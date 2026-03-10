@@ -1,0 +1,22 @@
+# Voice
+sounddevice>=0.5.0
+numpy
+pyaudio
+
+# TTS (ElevenLabs)
+httpx
+
+# Avatar / Video
+opencv-python
+ffmpeg-python
+
+# Display
+PyQt5
+PyQt5-sip
+
+# Utilities
+python-dotenv
+rich
+
+# Face generation (optional — only for scripts/generate_face.py)
+# replicate
