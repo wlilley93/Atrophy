@@ -82,11 +82,25 @@ def _migrate(conn: sqlite3.Connection):
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'"
     ).fetchone()
     if check_sql and "'companion'" in (check_sql[0] or ""):
-        # Update roles first while old table has no constraint conflict
-        conn.execute("UPDATE turns SET role = 'agent' WHERE role = 'companion'")
-        conn.commit()
+        # Old table has CHECK(role IN ('will','companion')) — can't update
+        # to 'agent' directly. Copy data to unconstrained temp, transform,
+        # then move into properly constrained table.
         conn.executescript("""
-            CREATE TABLE turns_new (
+            CREATE TABLE turns_tmp (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id  INTEGER REFERENCES sessions(id),
+                role        TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                topic_tags  TEXT,
+                weight      INTEGER DEFAULT 1,
+                channel     TEXT DEFAULT 'direct',
+                embedding   BLOB
+            );
+            INSERT INTO turns_tmp SELECT * FROM turns;
+            UPDATE turns_tmp SET role = 'agent' WHERE role = 'companion';
+            DROP TABLE turns;
+            CREATE TABLE turns (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id  INTEGER REFERENCES sessions(id),
                 role        TEXT NOT NULL CHECK(role IN ('will', 'agent')),
@@ -97,9 +111,8 @@ def _migrate(conn: sqlite3.Connection):
                 channel     TEXT DEFAULT 'direct',
                 embedding   BLOB
             );
-            INSERT INTO turns_new SELECT * FROM turns;
-            DROP TABLE turns;
-            ALTER TABLE turns_new RENAME TO turns;
+            INSERT INTO turns SELECT * FROM turns_tmp;
+            DROP TABLE turns_tmp;
             CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
             CREATE INDEX IF NOT EXISTS idx_turns_timestamp ON turns(timestamp);
         """)
