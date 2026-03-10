@@ -5,6 +5,7 @@ from pathlib import Path
 # Paths
 PROJECT_ROOT = Path(__file__).parent
 DB_PATH = PROJECT_ROOT / "companion.db"
+OPENING_CACHE = PROJECT_ROOT / ".opening_cache.json"
 SYSTEM_PROMPT_PATH = PROJECT_ROOT / "companion_system_prompt.md"
 SCHEMA_PATH = PROJECT_ROOT / "db" / "schema.sql"
 
@@ -26,9 +27,9 @@ TTS_BACKEND = os.environ.get("TTS_BACKEND", "elevenlabs")  # "elevenlabs", "fal"
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "")
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_v3")
-ELEVENLABS_STABILITY = float(os.environ.get("ELEVENLABS_STABILITY", "0.5"))
-ELEVENLABS_SIMILARITY = float(os.environ.get("ELEVENLABS_SIMILARITY", "0.75"))
-ELEVENLABS_STYLE = float(os.environ.get("ELEVENLABS_STYLE", "0.3"))
+ELEVENLABS_STABILITY = float(os.environ.get("ELEVENLABS_STABILITY", "0.7"))
+ELEVENLABS_SIMILARITY = float(os.environ.get("ELEVENLABS_SIMILARITY", "0.85"))
+ELEVENLABS_STYLE = float(os.environ.get("ELEVENLABS_STYLE", "0.15"))
 
 # Fal TTS fallback (ElevenLabs v3 via Fal, uses FAL_KEY from .env)
 FAL_TTS_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3"
@@ -49,6 +50,7 @@ LIVEPORTRAIT_PATH = Path.home() / "LivePortrait"
 AVATAR_RESOLUTION = 512
 AVATAR_ENABLED = os.environ.get("AVATAR_ENABLED", "false").lower() == "true"
 IDLE_LOOP = PROJECT_ROOT / "avatar" / "ambient_loop.mp4"
+IDLE_LOOPS_DIR = PROJECT_ROOT / "avatar" / "loops"
 IDLE_THINKING = PROJECT_ROOT / "avatar" / "idle_thinking.mp4"
 IDLE_LISTENING = PROJECT_ROOT / "avatar" / "idle_listening.mp4"
 IDLE_DRIVER = PROJECT_ROOT / "avatar" / "source" / "idle_driver.wav"

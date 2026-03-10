@@ -206,6 +206,7 @@ def stream_inference(
             "--include-partial-messages",
             "--resume", cli_session_id,
             "--mcp-config", mcp_config,
+            "--allowedTools", "mcp__memory__*",
             "-p", f"[Current context: {_agency_context(user_message)}]\n\n{user_message}",
         ]
     else:
@@ -220,6 +221,7 @@ def stream_inference(
             "--session-id", cli_session_id,
             "--system-prompt", system + "\n\n---\n\n## Current Context\n\n" + _agency_context(user_message),
             "--mcp-config", mcp_config,
+            "--allowedTools", "mcp__memory__*",
             "--disallowedTools", ",".join(_TOOL_BLACKLIST),
             "-p", user_message,
         ]

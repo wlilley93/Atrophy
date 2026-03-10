@@ -27,7 +27,7 @@ from PyQt5.QtMultimedia import (
     QVideoFrame,
 )
 
-from config import WINDOW_WIDTH, WINDOW_HEIGHT, IDLE_LOOP
+from config import WINDOW_WIDTH, WINDOW_HEIGHT, IDLE_LOOP, IDLE_LOOPS_DIR
 
 _W = WINDOW_WIDTH
 _H = WINDOW_HEIGHT
@@ -222,61 +222,25 @@ class ThinkingSpinner(QWidget):
         p.end()
 
 
-# ── Overlay label — teleprompter ──
+# ── Chat transcript overlay ──
 
-class OverlayLabel(QWidget):
-    _VISIBLE_LINES = 3
-    _SCROLL_PX_PER_SEC = 28
-    _FADE_EDGE = 18
+class TranscriptOverlay(QWidget):
+    """Scrolling chat transcript — messages accumulate bottom-aligned."""
+    _FADE_EDGE = 24
+    _MSG_GAP = 8
 
-    def __init__(self, parent=None, font_family="Bricolage Grotesque",
-                 font_size=14, base_alpha=255):
+    def __init__(self, parent=None, font_family="Bricolage Grotesque"):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAutoFillBackground(False)
-        self.setFont(QFont(font_family, font_size))
-        self._base_alpha = base_alpha
-        self._opacity = 0.0
-        self._text = ""
-        self._alignment = Qt.AlignLeft | Qt.AlignTop
-        self._scroll_offset = 0.0
-        self._scroll_timer = None
-        self._full_text_height = 0
-        self._revealed_chars = 0
-        self._target_chars = 0
+        self._font_companion = QFont(font_family, 15)
+        self._font_user = QFont(font_family, 13)
+        # Each entry: {"role": "user"|"companion", "text": str, "revealed": int}
+        self._messages = []
+        self._opacity = 1.0
         self._reveal_timer = QTimer(self)
-        self._reveal_timer.setInterval(20)  # ~50 chars/sec
+        self._reveal_timer.setInterval(18)
         self._reveal_timer.timeout.connect(self._tick_reveal)
-
-    def setText(self, text):
-        self._text = text
-        self._revealed_chars = len(text)  # instant reveal on full set
-        self._target_chars = len(text)
-        self._scroll_offset = 0.0
-        self._stop_scroll()
-        self._calc_text_height()
-        if self._needs_scroll():
-            self._start_scroll()
-        self.update()
-
-    def appendText(self, text):
-        """Append text with gradual reveal."""
-        old_len = len(self._text)
-        self._text = (self._text + " " + text).strip() if self._text else text
-        self._target_chars = len(self._text)
-        # Don't jump revealed_chars — let the timer catch up
-        if not self._reveal_timer.isActive():
-            self._reveal_timer.start()
-        self._calc_text_height()
-        if self._needs_scroll() and not self._scroll_timer:
-            self._start_scroll()
-        self.update()
-
-    def text(self):
-        return self._text
-
-    def setAlignment(self, alignment):
-        self._alignment = alignment
 
     def _get_opacity(self):
         return self._opacity
@@ -287,106 +251,136 @@ class OverlayLabel(QWidget):
 
     opacity = pyqtProperty(float, _get_opacity, _set_opacity)
 
-    def _calc_text_height(self):
-        if not self._text:
-            self._full_text_height = 0
+    def add_message(self, role: str, text: str, instant: bool = False):
+        """Add a message. User messages reveal instantly, companion gradually."""
+        revealed = len(text) if (instant or role == "user") else 0
+        self._messages.append({
+            "role": role, "text": text, "revealed": revealed,
+        })
+        if revealed < len(text) and not self._reveal_timer.isActive():
+            self._reveal_timer.start()
+        self.update()
+
+    def append_to_last(self, text: str):
+        """Append text to the last companion message (streaming)."""
+        if not self._messages:
             return
-        fm = self.fontMetrics()
-        w = self.width() if self.width() > 0 else 400
-        br = fm.boundingRect(QRect(0, 0, w, 99999), Qt.TextWordWrap, self._text)
-        self._full_text_height = br.height()
+        msg = self._messages[-1]
+        old_revealed = msg["revealed"]
+        msg["text"] = (msg["text"] + " " + text).strip() if msg["text"] else text
+        # Keep revealed where it was — let timer catch up
+        if not self._reveal_timer.isActive():
+            self._reveal_timer.start()
+        self.update()
 
-    def _visible_height(self):
-        return self.height()
-
-    def _needs_scroll(self):
-        return self._full_text_height > self._visible_height() + 4
-
-    def _max_scroll(self):
-        return max(0, self._full_text_height - self._visible_height())
-
-    def _start_scroll(self):
-        if self._scroll_timer:
+    def set_last_text(self, text: str):
+        """Set the text of the last message (first sentence)."""
+        if not self._messages:
             return
-        self._scroll_timer = QTimer(self)
-        self._scroll_timer.setInterval(33)
-        self._scroll_paused = 60
-        self._scroll_timer.timeout.connect(self._tick_scroll)
-        self._scroll_timer.start()
+        msg = self._messages[-1]
+        msg["text"] = text
+        # Don't jump revealed — let timer catch up
+        if not self._reveal_timer.isActive():
+            self._reveal_timer.start()
+        self.update()
 
-    def _stop_scroll(self):
-        if self._scroll_timer:
-            self._scroll_timer.stop()
-            self._scroll_timer = None
+    def clear_messages(self):
+        self._messages.clear()
+        self.update()
 
     def _tick_reveal(self):
-        if self._revealed_chars >= self._target_chars:
+        any_pending = False
+        for msg in self._messages:
+            if msg["revealed"] < len(msg["text"]):
+                msg["revealed"] = min(msg["revealed"] + 3, len(msg["text"]))
+                any_pending = True
+        if not any_pending:
             self._reveal_timer.stop()
-            return
-        # Reveal 2-3 chars per tick (40-60 chars/sec)
-        self._revealed_chars = min(self._revealed_chars + 2, self._target_chars)
         self.update()
 
-    def _tick_scroll(self):
-        if self._scroll_paused > 0:
-            self._scroll_paused -= 1
-            return
-        max_s = self._max_scroll()
-        if self._scroll_offset >= max_s:
-            self._stop_scroll()
-            return
-        self._scroll_offset += self._SCROLL_PX_PER_SEC / 30.0
-        self._scroll_offset = min(self._scroll_offset, max_s)
-        self.update()
+    def _measure_msg(self, msg, width):
+        """Measure the height of a message when rendered."""
+        font = self._font_companion if msg["role"] == "companion" else self._font_user
+        fm = self.fontMetrics()
+        # Use the right font metrics
+        from PyQt5.QtGui import QFontMetrics
+        fm = QFontMetrics(font)
+        text = msg["text"][:msg["revealed"]] or " "
+        br = fm.boundingRect(QRect(0, 0, width, 99999), Qt.TextWordWrap, text)
+        return br.height()
 
     def paintEvent(self, event):
-        if not self._text or self._opacity <= 0.001:
+        if not self._messages or self._opacity <= 0.001:
             return
-        vis_h = self._visible_height()
+
         w = self.width()
+        vis_h = self.height()
         p = QPainter(self)
         p.setRenderHint(QPainter.TextAntialiasing)
         p.setClipRect(0, 0, w, vis_h)
-        p.setFont(self.font())
-        y_off = -int(self._scroll_offset)
-        text_rect = QRect(0, y_off, w, self._full_text_height + 40)
-        flags = self._alignment | Qt.TextWordWrap
-        visible = self._text[:self._revealed_chars]
-        p.setPen(QColor(0, 0, 0, int(160 * self._opacity)))
-        p.drawText(text_rect.adjusted(1, 2, 1, 2), flags, visible)
-        p.setPen(QColor(255, 255, 255, int(self._base_alpha * self._opacity)))
-        p.drawText(text_rect, flags, visible)
-        if self._needs_scroll():
-            fade = self._FADE_EDGE
-            if self._scroll_offset > 0:
-                grad = QLinearGradient(0, 0, 0, fade)
-                grad.setColorAt(0, QColor(0, 0, 0, int(200 * self._opacity)))
-                grad.setColorAt(1, QColor(0, 0, 0, 0))
-                p.setCompositionMode(QPainter.CompositionMode_DestinationOut)
-                p.fillRect(0, 0, w, fade, grad)
-                p.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            if self._scroll_offset < self._max_scroll():
-                grad = QLinearGradient(0, vis_h - fade, 0, vis_h)
-                grad.setColorAt(0, QColor(0, 0, 0, 0))
-                grad.setColorAt(1, QColor(0, 0, 0, int(200 * self._opacity)))
-                p.setCompositionMode(QPainter.CompositionMode_DestinationOut)
-                p.fillRect(0, vis_h - fade, w, fade, grad)
-                p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+
+        # Measure all messages bottom-up
+        blocks = []
+        for msg in self._messages:
+            text = msg["text"][:msg["revealed"]]
+            if not text:
+                continue
+            font = self._font_companion if msg["role"] == "companion" else self._font_user
+            from PyQt5.QtGui import QFontMetrics
+            fm = QFontMetrics(font)
+            br = fm.boundingRect(QRect(0, 0, w, 99999), Qt.TextWordWrap, text)
+            blocks.append({
+                "text": text,
+                "role": msg["role"],
+                "font": font,
+                "height": br.height(),
+            })
+
+        if not blocks:
+            p.end()
+            return
+
+        # Layout bottom-up
+        y = vis_h
+        layout = []
+        for block in reversed(blocks):
+            y -= block["height"]
+            layout.insert(0, (block, y))
+            y -= self._MSG_GAP
+
+        # Draw each message
+        for block, y_pos in layout:
+            if y_pos + block["height"] < 0:
+                continue  # off screen above
+            if y_pos > vis_h:
+                continue  # off screen below
+
+            p.setFont(block["font"])
+            alpha = int(150 * self._opacity) if block["role"] == "user" else int(240 * self._opacity)
+            # Shadow
+            p.setPen(QColor(0, 0, 0, int(140 * self._opacity)))
+            shadow_rect = QRect(1, int(y_pos) + 1, w, block["height"] + 4)
+            p.drawText(shadow_rect, Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
+            # Text
+            p.setPen(QColor(255, 255, 255, alpha))
+            text_rect = QRect(0, int(y_pos), w, block["height"] + 4)
+            p.drawText(text_rect, Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
+
+        # Fade at top edge
+        fade = self._FADE_EDGE
+        if layout and layout[0][1] < fade:
+            grad = QLinearGradient(0, 0, 0, fade)
+            grad.setColorAt(0, QColor(0, 0, 0, int(255 * self._opacity)))
+            grad.setColorAt(1, QColor(0, 0, 0, 0))
+            p.setCompositionMode(QPainter.CompositionMode_DestinationOut)
+            p.fillRect(0, 0, w, fade, grad)
+            p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+
         p.end()
 
-    def sizeHint(self):
-        if not self._text:
-            return QSize(0, 0)
-        fm = self.fontMetrics()
-        w = self.width() if self.width() > 0 else 400
-        line_h = fm.lineSpacing()
-        max_h = line_h * self._VISIBLE_LINES
-        br = fm.boundingRect(QRect(0, 0, w, 99999), Qt.TextWordWrap, self._text)
-        return QSize(br.width(), min(br.height(), max_h))
 
-
-def _fade(label, start, end, duration_ms):
-    anim = QPropertyAnimation(label, b"opacity", label)
+def _fade(widget, start, end, duration_ms):
+    anim = QPropertyAnimation(widget, b"opacity", widget)
     anim.setStartValue(start)
     anim.setEndValue(end)
     anim.setDuration(duration_ms)
@@ -611,24 +605,25 @@ class AudioPlayer(QThread):
 class CompanionWindow(QWidget):
 
     def __init__(self, on_input=None, on_synth=None, on_opening=None,
-                 system_prompt="", cli_session_id=None, session=None):
+                 system_prompt="", cli_session_id=None, session=None,
+                 cached_opening_audio=""):
         super().__init__()
         self._on_input = on_input    # unused in streaming mode
         self._on_synth = on_synth    # synthesise_sync
         self._on_opening = on_opening
+        self._cached_opening_audio = cached_opening_audio
         self._system = system_prompt
         self._cli_session_id = cli_session_id
         self._session = session
         self._worker = None
         self._anims = []
         self._frame = QImage()
+        self._scaled_frame = None
         self._first_sentence_shown = False
 
-        # Conversation history for arrow key browsing
+        # Conversation history
         # Each entry: {"user": str, "companion": str}
         self._history = []
-        self._history_index = -1  # -1 = live (current turn)
-        self._browsing = False
 
         # Ken Burns drift — slow, gentle movement
         self._drift_x = 0.0
@@ -675,8 +670,13 @@ class CompanionWindow(QWidget):
 
         # Dynamic opening
         if on_opening:
-            self._spinner.start()
-            self._opening_worker = OpeningWorker(on_opening, on_synth)
+            if cached_opening_audio:
+                # Cached — skip TTS, use pre-generated audio
+                synth_for_opening = None
+            else:
+                self._spinner.start()
+                synth_for_opening = on_synth
+            self._opening_worker = OpeningWorker(on_opening, synth_for_opening)
             self._opening_worker.ready.connect(self._on_opening_ready)
             self._opening_worker.error_signal.connect(self._on_opening_error)
             QTimer.singleShot(300, self._opening_worker.start)
@@ -687,8 +687,11 @@ class CompanionWindow(QWidget):
         self._opening_worker = None
         self._spinner.stop()
         self._present(text)
-        if audio_path and not self._muted:
-            self._audio_player.enqueue(audio_path, 0)
+        # Use cached audio if available, otherwise use what TTS produced
+        play_audio = self._cached_opening_audio or audio_path
+        if play_audio and not self._muted:
+            self._audio_player.enqueue(play_audio, 0)
+        self._cached_opening_audio = ""  # consumed
         if self._session:
             self._session.add_turn("companion", text)
         self._history.append({"user": "", "companion": text})
@@ -736,7 +739,24 @@ class CompanionWindow(QWidget):
         self._player.setVideoOutput(self._surface)
         self._player.setMuted(True)
         self._player.mediaStatusChanged.connect(self._on_media_status)
-        self._load_video(IDLE_LOOP)
+
+        # Collect individual loop clips for shuffled playback
+        self._loop_clips = sorted(IDLE_LOOPS_DIR.glob("loop_*.mp4")) \
+            if IDLE_LOOPS_DIR.exists() else []
+        self._loop_queue = []
+
+        if self._loop_clips:
+            self._play_next_loop()
+        else:
+            self._load_video(IDLE_LOOP)
+
+    def _play_next_loop(self):
+        """Play the next clip from a shuffled queue."""
+        if not self._loop_queue:
+            self._loop_queue = list(self._loop_clips)
+            random.shuffle(self._loop_queue)
+        clip = self._loop_queue.pop()
+        self._load_video(clip)
 
     def _load_video(self, path):
         p = Path(path)
@@ -746,6 +766,7 @@ class CompanionWindow(QWidget):
 
     def _on_frame(self, img):
         self._frame = img
+        self._scaled_frame = None  # invalidate cache
         if not self._eye_mode:
             self.update()
 
@@ -768,8 +789,11 @@ class CompanionWindow(QWidget):
 
     def _on_media_status(self, status):
         if status == QMediaPlayer.EndOfMedia:
-            self._player.setPosition(0)
-            self._player.play()
+            if self._loop_clips:
+                self._play_next_loop()
+            else:
+                self._player.setPosition(0)
+                self._player.play()
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -781,10 +805,16 @@ class CompanionWindow(QWidget):
         img_w, img_h = self._frame.width(), self._frame.height()
         scale = max(win_w / img_w, win_h / img_h) * 1.01
         sw, sh = int(img_w * scale), int(img_h * scale)
+        # Cache the scaled frame — only rescale when source or size changes
+        if (self._scaled_frame is None
+                or self._scaled_frame.width() != sw
+                or self._scaled_frame.height() != sh):
+            self._scaled_frame = self._frame.scaled(
+                sw, sh, Qt.IgnoreAspectRatio, Qt.FastTransformation,
+            )
         x = (win_w - sw) // 2 + int(self._drift_x)
         y = (win_h - sh) // 2 + int(self._drift_y)
-        scaled = self._frame.scaled(sw, sh, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-        p.drawImage(x, y, scaled)
+        p.drawImage(x, y, self._scaled_frame)
         # Warm vignette overlay
         if self._vignette_opacity > 0.01:
             cx, cy = win_w / 2, win_h / 2
@@ -808,10 +838,7 @@ class CompanionWindow(QWidget):
     # ── Overlays ──
 
     def _build_overlays(self):
-        self._my_label = OverlayLabel(self, "Bricolage Grotesque", 14, base_alpha=150)
-        self._my_label.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
-        self._her_label = OverlayLabel(self, "Bricolage Grotesque", 15, base_alpha=255)
-        self._her_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._transcript = TranscriptOverlay(self)
         self._reflow()
 
     # ── Input bar ──
@@ -861,22 +888,11 @@ class CompanionWindow(QWidget):
     # ── Streaming interaction flow ──
 
     def _on_user_input(self, text):
-        # Fade out old overlays
-        self._anims.clear()
-        self._anims.append(_fade(self._my_label, self._my_label.opacity, 0.0, 150))
-        self._anims.append(_fade(self._her_label, self._her_label.opacity, 0.0, 150))
-        QTimer.singleShot(170, lambda: self._start_turn(text))
+        self._start_turn(text)
 
     def _start_turn(self, text):
-        # Exit history browsing
-        self._browsing = False
-        self._history_index = -1
-
-        # Show user message
-        self._her_label.setText("")
-        self._my_label.setText(text)
-        self._reflow()
-        self._anims.append(_fade(self._my_label, 0.0, 1.0, 200))
+        # Add user message to transcript
+        self._transcript.add_message("user", text)
 
         # Record user turn — companion text filled in when done
         self._history.append({"user": text, "companion": ""})
@@ -925,38 +941,17 @@ class CompanionWindow(QWidget):
         if not self._first_sentence_shown:
             self._first_sentence_shown = True
             self._spinner.stop()
-            self._her_label.setText(_strip_tags(sentence))
-            self._reflow()
-            self._anims.append(_fade(self._her_label, 0.0, 1.0, 300))
+            # Add a new companion message to the transcript
+            self._transcript.add_message("companion", _strip_tags(sentence))
         else:
-            self._her_label.appendText(_strip_tags(sentence))
-            self._reflow()
+            self._transcript.append_to_last(_strip_tags(sentence))
 
         if audio_path and not self._muted:
             self._audio_player.enqueue(audio_path, index)
 
     def _on_tool_use(self, name, tool_id):
         """Claude invoked a tool — show in UI."""
-        # Map tool names to human-readable labels
-        _labels = {
-            'remember': 'remembering...',
-            'recall_session': 'recalling...',
-            'get_threads': 'checking threads...',
-            'track_thread': 'tracking...',
-            'read_note': 'reading notes...',
-            'write_note': 'writing...',
-            'search_notes': 'searching notes...',
-            'daily_digest': 'reading digest...',
-            'ask_will': 'thinking...',
-        }
-        label = _labels.get(name, f'{name}...')
         self._spinner.start()
-        # Briefly show tool label — reuse my_label with low opacity
-        self._my_label.setText(label)
-        self._reflow()
-        self._anims.append(_fade(self._my_label, 0.0, 0.5, 200))
-        # Fade out after 1.5s
-        QTimer.singleShot(1500, lambda: self._anims.append(_fade(self._my_label, self._my_label.opacity, 0.0, 300)))
 
     def _on_done(self, full_text, session_id):
         """Stream complete."""
@@ -1045,9 +1040,7 @@ class CompanionWindow(QWidget):
             self._vignette_target = 0.0
 
     def _present(self, text):
-        self._her_label.setText(_strip_tags(text))
-        self._reflow()
-        self._anims.append(_fade(self._her_label, 0.0, 1.0, 400))
+        self._transcript.add_message("companion", _strip_tags(text))
 
     # ── Public API ──
 
@@ -1057,6 +1050,7 @@ class CompanionWindow(QWidget):
     # ── Layout ──
 
     def resizeEvent(self, event):
+        self._scaled_frame = None  # invalidate cache
         w, h = self.width(), self.height()
         bar_w = w - _PAD * 2
         self._bar.setFixedSize(bar_w, _BAR_H)
@@ -1069,105 +1063,36 @@ class CompanionWindow(QWidget):
     def _reflow(self):
         w, h = self.width(), self.height()
         bar_y = h - _PAD - _BAR_H
-        gap = 12
-        her_h = min(max(self._her_label.sizeHint().height(), 24), 80)
-        her_y = bar_y - gap - her_h
-        self._her_label.setGeometry(_PAD, her_y, w - _PAD * 2, her_h)
-        my_h = min(max(self._my_label.sizeHint().height(), 22), 50)
-        if not self._her_label.text():
-            my_y = bar_y - gap - my_h
-        else:
-            my_y = her_y - my_h - 4
-        self._my_label.setGeometry(_PAD, my_y, w - _PAD * 2, my_h)
-
-    # ── History browsing ──
-
-    def _browse_history(self, direction):
-        """Browse conversation history. direction: -1 = older, +1 = newer."""
-        if not self._history:
-            return
-
-        if not self._browsing:
-            # Enter browsing mode from the latest exchange
-            self._browsing = True
-            self._history_index = len(self._history) - 1
-            if direction == -1 and self._history_index > 0:
-                self._history_index -= 1
-        else:
-            new_idx = self._history_index + direction
-            if new_idx < 0:
-                return  # already at oldest
-            if new_idx >= len(self._history):
-                # Back to live — exit browsing
-                self._browsing = False
-                self._history_index = -1
-                self._show_live()
-                return
-            self._history_index = new_idx
-
-        self._show_history_entry(self._history_index)
-
-    def _show_history_entry(self, index):
-        """Display a past exchange with fade transition."""
-        entry = self._history[index]
-
-        # Fade out
-        self._anims.clear()
-        self._anims.append(_fade(self._my_label, self._my_label.opacity, 0.0, 120))
-        self._anims.append(_fade(self._her_label, self._her_label.opacity, 0.0, 120))
-
-        def _show():
-            self._my_label.setText(entry["user"])
-            self._her_label.setText(_strip_tags(entry["companion"]))
-            self._reflow()
-            if entry["user"]:
-                self._anims.append(_fade(self._my_label, 0.0, 1.0, 200))
-            if entry["companion"]:
-                self._anims.append(_fade(self._her_label, 0.0, 1.0, 200))
-
-        QTimer.singleShot(130, _show)
-
-    def _show_live(self):
-        """Return to the current/latest exchange."""
-        if self._history:
-            self._show_history_entry(len(self._history) - 1)
+        gap = 10
+        # Transcript fills area above input bar (bottom half of window)
+        transcript_h = h // 2
+        transcript_y = bar_y - gap - transcript_h
+        self._transcript.setGeometry(_PAD, transcript_y, w - _PAD * 2, transcript_h)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
             self._audio_player.stop()
             self.close()
-        elif event.key() == Qt.Key_Up:
-            self._browse_history(-1)
-        elif event.key() == Qt.Key_Down:
-            self._browse_history(1)
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Pin to all macOS Spaces so Cmd+Left/Right doesn't leave it behind
-        try:
-            import ctypes, ctypes.util
-            objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library('objc'))
-            objc.objc_getClass.restype = ctypes.c_void_p
-            objc.sel_registerName.restype = ctypes.c_void_p
-            objc.objc_msgSend.restype = ctypes.c_void_p
-            objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self._pin_to_all_spaces()
 
-            NSApp = objc.objc_msgSend(
-                objc.objc_getClass(b'NSApplication'),
-                objc.sel_registerName(b'sharedApplication'),
-            )
-            # Get the NSWindow for this QWidget's winId
-            view = ctypes.c_void_p(int(self.winId()))
-            sel_window = objc.sel_registerName(b'window')
-            objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-            ns_window = objc.objc_msgSend(view, sel_window)
-            if ns_window:
-                # NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
-                sel_set = objc.sel_registerName(b'setCollectionBehavior:')
-                objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulonglong]
-                objc.objc_msgSend(ns_window, sel_set, 1 << 0)
-        except Exception:
-            pass
+    def _pin_to_all_spaces(self):
+        """Make window visible on all macOS Spaces/desktops."""
+        try:
+            from AppKit import NSApplication
+            # Find our NSWindow — iterate app windows, match by title
+            for ns_window in NSApplication.sharedApplication().windows():
+                if ns_window.title() == self.windowTitle():
+                    # canJoinAllSpaces(1<<0) | stationary(1<<4) | fullScreenAuxiliary(1<<8)
+                    ns_window.setCollectionBehavior_((1 << 0) | (1 << 4) | (1 << 8))
+                    ns_window.setLevel_(3)  # NSFloatingWindowLevel
+                    print("  [Pinned to all Spaces]")
+                    return
+            print("  [Spaces pin: no matching NSWindow found]")
+        except Exception as e:
+            print(f"  [Spaces pin failed: {e}]")
 
     def closeEvent(self, event):
         # Stop timers
@@ -1186,6 +1111,19 @@ class CompanionWindow(QWidget):
             t = threading.Thread(target=_end, daemon=True)
             t.start()
             t.join(timeout=5)
+        # Pre-generate next session's opening in background
+        import threading
+        def _cache():
+            try:
+                from main import _cache_next_opening
+                _cache_next_opening(
+                    self._system, self._cli_session_id, self._on_synth,
+                )
+            except Exception as e:
+                print(f"  [Cache opening failed: {e}]")
+        cache_thread = threading.Thread(target=_cache, daemon=True)
+        cache_thread.start()
+        cache_thread.join(timeout=30)
         super().closeEvent(event)
         app = QApplication.instance()
         if app:
@@ -1195,7 +1133,8 @@ class CompanionWindow(QWidget):
 # ── Entry point ──
 
 def run_app(on_synth_callback=None, on_opening_callback=None,
-            system_prompt="", cli_session_id=None, session=None):
+            system_prompt="", cli_session_id=None, session=None,
+            cached_opening_audio=""):
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
@@ -1211,10 +1150,44 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
         system_prompt=system_prompt,
         cli_session_id=cli_session_id,
         session=session,
+        cached_opening_audio=cached_opening_audio,
     )
     _companion_window.show()
     _companion_window.raise_()
     _companion_window._bar.focus_input()
+
+    # Watch for Space changes — re-show window on the active Space
+    try:
+        from AppKit import NSWorkspace, NSWorkspaceActiveSpaceDidChangeNotification
+        from Foundation import NSObject
+        import objc
+
+        class _SpaceObserver(NSObject):
+            def spaceChanged_(self, notification):
+                if _companion_window:
+                    # Move to current Space by hiding and re-showing
+                    QTimer.singleShot(100, _reshow)
+
+        def _reshow():
+            if _companion_window:
+                pos = _companion_window.pos()
+                _companion_window.hide()
+                _companion_window.move(pos)
+                _companion_window.show()
+                _companion_window.raise_()
+
+        observer = _SpaceObserver.alloc().init()
+        NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
+            observer,
+            objc.selector(observer.spaceChanged_, signature=b'v@:@'),
+            NSWorkspaceActiveSpaceDidChangeNotification,
+            None,
+        )
+        # prevent gc
+        _companion_window._space_observer = observer
+    except Exception as e:
+        print(f"  [Space observer failed: {e}]")
+
     app.exec_()
 
 _companion_window = None

@@ -444,41 +444,107 @@ async def run_text_only():
 
 # ── GUI mode ──
 
-def run_gui():
+def _generate_opening(system: str, cli_session_id: str | None) -> tuple[str, str]:
+    """Generate an opening line. Returns (text, cli_session_id)."""
     from core.inference import run_inference_turn
+    from core.agency import time_of_day_context, time_gap_note
+    from core.memory import get_active_threads, get_last_session_time
+
+    context_parts = [time_of_day_context()]
+    gap = time_gap_note(get_last_session_time())
+    if gap:
+        context_parts.append(gap)
+    threads = get_active_threads()
+    if threads:
+        names = [t["name"] for t in threads[:3]]
+        context_parts.append(f"Active threads: {', '.join(names)}")
+    context = " ".join(context_parts)
+
+    response, cli_id = run_inference_turn(
+        f"[Context: {context}]\n\n"
+        "(Session starting. You go first. One or two sentences. "
+        "Be present — not a greeting, not a status update. "
+        "Say something real. Reference a thread, notice the time, "
+        "ask something pointed. Different every time.)",
+        system,
+        cli_session_id,
+    )
+    return response, cli_id
+
+
+def _load_cached_opening() -> dict | None:
+    """Load cached opening (text + audio path) if available."""
+    import json
+    from config import OPENING_CACHE
+    if not OPENING_CACHE.exists():
+        return None
+    try:
+        data = json.loads(OPENING_CACHE.read_text())
+        OPENING_CACHE.unlink()  # one-shot — delete after use
+        if data.get("text"):
+            # Verify audio file still exists
+            audio = data.get("audio_path", "")
+            if audio and not Path(audio).exists():
+                data["audio_path"] = ""
+            return data
+    except Exception:
+        pass
+    return None
+
+
+def _cache_next_opening(system: str, cli_session_id: str | None, synth_fn):
+    """Pre-generate the next session's opening and cache it."""
+    import json
+    from config import OPENING_CACHE
+
+    try:
+        text, cli_id = _generate_opening(system, cli_session_id)
+        if not text:
+            return
+
+        audio_path = ""
+        if synth_fn:
+            try:
+                audio_path = str(synth_fn(text))
+            except Exception:
+                pass
+
+        OPENING_CACHE.write_text(json.dumps({
+            "text": text,
+            "audio_path": audio_path,
+            "cli_session_id": cli_id,
+        }))
+        print("  [Cached next opening]")
+    except Exception as e:
+        print(f"  [Failed to cache opening: {e}]")
+
+
+def run_gui():
     from core.context import load_system_prompt
     from voice.tts import synthesise_sync
 
     session = _init()
     system = load_system_prompt()
 
-    def on_opening(_ignored: str) -> str:
-        """Generate dynamic opening line — she goes first."""
-        from core.agency import time_of_day_context, time_gap_note
-        from core.memory import get_active_threads, get_last_session_time
+    # Check for cached opening from previous session
+    cached = _load_cached_opening()
 
-        # Build context for a varied, grounded opening
-        context_parts = [time_of_day_context()]
-        gap = time_gap_note(get_last_session_time())
-        if gap:
-            context_parts.append(gap)
-        threads = get_active_threads()
-        if threads:
-            names = [t["name"] for t in threads[:3]]
-            context_parts.append(f"Active threads: {', '.join(names)}")
-        context = " ".join(context_parts)
+    if cached:
+        # Use cached opening — instant startup
+        def on_opening(_ignored: str) -> str:
+            if cached.get("cli_session_id"):
+                session.set_cli_session_id(cached["cli_session_id"])
+            return cached["text"]
 
-        response, cli_id = run_inference_turn(
-            f"[Context: {context}]\n\n"
-            "(Session starting. You go first. One or two sentences. "
-            "Be present — not a greeting, not a status update. "
-            "Say something real. Reference a thread, notice the time, "
-            "ask something pointed. Different every time.)",
-            system,
-            session.cli_session_id,
-        )
-        session.set_cli_session_id(cli_id)
-        return response
+        # Pass cached audio path to skip TTS
+        cached_audio = cached.get("audio_path", "")
+    else:
+        # No cache — generate live (slower)
+        def on_opening(_ignored: str) -> str:
+            text, cli_id = _generate_opening(system, session.cli_session_id)
+            session.set_cli_session_id(cli_id)
+            return text
+        cached_audio = ""
 
     from display.window import run_app
     run_app(
@@ -487,6 +553,7 @@ def run_gui():
         system_prompt=system,
         cli_session_id=session.cli_session_id,
         session=session,
+        cached_opening_audio=cached_audio,
     )
 
 

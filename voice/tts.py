@@ -202,15 +202,18 @@ async def _synthesise_elevenlabs_stream(text: str) -> Path:
     if not text or not text.strip():
         raise ValueError("Empty text after prosody stripping")
 
-    stab = max(0.0, min(1.0, ELEVENLABS_STABILITY + prosody_overrides.get('stability', 0)))
-    sim = max(0.0, min(1.0, ELEVENLABS_SIMILARITY + prosody_overrides.get('similarity_boost', 0)))
-    sty = max(0.0, min(1.0, ELEVENLABS_STYLE + prosody_overrides.get('style', 0)))
+    # Clamp overrides to ±0.1 so timbre stays consistent across sentences
+    stab_d = max(-0.1, min(0.1, prosody_overrides.get('stability', 0)))
+    sim_d = max(-0.1, min(0.1, prosody_overrides.get('similarity_boost', 0)))
+    sty_d = max(-0.1, min(0.1, prosody_overrides.get('style', 0)))
+    stab = max(0.0, min(1.0, ELEVENLABS_STABILITY + stab_d))
+    sim = max(0.0, min(1.0, ELEVENLABS_SIMILARITY + sim_d))
+    sty = max(0.0, min(1.0, ELEVENLABS_STYLE + sty_d))
 
     url = (
         f"https://api.elevenlabs.io/v1/text-to-speech"
         f"/{ELEVENLABS_VOICE_ID}/stream"
         f"?output_format=mp3_44100_64"
-        f"&optimize_streaming_latency=3"
     )
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
@@ -232,7 +235,11 @@ async def _synthesise_elevenlabs_stream(text: str) -> Path:
         async with client.stream(
             "POST", url, json=payload, headers=headers, timeout=30.0
         ) as response:
-            response.raise_for_status()
+            if response.status_code != 200:
+                body = await response.aread()
+                raise RuntimeError(
+                    f"ElevenLabs {response.status_code}: {body.decode(errors='replace')[:300]}"
+                )
             async for chunk in response.aiter_bytes(chunk_size=4096):
                 tmp.write(chunk)
 
