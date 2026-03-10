@@ -2006,14 +2006,24 @@ def handle_add_avatar_loop(args):
         )
 
 
+def _dismiss_artefact_loading(display_file):
+    """Remove the loading signal on error so the GUI loading bar disappears."""
+    try:
+        if os.path.exists(display_file):
+            os.remove(display_file)
+    except OSError:
+        pass
+
+
 def handle_create_artefact(args):
     """Create a visual artefact — HTML, image, or video."""
     import re
-    import time
     from datetime import datetime
 
     artefact_type = args["type"]
     name = re.sub(r"[^a-z0-9_-]", "-", args["name"].lower().strip())
+    if not name:
+        return "Error: artefact name is required."
     description = args["description"]
     content = args.get("content", "")
     prompt = args.get("prompt", "")
@@ -2024,13 +2034,12 @@ def handle_create_artefact(args):
     today = datetime.now().strftime("%Y-%m-%d")
     now_iso = datetime.now().isoformat()
 
-    # Resolve paths — artefacts live in persistent user data, not the bundle/vault
+    # Resolve paths — artefacts live in persistent user data
     user_data = os.path.expanduser("~/.atrophy")
     artefact_dir = os.path.join(user_data, "agents", AGENT_NAME, "artefacts", today, name)
     os.makedirs(artefact_dir, exist_ok=True)
 
     data_dir = os.path.join(user_data, "agents", AGENT_NAME, "data")
-    request_file = os.path.join(data_dir, ".artefact_request.json")
     display_file = os.path.join(data_dir, ".artefact_display.json")
     index_file = os.path.join(data_dir, ".artefact_index.json")
 
@@ -2043,74 +2052,35 @@ def handle_create_artefact(args):
         "path": artefact_dir,
     }
 
-    if artefact_type == "html":
-        # HTML artefacts — no approval needed, no cost
-        if not content:
-            return "Error: 'content' is required for HTML artefacts."
-        html_path = os.path.join(artefact_dir, "index.html")
-        with open(html_path, "w") as f:
-            f.write(content)
-        metadata["file"] = html_path
+    try:
+        if artefact_type == "html":
+            if not content:
+                return "Error: 'content' is required for HTML artefacts."
+            html_path = os.path.join(artefact_dir, "index.html")
+            with open(html_path, "w") as f:
+                f.write(content)
+            metadata["file"] = html_path
 
-    elif artefact_type in ("image", "video"):
-        # Requires approval — write request, poll for approval
-        if not prompt:
-            return f"Error: 'prompt' is required for {artefact_type} artefacts."
+        elif artefact_type in ("image", "video"):
+            if not prompt:
+                return f"Error: 'prompt' is required for {artefact_type} artefacts."
 
-        if not model:
-            model = ("fal-ai/flux-general" if artefact_type == "image"
-                     else "fal-ai/kling-video/v3/pro/text-to-video")
+            if not model:
+                model = ("fal-ai/flux-general" if artefact_type == "image"
+                         else "fal-ai/kling-video/v3/pro/text-to-video")
 
-        cost_est = "$0.03" if artefact_type == "image" else "$0.30"
-        request = {
-            "status": "pending",
-            "type": artefact_type,
-            "name": name,
-            "description": description,
-            "prompt": prompt,
-            "model": model,
-            "cost_estimate": cost_est,
-            "requested_at": now_iso,
-        }
-        with open(request_file, "w") as f:
-            json.dump(request, f, indent=2)
+            # Signal GUI to show loading state
+            loading_signal = {
+                "status": "generating",
+                "type": artefact_type,
+                "name": name,
+            }
+            with open(display_file, "w") as f:
+                json.dump(loading_signal, f, indent=2)
 
-        # Poll for approval (max 120s)
-        deadline = time.time() + 120
-        approved = False
-        while time.time() < deadline:
-            time.sleep(2)
-            try:
-                with open(request_file, "r") as f:
-                    state = json.load(f)
-                if state.get("status") == "approved":
-                    approved = True
-                    break
-                elif state.get("status") == "rejected":
-                    try:
-                        os.remove(request_file)
-                    except OSError:
-                        pass
-                    return "Artefact creation cancelled by user."
-            except (json.JSONDecodeError, OSError):
-                continue
-
-        if not approved:
-            try:
-                os.remove(request_file)
-            except OSError:
-                pass
-            return "Artefact creation timed out waiting for approval."
-
-        # Clean up request file
-        try:
-            os.remove(request_file)
-        except OSError:
-            pass
-
-        # Generate via fal
-        try:
             import fal_client
+            import urllib.request
+
             if artefact_type == "image":
                 result = fal_client.subscribe(model, arguments={
                     "prompt": prompt,
@@ -2118,53 +2088,76 @@ def handle_create_artefact(args):
                     "num_inference_steps": 50,
                     "guidance_scale": 3.5,
                 })
-                image_url = result["images"][0]["url"]
-                # Download image
-                import urllib.request
-                ext = "png"
-                file_path = os.path.join(artefact_dir, f"image.{ext}")
-                urllib.request.urlretrieve(image_url, file_path)
-                metadata["file"] = file_path
-                metadata["model"] = model
-                metadata["prompt"] = prompt
-                metadata["cost_estimate"] = cost_est
+                images = result.get("images", [])
+                if not images or "url" not in images[0]:
+                    return f"Error: fal returned no image. Response: {result}"
+                file_path = os.path.join(artefact_dir, "image.png")
+                urllib.request.urlretrieve(images[0]["url"], file_path)
 
-            elif artefact_type == "video":
+            else:  # video
                 result = fal_client.subscribe(model, arguments={
                     "prompt": prompt,
                     "aspect_ratio": f"{width}:{height}",
                     "duration": 5,
                 })
-                video_url = result["video"]["url"]
-                import urllib.request
-                file_path = os.path.join(artefact_dir, f"video.mp4")
-                urllib.request.urlretrieve(video_url, file_path)
-                metadata["file"] = file_path
-                metadata["model"] = model
-                metadata["prompt"] = prompt
-                metadata["cost_estimate"] = cost_est
+                video = result.get("video", {})
+                if not video or "url" not in video:
+                    return f"Error: fal returned no video. Response: {result}"
+                file_path = os.path.join(artefact_dir, "video.mp4")
+                urllib.request.urlretrieve(video["url"], file_path)
 
-        except Exception as e:
-            return f"Artefact generation failed: {e}"
-    else:
-        return f"Unknown artefact type: {artefact_type}"
+            # Verify the file was actually downloaded
+            if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                return f"Error: download failed — file is empty or missing at {file_path}"
+
+            metadata["file"] = file_path
+            metadata["model"] = model
+            metadata["prompt"] = prompt
+
+        else:
+            return f"Unknown artefact type: {artefact_type}. Use 'html', 'image', or 'video'."
+
+    except ImportError:
+        _dismiss_artefact_loading(display_file)
+        return "Error: fal_client not installed. Run: pip install fal-client"
+    except Exception as e:
+        _dismiss_artefact_loading(display_file)
+        # Clean up empty artefact dir on failure
+        try:
+            if not os.listdir(artefact_dir):
+                os.rmdir(artefact_dir)
+        except OSError:
+            pass
+        return f"Artefact creation failed: {e}"
 
     # Save metadata
     meta_path = os.path.join(artefact_dir, "artefact.json")
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    # Update index
+    # Update index — sorted by created_at descending
     index = []
     if os.path.exists(index_file):
         try:
             with open(index_file, "r") as f:
                 index = json.load(f)
+            if not isinstance(index, list):
+                index = []
         except (json.JSONDecodeError, OSError):
             index = []
     index.insert(0, metadata)
+    # Deduplicate by path (in case of re-creation)
+    seen = set()
+    deduped = []
+    for entry in index:
+        p = entry.get("path", "")
+        if p not in seen:
+            seen.add(p)
+            deduped.append(entry)
+    # Sort by created_at descending
+    deduped.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     with open(index_file, "w") as f:
-        json.dump(index, f, indent=2)
+        json.dump(deduped, f, indent=2)
 
     # Signal the GUI to display it
     display_request = {

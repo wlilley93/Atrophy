@@ -2171,12 +2171,6 @@ class CompanionWindow(QWidget):
         self._deferral_count = 0
         self._deferral_window_start = 0.0
 
-        # Artefact request watcher — check every 2 seconds for approval requests
-        self._artefact_watcher = QTimer(self)
-        self._artefact_watcher.setInterval(2000)
-        self._artefact_watcher.timeout.connect(self._check_artefact_requests)
-        self._artefact_watcher.start()
-
         # Artefact display watcher — check every 2 seconds for new artefacts to show
         self._artefact_display_watcher = QTimer(self)
         self._artefact_display_watcher.setInterval(2000)
@@ -3391,110 +3385,29 @@ class CompanionWindow(QWidget):
         self._pip_anim.setEasingCurve(QEasingCurve.InOutCubic)
         self._pip_anim.start()
 
-    def _check_artefact_requests(self):
-        """Poll for artefact approval requests from MCP create_artefact tool."""
-        if self._booting or self._switching:
-            return
-        import config as cfg
-        req_file = cfg.ARTEFACT_REQUEST_FILE
-        if not req_file.exists():
-            return
-        try:
-            data = json.loads(req_file.read_text())
-        except Exception:
-            return
-
-        # Only handle pending requests — approved/denied handled by MCP
-        status = data.get("status", "")
-        if status != "pending":
-            return
-
-        self._show_artefact_approval(data, req_file)
-
-    def _show_artefact_approval(self, data, req_file):
-        """Show an approval overlay for a paid artefact (image/video)."""
-        atype = data.get("type", "unknown")
-        name = data.get("name", "untitled")
-        desc = data.get("description", "")
-        cost_hint = "image generation" if atype == "image" else "video generation"
-
-        # Build a simple approval overlay
-        overlay = QWidget(self)
-        overlay.setGeometry(0, 0, self.width(), self.height())
-        overlay.setStyleSheet("background: rgba(0, 0, 0, 0.85);")
-
-        layout = QVBoxLayout(overlay)
-        layout.setAlignment(Qt.AlignCenter)
-
-        title = QLabel(f"Artefact Request: {name}")
-        title.setStyleSheet(
-            "color: white; font-size: 18px; font-weight: bold;"
-        )
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
-
-        type_lbl = QLabel(f"Type: {atype.upper()} ({cost_hint})")
-        type_lbl.setStyleSheet("color: rgba(255,255,255,0.6); font-size: 13px;")
-        type_lbl.setAlignment(Qt.AlignCenter)
-        layout.addWidget(type_lbl)
-
-        if desc:
-            desc_lbl = QLabel(desc[:200])
-            desc_lbl.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 12px;")
-            desc_lbl.setAlignment(Qt.AlignCenter)
-            desc_lbl.setWordWrap(True)
-            desc_lbl.setMaximumWidth(400)
-            layout.addWidget(desc_lbl)
-
-        btn_row = QHBoxLayout()
-        btn_row.setAlignment(Qt.AlignCenter)
-
-        approve_btn = QPushButton("Approve")
-        approve_btn.setStyleSheet(
-            "QPushButton { background: rgba(80,180,100,0.8); color: white; "
-            "border: none; border-radius: 8px; padding: 8px 24px; font-size: 14px; }"
-            "QPushButton:hover { background: rgba(80,200,100,0.9); }"
-        )
-        approve_btn.setCursor(Qt.PointingHandCursor)
-
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setStyleSheet(
-            "QPushButton { background: rgba(180,80,80,0.8); color: white; "
-            "border: none; border-radius: 8px; padding: 8px 24px; font-size: 14px; }"
-            "QPushButton:hover { background: rgba(200,80,80,0.9); }"
-        )
-        cancel_btn.setCursor(Qt.PointingHandCursor)
-
-        def _approve():
-            data["status"] = "approved"
-            req_file.write_text(json.dumps(data))
-            overlay.deleteLater()
-
-        def _cancel():
-            data["status"] = "denied"
-            req_file.write_text(json.dumps(data))
-            overlay.deleteLater()
-
-        approve_btn.clicked.connect(_approve)
-        cancel_btn.clicked.connect(_cancel)
-        btn_row.addWidget(cancel_btn)
-        btn_row.addWidget(approve_btn)
-        layout.addLayout(btn_row)
-
-        overlay.show()
-        overlay.raise_()
-
     def _check_artefact_display(self):
-        """Poll for newly created artefacts that should be displayed."""
+        """Poll for newly created artefacts or loading state."""
         import config as cfg
         display_file = cfg.ARTEFACT_DISPLAY_FILE
         if not display_file.exists():
+            # Loading bar was showing but file disappeared (error or cleanup)
+            if hasattr(self, '_artefact_loading') and self._artefact_loading:
+                self._dismiss_artefact_loading()
             return
         try:
             data = json.loads(display_file.read_text())
-            display_file.unlink()
         except Exception:
             return
+
+        # Loading state — show progress bar
+        if data.get("status") == "generating":
+            if not hasattr(self, '_artefact_loading') or not self._artefact_loading:
+                self._show_artefact_loading(data.get("name", "artefact"))
+            return
+
+        # Final artefact — dismiss loading, show result
+        display_file.unlink(missing_ok=True)
+        self._dismiss_artefact_loading()
 
         artefact_dir = data.get("path", "")
         atype = data.get("type", "html")
@@ -3505,6 +3418,51 @@ class CompanionWindow(QWidget):
             self._artefact_overlay.show_artefact(artefact_dir, atype, file_path)
             self._artefact_btn.set_has_new(True)
             self._animate_to_pip()
+
+    def _show_artefact_loading(self, name="artefact"):
+        """Show a loading bar at the bottom of the window."""
+        if hasattr(self, '_artefact_loading_bar') and self._artefact_loading_bar:
+            return  # Already showing
+        self._artefact_loading = True
+        bar = QWidget(self)
+        bar.setFixedHeight(36)
+        bar.setStyleSheet("background: rgba(15, 15, 18, 0.92); border-top: 1px solid rgba(255,255,255,0.06);")
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(16, 0, 16, 0)
+
+        # Pulsing dot
+        dot = QLabel("\u2022")
+        dot.setStyleSheet("color: rgba(120, 160, 255, 0.9); font-size: 18px;")
+        layout.addWidget(dot)
+
+        label = QLabel(f"Loading artefact: {name}")
+        label.setStyleSheet("color: rgba(255,255,255,0.55); font-size: 12px;")
+        layout.addWidget(label)
+        layout.addStretch()
+
+        # Indeterminate progress bar
+        from PyQt5.QtWidgets import QProgressBar
+        progress = QProgressBar()
+        progress.setFixedWidth(120)
+        progress.setFixedHeight(4)
+        progress.setRange(0, 0)  # indeterminate
+        progress.setStyleSheet(
+            "QProgressBar { background: rgba(255,255,255,0.06); border: none; border-radius: 2px; }"
+            "QProgressBar::chunk { background: rgba(120, 160, 255, 0.5); border-radius: 2px; }"
+        )
+        layout.addWidget(progress)
+
+        bar.setGeometry(0, self.height() - 36, self.width(), 36)
+        bar.show()
+        bar.raise_()
+        self._artefact_loading_bar = bar
+
+    def _dismiss_artefact_loading(self):
+        """Remove the loading bar."""
+        self._artefact_loading = False
+        if hasattr(self, '_artefact_loading_bar') and self._artefact_loading_bar:
+            self._artefact_loading_bar.deleteLater()
+            self._artefact_loading_bar = None
 
     def _reflow_artefacts(self):
         """Reposition artefact overlays on resize."""

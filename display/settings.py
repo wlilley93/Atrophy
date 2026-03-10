@@ -1000,11 +1000,14 @@ class SettingsModal(QWidget):
         new_agent_row.addStretch()
         self._content_layout.addLayout(new_agent_row)
 
+        # ── You ──
+        self._add_section("YOU")
+        self._add_text("user_name", "Your Name", cfg.USER_NAME)
+
         # ── Agent Identity ──
         self._add_section("AGENT IDENTITY")
         self._add_info("agent_name", "Agent Slug", cfg.AGENT_NAME)
         self._add_text("agent_display_name", "Display Name", cfg.AGENT_DISPLAY_NAME)
-        self._add_text("user_name", "User Name", cfg.USER_NAME)
         self._add_text("opening_line", "Opening Line", cfg.OPENING_LINE)
         self._add_text("wake_words", "Wake Words", ", ".join(cfg.WAKE_WORDS))
 
@@ -1142,6 +1145,25 @@ class SettingsModal(QWidget):
         self._add_info("app_version", "Version", cfg.VERSION)
         self._add_info("build_root", "Install Path", str(cfg.BUNDLE_ROOT))
 
+        # Reset setup wizard
+        reset_row = QHBoxLayout()
+        reset_label = QLabel("Re-run the first-launch setup wizard on next start")
+        reset_label.setStyleSheet("color: rgba(255,255,255,0.35); font-size: 11px;")
+        reset_row.addWidget(reset_label)
+        reset_row.addStretch()
+        reset_btn = QPushButton("Reset Setup")
+        reset_btn.setFixedWidth(120)
+        reset_btn.setCursor(Qt.PointingHandCursor)
+        reset_btn.setStyleSheet(
+            "QPushButton { background: rgba(255,100,100,0.1); color: rgba(255,100,100,0.7); "
+            "border: 1px solid rgba(255,100,100,0.2); border-radius: 6px; padding: 6px 12px; "
+            "font-size: 12px; } "
+            "QPushButton:hover { background: rgba(255,100,100,0.2); color: rgba(255,100,100,0.9); }"
+        )
+        reset_btn.clicked.connect(self._reset_setup)
+        reset_row.addWidget(reset_btn)
+        self._content_layout.addLayout(reset_row)
+
         # Check for updates
         update_row = QHBoxLayout()
         self._update_label = QLabel("")
@@ -1155,6 +1177,17 @@ class SettingsModal(QWidget):
         update_btn.clicked.connect(self._check_for_updates)
         update_row.addWidget(update_btn)
         self._content_layout.addLayout(update_row)
+
+    # ── Setup reset ─────────────────────────────────────────────
+
+    def _reset_setup(self):
+        import config as cfg
+        cfg.save_user_config({"setup_complete": False})
+        # Find the button and update it
+        sender = self.sender()
+        if sender:
+            sender.setText("Reset — restart app")
+            sender.setEnabled(False)
 
     # ── Update checking ─────────────────────────────────────────
 

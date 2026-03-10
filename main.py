@@ -598,19 +598,23 @@ def run_gui(menu_bar_mode=False):
     from voice.tts import synthesise_sync
     from display.setup_wizard import needs_setup, run_setup
 
-    # First-launch setup — ask user's name before anything else
+    # First-launch setup — name + agent creation before anything else
     if needs_setup():
         from PyQt5.QtWidgets import QApplication
         app = QApplication.instance() or QApplication(sys.argv)
-        name = run_setup(app)
-        if name:
-            # Reload config so USER_NAME picks up the new value
+        result = run_setup(app)
+        if result:
+            # Switch to the newly created agent if one was made
+            if result.get("agent_created") and result.get("agent_name"):
+                os.environ["AGENT"] = result["agent_name"]
+            # Reload config so USER_NAME and AGENT pick up new values
             import importlib
             import config as _cfg
             importlib.reload(_cfg)
-            # Re-import into this module's namespace
-            global USER_NAME
+            global USER_NAME, AGENT_DISPLAY_NAME, OPENING_LINE
             USER_NAME = _cfg.USER_NAME
+            AGENT_DISPLAY_NAME = _cfg.AGENT_DISPLAY_NAME
+            OPENING_LINE = _cfg.OPENING_LINE
 
     session = _init()
     system = load_system_prompt()

@@ -22,8 +22,15 @@ from textwrap import dedent
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 PROJECT_ROOT = Path(__file__).parent.parent
-AGENTS_DIR = PROJECT_ROOT / "agents"
 SCHEMA_PATH = PROJECT_ROOT / "db" / "schema.sql"
+
+# Agents go to USER_DATA (~/.atrophy/agents/) so they persist across updates.
+# Falls back to PROJECT_ROOT/agents/ if config isn't available yet.
+try:
+    from config import USER_DATA
+    AGENTS_DIR = USER_DATA / "agents"
+except ImportError:
+    AGENTS_DIR = PROJECT_ROOT / "agents"
 
 
 # ── Helpers ──
@@ -1190,9 +1197,11 @@ def scaffold_agent(
     agent_dir = AGENTS_DIR / name
 
     if agent_dir.exists():
-        if not _ask_yn(f"Agent '{name}' already exists. Overwrite?", False):
-            print("  Aborted.")
-            return
+        # In non-interactive mode (e.g. GUI wizard), skip the overwrite prompt
+        if sys.stdin and sys.stdin.isatty():
+            if not _ask_yn(f"Agent '{name}' already exists. Overwrite?", False):
+                print("  Aborted.")
+                return
     else:
         agent_dir.mkdir(parents=True)
 

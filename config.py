@@ -169,7 +169,6 @@ SYSTEM_PROMPT_PATH = PROMPTS_DIR / "system_prompt.md"
 SOUL_PATH = PROMPTS_DIR / "soul.md"
 HEARTBEAT_PATH = PROMPTS_DIR / "heartbeat.md"
 IDENTITY_QUEUE = DATA_DIR / ".identity_review_queue.json"
-ARTEFACT_REQUEST_FILE = DATA_DIR / ".artefact_request.json"
 ARTEFACT_DISPLAY_FILE = DATA_DIR / ".artefact_display.json"
 ARTEFACT_INDEX_FILE = DATA_DIR / ".artefact_index.json"
 
