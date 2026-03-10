@@ -238,12 +238,15 @@ def stream_inference(
     sentence_buffer = ""
     sentence_index = 0
     session_id = cli_session_id
+    got_any_output = False
 
     try:
         for line in proc.stdout:
             line = line.strip()
             if not line:
                 continue
+
+            got_any_output = True
 
             try:
                 event = json.loads(line)
@@ -333,6 +336,25 @@ def stream_inference(
 
         proc.wait(timeout=10)
 
+        # Read stderr for diagnostics
+        stderr_text = ""
+        try:
+            stderr_text = proc.stderr.read()
+        except Exception:
+            pass
+
+        # Check for subprocess failure
+        if proc.returncode and proc.returncode != 0:
+            err_msg = stderr_text.strip()[:300] if stderr_text else f"claude exited with code {proc.returncode}"
+            yield StreamError(message=err_msg)
+            return
+
+        # No output at all — something went wrong silently
+        if not got_any_output and not full_text:
+            err_msg = stderr_text.strip()[:300] if stderr_text else "No response from claude"
+            yield StreamError(message=err_msg)
+            return
+
         # Flush remaining sentence buffer
         remainder = sentence_buffer.strip()
         if remainder:
@@ -341,7 +363,10 @@ def stream_inference(
         yield StreamDone(full_text=full_text, session_id=session_id)
 
     except Exception as e:
-        proc.kill()
+        try:
+            proc.kill()
+        except Exception:
+            pass
         yield StreamError(message=str(e))
 
 

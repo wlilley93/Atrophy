@@ -655,7 +655,6 @@ class CompanionWindow(QWidget):
         self.setWindowFlags(
             self.windowFlags()
             | Qt.WindowStaysOnTopHint
-            | Qt.Tool  # keeps it out of Cmd-Tab, like a PiP overlay
         )
 
         # Audio player thread
@@ -697,6 +696,7 @@ class CompanionWindow(QWidget):
     def _on_opening_error(self, msg):
         self._opening_worker = None
         self._spinner.stop()
+        print(f"  [Opening error: {msg}]")
         self._present("Ready. Where are we?")
         self._history.append({"user": "", "companion": "Ready. Where are we?"})
 
@@ -887,11 +887,17 @@ class CompanionWindow(QWidget):
         # Start streaming pipeline
         self._spinner.start()
         self._first_sentence_shown = False
+        self._retry_text = text  # stash for auto-retry
+        self._retried = False
 
+        self._launch_worker(text, self._cli_session_id)
+
+    def _launch_worker(self, text, session_id):
+        """Launch the streaming pipeline worker."""
         self._worker = StreamingPipelineWorker(
             user_text=text,
             system=self._system,
-            cli_session_id=self._cli_session_id,
+            cli_session_id=session_id,
             synth_fn=self._on_synth,
         )
         self._worker.sentence_ready.connect(self._on_sentence_ready)
@@ -899,6 +905,20 @@ class CompanionWindow(QWidget):
         self._worker.done.connect(self._on_done)
         self._worker.error.connect(self._on_error)
         self._worker.start()
+
+    def _auto_retry(self):
+        """Reset session and retry the last message once."""
+        if self._retried:
+            self._present("[couldn't connect — try again]")
+            return
+        self._retried = True
+        print("  [Session reset — retrying...]")
+        self._cli_session_id = None
+        if self._session:
+            self._session.set_cli_session_id(None)
+        self._first_sentence_shown = False
+        self._spinner.start()
+        self._launch_worker(self._retry_text, None)
 
     def _on_sentence_ready(self, sentence, audio_path, index):
         """A sentence has been synthesised — show text + queue audio."""
@@ -941,12 +961,21 @@ class CompanionWindow(QWidget):
     def _on_done(self, full_text, session_id):
         """Stream complete."""
         self._worker = None
+
+        if session_id:
+            self._cli_session_id = session_id
+
+        # Empty response — auto-retry with fresh session
+        if not full_text and not self._first_sentence_shown:
+            self._auto_retry()
+            return
+
         self._spinner.stop()
-        self._cli_session_id = session_id
 
         # Update session
         if self._session:
-            self._session.set_cli_session_id(session_id)
+            if session_id:
+                self._session.set_cli_session_id(session_id)
             self._session.add_turn("companion", full_text)
 
         # Update history with full companion text
@@ -1001,8 +1030,9 @@ class CompanionWindow(QWidget):
 
     def _on_error(self, msg):
         self._worker = None
-        self._spinner.stop()
-        self._present(f"[error: {msg}]")
+        print(f"  [Inference error: {msg}]")
+        # Auto-retry with fresh session
+        self._auto_retry()
 
     def _on_audio_started(self, index):
         """Audio playback began for a sentence."""
