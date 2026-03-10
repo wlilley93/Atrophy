@@ -126,6 +126,13 @@ class Compacting:
 
 def _agency_context(user_message: str) -> str:
     """Build dynamic context block from agency signals."""
+    from datetime import datetime
+    from core.memory import (
+        get_current_session_mood, get_last_session_time,
+        get_active_threads, get_context_injection,
+        get_recent_companion_turns,
+    )
+
     parts = [time_of_day_context()]
     pattern = session_pattern_note(str(DB_PATH))
     if pattern:
@@ -136,12 +143,10 @@ def _agency_context(user_message: str) -> str:
         parts.append(validation_system_note())
     if detect_compulsive_modelling(user_message):
         parts.append(modelling_interrupt_note())
-    from core.memory import get_current_session_mood
     mood = get_current_session_mood()
     if mood == "heavy":
         parts.append("This session has carried emotional weight. Stay present. Don't reset to neutral.")
     # Time-gap awareness
-    from core.memory import get_last_session_time
     gap_note = time_gap_note(get_last_session_time())
     if gap_note:
         parts.append(gap_note)
@@ -150,13 +155,11 @@ def _agency_context(user_message: str) -> str:
     parts.append("Obsidian vault is available. Write notes when something matters — insights, reflections, things worth keeping beyond the session transcript. Read his notes when context would help you speak to what he's working through. The database records what happened. Obsidian holds what mattered.")
 
     # Proactive memory — surface recent threads on resume
-    from core.memory import get_active_threads, get_context_injection
     threads = get_active_threads()
     if threads:
         thread_names = [t["name"] for t in threads[:5]]
         parts.append(f"Active threads you're tracking: {', '.join(thread_names)}. Consider surfacing one if relevant.")
     # Nudge to use daily digest on first turn of the day
-    from datetime import datetime
     hour = datetime.now().hour
     if 5 <= hour <= 10:
         parts.append("If this is the first session today, use daily_digest to orient yourself before speaking.")
@@ -169,7 +172,6 @@ def _agency_context(user_message: str) -> str:
         parts.append(energy)
 
     # Drift detection — check if companion has been too agreeable
-    from core.memory import get_recent_companion_turns
     recent_turns = get_recent_companion_turns()
     drift_note = detect_drift(recent_turns)
     if drift_note:

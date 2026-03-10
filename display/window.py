@@ -751,6 +751,8 @@ class AudioPlayer(QThread):
         super().__init__()
         self._queue = Queue()
         self._running = True
+        from config import TTS_PLAYBACK_RATE
+        self._rate = str(TTS_PLAYBACK_RATE)
 
     def enqueue(self, audio_path: str, index: int):
         self._queue.put((audio_path, index))
@@ -760,6 +762,7 @@ class AudioPlayer(QThread):
         self._queue.put(None)
 
     def run(self):
+        rate = self._rate
         while self._running:
             try:
                 item = self._queue.get(timeout=0.5)
@@ -772,9 +775,8 @@ class AudioPlayer(QThread):
                 continue
             self.file_started.emit(index)
             try:
-                from config import TTS_PLAYBACK_RATE
                 subprocess.run(
-                    ["afplay", "-r", str(TTS_PLAYBACK_RATE), audio_path],
+                    ["afplay", "-r", rate, audio_path],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -1028,19 +1030,21 @@ class CompanionWindow(QWidget):
         """Load and pause the next clip on the standby player."""
         if not self._loop_clips:
             return
-        standby_idx = 1 - self._active_idx
+        self._preloading_idx = 1 - self._active_idx
         clip = self._next_clip()
-        p = self._players[standby_idx]
+        p = self._players[self._preloading_idx]
         p.setMedia(QMediaContent(QUrl.fromLocalFile(str(clip))))
         p.play()
         # Pause after a short delay to let it decode first frames
-        QTimer.singleShot(300, lambda: self._pause_standby(standby_idx))
+        QTimer.singleShot(300, self._pause_preloading)
 
-    def _pause_standby(self, idx):
+    def _pause_preloading(self):
         """Pause the standby player once it's buffered."""
-        if idx != self._active_idx:  # still standby
+        idx = getattr(self, '_preloading_idx', -1)
+        if idx >= 0 and idx != self._active_idx:  # still standby
             self._players[idx].pause()
             self._next_ready = True
+
 
     def _load_video(self, path):
         """Fallback: load directly on active player."""
