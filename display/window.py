@@ -40,6 +40,8 @@ except ImportError:
     HAS_CANVAS = False
     HAS_WEBENGINE = False
 
+from display.artefact import ArtefactOverlay, ArtefactGallery
+
 _W = WINDOW_WIDTH
 _H = WINDOW_HEIGHT
 _DISPLAY_TAG_RE = re.compile(r'\[[^\]]+\]')
@@ -300,7 +302,12 @@ class StatusBar(QWidget):
 # ── Chat transcript overlay ──
 
 class TranscriptOverlay(QWidget):
-    """Scrolling chat transcript — messages accumulate bottom-aligned."""
+    """Scrolling chat transcript with selectable text.
+
+    Uses a QTextBrowser for native text selection and copy, styled to match
+    the transparent-overlay aesthetic. Messages are bottom-aligned with a
+    fade gradient at the top.
+    """
     _MSG_GAP = 6       # gap within a pair (user → companion)
     _PAIR_GAP = 20     # gap between pairs
     _SCROLL_STEP = 40
@@ -309,30 +316,124 @@ class TranscriptOverlay(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAutoFillBackground(False)
-        self._font = QFont(font_family, 14)
-        self._fm = QFontMetrics(self._font)
+
+        from PyQt5.QtWidgets import QTextBrowser
+
+        self._browser = QTextBrowser(self)
+        self._browser.setReadOnly(True)
+        self._browser.setOpenLinks(False)
+        self._browser.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._browser.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._browser.setStyleSheet(f"""
+            QTextBrowser {{
+                background: transparent;
+                border: none;
+                color: rgba(255, 255, 255, 220);
+                font-family: '{font_family}';
+                font-size: 14px;
+                selection-background-color: rgba(100, 140, 255, 120);
+                selection-color: white;
+            }}
+        """)
+
         # Each entry: {"role": "user"|"companion", "text": str, "revealed": int}
         self._messages = []
         self._opacity = 1.0
-        self._scroll_offset = 0.0  # 0 = pinned to bottom, positive = scrolled up
-        self._auto_scroll = True   # snap to bottom on new messages
-        self._layout_dirty = True  # recalc layout only when messages change
-        self._cached_blocks = []   # cached layout measurements
+        self._auto_scroll = True
+        self._html_dirty = True
+
         self._reveal_timer = QTimer(self)
         self._reveal_timer.setInterval(18)
         self._reveal_timer.timeout.connect(self._tick_reveal)
+
+        # Track scroll position for auto-scroll detection
+        vbar = self._browser.verticalScrollBar()
+        vbar.rangeChanged.connect(self._on_range_changed)
+        vbar.valueChanged.connect(self._on_scroll_changed)
+
+    def _on_range_changed(self, _min, _max):
+        """When content changes size, scroll to bottom if auto-scroll is on."""
+        if self._auto_scroll:
+            self._browser.verticalScrollBar().setValue(
+                self._browser.verticalScrollBar().maximum()
+            )
+
+    def _on_scroll_changed(self, value):
+        """Detect manual scrolling — disable auto-scroll when user scrolls up."""
+        vbar = self._browser.verticalScrollBar()
+        if vbar.maximum() > 0 and value < vbar.maximum():
+            self._auto_scroll = False
+        elif value >= vbar.maximum():
+            self._auto_scroll = True
 
     def _get_opacity(self):
         return self._opacity
 
     def _set_opacity(self, val):
         self._opacity = val
+        self._browser.setStyleSheet(self._browser.styleSheet())  # force repaint
         self.update()
 
     opacity = pyqtProperty(float, _get_opacity, _set_opacity)
 
     def _invalidate_layout(self):
-        self._layout_dirty = True
+        self._html_dirty = True
+
+    def _rebuild_html(self):
+        """Rebuild the HTML content from messages."""
+        if not self._html_dirty:
+            return
+        self._html_dirty = False
+
+        parts = []
+        for i, msg in enumerate(self._messages):
+            text = msg["text"][:msg["revealed"]]
+            if not text:
+                continue
+
+            # Escape HTML
+            escaped = (text.replace("&", "&amp;")
+                          .replace("<", "&lt;")
+                          .replace(">", "&gt;")
+                          .replace("\n", "<br>"))
+
+            # Spacing between pairs
+            if i > 0:
+                prev_role = self._messages[i - 1]["role"]
+                if msg["role"] == "user" and prev_role == "companion":
+                    parts.append(f'<div style="height: {self._PAIR_GAP}px;"></div>')
+                else:
+                    parts.append(f'<div style="height: {self._MSG_GAP}px;"></div>')
+
+            if msg["role"] == "divider":
+                parts.append(
+                    f'<div style="color: rgba(120, 200, 120, 0.6); text-align: center; '
+                    f'font-size: 11px; letter-spacing: 3px; padding: 8px 0; '
+                    f'border-top: 1px solid rgba(120, 200, 120, 0.2); '
+                    f'border-bottom: 1px solid rgba(120, 200, 120, 0.2); '
+                    f'text-transform: uppercase; font-weight: 600;">'
+                    f'{escaped}</div>'
+                )
+                continue
+
+            if msg["role"] == "user":
+                color = "rgba(180, 180, 180, 220)"
+            else:
+                color = "rgba(255, 255, 255, 220)"
+
+            parts.append(
+                f'<div style="color: {color}; '
+                f'text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">'
+                f'{escaped}</div>'
+            )
+
+        html = "".join(parts)
+        # Preserve scroll position
+        vbar = self._browser.verticalScrollBar()
+        was_at_bottom = self._auto_scroll
+        self._browser.setHtml(html)
+        if was_at_bottom:
+            vbar.setValue(vbar.maximum())
 
     def add_message(self, role: str, text: str, instant: bool = False):
         """Add a message. User messages reveal instantly, companion gradually."""
@@ -343,9 +444,9 @@ class TranscriptOverlay(QWidget):
         if revealed < len(text) and not self._reveal_timer.isActive():
             self._reveal_timer.start()
         if self._auto_scroll:
-            self._scroll_offset = 0.0
-        self._invalidate_layout()
-        self.update()
+            pass  # _on_range_changed handles scrolling
+        self._html_dirty = True
+        self._rebuild_html()
 
     def append_to_last(self, text: str):
         """Append text to the last companion message (streaming)."""
@@ -353,12 +454,10 @@ class TranscriptOverlay(QWidget):
             return
         msg = self._messages[-1]
         msg["text"] = (msg["text"] + " " + text).strip() if msg["text"] else text
-        if not self._reveal_timer.isActive():
-            self._reveal_timer.start()
-        if self._auto_scroll:
-            self._scroll_offset = 0.0
-        self._invalidate_layout()
-        self.update()
+        # For streaming, reveal immediately — text arrives as it streams
+        msg["revealed"] = len(msg["text"])
+        self._html_dirty = True
+        self._rebuild_html()
 
     def set_last_text(self, text: str):
         """Set the text of the last message (first sentence)."""
@@ -368,30 +467,45 @@ class TranscriptOverlay(QWidget):
         msg["text"] = text
         if not self._reveal_timer.isActive():
             self._reveal_timer.start()
-        self._invalidate_layout()
-        self.update()
+        self._html_dirty = True
+        self._rebuild_html()
+
+    def add_divider(self, label: str = ""):
+        """Add a visual divider — used during agent deferral (codec-style)."""
+        self._messages.append({
+            "role": "divider", "text": label, "revealed": len(label),
+        })
+        self._html_dirty = True
+        self._rebuild_html()
 
     def clear_messages(self):
         self._messages.clear()
-        self._scroll_offset = 0.0
-        self._invalidate_layout()
-        self.update()
+        self._auto_scroll = True
+        self._browser.clear()
+        self._html_dirty = True
 
     def scroll_up(self):
-        max_s = self._max_scroll()
-        if max_s > 0:
-            self._scroll_offset = min(self._scroll_offset + self._SCROLL_STEP, max_s)
-            self._auto_scroll = False
-            self.update()
+        vbar = self._browser.verticalScrollBar()
+        vbar.setValue(vbar.value() - self._SCROLL_STEP)
+        self._auto_scroll = False
 
     def scroll_down(self):
-        self._scroll_offset = max(0.0, self._scroll_offset - self._SCROLL_STEP)
-        if self._scroll_offset <= 0:
+        vbar = self._browser.verticalScrollBar()
+        vbar.setValue(vbar.value() + self._SCROLL_STEP)
+        if vbar.value() >= vbar.maximum():
             self._auto_scroll = True
-        self.update()
 
     def copy_last_companion(self):
         """Copy the last companion message to clipboard."""
+        # If user has selected text in the browser, copy that instead
+        cursor = self._browser.textCursor()
+        if cursor.hasSelection():
+            app = QApplication.instance()
+            if app:
+                app.clipboard().setText(cursor.selectedText())
+                print(f"  [Copied selection]")
+            return
+        # Otherwise copy last companion message
         for msg in reversed(self._messages):
             if msg["role"] == "companion" and msg["text"]:
                 app = QApplication.instance()
@@ -409,115 +523,33 @@ class TranscriptOverlay(QWidget):
                 any_pending = True
         if not any_pending:
             self._reveal_timer.stop()
-        self._invalidate_layout()
-        self.update()
+        self._html_dirty = True
+        self._rebuild_html()
 
-    def _gap_before(self, index):
-        """Gap before message at index — bigger between pairs."""
-        if index == 0:
-            return 0
-        prev_role = self._messages[index - 1]["role"]
-        curr_role = self._messages[index]["role"]
-        # New pair starts at each user message (unless first)
-        if curr_role == "user" and prev_role == "companion":
-            return self._PAIR_GAP
-        return self._MSG_GAP
-
-    def _rebuild_layout(self):
-        """Rebuild cached block measurements."""
-        w = self.width()
-        blocks = []
-        if w <= 0:
-            self._cached_blocks = blocks
-            self._layout_dirty = False
-            return
-        fm = self._fm
-        for i, msg in enumerate(self._messages):
-            text = msg["text"][:msg["revealed"]]
-            if not text:
-                continue
-            br = fm.boundingRect(QRect(0, 0, w, 99999), Qt.TextWordWrap, text)
-            blocks.append({
-                "text": text,
-                "role": msg["role"],
-                "height": br.height(),
-                "gap": self._gap_before(i),
-            })
-        self._cached_blocks = blocks
-        self._layout_dirty = False
-
-    def _total_content_height(self):
-        """Total height of all messages."""
-        if self._layout_dirty:
-            self._rebuild_layout()
-        return sum(b["height"] + b["gap"] for b in self._cached_blocks)
-
-    def _max_scroll(self):
-        return max(0.0, self._total_content_height() - self.height())
-
-    def wheelEvent(self, event):
-        delta = event.angleDelta().y()
-        if delta > 0:
-            self.scroll_up()
-        elif delta < 0:
-            self.scroll_down()
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._browser.setGeometry(0, 0, self.width(), self.height())
 
     def paintEvent(self, event):
-        if not self._messages or self._opacity <= 0.001:
+        """Draw fade gradient over the top 1/3 of the transcript."""
+        if self._opacity <= 0.001:
             return
+        super().paintEvent(event)
 
-        if self._layout_dirty:
-            self._rebuild_layout()
-
-        blocks = self._cached_blocks
-        if not blocks:
-            return
-
-        w = self.width()
+        # Fade mask — gradient from opaque (background) at top to transparent at 1/3
         vis_h = self.height()
-        p = QPainter(self)
-        p.setRenderHint(QPainter.TextAntialiasing)
-        p.setClipRect(0, 0, w, vis_h)
-        p.setFont(self._font)
-
-        # Layout bottom-up, offset by scroll
-        y = vis_h + self._scroll_offset
-        layout = []
-        for block in reversed(blocks):
-            y -= block["height"]
-            layout.insert(0, (block, y))
-            y -= block["gap"]
-
-        # Fade zone — top 1/3 of the widget
         fade_h = vis_h / 3.0
-        opacity = self._opacity
+        if fade_h <= 0:
+            return
 
-        # Draw each message
-        for block, y_pos in layout:
-            bottom = y_pos + block["height"]
-            if bottom < 0 or y_pos > vis_h:
-                continue
-
-            # Fade based on vertical position — full at bottom, fading in top 1/3
-            msg_center = y_pos + block["height"] / 2
-            fade_alpha = min(1.0, max(0.0, msg_center / fade_h)) if msg_center < fade_h else 1.0
-            combined = opacity * fade_alpha
-
-            alpha = int(220 * combined)
-            y_int = int(y_pos)
-
-            # Shadow
-            p.setPen(QColor(0, 0, 0, int(120 * combined)))
-            p.drawText(QRect(1, y_int + 1, w, block["height"] + 4),
-                       Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
-            # Text — companion white, user greyed
-            if block["role"] == "user":
-                p.setPen(QColor(180, 180, 180, alpha))
-            else:
-                p.setPen(QColor(255, 255, 255, alpha))
-            p.drawText(QRect(0, y_int, w, block["height"] + 4),
-                       Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
-
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        grad = QLinearGradient(0, 0, 0, fade_h)
+        # Use parent's background color for fade (dark/black for video overlay)
+        grad.setColorAt(0.0, QColor(0, 0, 0, 255))
+        grad.setColorAt(0.7, QColor(0, 0, 0, 80))
+        grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.fillRect(0, 0, self.width(), int(fade_h), grad)
         p.end()
 
 
@@ -691,6 +723,57 @@ class _WakeButton(QPushButton):
             p.setBrush(Qt.NoBrush)
             p.drawArc(cx - 10, cy - 10, 20, 20, 30 * 16, 120 * 16)
             p.drawArc(cx - 13, cy - 13, 26, 26, 30 * 16, 120 * 16)
+        p.end()
+
+
+class _ArtefactButton(QPushButton):
+    """File/document icon button for artefact gallery."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(34, 34)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self._has_new = False
+
+    def set_has_new(self, has_new):
+        self._has_new = has_new
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        bg = QPainterPath()
+        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
+        p.fillPath(bg, QColor(20, 20, 22, 210))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(bg)
+        # Document icon
+        alpha = 220 if self._has_new else 120
+        col = QColor(255, 255, 255, alpha)
+        p.setPen(QPen(col, 1.6))
+        p.setBrush(Qt.NoBrush)
+        # Page outline with folded corner
+        path = QPainterPath()
+        path.moveTo(10, 8)
+        path.lineTo(21, 8)
+        path.lineTo(25, 12)
+        path.lineTo(25, 26)
+        path.lineTo(10, 26)
+        path.closeSubpath()
+        p.drawPath(path)
+        # Corner fold
+        p.drawLine(21, 8, 21, 12)
+        p.drawLine(21, 12, 25, 12)
+        # Content lines
+        p.setPen(QPen(col, 1.0))
+        p.drawLine(13, 16, 22, 16)
+        p.drawLine(13, 19, 20, 19)
+        p.drawLine(13, 22, 21, 22)
+        # New indicator dot
+        if self._has_new:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(100, 180, 255, 220))
+            p.drawEllipse(26, 6, 6, 6)
         p.end()
 
 
@@ -935,13 +1018,13 @@ class SettingsPanel(QWidget):
 
         self._content_layout.addStretch()
 
-        # Save to .env button
+        # Save button
         save_row = QHBoxLayout()
         save_row.addStretch()
-        save_btn = QPushButton("Save to .env")
+        save_btn = QPushButton("Save")
         save_btn.setObjectName("saveButton")
         save_btn.setCursor(Qt.PointingHandCursor)
-        save_btn.clicked.connect(self._save_to_env)
+        save_btn.clicked.connect(self._save_settings)
         save_row.addWidget(save_btn)
         apply_btn = QPushButton("Apply")
         apply_btn.setObjectName("saveButton")
@@ -1075,6 +1158,81 @@ class SettingsPanel(QWidget):
 
     def _build_sections(self):
         import config as cfg
+        from core.agent_manager import discover_agents, get_agent_state
+
+        # ── Agents ──
+        self._add_section("AGENTS")
+        self._agent_controls = {}
+        agents = discover_agents()
+        for agent in agents:
+            name = agent["name"]
+            display = agent["display_name"]
+            state = get_agent_state(name)
+            is_current = (name == cfg.AGENT_NAME)
+
+            row = QHBoxLayout()
+
+            # Agent name with current indicator
+            label_text = f"  {display}" if not is_current else f"  {display}"
+            name_lbl = QLabel(label_text)
+            name_lbl.setFixedWidth(140)
+            if is_current:
+                name_lbl.setStyleSheet(
+                    "color: rgba(255,255,255,0.95); font-weight: bold; font-size: 13px;"
+                )
+            else:
+                name_lbl.setStyleSheet("color: rgba(255,255,255,0.6); font-size: 13px;")
+            row.addWidget(name_lbl)
+
+            # Enabled checkbox (controls cron jobs)
+            enabled_cb = QCheckBox("Enabled")
+            enabled_cb.setChecked(state.get("enabled", True))
+            row.addWidget(enabled_cb)
+
+            # Muted checkbox (per-agent TTS suppression)
+            muted_cb = QCheckBox("Muted")
+            muted_cb.setChecked(state.get("muted", False))
+            row.addWidget(muted_cb)
+
+            # Switch button (if not current)
+            if not is_current:
+                switch_btn = QPushButton("Switch")
+                switch_btn.setObjectName("saveButton")
+                switch_btn.setFixedWidth(70)
+                switch_btn.setCursor(Qt.PointingHandCursor)
+                switch_btn.clicked.connect(
+                    lambda checked, a=name: self._switch_to_agent(a)
+                )
+                row.addWidget(switch_btn)
+            else:
+                current_lbl = QLabel("active")
+                current_lbl.setStyleSheet("color: rgba(255,255,255,0.3); font-size: 11px;")
+                row.addWidget(current_lbl)
+
+            row.addStretch()
+            self._content_layout.addLayout(row)
+            self._agent_controls[name] = {
+                "enabled": enabled_cb,
+                "muted": muted_cb,
+                "label": name_lbl,
+            }
+
+        # New agent button
+        new_agent_row = QHBoxLayout()
+        new_agent_btn = QPushButton("+ New Agent")
+        new_agent_btn.setObjectName("saveButton")
+        new_agent_btn.setFixedWidth(120)
+        new_agent_btn.setCursor(Qt.PointingHandCursor)
+        new_agent_btn.setStyleSheet(
+            "QPushButton { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); "
+            "border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 12px; "
+            "font-size: 12px; } "
+            "QPushButton:hover { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.9); }"
+        )
+        new_agent_btn.clicked.connect(self._run_new_agent_flow)
+        new_agent_row.addWidget(new_agent_btn)
+        new_agent_row.addStretch()
+        self._content_layout.addLayout(new_agent_row)
 
         # ── Agent Identity ──
         self._add_section("AGENT IDENTITY")
@@ -1084,6 +1242,32 @@ class SettingsPanel(QWidget):
         self._add_text("opening_line", "Opening Line", cfg.OPENING_LINE)
         self._add_text("wake_words", "Wake Words",
                        ", ".join(cfg.WAKE_WORDS))
+
+        # ── Per-Agent Tool Disabling ──
+        self._add_section("TOOLS")
+        self._tool_checkboxes = {}
+        _toggleable_tools = [
+            ("mcp__memory__defer_to_agent", "Agent deferral"),
+            ("mcp__memory__send_telegram", "Telegram messaging"),
+            ("mcp__memory__set_reminder", "Reminders"),
+            ("mcp__memory__set_timer", "Timers"),
+            ("mcp__memory__create_task", "Task scheduling"),
+            ("mcp__memory__render_canvas", "Canvas overlay"),
+            ("mcp__memory__write_note", "Write Obsidian notes"),
+            ("mcp__memory__prompt_journal", "Journal prompting"),
+            ("mcp__memory__update_emotional_state", "Emotional state"),
+            ("mcp__memory__create_artefact", "Artefact creation"),
+            ("mcp__memory__manage_schedule", "Schedule management"),
+            ("mcp__puppeteer__*", "Browser (Puppeteer)"),
+            ("mcp__fal__*", "Media generation (fal)"),
+        ]
+        _disabled = set(cfg.DISABLED_TOOLS)
+        for tool_id, label in _toggleable_tools:
+            cb = QCheckBox(label)
+            cb.setChecked(tool_id not in _disabled)
+            cb.setStyleSheet("color: rgba(255,255,255,0.7); font-size: 12px; padding-left: 8px;")
+            self._content_layout.addWidget(cb)
+            self._tool_checkboxes[tool_id] = cb
 
         # ── Display / Window ──
         self._add_section("WINDOW")
@@ -1130,6 +1314,11 @@ class SettingsPanel(QWidget):
                            cfg.WAKE_WORD_ENABLED)
         self._add_spinbox("wake_chunk_seconds", "Wake Chunk Duration",
                           1, 10, cfg.WAKE_CHUNK_SECONDS, suffix="sec")
+
+        # ── Notifications ──
+        self._add_section("NOTIFICATIONS")
+        self._add_checkbox("notifications_enabled", "macOS Notifications",
+                           cfg.NOTIFICATIONS_ENABLED)
 
         # ── Audio Capture ──
         self._add_section("AUDIO CAPTURE")
@@ -1186,6 +1375,128 @@ class SettingsPanel(QWidget):
         self._add_text("telegram_chat_id", "Chat ID",
                        cfg.TELEGRAM_CHAT_ID)
 
+        # ── About ──
+        self._add_section("ABOUT")
+        self._add_info("app_version", "Version", cfg.VERSION)
+        self._add_info("build_root", "Install Path", str(cfg.BUNDLE_ROOT))
+
+        # Check for updates button
+        update_row = QHBoxLayout()
+        self._update_label = QLabel("")
+        self._update_label.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 11px;")
+        update_row.addWidget(self._update_label)
+        update_row.addStretch()
+        update_btn = QPushButton("Check for Updates")
+        update_btn.setObjectName("saveButton")
+        update_btn.setFixedWidth(150)
+        update_btn.setCursor(Qt.PointingHandCursor)
+        update_btn.clicked.connect(self._check_for_updates)
+        update_row.addWidget(update_btn)
+        self._content_layout.addLayout(update_row)
+
+    def _check_for_updates(self):
+        """Check git remote for new commits and offer to update."""
+        import config as cfg
+        self._update_label.setText("Checking...")
+        self._update_label.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 11px;")
+        QApplication.processEvents()
+
+        try:
+            # Fetch latest from remote
+            subprocess.run(
+                ["git", "fetch", "--quiet"],
+                cwd=str(cfg.BUNDLE_ROOT),
+                capture_output=True, timeout=15,
+            )
+            # Check if we're behind
+            result = subprocess.run(
+                ["git", "rev-list", "--count", "HEAD..@{u}"],
+                cwd=str(cfg.BUNDLE_ROOT),
+                capture_output=True, text=True, timeout=10,
+            )
+            behind = int(result.stdout.strip()) if result.returncode == 0 else 0
+
+            if behind == 0:
+                self._update_label.setText(f"v{cfg.VERSION} — up to date")
+                self._update_label.setStyleSheet(
+                    "color: rgba(100,255,100,0.7); font-size: 11px;")
+            else:
+                self._update_label.setText(
+                    f"{behind} update{'s' if behind != 1 else ''} available")
+                self._update_label.setStyleSheet(
+                    "color: rgba(255,200,100,0.9); font-size: 11px;")
+                self._offer_update(behind)
+        except Exception as e:
+            self._update_label.setText(f"Check failed: {e}")
+            self._update_label.setStyleSheet(
+                "color: rgba(255,100,100,0.7); font-size: 11px;")
+
+    def _offer_update(self, behind: int):
+        """Replace the check button with an Update Now button."""
+        import config as cfg
+        # Find the update row and add an update button
+        update_btn = QPushButton(f"Update Now ({behind})")
+        update_btn.setObjectName("saveButton")
+        update_btn.setFixedWidth(150)
+        update_btn.setCursor(Qt.PointingHandCursor)
+        update_btn.setStyleSheet(
+            "QPushButton { background: rgba(100,200,100,0.2); color: rgba(100,255,100,0.9); "
+            "border: 1px solid rgba(100,255,100,0.3); border-radius: 6px; padding: 6px 12px; "
+            "font-size: 12px; font-weight: bold; } "
+            "QPushButton:hover { background: rgba(100,200,100,0.35); }"
+        )
+        update_btn.clicked.connect(lambda: self._do_update(cfg.BUNDLE_ROOT))
+        # Add to the parent layout of _update_label
+        self._update_label.parent().layout().addWidget(update_btn)
+
+    def _do_update(self, bundle_root):
+        """Pull latest changes and notify user."""
+        self._update_label.setText("Updating...")
+        QApplication.processEvents()
+        try:
+            result = subprocess.run(
+                ["git", "pull", "--ff-only"],
+                cwd=str(bundle_root),
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                # Re-read version
+                version_file = bundle_root / "VERSION"
+                new_version = version_file.read_text().strip() if version_file.exists() else "?"
+                self._update_label.setText(
+                    f"Updated to v{new_version} — restart to apply")
+                self._update_label.setStyleSheet(
+                    "color: rgba(100,255,100,0.9); font-size: 11px;")
+            else:
+                self._update_label.setText(f"Update failed: {result.stderr[:80]}")
+                self._update_label.setStyleSheet(
+                    "color: rgba(255,100,100,0.7); font-size: 11px;")
+        except Exception as e:
+            self._update_label.setText(f"Update failed: {e}")
+            self._update_label.setStyleSheet(
+                "color: rgba(255,100,100,0.7); font-size: 11px;")
+
+    def _switch_to_agent(self, agent_name: str):
+        """Switch agent from settings panel."""
+        companion = self.parent()
+        if companion and hasattr(companion, 'switch_agent'):
+            self._close()
+            companion.switch_agent(agent_name)
+
+    def _run_new_agent_flow(self):
+        """Launch the interactive create_agent.py script in a terminal."""
+        import config as cfg
+        script = Path(cfg.BUNDLE_ROOT) / "scripts" / "create_agent.py"
+        if not script.exists():
+            return
+        # Open in a new Terminal window so the user can interact
+        cmd = (
+            f'tell application "Terminal" to do script '
+            f'"cd {str(cfg.BUNDLE_ROOT).replace(chr(34), chr(92)+chr(34))} && '
+            f'python3 {str(script).replace(chr(34), chr(92)+chr(34))}"'
+        )
+        subprocess.Popen(["osascript", "-e", cmd])
+
     def _get_value(self, key):
         """Read the current value from a control."""
         if key not in self._controls:
@@ -1209,6 +1520,23 @@ class SettingsPanel(QWidget):
     def _apply_settings(self):
         """Apply current settings to the running config module."""
         import config as cfg
+        from core.agent_manager import set_agent_state
+
+        # ── Per-agent states ──
+        for name, controls in self._agent_controls.items():
+            set_agent_state(
+                name,
+                muted=controls["muted"].isChecked(),
+                enabled=controls["enabled"].isChecked(),
+            )
+
+        # Update current agent's mute state on the companion window
+        companion = self.parent()
+        if companion and hasattr(companion, '_agent_muted'):
+            current = cfg.AGENT_NAME
+            if current in self._agent_controls:
+                companion._agent_muted = self._agent_controls[current]["muted"].isChecked()
+                companion._muted = companion._global_muted or companion._agent_muted
 
         # ── Agent identity ──
         cfg.AGENT_DISPLAY_NAME = self._get_value("agent_display_name")
@@ -1241,6 +1569,9 @@ class SettingsPanel(QWidget):
         cfg.PTT_KEY = self._get_value("ptt_key")
         cfg.WAKE_WORD_ENABLED = self._get_value("wake_word_enabled")
         cfg.WAKE_CHUNK_SECONDS = self._get_value("wake_chunk_seconds")
+
+        # ── Notifications ──
+        cfg.NOTIFICATIONS_ENABLED = self._get_value("notifications_enabled")
 
         # ── Audio ──
         cfg.SAMPLE_RATE = self._get_value("sample_rate")
@@ -1275,6 +1606,16 @@ class SettingsPanel(QWidget):
         cfg.TELEGRAM_BOT_TOKEN = self._get_value("telegram_bot_token")
         cfg.TELEGRAM_CHAT_ID = self._get_value("telegram_chat_id")
 
+        # ── Per-agent tool disabling ──
+        disabled = []
+        for tool_id, cb in self._tool_checkboxes.items():
+            if not cb.isChecked():
+                disabled.append(tool_id)
+        cfg.DISABLED_TOOLS = disabled
+        # Reset MCP config so new disallowed list takes effect
+        from core.inference import reset_mcp_config
+        reset_mcp_config()
+
         # Update env vars so child processes inherit
         os.environ["TTS_BACKEND"] = cfg.TTS_BACKEND
         os.environ["ELEVENLABS_API_KEY"] = cfg.ELEVENLABS_API_KEY
@@ -1290,6 +1631,7 @@ class SettingsPanel(QWidget):
         os.environ["ADAPTIVE_EFFORT"] = str(cfg.ADAPTIVE_EFFORT).lower()
         os.environ["WAKE_WORD_ENABLED"] = str(cfg.WAKE_WORD_ENABLED).lower()
         os.environ["AVATAR_ENABLED"] = str(cfg.AVATAR_ENABLED).lower()
+        os.environ["NOTIFICATIONS_ENABLED"] = str(cfg.NOTIFICATIONS_ENABLED).lower()
 
         # Update audio player rate
         if hasattr(self.parent(), '_audio_player'):
@@ -1305,13 +1647,13 @@ class SettingsPanel(QWidget):
 
         print("  [Settings applied]")
 
-    def _save_to_env(self):
-        """Write current settings to .env and agent.json."""
+    def _save_settings(self):
+        """Write current settings to ~/.atrophy/config.json and agent.json."""
         self._apply_settings()
         import config as cfg
 
-        # ── Save agent.json ──
-        manifest_path = cfg.AGENT_DIR / "agent.json"
+        # ── Save agent.json (agent-specific settings) ──
+        manifest_path = cfg.AGENT_DIR / "data" / "agent.json"
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text())
         else:
@@ -1322,7 +1664,6 @@ class SettingsPanel(QWidget):
         manifest["user_name"] = cfg.USER_NAME
         manifest["opening_line"] = cfg.OPENING_LINE
         manifest["wake_words"] = cfg.WAKE_WORDS
-
 
         manifest.setdefault("voice", {})
         manifest["voice"]["tts_backend"] = cfg.TTS_BACKEND
@@ -1344,6 +1685,9 @@ class SettingsPanel(QWidget):
         manifest["heartbeat"]["active_end"] = cfg.HEARTBEAT_ACTIVE_END
         manifest["heartbeat"]["interval_mins"] = cfg.HEARTBEAT_INTERVAL_MINS
 
+        # Save disabled tools
+        manifest["disabled_tools"] = cfg.DISABLED_TOOLS
+
         manifest.setdefault("telegram", {})
         tg = manifest["telegram"]
         token_env = tg.get("bot_token_env", f"TELEGRAM_BOT_TOKEN_{cfg.AGENT_NAME.upper()}")
@@ -1351,42 +1695,32 @@ class SettingsPanel(QWidget):
         manifest["telegram"]["bot_token_env"] = token_env
         manifest["telegram"]["chat_id_env"] = chat_env
 
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
         print(f"  [Saved agent.json: {manifest_path}]")
 
-        # ── Save .env ──
-        env_path = cfg.PROJECT_ROOT / ".env"
-        existing = {}
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    existing[k.strip()] = v.strip()
-
-        env_map = {
+        # ── Save config.json (global app settings) ──
+        user_cfg = {
             "AGENT": cfg.AGENT_NAME,
-            "TTS_BACKEND": cfg.TTS_BACKEND,
-            "ELEVENLABS_API_KEY": cfg.ELEVENLABS_API_KEY,
             "INPUT_MODE": cfg.INPUT_MODE,
             "WAKE_WORD_ENABLED": str(cfg.WAKE_WORD_ENABLED).lower(),
             "CLAUDE_BIN": cfg.CLAUDE_BIN,
             "CLAUDE_EFFORT": cfg.CLAUDE_EFFORT,
             "ADAPTIVE_EFFORT": str(cfg.ADAPTIVE_EFFORT).lower(),
             "AVATAR_ENABLED": str(cfg.AVATAR_ENABLED).lower(),
+            "NOTIFICATIONS_ENABLED": str(cfg.NOTIFICATIONS_ENABLED).lower(),
             "OBSIDIAN_VAULT": str(cfg.OBSIDIAN_VAULT),
         }
-        # Telegram tokens go to env (secrets shouldn't live in agent.json)
+        # Secrets go to config.json (user-local, gitignored by nature)
+        if cfg.ELEVENLABS_API_KEY:
+            user_cfg["ELEVENLABS_API_KEY"] = cfg.ELEVENLABS_API_KEY
         if cfg.TELEGRAM_BOT_TOKEN:
-            env_map[token_env] = cfg.TELEGRAM_BOT_TOKEN
+            user_cfg[token_env] = cfg.TELEGRAM_BOT_TOKEN
         if cfg.TELEGRAM_CHAT_ID:
-            env_map[chat_env] = cfg.TELEGRAM_CHAT_ID
+            user_cfg[chat_env] = cfg.TELEGRAM_CHAT_ID
 
-        existing.update(env_map)
-
-        lines = [f"{k}={v}" for k, v in sorted(existing.items())]
-        env_path.write_text("\n".join(lines) + "\n")
-        print(f"  [Saved .env: {env_path}]")
+        cfg.save_user_config(user_cfg)
+        print(f"  [Saved config.json: {cfg.USER_DATA / 'config.json'}]")
 
     def _close(self):
         self.hide()
@@ -1578,7 +1912,7 @@ class CompanionWindow(QWidget):
 
     def __init__(self, on_input=None, on_synth=None, on_opening=None,
                  system_prompt="", cli_session_id=None, session=None,
-                 cached_opening_audio=""):
+                 cached_opening_audio="", dormant=False):
         super().__init__()
         self._on_input = on_input    # unused in streaming mode
         self._on_synth = on_synth    # synthesise_sync
@@ -1587,6 +1921,8 @@ class CompanionWindow(QWidget):
         self._system = system_prompt
         self._cli_session_id = cli_session_id
         self._session = session
+        self._dormant = dormant       # True = don't boot until first shown
+        self._switching = False       # True during agent switch animation
         self._worker = None
         self._anims = []
         self._frame = QImage()
@@ -1623,6 +1959,14 @@ class CompanionWindow(QWidget):
         self._vignette_img = None  # cached vignette image
         self._vignette_size = (0, 0)  # size it was rendered at
 
+        # PIP transition — video shrinks to bottom-right when artefact is shown
+        self._pip_progress = 0.0  # 0.0 = full-bleed, 1.0 = PIP corner
+        self._pip_anim = None
+
+        # Iris wipe — agent switch transition
+        self._iris_progress = 0.0  # 0.0 = fully open, 1.0 = fully closed
+        self._iris_phase = None    # "closing" or "opening"
+
         self.setWindowTitle(AGENT_DISPLAY_NAME)
         self.resize(_W, _H)
         self.setMinimumSize(360, 480)
@@ -1637,8 +1981,18 @@ class CompanionWindow(QWidget):
         self._audio_player.start()
 
         # Mode flags
-        self._muted = False       # True = text-only (no audio playback)
-        self._eye_mode = False    # True = minimal (chat bar only)
+        self._global_muted = False   # Global mute (main panel button)
+        self._muted = False          # Combined: global OR per-agent
+        self._eye_mode = False       # True = minimal (chat bar only)
+
+        # Multi-agent
+        from core.agent_manager import discover_agents, get_agent_state
+        import config as _cfg
+        self._agents = discover_agents()
+        self._current_agent = _cfg.AGENT_NAME
+        _agent_state = get_agent_state(self._current_agent)
+        self._agent_muted = _agent_state.get("muted", False)
+        self._muted = self._global_muted or self._agent_muted
 
         # Wake word detection
         self._wake_listener = None
@@ -1671,15 +2025,28 @@ class CompanionWindow(QWidget):
         self._eye_btn.hide()
         self._min_btn.hide()
         self._wake_btn.hide()
+        self._artefact_btn.hide()
         self._settings_btn.hide()
 
         # Centre status bar for boot
         self._status_bar.start("connecting...")
         self._centre_status_bar()
 
+        # Dormant mode — skip boot sequence until first shown
+        if self._dormant:
+            self._opening_worker = None
+            self._status_bar.stop()
+            return
+
         # Dynamic opening
+        self._start_boot_sequence()
+
+    def _start_boot_sequence(self):
+        """Begin the opening line generation and boot animation."""
+        on_opening = self._on_opening
+        on_synth = self._on_synth
         if on_opening:
-            if cached_opening_audio:
+            if self._cached_opening_audio:
                 synth_for_opening = None
                 self._status_bar.set_progress(0.5, "loading cached opening...")
             else:
@@ -1695,6 +2062,15 @@ class CompanionWindow(QWidget):
                 self._history.append({"user": "", "companion": "Ready. Where are we?"})
                 self._boot_complete()
             QTimer.singleShot(600, _default_boot)
+
+    def wake_up(self):
+        """Wake from dormant mode — called on first show."""
+        if not self._dormant:
+            return
+        self._dormant = False
+        self._status_bar.start("waking up...")
+        self._centre_status_bar()
+        self._start_boot_sequence()
 
     def _centre_status_bar(self):
         # During boot — centre horizontally, middle of screen
@@ -1712,20 +2088,37 @@ class CompanionWindow(QWidget):
         self._eye_btn.show()
         self._min_btn.show()
         self._wake_btn.show()
+        self._artefact_btn.show()
         self._settings_btn.show()
         self._position_status_bar()  # restore normal position
 
-        # Animate boot overlay fade-out
-        self._boot_anim = QPropertyAnimation(self, b"boot_opacity", self)
-        self._boot_anim.setStartValue(1.0)
-        self._boot_anim.setEndValue(0.0)
-        self._boot_anim.setDuration(600)
-        self._boot_anim.setEasingCurve(QEasingCurve.InOutQuad)
-        self._boot_anim.finished.connect(self._on_boot_faded)
-        self._boot_anim.start()
+        # Reveal animation — iris open for agent switch, fade for cold boot
+        if self._iris_phase == "closing":
+            # Iris open — circle expands from center to reveal new agent
+            self._iris_phase = "opening"
+            self._boot_anim = QPropertyAnimation(self, b"iris_progress", self)
+            self._boot_anim.setStartValue(0.0)
+            self._boot_anim.setEndValue(1.0)
+            self._boot_anim.setDuration(500)
+            self._boot_anim.setEasingCurve(QEasingCurve.OutQuad)
+            self._boot_anim.finished.connect(self._on_boot_faded)
+            self._boot_anim.start()
+        else:
+            # Standard fade from black
+            self._boot_anim = QPropertyAnimation(self, b"boot_opacity", self)
+            self._boot_anim.setStartValue(1.0)
+            self._boot_anim.setEndValue(0.0)
+            self._boot_anim.setDuration(600)
+            self._boot_anim.setEasingCurve(QEasingCurve.InOutQuad)
+            self._boot_anim.finished.connect(self._on_boot_faded)
+            self._boot_anim.start()
 
     def _on_boot_faded(self):
         self._booting = False
+        self._switching = False
+        # Reset iris state
+        self._iris_progress = 0.0
+        self._iris_phase = None
         # Schedule a journal nudge — random point 15-45 mins into session
         delay_ms = random.randint(15 * 60_000, 45 * 60_000)
         self._journal_nudge_timer = QTimer(self)
@@ -1740,6 +2133,39 @@ class CompanionWindow(QWidget):
         self._coherence_timer.start()
         self._coherence_worker = None
 
+        # Timer request watcher — check every 2 seconds for MCP-requested timers
+        self._timer_watcher = QTimer(self)
+        self._timer_watcher.setInterval(2000)
+        self._timer_watcher.timeout.connect(self._check_timer_requests)
+        self._timer_watcher.start()
+        self._active_timers = []
+
+        # Inbox watcher — check all agents' message queues every 30 seconds
+        self._inbox_timer = QTimer(self)
+        self._inbox_timer.setInterval(30_000)
+        self._inbox_timer.timeout.connect(self._check_inbox)
+        self._inbox_timer.start()
+
+        # Deferral request watcher — check every 2 seconds for agent handoffs
+        self._deferral_watcher = QTimer(self)
+        self._deferral_watcher.setInterval(2000)
+        self._deferral_watcher.timeout.connect(self._check_deferral_requests)
+        self._deferral_watcher.start()
+        self._deferral_count = 0
+        self._deferral_window_start = 0.0
+
+        # Artefact request watcher — check every 2 seconds for approval requests
+        self._artefact_watcher = QTimer(self)
+        self._artefact_watcher.setInterval(2000)
+        self._artefact_watcher.timeout.connect(self._check_artefact_requests)
+        self._artefact_watcher.start()
+
+        # Artefact display watcher — check every 2 seconds for new artefacts to show
+        self._artefact_display_watcher = QTimer(self)
+        self._artefact_display_watcher.setInterval(2000)
+        self._artefact_display_watcher.timeout.connect(self._check_artefact_display)
+        self._artefact_display_watcher.start()
+
         self._boot_anim = None
         self.update()
 
@@ -1752,6 +2178,25 @@ class CompanionWindow(QWidget):
 
     boot_opacity = pyqtProperty(float, _get_boot_opacity, _set_boot_opacity)
 
+    def _get_pip_progress(self):
+        return self._pip_progress
+
+    def _set_pip_progress(self, val):
+        self._pip_progress = val
+        self._scaled_frame = None  # force re-render at new size
+        self.update()
+
+    pip_progress = pyqtProperty(float, _get_pip_progress, _set_pip_progress)
+
+    def _get_iris_progress(self):
+        return self._iris_progress
+
+    def _set_iris_progress(self, val):
+        self._iris_progress = val
+        self.update()
+
+    iris_progress = pyqtProperty(float, _get_iris_progress, _set_iris_progress)
+
     def _on_opening_ready(self, text, audio_path):
         self._opening_worker = None
         self._present(text)
@@ -1760,35 +2205,84 @@ class CompanionWindow(QWidget):
             self._audio_player.enqueue(play_audio, 0)
         self._cached_opening_audio = ""
         if self._session:
-            self._session.add_turn("companion", text)
+            self._session.add_turn("agent", text)
         self._history.append({"user": "", "companion": text})
         self._boot_complete()
         # Drain queued messages (morning brief, etc.) after a short pause
         QTimer.singleShot(3000, self._drain_message_queue)
 
     def _drain_message_queue(self):
-        """Check for queued messages from cron jobs and present them."""
-        from config import MESSAGE_QUEUE
-        if not MESSAGE_QUEUE.exists():
+        """Check for queued messages from cron jobs and enqueue them for paced delivery."""
+        from core.agent_manager import discover_agents, get_agent_state
+
+        # Drain active agent's queue
+        self._drain_agent_queue(self._current_agent, is_active=True)
+
+        # Check other agents' queues — notify but don't speak
+        for agent in discover_agents():
+            if agent["name"] != self._current_agent:
+                self._drain_agent_queue(agent["name"], is_active=False)
+
+    def _drain_agent_queue(self, agent_name: str, is_active: bool):
+        """Drain one agent's message queue. Active agent = present + audio. Others = notify only."""
+        from config import USER_DATA
+        queue_file = USER_DATA / "agents" / agent_name / "data" / ".message_queue.json"
+        if not queue_file.exists():
             return
+
         try:
-            queue = json.loads(MESSAGE_QUEUE.read_text())
-            MESSAGE_QUEUE.unlink()
+            queue = json.loads(queue_file.read_text())
+            queue_file.unlink()
         except Exception:
             return
         if not queue:
             return
-        for msg in queue:
+
+        from core.agent_manager import get_agent_state
+        agent_state = get_agent_state(agent_name)
+        agent_muted = agent_state.get("muted", False)
+
+        for i, msg in enumerate(queue):
             text = msg.get("text", "")
             audio = msg.get("audio_path", "")
+            source = msg.get("source", "unknown")
             if not text:
                 continue
+
             # Verify audio file still exists
             if audio and not Path(audio).exists():
                 audio = ""
-            self._present_with_audio(text, audio)
-            if self._session:
-                self._session.add_turn("companion", text)
+
+            if is_active:
+                # Pace messages — delay between each one
+                delay = i * 4000  # 4 seconds between messages
+                QTimer.singleShot(delay, lambda t=text, a=audio, m=agent_muted: (
+                    self._deliver_transmission(t, a, m)
+                ))
+            else:
+                # Inactive agent — macOS notification only, don't interrupt
+                # Load display name
+                from config import _find_agent_dir
+                manifest = _find_agent_dir(agent_name) / "data" / "agent.json"
+                display_name = agent_name.title()
+                if manifest.exists():
+                    try:
+                        display_name = json.loads(manifest.read_text()).get("display_name", display_name)
+                    except Exception:
+                        pass
+
+                from core.notify import send_notification
+                body = text[:200] + "..." if len(text) > 200 else text
+                send_notification(display_name, body, subtitle=source)
+
+    def _deliver_transmission(self, text: str, audio_path: str, agent_muted: bool):
+        """Deliver a single queued message with text + optional audio."""
+        self._present(text)
+        if self._session:
+            self._session.add_turn("agent", text)
+        # Audio only if not globally muted AND not agent-muted
+        if audio_path and not self._muted and not agent_muted:
+            self._audio_player.enqueue(audio_path, 0)
 
     def _on_opening_error(self, msg):
         self._opening_worker = None
@@ -1869,33 +2363,93 @@ class CompanionWindow(QWidget):
             pass  # widget deleted during shutdown
 
 
+    def _video_rect(self):
+        """Calculate the video draw rect, interpolating between full-bleed and PIP."""
+        win_w, win_h = self.width(), self.height()
+        img_w, img_h = self._frame.width(), self._frame.height()
+        if img_w == 0 or img_h == 0:
+            return 0, 0, win_w, win_h
+
+        # Full-bleed rect
+        scale_full = min(win_w / img_w, win_h / img_h) * 1.01
+        sw_full = int(img_w * scale_full)
+        sh_full = int(img_h * scale_full)
+        x_full = (win_w - sw_full) // 2 + int(self._drift_x)
+        y_full = (win_h - sh_full) // 2 + int(self._drift_y)
+
+        if self._pip_progress < 0.001:
+            return x_full, y_full, sw_full, sh_full
+
+        # PIP rect — bottom-right corner, 25% of window size
+        pip_w = int(win_w * 0.25)
+        pip_h = int(pip_w * img_h / img_w)
+        pip_margin = 16
+        x_pip = win_w - pip_w - pip_margin
+        y_pip = win_h - pip_h - pip_margin - _BAR_H - 8
+
+        # Smooth interpolation
+        t = self._pip_progress
+        # Ease curve (cubic)
+        t = t * t * (3 - 2 * t)
+        x = int(x_full + (x_pip - x_full) * t)
+        y = int(y_full + (y_pip - y_full) * t)
+        w = int(sw_full + (pip_w - sw_full) * t)
+        h = int(sh_full + (pip_h - sh_full) * t)
+        return x, y, w, h
+
     def paintEvent(self, event):
         p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
         if self._eye_mode or self._frame.isNull():
             p.fillRect(self.rect(), QColor(18, 18, 20))
             p.end()
             return
         win_w, win_h = self.width(), self.height()
-        img_w, img_h = self._frame.width(), self._frame.height()
-        # Black background (visible as pillarbox bars when window is wider than video)
+
+        # Black background
         p.fillRect(self.rect(), QColor(0, 0, 0))
-        # Fit scaling — preserve aspect ratio, never crop
-        scale = min(win_w / img_w, win_h / img_h) * 1.01
-        sw, sh = int(img_w * scale), int(img_h * scale)
-        # Cache the scaled frame — only rescale when source or size changes
+
+        # Video frame — full-bleed or PIP depending on _pip_progress
+        vx, vy, vw, vh = self._video_rect()
+
+        # Scale frame to target size (cached)
         if (self._scaled_frame is None
-                or self._scaled_frame.width() != sw
-                or self._scaled_frame.height() != sh):
+                or self._scaled_frame.width() != vw
+                or self._scaled_frame.height() != vh):
             self._scaled_frame = self._frame.scaled(
-                sw, sh, Qt.IgnoreAspectRatio, Qt.FastTransformation,
+                vw, vh, Qt.IgnoreAspectRatio, Qt.FastTransformation,
             )
-        x = (win_w - sw) // 2 + int(self._drift_x)
-        y = (win_h - sh) // 2 + int(self._drift_y)
-        p.drawImage(x, y, self._scaled_frame)
-        # Warm vignette overlay (cached image, alpha-blended)
-        if self._vignette_opacity > 0.01:
+
+        if self._pip_progress > 0.01:
+            # PIP mode — clip to rounded rect with shadow
+            p.save()
+            pip_radius = int(8 + 4 * self._pip_progress)
+            pip_path = QPainterPath()
+            pip_path.addRoundedRect(QRectF(vx, vy, vw, vh), pip_radius, pip_radius)
+            # Shadow
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(0, 0, 0, int(80 * self._pip_progress)))
+            shadow_path = QPainterPath()
+            shadow_path.addRoundedRect(
+                QRectF(vx + 2, vy + 2, vw, vh), pip_radius, pip_radius
+            )
+            p.drawPath(shadow_path)
+            # Clip and draw video
+            p.setClipPath(pip_path)
+            p.drawImage(vx, vy, self._scaled_frame)
+            # Thin border
+            p.setClipping(False)
+            p.setPen(QPen(QColor(255, 255, 255, int(30 * self._pip_progress)), 1.0))
+            p.setBrush(Qt.NoBrush)
+            p.drawPath(pip_path)
+            p.restore()
+        else:
+            # Full-bleed — no clipping needed
+            p.drawImage(vx, vy, self._scaled_frame)
+
+        # Warm vignette overlay (only in full-bleed mode)
+        if self._vignette_opacity > 0.01 and self._pip_progress < 0.5:
             if self._vignette_img is None or self._vignette_size != (win_w, win_h):
-                # Render vignette to an image at full intensity — modulate via opacity
                 vig = QImage(win_w, win_h, QImage.Format_ARGB32_Premultiplied)
                 vig.fill(QColor(0, 0, 0, 0))
                 vp = QPainter(vig)
@@ -1908,9 +2462,31 @@ class CompanionWindow(QWidget):
                 vp.end()
                 self._vignette_img = vig
                 self._vignette_size = (win_w, win_h)
-            p.setOpacity(self._vignette_opacity)
+            fade = 1.0 - self._pip_progress * 2  # fade out as we go to PIP
+            p.setOpacity(self._vignette_opacity * max(0, fade))
             p.drawImage(0, 0, self._vignette_img)
             p.setOpacity(1.0)
+
+        # Iris wipe — circular mask for agent switch transitions
+        if self._iris_progress > 0.001:
+            cx, cy = win_w / 2, win_h / 2
+            max_radius = (win_w ** 2 + win_h ** 2) ** 0.5 / 2
+            # Iris closes: circle shrinks to 0. Iris opens: circle grows from 0.
+            if self._iris_phase == "closing":
+                radius = max_radius * (1.0 - self._iris_progress)
+            else:  # opening
+                radius = max_radius * self._iris_progress
+
+            # Draw the mask: fill everything outside the circle with black
+            mask = QPainterPath()
+            mask.addRect(QRectF(0, 0, win_w, win_h))
+            circle = QPainterPath()
+            circle.addEllipse(cx - radius, cy - radius, radius * 2, radius * 2)
+            mask = mask.subtracted(circle)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(0, 0, 0))
+            p.drawPath(mask)
+
         # Boot overlay — black screen that fades out when ready
         if self._booting and self._boot_opacity > 0.001:
             p.fillRect(self.rect(), QColor(0, 0, 0, int(255 * self._boot_opacity)))
@@ -1933,6 +2509,16 @@ class CompanionWindow(QWidget):
         self._bar.stop_requested.connect(self._on_stop)
         self._bar.raise_()
 
+        # Metrics label — small text above right side of input bar
+        self._metrics_label = QLabel(self)
+        self._metrics_label.setStyleSheet(
+            "color: rgba(255,255,255,0.25); font-size: 10px; background: transparent;"
+        )
+        self._metrics_label.setAlignment(Qt.AlignRight | Qt.AlignBottom)
+        self._metrics_label.setFixedHeight(14)
+        self._metrics_label.hide()
+        self._response_start_time = None
+
         # Global Cmd+C shortcut — copies last companion message when no text selected
         from PyQt5.QtWidgets import QShortcut
         from PyQt5.QtGui import QKeySequence
@@ -1940,12 +2526,50 @@ class CompanionWindow(QWidget):
         copy_shortcut.activated.connect(self._handle_copy)
         self._copy_shortcut = copy_shortcut  # prevent gc
 
+    def _update_metrics_label(self, response_tokens=0):
+        """Update the small metrics display above the input bar."""
+        import time as _time
+        import config as cfg
+        parts = []
+
+        # Response time
+        if self._response_start_time:
+            elapsed = _time.time() - self._response_start_time
+            parts.append(f"{elapsed:.1f}s")
+            self._response_start_time = None
+
+        # Token estimate for this response
+        if response_tokens > 0:
+            if response_tokens >= 1000:
+                parts.append(f"~{response_tokens / 1000:.1f}k tok")
+            else:
+                parts.append(f"~{response_tokens} tok")
+
+        # Context usage %
+        max_tokens = cfg.MAX_CONTEXT_TOKENS
+        if max_tokens > 0:
+            pct = min(100, (self._approx_tokens / max_tokens) * 100)
+            parts.append(f"{pct:.0f}% ctx")
+
+        if parts:
+            self._metrics_label.setText("  ".join(parts))
+            self._position_metrics_label()
+            self._metrics_label.show()
+
+    def _position_metrics_label(self):
+        """Position metrics label above right side of input bar."""
+        left, right, _, h = self._content_rect()
+        content_w = right - left
+        bar_y = h - _PAD - _BAR_H
+        self._metrics_label.setFixedWidth(content_w)
+        self._metrics_label.move(left, bar_y - 16)
+
     def _handle_copy(self):
-        """Global Cmd+C handler — copy selected input text, or last companion message."""
+        """Global Cmd+C handler — copy selected transcript text, input text, or last companion message."""
         if self._bar._input.hasSelectedText():
             self._bar._input.copy()
         else:
-            self._transcript.copy_last_companion()
+            self._transcript.copy_last_companion()  # copies selection if any, else last msg
 
     # ── Mode toggle buttons ──
 
@@ -1962,6 +2586,9 @@ class CompanionWindow(QWidget):
         self._wake_btn = _WakeButton(self)
         self._wake_btn.clicked.connect(self._toggle_wake)
 
+        self._artefact_btn = _ArtefactButton(self)
+        self._artefact_btn.clicked.connect(self._toggle_artefact_gallery)
+
         self._settings_btn = _SettingsButton(self)
         self._settings_btn.clicked.connect(self._toggle_settings)
 
@@ -1969,6 +2596,16 @@ class CompanionWindow(QWidget):
         self._settings_panel = SettingsPanel(self)
         self._settings_panel.closed.connect(lambda: self._settings_btn.set_active(False))
         self._settings_open = False
+
+        # Artefact overlay and gallery
+        import config as cfg
+        self._artefact_overlay = ArtefactOverlay(self)
+        self._artefact_overlay.dismissed.connect(self._animate_from_pip)
+        self._artefact_gallery = ArtefactGallery(
+            str(cfg.ARTEFACT_INDEX_FILE),
+            on_select=self._on_artefact_selected,
+            parent=self,
+        )
 
         # Keyboard shortcut: Cmd+Shift+W to toggle wake word
         from PyQt5.QtWidgets import QShortcut
@@ -1991,7 +2628,8 @@ class CompanionWindow(QWidget):
         self._mute_btn.move(right - 34 - 38, btn_y)
         self._min_btn.move(right - 34 - 38 - 38, btn_y)
         self._wake_btn.move(right - 34 - 38 - 38 - 38, btn_y)
-        self._settings_btn.move(right - 34 - 38 - 38 - 38 - 38, btn_y)
+        self._artefact_btn.move(right - 34 - 38 - 38 - 38 - 38, btn_y)
+        self._settings_btn.move(right - 34 - 38 - 38 - 38 - 38 - 38, btn_y)
 
     def _toggle_settings(self):
         self._settings_open = not self._settings_open
@@ -2028,8 +2666,10 @@ class CompanionWindow(QWidget):
         self._status_bar.move(bar_x, bar_y - 2)
 
     def _toggle_mute(self):
-        self._muted = not self._muted
-        self._mute_btn.set_active(self._muted)
+        """Toggle global mute — overrides all per-agent mute states."""
+        self._global_muted = not self._global_muted
+        self._muted = self._global_muted or self._agent_muted
+        self._mute_btn.set_active(self._global_muted)
 
     def _toggle_wake(self):
         """Toggle wake word listening on/off."""
@@ -2167,6 +2807,296 @@ class CompanionWindow(QWidget):
         if self._wake_listener:
             self._wake_listener.resume()
 
+    # ── Agent switching ──
+
+    def switch_agent(self, agent_name: str):
+        """Switch to a different agent with fade animation."""
+        if agent_name == self._current_agent:
+            return
+        if self._switching:
+            return
+        if self._worker is not None:
+            self._status_bar.start("finish conversation first")
+            QTimer.singleShot(2000, self._status_bar.stop)
+            return
+
+        self._switching = True
+        self._switch_target = agent_name
+
+        # Stop background services
+        if self._wake_listener:
+            self._stop_wake_listener()
+        if hasattr(self, '_coherence_timer') and self._coherence_timer:
+            self._coherence_timer.stop()
+        if hasattr(self, '_journal_nudge_timer') and self._journal_nudge_timer:
+            self._journal_nudge_timer.stop()
+
+        # Iris wipe — circle closes to center, swaps agent, circle opens
+        self._iris_phase = "closing"
+        self._switch_anim = QPropertyAnimation(self, b"iris_progress", self)
+        self._switch_anim.setStartValue(0.0)
+        self._switch_anim.setEndValue(1.0)
+        self._switch_anim.setDuration(400)
+        self._switch_anim.setEasingCurve(QEasingCurve.InQuad)
+        self._switch_anim.finished.connect(self._on_switch_faded_out)
+        self._switch_anim.start()
+
+    def _on_switch_faded_out(self):
+        """At peak black — swap everything, then fade back in."""
+        import threading
+        from core.agent_manager import reload_agent_config, get_agent_state
+        from core.context import load_system_prompt
+        from core import memory
+
+        target = self._switch_target
+
+        # End old session in background (summary generation can be slow)
+        old_session = self._session
+        old_system = self._system
+        if old_session:
+            threading.Thread(
+                target=lambda: old_session.end(old_system),
+                daemon=True,
+            ).start()
+
+        # Reload config for new agent
+        reload_agent_config(target)
+        from core.inference import reset_mcp_config
+        reset_mcp_config()
+        import config as cfg
+
+        # Update state
+        self._current_agent = target
+        agent_state = get_agent_state(target)
+        self._agent_muted = agent_state.get("muted", False)
+        self._muted = self._global_muted or self._agent_muted
+
+        # Update UI
+        self.setWindowTitle(cfg.AGENT_DISPLAY_NAME)
+        self._transcript.clear_messages()
+
+        # Swap video if available
+        idle_loop = cfg.IDLE_LOOP
+        if idle_loop.exists():
+            self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(idle_loop))))
+            self._player.play()
+        else:
+            self._player.stop()
+            self._frame = QImage()
+
+        # Re-init memory and session
+        memory.init_db()
+        from core.session import Session
+        self._session = Session()
+        self._session.start()
+        self._system = load_system_prompt()
+        self._cli_session_id = self._session.cli_session_id
+        self._history.clear()
+        self._approx_tokens = 0
+
+        # Update mute button visual
+        self._mute_btn.set_active(self._global_muted)
+
+        # Show agent name flash
+        self._flash_agent_name(cfg.AGENT_DISPLAY_NAME)
+
+        # Start boot sequence (generates opening line, fades in)
+        self._start_boot_sequence()
+
+    def _flash_agent_name(self, name: str):
+        """Show agent name centred, fades out after 2 seconds."""
+        if hasattr(self, '_agent_label') and self._agent_label:
+            self._agent_label.deleteLater()
+
+        lbl = QLabel(name.upper(), self)
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setStyleSheet(
+            "color: rgba(255,255,255,0.8); font-size: 28px; font-weight: bold; "
+            "letter-spacing: 6px; background: transparent;"
+        )
+        lbl.setFixedSize(self.width(), 60)
+        lbl.move(0, self.height() // 2 - 50)
+        lbl.show()
+        lbl.raise_()
+        self._agent_label = lbl
+
+        def _fade_label():
+            if hasattr(self, '_agent_label') and self._agent_label:
+                self._agent_label.deleteLater()
+                self._agent_label = None
+
+        QTimer.singleShot(2500, _fade_label)
+
+    # ── Agent deferral (codec-style handoff) ──
+
+    def _check_deferral_requests(self):
+        """Poll for deferral requests written by the MCP defer_to_agent tool."""
+        # Don't process during active inference or switching
+        if self._worker is not None or self._switching or self._booting:
+            return
+        import config as cfg
+        deferral_file = cfg.DATA_DIR / ".deferral_request.json"
+        if not deferral_file.exists():
+            return
+        try:
+            data = json.loads(deferral_file.read_text())
+            deferral_file.unlink()
+        except Exception:
+            return
+
+        target = data.get("target", "")
+        if not target or target == self._current_agent:
+            return
+
+        # Anti-loop: max 3 deferrals in 60 seconds
+        import time as _time
+        now = _time.time()
+        if now - self._deferral_window_start > 60:
+            self._deferral_count = 0
+            self._deferral_window_start = now
+        self._deferral_count += 1
+        if self._deferral_count > 3:
+            print("  [deferral] suppressed — too many in 60s")
+            return
+
+        self._defer_to_agent(target, data)
+
+    def _defer_to_agent(self, target: str, deferral_data: dict):
+        """Codec-style handoff to another agent. No boot sequence, no transcript clear."""
+        if self._switching:
+            return
+
+        self._switching = True
+        self._switch_target = target
+        self._deferral_data = deferral_data
+
+        # Stop wake listener
+        if self._wake_listener:
+            self._stop_wake_listener()
+
+        # Kill audio — current agent's speech stops
+        self._kill_audio()
+
+        # Iris wipe — fast, like switching channels
+        self._iris_phase = "closing"
+        self._switch_anim = QPropertyAnimation(self, b"iris_progress", self)
+        self._switch_anim.setStartValue(0.0)
+        self._switch_anim.setEndValue(1.0)
+        self._switch_anim.setDuration(250)
+        self._switch_anim.setEasingCurve(QEasingCurve.InQuad)
+        self._switch_anim.finished.connect(self._on_deferral_faded_out)
+        self._switch_anim.start()
+
+    def _on_deferral_faded_out(self):
+        """At peak black during deferral — swap agent, inject context, respond."""
+        from core.agent_manager import (
+            reload_agent_config, get_agent_state,
+            suspend_agent_session, resume_agent_session,
+        )
+        from core.context import load_system_prompt
+        from core.inference import reset_mcp_config
+        from core import memory
+
+        target = self._switch_target
+        deferral = self._deferral_data
+        source_agent = self._current_agent
+
+        # Suspend current agent's session (don't end it — preserves CLI conversation)
+        suspend_agent_session(
+            source_agent,
+            cli_session_id=self._cli_session_id,
+            session=self._session,
+        )
+
+        # Reload config for target agent
+        reload_agent_config(target)
+        reset_mcp_config()
+        import config as cfg
+
+        # Update state
+        self._current_agent = target
+        agent_state = get_agent_state(target)
+        self._agent_muted = agent_state.get("muted", False)
+        self._muted = self._global_muted or self._agent_muted
+
+        # Update window
+        self.setWindowTitle(cfg.AGENT_DISPLAY_NAME)
+
+        # DO NOT clear transcript — conversation should feel continuous
+        # Add a codec-style divider instead
+        source_name = deferral.get("source_display_name", source_agent)
+        self._transcript.add_divider(f"{source_name}  ›  {cfg.AGENT_DISPLAY_NAME}")
+
+        # Swap video/avatar
+        idle_loop = cfg.IDLE_LOOP
+        if idle_loop.exists():
+            self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(idle_loop))))
+            self._player.play()
+        else:
+            self._player.stop()
+            self._frame = QImage()
+
+        # Check for a suspended session for the target agent
+        suspended = resume_agent_session(target)
+        if suspended:
+            self._session = suspended["session"]
+            self._cli_session_id = suspended["cli_session_id"]
+            self._system = load_system_prompt()
+        else:
+            # New session for this agent
+            memory.init_db()
+            from core.session import Session
+            self._session = Session()
+            self._session.start()
+            self._system = load_system_prompt()
+            self._cli_session_id = self._session.cli_session_id
+
+        # Update mute button
+        self._mute_btn.set_active(self._global_muted)
+
+        # Flash agent name — codec style
+        self._flash_agent_name(cfg.AGENT_DISPLAY_NAME)
+
+        # Iris open — fast reveal of new agent
+        self._iris_phase = "opening"
+        self._switch_anim = QPropertyAnimation(self, b"iris_progress", self)
+        self._switch_anim.setStartValue(0.0)
+        self._switch_anim.setEndValue(1.0)
+        self._switch_anim.setDuration(300)
+        self._switch_anim.setEasingCurve(QEasingCurve.OutQuad)
+        self._switch_anim.finished.connect(self._on_deferral_faded_in)
+        self._switch_anim.start()
+
+    def _on_deferral_faded_in(self):
+        """Deferral fade-in complete — send the deferred question to the new agent."""
+        self._switching = False
+        self._switch_anim = None
+        self._iris_progress = 0.0
+        self._iris_phase = None
+
+        deferral = self._deferral_data
+        context = deferral.get("context", "")
+        user_question = deferral.get("user_question", "")
+        source = deferral.get("source_display_name", deferral.get("source_agent", "another agent"))
+
+        # Build injected message with handoff context
+        injected = (
+            f"[{source} has deferred this conversation to you. "
+            f"Context: {context}]\n\n{user_question}"
+        )
+
+        # Launch inference — the new agent responds to the deferred question
+        self._bar.set_stop_mode(True)
+        self._status_bar.start("thinking...")
+        self._first_sentence_shown = False
+        self._retry_text = user_question
+        self._retried = False
+
+        self._launch_worker(injected, self._cli_session_id)
+        self._deferral_data = None
+
+        # Resume wake listener after response completes (handled by _on_done)
+
     def _toggle_eye(self):
         self._eye_mode = not self._eye_mode
         self._eye_btn.set_active(self._eye_mode)
@@ -2247,6 +3177,167 @@ class CompanionWindow(QWidget):
         # Cover the full window (video is full-bleed)
         self._canvas.reposition(0, 0, self.width(), self.height())
 
+    # ── Artefact system ──
+
+    def _toggle_artefact_gallery(self):
+        """Toggle the artefact gallery modal."""
+        if self._artefact_gallery.isVisible():
+            self._artefact_gallery.hide()
+        else:
+            self._artefact_gallery.setGeometry(0, 0, self.width(), self.height())
+            self._artefact_gallery.show_gallery()
+        self._artefact_btn.set_has_new(False)
+
+    def _on_artefact_selected(self, artefact_dir, atype, file_path):
+        """User clicked an artefact in the gallery — display it."""
+        self._artefact_overlay.reposition(0, 0, self.width(), self.height())
+        self._artefact_overlay.show_artefact(artefact_dir, atype, file_path)
+        self._animate_to_pip()
+
+    def _animate_to_pip(self):
+        """Smoothly shrink the video to PIP in the bottom-right corner."""
+        if self._pip_anim:
+            self._pip_anim.stop()
+        self._pip_anim = QPropertyAnimation(self, b"pip_progress", self)
+        self._pip_anim.setStartValue(self._pip_progress)
+        self._pip_anim.setEndValue(1.0)
+        self._pip_anim.setDuration(500)
+        self._pip_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._pip_anim.start()
+
+    def _animate_from_pip(self):
+        """Smoothly grow the video back from PIP to full-bleed."""
+        if self._pip_anim:
+            self._pip_anim.stop()
+        self._pip_anim = QPropertyAnimation(self, b"pip_progress", self)
+        self._pip_anim.setStartValue(self._pip_progress)
+        self._pip_anim.setEndValue(0.0)
+        self._pip_anim.setDuration(500)
+        self._pip_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._pip_anim.start()
+
+    def _check_artefact_requests(self):
+        """Poll for artefact approval requests from MCP create_artefact tool."""
+        if self._booting or self._switching:
+            return
+        import config as cfg
+        req_file = cfg.ARTEFACT_REQUEST_FILE
+        if not req_file.exists():
+            return
+        try:
+            data = json.loads(req_file.read_text())
+        except Exception:
+            return
+
+        # Only handle pending requests — approved/denied handled by MCP
+        status = data.get("status", "")
+        if status != "pending":
+            return
+
+        self._show_artefact_approval(data, req_file)
+
+    def _show_artefact_approval(self, data, req_file):
+        """Show an approval overlay for a paid artefact (image/video)."""
+        atype = data.get("type", "unknown")
+        name = data.get("name", "untitled")
+        desc = data.get("description", "")
+        cost_hint = "image generation" if atype == "image" else "video generation"
+
+        # Build a simple approval overlay
+        overlay = QWidget(self)
+        overlay.setGeometry(0, 0, self.width(), self.height())
+        overlay.setStyleSheet("background: rgba(0, 0, 0, 0.85);")
+
+        layout = QVBoxLayout(overlay)
+        layout.setAlignment(Qt.AlignCenter)
+
+        title = QLabel(f"Artefact Request: {name}")
+        title.setStyleSheet(
+            "color: white; font-size: 18px; font-weight: bold;"
+        )
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        type_lbl = QLabel(f"Type: {atype.upper()} ({cost_hint})")
+        type_lbl.setStyleSheet("color: rgba(255,255,255,0.6); font-size: 13px;")
+        type_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(type_lbl)
+
+        if desc:
+            desc_lbl = QLabel(desc[:200])
+            desc_lbl.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 12px;")
+            desc_lbl.setAlignment(Qt.AlignCenter)
+            desc_lbl.setWordWrap(True)
+            desc_lbl.setMaximumWidth(400)
+            layout.addWidget(desc_lbl)
+
+        btn_row = QHBoxLayout()
+        btn_row.setAlignment(Qt.AlignCenter)
+
+        approve_btn = QPushButton("Approve")
+        approve_btn.setStyleSheet(
+            "QPushButton { background: rgba(80,180,100,0.8); color: white; "
+            "border: none; border-radius: 8px; padding: 8px 24px; font-size: 14px; }"
+            "QPushButton:hover { background: rgba(80,200,100,0.9); }"
+        )
+        approve_btn.setCursor(Qt.PointingHandCursor)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(
+            "QPushButton { background: rgba(180,80,80,0.8); color: white; "
+            "border: none; border-radius: 8px; padding: 8px 24px; font-size: 14px; }"
+            "QPushButton:hover { background: rgba(200,80,80,0.9); }"
+        )
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+
+        def _approve():
+            data["status"] = "approved"
+            req_file.write_text(json.dumps(data))
+            overlay.deleteLater()
+
+        def _cancel():
+            data["status"] = "denied"
+            req_file.write_text(json.dumps(data))
+            overlay.deleteLater()
+
+        approve_btn.clicked.connect(_approve)
+        cancel_btn.clicked.connect(_cancel)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(approve_btn)
+        layout.addLayout(btn_row)
+
+        overlay.show()
+        overlay.raise_()
+
+    def _check_artefact_display(self):
+        """Poll for newly created artefacts that should be displayed."""
+        import config as cfg
+        display_file = cfg.ARTEFACT_DISPLAY_FILE
+        if not display_file.exists():
+            return
+        try:
+            data = json.loads(display_file.read_text())
+            display_file.unlink()
+        except Exception:
+            return
+
+        artefact_dir = data.get("path", "")
+        atype = data.get("type", "html")
+        file_path = data.get("file", "")
+
+        if artefact_dir or file_path:
+            self._artefact_overlay.reposition(0, 0, self.width(), self.height())
+            self._artefact_overlay.show_artefact(artefact_dir, atype, file_path)
+            self._artefact_btn.set_has_new(True)
+            self._animate_to_pip()
+
+    def _reflow_artefacts(self):
+        """Reposition artefact overlays on resize."""
+        if self._artefact_overlay.is_active():
+            self._artefact_overlay.reposition(0, 0, self.width(), self.height())
+        if self._artefact_gallery.isVisible():
+            self._artefact_gallery.setGeometry(0, 0, self.width(), self.height())
+
     # ── Streaming interaction flow ──
 
     def _on_idle_timeout(self):
@@ -2305,6 +3396,8 @@ class CompanionWindow(QWidget):
 
     def _launch_worker(self, text, session_id):
         """Launch the streaming pipeline worker."""
+        import time as _time
+        self._response_start_time = _time.time()
         self._worker = StreamingPipelineWorker(
             user_text=text,
             system=self._system,
@@ -2350,10 +3443,15 @@ class CompanionWindow(QWidget):
 
     def _on_tool_use(self, name, tool_id):
         """Claude invoked a tool — show in UI."""
+        if name == "mcp__memory__defer_to_agent":
+            self._status_bar.start("handing off...")
 
     def _on_compacting(self):
         """Context window is being compacted — set flush flag and show status."""
         self._needs_memory_flush = True
+        self._compaction_warned = False
+        # After compaction, context is roughly halved
+        self._approx_tokens = self._approx_tokens // 3
         self._status_bar.start("compacting memory...")
 
     def _on_done(self, full_text, session_id):
@@ -2375,7 +3473,7 @@ class CompanionWindow(QWidget):
         if self._session:
             if session_id:
                 self._session.set_cli_session_id(session_id)
-            self._session.add_turn("companion", full_text)
+            self._session.add_turn("agent", full_text)
 
         # Update history with full companion text
         if self._history:
@@ -2383,11 +3481,15 @@ class CompanionWindow(QWidget):
 
         # Track approximate context usage (~4 chars per token)
         user_text = self._history[-1]["user"] if self._history else ""
-        self._approx_tokens += (len(user_text) + len(full_text)) // 4
+        response_tokens = len(full_text) // 4
+        self._approx_tokens += (len(user_text) // 4) + response_tokens
         if self._approx_tokens > 150000 and not self._compaction_warned:
             self._compaction_warned = True
             self._status_bar.start("context getting full — compaction soon")
             QTimer.singleShot(5000, self._status_bar.stop)
+
+        # Update metrics label
+        self._update_metrics_label(response_tokens)
 
         # If no sentences came through streaming, synthesise then show text + audio together
         if not self._first_sentence_shown and full_text:
@@ -2452,6 +3554,40 @@ class CompanionWindow(QWidget):
         self._worker.error.connect(self._on_error)
         self._worker.start()
 
+    def _check_timer_requests(self):
+        """Poll for timer requests written by the MCP set_timer tool."""
+        import config as cfg
+        timer_file = cfg.DATA_DIR / ".timer_request.json"
+        if not timer_file.exists():
+            return
+        try:
+            data = json.loads(timer_file.read_text())
+            timer_file.unlink()
+        except Exception:
+            return
+
+        seconds = data.get("seconds", 0)
+        label = data.get("label", "Timer")
+        if seconds <= 0:
+            return
+
+        from display.timer import TimerOverlay
+        timer = TimerOverlay(seconds=seconds, label=label)
+        timer.finished.connect(lambda lbl: self._on_timer_finished(lbl))
+        timer.show()
+        self._active_timers.append(timer)
+
+    def _check_inbox(self):
+        """Periodic check for new messages across all agents."""
+        # Don't check during boot, switch, or if worker is active
+        if self._booting or self._switching:
+            return
+        self._drain_message_queue()
+
+    def _on_timer_finished(self, label: str):
+        """Timer completed — clean up reference."""
+        self._active_timers = [t for t in self._active_timers if t.isVisible()]
+
     def _do_journal_nudge(self):
         """Unprompted journal nudge — once per session, timed randomly."""
         if self._worker is not None:
@@ -2494,7 +3630,7 @@ class CompanionWindow(QWidget):
         if self._session:
             self._session.set_cli_session_id(session_id)
             if full_text:
-                self._session.add_turn("companion", full_text)
+                self._session.add_turn("agent", full_text)
         # Append to current history entry
         if self._history and full_text:
             self._history[-1]["companion"] += "\n\n" + full_text
@@ -2649,13 +3785,28 @@ class CompanionWindow(QWidget):
         # Buttons and status bar
         self._position_mode_buttons()
         self._position_status_bar()
+        # Metrics label
+        if self._metrics_label.isVisible():
+            self._position_metrics_label()
         # Canvas overlay
         self._reflow_canvas()
+        # Artefact overlays
+        self._reflow_artefacts()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
             self._audio_player.stop()
             self.close()
+        elif event.key() == Qt.Key_Up and (event.modifiers() & Qt.MetaModifier):
+            from core.agent_manager import cycle_agent
+            next_agent = cycle_agent(-1, self._current_agent)
+            if next_agent:
+                self.switch_agent(next_agent)
+        elif event.key() == Qt.Key_Down and (event.modifiers() & Qt.MetaModifier):
+            from core.agent_manager import cycle_agent
+            next_agent = cycle_agent(+1, self._current_agent)
+            if next_agent:
+                self.switch_agent(next_agent)
         elif event.key() == Qt.Key_Up:
             self._transcript.scroll_up()
         elif event.key() == Qt.Key_Down:
@@ -2836,6 +3987,7 @@ class ChatPanel(QWidget):
         if self.isVisible():
             self.hide()
         else:
+            self._companion.wake_up()  # no-op if already awake
             # Centre on screen
             screen = QApplication.primaryScreen().geometry()
             x = (screen.width() - self.width()) // 2
@@ -2894,7 +4046,7 @@ class ChatPanel(QWidget):
             if session_id:
                 c._session.set_cli_session_id(session_id)
             if full_text:
-                c._session.add_turn("companion", full_text)
+                c._session.add_turn("agent", full_text)
         if c._history:
             c._history[-1]["companion"] = full_text
         if not self._first_sentence_shown and full_text:
@@ -2929,6 +4081,19 @@ class MenuBarIcon:
         menu.addAction("Show/Hide", self._toggle_window)
         menu.addAction("Chat Panel", self._toggle_chat)
         menu.addSeparator()
+
+        # Agent submenu
+        from core.agent_manager import discover_agents
+        agents = discover_agents()
+        if len(agents) > 1:
+            agents_menu = menu.addMenu("Agents")
+            for agent in agents:
+                action = agents_menu.addAction(agent["display_name"])
+                action.triggered.connect(
+                    lambda checked, a=agent["name"]: self._switch_to(a)
+                )
+            menu.addSeparator()
+
         self._status_action = menu.addAction("Set Away", self._toggle_status)
         menu.addSeparator()
         menu.addAction("Quit", self._quit)
@@ -2958,6 +4123,7 @@ class MenuBarIcon:
         if w.isVisible():
             w.hide()
         else:
+            w.wake_up()  # no-op if already awake
             w.show()
             w.raise_()
             w.activateWindow()
@@ -2965,6 +4131,14 @@ class MenuBarIcon:
 
     def _toggle_chat(self):
         self._chat.toggle()
+
+    def _switch_to(self, agent_name):
+        """Switch agent from tray menu."""
+        self._window.wake_up()
+        self._window.switch_agent(agent_name)
+        # Update tray tooltip
+        import config as cfg
+        self._tray.setToolTip(cfg.AGENT_DISPLAY_NAME)
 
     def _toggle_status(self):
         from core.status import is_away, set_active, set_away
@@ -3044,9 +4218,19 @@ class GlobalHotkey:
 
 def run_app(on_synth_callback=None, on_opening_callback=None,
             system_prompt="", cli_session_id=None, session=None,
-            cached_opening_audio=""):
+            cached_opening_audio="", menu_bar_mode=False):
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+
+    # Menu-bar-only mode — hide from Dock (like Amphetamine)
+    if menu_bar_mode:
+        try:
+            from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
+            NSApplication.sharedApplication().setActivationPolicy_(
+                NSApplicationActivationPolicyAccessory
+            )
+        except ImportError:
+            print("  [AppKit unavailable — app will still appear in Dock]")
 
     # App icon — orb
     from display.icon import get_app_icon
@@ -3066,14 +4250,16 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
         cli_session_id=cli_session_id,
         session=session,
         cached_opening_audio=cached_opening_audio,
+        dormant=menu_bar_mode,
     )
 
     _chat_panel = ChatPanel(_companion_window)
     _menu_bar_icon = MenuBarIcon(_companion_window, _chat_panel)
     _global_hotkey = GlobalHotkey(_chat_panel.toggle)
 
-    _companion_window.show()
-    _companion_window._bar.focus_input()
+    if not menu_bar_mode:
+        _companion_window.show()
+        _companion_window._bar.focus_input()
 
     app.exec_()
 

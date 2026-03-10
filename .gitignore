@@ -22,6 +22,7 @@ agents/*/avatar/
 .models/
 
 # Runtime state files (anywhere)
+.agent_states.json
 .opening_cache.json
 .message_queue.json
 .user_status.json
@@ -29,6 +30,8 @@ agents/*/avatar/
 .canvas_content.html
 .dream_log.txt
 .identity_review_queue.json
+.reminders.json
+.timer_request.json
 
 # MCP generated config
 mcp/config.json

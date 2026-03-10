@@ -12,7 +12,7 @@ Entry point: `main.py`. Three modes: `--cli` (voice+text), `--text` (text-only),
 
 1. **Load environment**: `.env` file loaded via `python-dotenv`. Agent name resolved from `--agent` flag or `AGENT` environment variable (default: `companion`).
 
-2. **Load configuration**: `config.py` reads `agents/<name>/data/agent.json` for identity, voice, display, heartbeat, and Telegram settings. All per-agent paths are derived from the agent name.
+2. **Load configuration**: `config.py` creates `~/.atrophy/` on first run, reads `~/.atrophy/config.json` for user settings, then loads the agent manifest from `agents/<name>/data/agent.json` (checking user-installed agents in `~/.atrophy/agents/` first, then bundled agents). Runtime state paths resolve to `~/.atrophy/agents/<name>/data/`.
 
 3. **Initialise database**: `memory.init_db()` executes `db/schema.sql` to create tables (idempotent via `IF NOT EXISTS`), then runs migrations for schema evolution on existing databases.
 
@@ -110,7 +110,7 @@ Triggered by `KeyboardInterrupt` or `EOFError` (Ctrl+C or Ctrl+D).
 
 2. **Write summary**: Summary stored in the `summaries` table with an async embedding. The session row is updated with `ended_at`, summary text, mood, and notable flag.
 
-3. **Save emotional state**: The inner life state (emotions + trust) is written to `agents/<name>/data/.emotional_state.json` with the current timestamp.
+3. **Save emotional state**: The inner life state (emotions + trust) is written to `~/.atrophy/agents/<name>/data/.emotional_state.json` with the current timestamp.
 
 4. **Update user status**: Presence tracking updated (if applicable).
 

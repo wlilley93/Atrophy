@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS turns (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id  INTEGER REFERENCES sessions(id),
-  role        TEXT NOT NULL CHECK(role IN ('will', 'companion')),
+  role        TEXT NOT NULL CHECK(role IN ('will', 'agent')),
   content     TEXT NOT NULL,
   timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
   topic_tags  TEXT,
@@ -150,6 +150,25 @@ CREATE TABLE IF NOT EXISTS entity_relations (
     last_seen   DATETIME
 );
 
+-- ── INTELLIGENCE ──────────────────────────────────────────────
+-- News items filed by agents. Structured storage with dedup.
+
+CREATE TABLE IF NOT EXISTS intelligence (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  headline      TEXT NOT NULL,
+  summary       TEXT,
+  link          TEXT,
+  source        TEXT,              -- "bbc_world", "defense_one", etc.
+  published_at  DATETIME,
+  urgency       TEXT DEFAULT 'routine'
+    CHECK(urgency IN ('routine', 'notable', 'urgent', 'critical')),
+  assessed      BOOLEAN DEFAULT 0, -- has inference reviewed this?
+  assessment    TEXT,              -- Montgomery's analysis
+  observation_id INTEGER REFERENCES observations(id),
+  embedding     BLOB
+);
+
 -- ── INDEXES ───────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_turns_session
@@ -172,3 +191,9 @@ CREATE INDEX IF NOT EXISTS idx_entities_name
   ON entities(name);
 CREATE INDEX IF NOT EXISTS idx_entity_relations_pair
   ON entity_relations(entity_a, entity_b);
+CREATE INDEX IF NOT EXISTS idx_intelligence_link
+  ON intelligence(link);
+CREATE INDEX IF NOT EXISTS idx_intelligence_urgency
+  ON intelligence(urgency);
+CREATE INDEX IF NOT EXISTS idx_intelligence_source
+  ON intelligence(source);

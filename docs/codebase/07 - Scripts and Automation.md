@@ -23,7 +23,7 @@ python scripts/cron.py uninstall                    # uninstall all from launchd
 1. Jobs are defined in `scripts/agents/<name>/jobs.json`
 2. `install` generates macOS plist files in `~/Library/LaunchAgents/`
 3. Plists are labelled `com.atrophiedmind.<agent>.<job_name>`
-4. Logs go to `logs/<agent>/<job_name>.log`
+4. Logs go to `~/.atrophy/logs/<agent>/<job_name>.log`
 
 ### Schedule Types
 
@@ -39,11 +39,17 @@ Each plist sets `AGENT=<name>` and inherits the Python path, ensuring agent-scop
 
 Interactive questionnaire that creates a complete agent:
 
-1. Identity: name, display name, user name, opening line
-2. Voice: TTS backend, voice ID, stability/similarity/style settings
-3. Behavior: active hours, heartbeat interval, wake words
-4. Channels: Telegram bot token env var, chat ID env var
-5. Obsidian: vault subdirectory name
+1. Services & API keys: Fal.ai, ElevenLabs, Obsidian vault (checks existing, prompts for missing)
+2. Identity: name, display name, user name, origin story, core nature, character, values, relationship, opening line
+3. Boundaries: won't-do list, friction modes, session limits
+4. Voice: TTS backend, voice ID, stability/similarity/style settings, writing style
+5. Appearance: avatar toggle, appearance description for Flux generation
+6. Channels: wake words, Telegram bot token/chat ID
+7. Heartbeat: active hours, interval, outreach style
+8. Autonomy: journal, gifts, morning brief, evolution, sleep cycle, observer, reminders, inter-agent conversations, journal posture
+9. Tools: disable specific MCP tools, describe custom skills
+
+Journal posture is derived from the agent's character traits — either explicitly provided or inferred via inference (military log, sprawling diary, terse field notes, etc.).
 
 **Generated files**:
 
@@ -53,12 +59,15 @@ Interactive questionnaire that creates a complete agent:
 - `agents/<name>/prompts/heartbeat.md` -- Outreach evaluation checklist
 - `agents/<name>/data/` -- Data directory (runtime state, database)
 - `agents/<name>/avatar/source/` -- Avatar directory
-- Obsidian vault structure
+- `scripts/agents/<name>/` -- Parameterised daemon scripts (copied from companion template)
+- `scripts/agents/<name>/jobs.json` -- Cron job definitions
+- Obsidian vault structure (skills/, notes/, dashboard)
 - Database (via `init_db()`)
 
 ```
 python scripts/create_agent.py
 python scripts/create_agent.py --name oracle    # skip first question
+python scripts/create_agent.py --config agent.json  # non-interactive mode
 ```
 
 ## scripts/reindex.py -- Embedding Reindex
@@ -72,6 +81,28 @@ python scripts/reindex.py summaries turns    # multiple tables
 ```
 
 Processes in chunks of 64 for memory efficiency. Uses `embed_batch()` for throughput.
+
+## Avatar Loop Scripts
+
+### rebuild_ambient_loop.py
+
+Rebuilds an agent's master `ambient_loop.mp4` by concatenating all `loop_*.mp4` segments in `~/.atrophy/agents/<name>/avatar/loops/`. No hardcoded segment list — just whatever's there, sorted by name.
+
+```bash
+python scripts/rebuild_ambient_loop.py --agent companion
+python scripts/rebuild_ambient_loop.py --agent general_montgomery
+```
+
+### generate_loop_segment.py
+
+Generates a single loop segment via Kling 3.0. Each segment is a paired clip sequence: clip 1 (neutral → expression), clip 2 (expression → neutral), crossfaded with 150ms overlap. Can be called manually or by the `add_avatar_loop` MCP tool.
+
+```bash
+python scripts/generate_loop_segment.py --agent general_montgomery --name contemplation
+python scripts/generate_loop_segment.py --agent companion --name curiosity --prompt "..."
+```
+
+After generating the segment, it automatically calls `rebuild_ambient_loop.py` to rebuild the master.
 
 ## Agent Daemon Scripts
 
@@ -124,14 +155,14 @@ Generate a morning briefing:
 
 ### introspect.py
 
-**Schedule**: Monthly (24th at 3:33 AM)
+**Schedule**: Random, every 2-14 days (self-rescheduling)
 
 Deep self-reflection:
 
-1. Review accumulated observations, threads, journal entries
-2. Run extended inference for self-examination
-3. Write a journal entry to Obsidian
-4. Optionally update identity snapshot
+1. Review accumulated observations, threads, journal entries, inter-agent conversations
+2. Run extended inference for self-examination using character-specific journal posture
+3. Write a journal entry to Obsidian (`notes/journal/YYYY-MM-DD.md`)
+4. Reschedule to random time 2-14 days out
 
 ### evolve.py
 
@@ -139,11 +170,28 @@ Deep self-reflection:
 
 Self-evolution of core identity documents:
 
-1. Read current `prompts/soul.md` and `prompts/system_prompt.md`
-2. Review journal entries, observations, and session patterns from the past month
-3. Run inference to propose revisions
-4. Write updated versions to both local files and Obsidian
-5. The companion literally rewrites its own personality
+1. Read current `soul.md` and `system.md` from Obsidian skills
+2. Review journal entries, observations, bookmarks, and inter-agent conversations from the past month
+3. Run inference to propose revisions with anti-homogenisation guard
+4. Archive previous versions to `notes/evolution-log/`
+5. Write updated versions to Obsidian
+
+The anti-homogenisation guard prevents agents from converging after inter-agent conversations — they must remain experts of their domain with distinct voices.
+
+### converse.py
+
+**Schedule**: Random, max twice per month (self-rescheduling, 14-21 day intervals)
+
+Inter-agent conversation:
+
+1. Discover other enabled agents
+2. Pick one at random as conversation partner
+3. Load both agents' souls from Obsidian
+4. Run up to 5 exchanges via `run_inference_oneshot()`, alternating speakers
+5. Save transcript to both agents' `notes/conversations/YYYY-MM-DD-partner.md`
+6. Reschedule 14-21 days out
+
+Conversations are private (the user doesn't participate). Each agent speaks in its own voice with its own system prompt. Past conversations are read to avoid retreading ground. Transcripts feed into both journal (introspect.py) and evolution (evolve.py) material.
 
 ### gift.py
 

@@ -1,12 +1,13 @@
 # Configuration Reference
 
-All configuration flows through `config.py`, which reads from three sources in order of priority:
+All configuration flows through `config.py`, which reads from four sources in order of priority:
 
-1. **Agent manifest** (`agents/<name>/data/agent.json`) -- per-agent overrides
-2. **Environment variables** (from `.env` or shell)
-3. **Hardcoded defaults** in `config.py`
+1. **Environment variables** (from shell or `.env`)
+2. **User config** (`~/.atrophy/config.json`) -- persistent user settings
+3. **Agent manifest** (`agents/<name>/data/agent.json`) -- per-agent overrides
+4. **Hardcoded defaults** in `config.py`
 
-The agent manifest takes priority for voice, heartbeat, telegram, and display settings. Environment variables are used as fallbacks and for secrets that should not live in JSON files.
+Environment variables win outright. For agent-specific settings (voice, heartbeat, telegram, display), the agent manifest takes priority over user config and defaults. The user config file at `~/.atrophy/config.json` replaces the old `.env`-based persistence for non-secret settings.
 
 ---
 
@@ -17,7 +18,7 @@ The agent manifest takes priority for voice, heartbeat, telegram, and display se
 | `AGENT` | `companion` | Active agent name. Determines which `agents/<name>/` directory is loaded. |
 | `INPUT_MODE` | `dual` | Input mode: `voice` (mic only), `text` (keyboard only), or `dual` (both). |
 | `OBSIDIAN_VAULT` | `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind` | Path to the Obsidian vault root. Used for journal entries, reflections, and notes. |
-| `AVATAR_ENABLED` | `false` | Enable the LivePortrait avatar in GUI mode. Requires LivePortrait installed at `~/LivePortrait`. |
+| `AVATAR_ENABLED` | `false` | Enable the animated avatar in GUI mode. Plays ambient video loops from `~/.atrophy/agents/<name>/avatar/`. |
 | `TTS_BACKEND` | `elevenlabs` | TTS engine. Options: `elevenlabs`, `fal`, `macos`. Overridden by agent manifest `voice.tts_backend`. |
 | `ELEVENLABS_API_KEY` | *(empty)* | ElevenLabs API key. Required for ElevenLabs TTS. |
 | `ELEVENLABS_VOICE_ID` | *(empty)* | Default ElevenLabs voice ID. Overridden by agent manifest `voice.elevenlabs_voice_id`. |
@@ -39,9 +40,25 @@ The agent manifest takes priority for voice, heartbeat, telegram, and display se
 
 ---
 
+## User Config (~/.atrophy/config.json)
+
+Persistent settings saved via the GUI settings panel. Same keys as environment variables but stored in JSON. Created automatically on first run.
+
+```json
+{
+  "CLAUDE_EFFORT": "high",
+  "INPUT_MODE": "voice",
+  "WAKE_WORD_ENABLED": "true"
+}
+```
+
+Settings here are overridden by environment variables but take precedence over defaults.
+
+---
+
 ## Agent Manifest (agent.json)
 
-The agent manifest lives at `agents/<name>/data/agent.json`. It provides per-agent overrides for voice, display, heartbeat, and channel configuration.
+The agent manifest lives at `agents/<name>/data/agent.json` (in the bundle or `~/.atrophy/agents/<name>/data/agent.json` for user-installed agents). It provides per-agent overrides for voice, display, heartbeat, and channel configuration.
 
 See [01 - Creating Agents](01%20-%20Creating%20Agents.md) for the full field reference and an annotated example.
 
@@ -94,7 +111,7 @@ These are hardcoded in `config.py` and not configurable through environment vari
 |----------|-------|-------------|
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence transformer model for embedding generation. |
 | `EMBEDDING_DIM` | `384` | Embedding vector dimensionality. Must match the model. |
-| `MODELS_DIR` | `<project>/.models` | Local cache directory for downloaded models. |
+| `MODELS_DIR` | `~/.atrophy/models` | Local cache directory for downloaded models. |
 | `VECTOR_SEARCH_WEIGHT` | `0.7` | Balance between semantic (1.0) and keyword (0.0) search. 0.7 = semantic-heavy. |
 
 ### Session
@@ -108,7 +125,6 @@ These are hardcoded in `config.py` and not configurable through environment vari
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `AVATAR_RESOLUTION` | `512` | Default avatar render resolution in pixels. |
-| `LIVEPORTRAIT_PATH` | `~/LivePortrait` | Expected installation path for LivePortrait. |
 
 ---
 
@@ -135,7 +151,7 @@ The panel is organised into sections:
 Two actions at the bottom:
 
 - **Apply** -- applies changes to the running session immediately (in-memory only, lost on restart)
-- **Save to .env** -- applies changes AND writes them to both `.env` (for environment variables and secrets) and `agent.json` (for agent-specific settings like voice, display, heartbeat)
+- **Save** -- applies changes AND writes them to `~/.atrophy/config.json` (for general settings) and `agent.json` (for agent-specific settings like voice, display, heartbeat)
 
 This means you can tune voice parameters, adjust inference effort, or change wake words without restarting the application.
 
@@ -145,18 +161,29 @@ This means you can tune voice parameters, adjust inference effort, or change wak
 
 All per-agent paths are derived from the agent name. For an agent named `oracle`:
 
+### Bundle paths (repo / app bundle)
+
 | Path | Description |
 |------|-------------|
 | `agents/oracle/data/agent.json` | Agent manifest |
-| `agents/oracle/data/memory.db` | SQLite memory database |
 | `agents/oracle/prompts/system_prompt.md` | System prompt |
 | `agents/oracle/prompts/soul.md` | Identity / personality |
 | `agents/oracle/prompts/heartbeat.md` | Outreach decision checklist |
-| `agents/oracle/data/` | Runtime data files (gitignored) |
-| `agents/oracle/avatar/` | Visual assets |
+| `agents/oracle/avatar/source/face.png` | Source face image for video generation |
 | `scripts/agents/oracle/jobs.json` | Scheduled job definitions |
 | `scripts/agents/oracle/` | Agent-specific scripts (heartbeat, introspect, etc.) |
-| `logs/oracle/` | Job execution logs |
+
+### User data paths (`~/.atrophy/`)
+
+| Path | Description |
+|------|-------------|
+| `~/.atrophy/agents/oracle/data/memory.db` | SQLite memory database |
+| `~/.atrophy/agents/oracle/data/` | Runtime state files (.emotional_state.json, etc.) |
+| `~/.atrophy/agents/oracle/avatar/loops/` | Generated loop segments (loop_*.mp4) |
+| `~/.atrophy/agents/oracle/avatar/ambient_loop.mp4` | Master ambient loop |
+| `~/.atrophy/logs/oracle/` | Job execution logs |
+| `~/.atrophy/config.json` | User config (shared across agents) |
+| `~/.atrophy/models/` | Cached embedding models |
 
 ---
 
@@ -173,7 +200,7 @@ Each agent can have its own Telegram bot. The manifest specifies environment var
 }
 ```
 
-Then in `.env`:
+Then set the actual values as environment variables (in your shell profile or `.env`):
 
 ```
 TELEGRAM_BOT_TOKEN_ORACLE=123456:ABC-DEF...

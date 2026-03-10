@@ -26,11 +26,13 @@ cd the-atrophied-mind
 pip install -r requirements.txt
 ```
 
-The project uses a `.env` file for secrets and configuration. Create one from the template or manually:
+The project uses environment variables for secrets and `~/.atrophy/config.json` for persistent settings. Create a `.env` file for secrets:
 
 ```bash
 cp .env.example .env  # if available, or create .env manually
 ```
+
+On first run, the system creates `~/.atrophy/` automatically with the user data directory structure.
 
 ---
 
@@ -54,9 +56,11 @@ The binary ends up at `vendor/whisper.cpp/build/bin/whisper-cli` and the model a
 
 ---
 
-## Configure .env
+## Configure Secrets
 
 At minimum, add your ElevenLabs key if you want voice output. Everything else has defaults.
+
+Create a `.env` file in the project root with your API keys:
 
 ```
 ELEVENLABS_API_KEY=...        # For TTS
@@ -64,10 +68,12 @@ ELEVENLABS_VOICE_ID=...      # Voice to use (from ElevenLabs voice library)
 TELEGRAM_BOT_TOKEN=...       # Optional: for unprompted outreach
 TELEGRAM_CHAT_ID=...         # Optional: your Telegram chat ID
 OBSIDIAN_VAULT=...           # Optional: path to Obsidian vault root
-AVATAR_ENABLED=false         # Set true if LivePortrait is installed
+AVATAR_ENABLED=true          # Set true to enable animated avatar
 ```
 
-See [02 - Configuration Reference](02%20-%20Configuration%20Reference.md) for the full list of environment variables.
+Non-secret settings can also be saved via the GUI settings panel, which writes to `~/.atrophy/config.json`.
+
+See [02 - Configuration Reference](02%20-%20Configuration%20Reference.md) for the full list of configuration options.
 
 ---
 
@@ -116,7 +122,7 @@ Additional keyboard shortcuts:
 | Cmd+C | Copy selected text, or last companion message if nothing is selected |
 | Escape | Close the chat overlay |
 
-The **Settings panel** (gear icon or Cmd+,) lets you adjust all configuration live -- voice settings, input mode, inference effort, memory parameters, heartbeat schedule, wake words, and more. Changes can be applied immediately to the running session, or saved to `.env` and `agent.json` for persistence across restarts.
+The **Settings panel** (gear icon or Cmd+,) lets you adjust all configuration live -- voice settings, input mode, inference effort, memory parameters, heartbeat schedule, wake words, and more. Changes can be applied immediately to the running session, or saved to `~/.atrophy/config.json` and `agent.json` for persistence across restarts.
 
 ---
 
@@ -124,7 +130,7 @@ The **Settings panel** (gear icon or Cmd+,) lets you adjust all configuration li
 
 On first run, the companion:
 
-1. Initializes its SQLite database from `db/schema.sql` (stored at `agents/companion/data/memory.db`)
+1. Creates `~/.atrophy/` directory structure and initializes its SQLite database from `db/schema.sql` (stored at `~/.atrophy/agents/companion/data/memory.db`)
 2. Starts a new session
 3. Delivers its opening line (configured in `agents/companion/data/agent.json`)
 

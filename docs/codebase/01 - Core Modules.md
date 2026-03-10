@@ -94,7 +94,7 @@ System prompt assembly.
 def load_system_prompt() -> str
 ```
 
-Reads from Obsidian first (`<OBSIDIAN_AGENT_DIR>/skills/system.md`), falls back to `agents/<name>/prompts/system_prompt.md`, then a minimal default.
+Reads from Obsidian first (`<OBSIDIAN_AGENT_DIR>/skills/system.md`), falls back to `agents/<name>/prompts/system_prompt.md` (from the bundle or `~/.atrophy/agents/<name>/prompts/`), then a minimal default.
 
 ```python
 def assemble_context(turn_history) -> tuple[str, list[dict]]

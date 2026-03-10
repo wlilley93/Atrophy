@@ -13,7 +13,7 @@ The MCP server is launched as a subprocess by the `claude` CLI. Configuration is
       "command": "/path/to/python",
       "args": ["mcp/memory_server.py"],
       "env": {
-        "COMPANION_DB": "agents/<name>/data/memory.db",
+        "COMPANION_DB": "~/.atrophy/agents/<name>/data/memory.db",
         "OBSIDIAN_VAULT": "~/Library/Mobile Documents/.../The Atrophied Mind",
         "OBSIDIAN_AGENT_DIR": "<vault>/<agent_display_name>",
         "OBSIDIAN_AGENT_NOTES": "<vault>/<agent>/agents/<name>",
@@ -161,7 +161,7 @@ Send a proactive Telegram message. Rate limited to 5 per day.
 
 ### read_note
 
-Read a note from the Obsidian vault.
+Read a note from the Obsidian vault. Path is validated against traversal attacks — `_safe_vault_path()` resolves the real path and rejects anything that escapes the vault boundary.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -169,7 +169,7 @@ Read a note from the Obsidian vault.
 
 ### write_note
 
-Write or append to a note. New notes get YAML frontmatter (type, created, updated, agent, tags).
+Write or append to a note. New notes get YAML frontmatter (type, created, updated, agent, tags). Same path traversal protection as `read_note`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -253,3 +253,52 @@ Review the tool call audit log.
 |-----------|------|----------|-------------|
 | `limit` | integer | no | Recent entries to show (default 20) |
 | `flagged_only` | boolean | no | Only show flagged calls |
+
+### set_reminder
+
+Set a one-off alarm at a specific time. Fires as a macOS notification with sound.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `time` | string | yes | ISO 8601 or natural time (e.g. "3pm", "2026-03-10T15:00") |
+| `message` | string | yes | What to remind about |
+
+### set_timer
+
+Start a local countdown timer overlay.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `seconds` | integer | yes | Duration in seconds |
+| `label` | string | yes | What the timer is for |
+
+### create_task
+
+Schedule a recurring prompt-based task via cron.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | yes | Task identifier |
+| `prompt` | string | yes | What the task should do |
+| `cron` | string | yes | 5-field cron schedule |
+| `sources` | array | no | Data sources to fetch before running |
+
+### defer_to_agent
+
+Hand off conversation to another agent.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `target` | string | yes | Agent slug to defer to |
+| `context` | string | yes | Why this agent is better suited |
+| `user_question` | string | yes | The user's original question |
+
+### add_avatar_loop
+
+Generate a new ambient avatar loop segment via Kling.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | yes | Short name for the loop (used as filename) |
+| `prompt` | string | yes | Cinematic description of expression/movement |
+| `agent` | string | no | Target agent (defaults to current) |

@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from config import DB_PATH, AGENT_DIR
+from config import DB_PATH, AGENT_DIR, AGENT_DISPLAY_NAME
 from core.memory import _connect, write_observation
 from core.inference import run_inference_oneshot
 
@@ -112,7 +112,7 @@ def observe():
     # Build transcript
     transcript_lines = []
     for t in turns:
-        role = "Will" if t["role"] == "will" else "Companion"
+        role = "Will" if t["role"] == "will" else AGENT_DISPLAY_NAME
         content = t["content"]
         if len(content) > 500:
             content = content[:500] + "..."

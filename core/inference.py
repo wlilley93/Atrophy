@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from config import CLAUDE_BIN, CLAUDE_EFFORT, ADAPTIVE_EFFORT, DB_PATH, MCP_SERVER_SCRIPT, OBSIDIAN_VAULT, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, AGENT_NAME
+from config import CLAUDE_BIN, CLAUDE_EFFORT, ADAPTIVE_EFFORT, DB_PATH, MCP_SERVER_SCRIPT, OBSIDIAN_VAULT, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, AGENT_NAME, AGENT_DISPLAY_NAME, DISABLED_TOOLS
 from core.thinking import classify_effort
 from core.agency import (
     time_of_day_context, detect_mood_shift, mood_shift_system_note,
@@ -69,6 +69,13 @@ def _env():
 
 _mcp_config: str | None = None
 
+
+def reset_mcp_config():
+    """Clear cached MCP config so it's regenerated for the new agent."""
+    global _mcp_config
+    _mcp_config = None
+
+
 def _mcp_config_path() -> str:
     """Write MCP config once, return cached path on subsequent calls.
 
@@ -90,7 +97,14 @@ def _mcp_config_path() -> str:
                 "OBSIDIAN_AGENT_NOTES": str(OBSIDIAN_AGENT_NOTES),
                 "AGENT": AGENT_NAME,
             },
-        }
+        },
+        "puppeteer": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+            "env": {
+                "PUPPETEER_LAUNCH_OPTIONS": json.dumps({"headless": True}),
+            },
+        },
     }
 
     # Import global MCP servers from Claude Code settings
@@ -155,7 +169,7 @@ def _agency_context(user_message: str) -> str:
     from core.memory import (
         get_current_session_mood, get_last_session_time,
         get_active_threads, get_context_injection,
-        get_recent_companion_turns,
+        get_recent_companion_turns, get_other_agents_recent_summaries,
     )
 
     # Auto-detect emotional signals and apply them
@@ -225,6 +239,25 @@ def _agency_context(user_message: str) -> str:
 
     parts.append("If a new topic emerges or an existing thread shifts, use track_thread to keep your threads current.")
 
+    # Cross-agent awareness — what other agents have been discussing with Will
+    try:
+        other_agents = get_other_agents_recent_summaries(n_per_agent=2, max_agents=5)
+        if other_agents:
+            cross_parts = ["## Other Agents — Recent Activity"]
+            for oa in other_agents:
+                cross_parts.append(f"### {oa['display_name']}")
+                for s in oa["summaries"]:
+                    mood_tag = f" [{s['mood']}]" if s.get("mood") else ""
+                    cross_parts.append(f"[{s['created_at']}]{mood_tag} {s['content']}")
+            cross_parts.append(
+                "You can see what Will discussed with other agents. Reference it "
+                "naturally if relevant — don't force it. Use recall_other_agent to "
+                "search deeper if needed."
+            )
+            parts.append("\n".join(cross_parts))
+    except Exception:
+        pass  # Non-critical — don't break context assembly
+
     # Energy matching
     energy = energy_note(user_message)
     if energy:
@@ -279,7 +312,7 @@ def stream_inference(
             "--include-partial-messages",
             "--resume", cli_session_id,
             "--mcp-config", mcp_config,
-            "--allowedTools", "mcp__*",
+            "--allowedTools", "mcp__memory__*,mcp__puppeteer__*,mcp__fal__*",
             "-p", f"[Current context: {_agency_context(user_message)}]\n\n{user_message}",
         ]
     else:
@@ -294,8 +327,8 @@ def stream_inference(
             "--session-id", cli_session_id,
             "--system-prompt", system + "\n\n---\n\n## Current Context\n\n" + _agency_context(user_message),
             "--mcp-config", mcp_config,
-            "--allowedTools", "mcp__*",
-            "--disallowedTools", ",".join(_TOOL_BLACKLIST),
+            "--allowedTools", "mcp__memory__*,mcp__puppeteer__*,mcp__fal__*",
+            "--disallowedTools", ",".join(_TOOL_BLACKLIST + DISABLED_TOOLS),
             "-p", user_message,
         ]
 
@@ -495,7 +528,7 @@ def run_inference_oneshot(messages: list[dict], system: str,
                          effort: str = "low") -> str:
     prompt_parts = []
     for msg in messages:
-        role_label = "Will" if msg["role"] == "user" else "Companion"
+        role_label = "Will" if msg["role"] == "user" else AGENT_DISPLAY_NAME
         prompt_parts.append(f"{role_label}: {msg['content']}")
     full_prompt = "\n".join(prompt_parts)
 

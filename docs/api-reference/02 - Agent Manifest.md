@@ -1,8 +1,8 @@
 # Agent Manifest Reference
 
-Each agent is defined by an `agent.json` file in its data directory under `agents/{name}/data/`. The manifest configures identity, voice synthesis, communication channels, display, scheduled behaviors, and Obsidian integration.
+Each agent is defined by an `agent.json` file. The manifest lives in the agent's data directory — either bundled (`agents/{name}/data/agent.json`) or user-installed (`~/.atrophy/agents/{name}/data/agent.json`). User-installed agents take precedence. The manifest configures identity, voice synthesis, communication channels, display, scheduled behaviors, and Obsidian integration.
 
-File path: `agents/{name}/data/agent.json`
+File path: `agents/{name}/data/agent.json` (bundle) or `~/.atrophy/agents/{name}/data/agent.json` (user-installed)
 
 ---
 
@@ -141,7 +141,7 @@ Agent workspaces in Obsidian are resolved automatically from the agent name:
 {OBSIDIAN_VAULT}/Projects/{project-name}/agents/{agent-name}/
 ```
 
-No manifest field is needed — `config.py` derives the path from `PROJECT_ROOT.name` and `AGENT_NAME`.
+No manifest field is needed — `config.py` derives the path from `BUNDLE_ROOT.name` and `AGENT_NAME`.
 
 ---
 
@@ -151,6 +151,7 @@ No manifest field is needed — `config.py` derives the path from `PROJECT_ROOT.
 {
   "name": "companion",
   "display_name": "Companion",
+  "description": "Personal companion — emotionally aware, memory-bearing, self-evolving",
   "user_name": "Will",
   "opening_line": "Ready. Where are we?",
   "wake_words": ["hey companion", "companion"],
@@ -177,6 +178,8 @@ No manifest field is needed — `config.py` derives the path from `PROJECT_ROOT.
     "active_start": 9,
     "active_end": 22,
     "interval_mins": 30
-  }
+  },
+  "avatar_description": "A woman in her mid-thirties...",
+  "disabled_tools": []
 }
 ```

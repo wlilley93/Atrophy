@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from config import DB_PATH, IDENTITY_QUEUE as _IDENTITY_QUEUE
+from config import DB_PATH, AGENT_DISPLAY_NAME as agent_display_name, IDENTITY_QUEUE as _IDENTITY_QUEUE
 from core.memory import (
     _connect,
     get_active_threads,
@@ -81,7 +81,7 @@ def _gather_material() -> str:
     if turns:
         turn_lines = []
         for t in turns:
-            role = "Will" if t["role"] == "will" else "Companion"
+            role = "Will" if t["role"] == "will" else agent_display_name
             content = t["content"]
             if len(content) > 500:
                 content = content[:500] + "..."

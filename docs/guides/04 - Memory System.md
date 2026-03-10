@@ -1,6 +1,6 @@
 # Memory System
 
-The companion's memory is a three-layer architecture stored in a per-agent SQLite database at `agents/<name>/data/memory.db`. Each layer serves a different purpose, and they work together to give the agent continuity across sessions.
+The companion's memory is a three-layer architecture stored in a per-agent SQLite database at `~/.atrophy/agents/<name>/data/memory.db`. Each layer serves a different purpose, and they work together to give the agent continuity across sessions.
 
 ---
 
@@ -154,7 +154,7 @@ Reindexing is safe to run multiple times. It overwrites existing embeddings with
 
 ### Database Location
 
-Each agent has its own database at `agents/<name>/data/memory.db`. There is no shared memory between agents.
+Each agent has its own database at `~/.atrophy/agents/<name>/data/memory.db`. There is no shared memory between agents.
 
 ### Sleep Cycle
 

@@ -455,6 +455,37 @@ Generate and render a visual graph of active threads and recent observations in 
 
 ---
 
+## Avatar
+
+### add_avatar_loop
+
+Request generation of a new ambient video loop segment for the agent's avatar. The loop is generated asynchronously in the background using Kling 3.0 via Fal. Each segment is a paired clip sequence (neutral → expression → neutral) with crossfade transitions.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Short name for the loop segment (e.g. `contemplation`, `amusement`) |
+| `prompt` | string | Yes | Description of the expression/movement to generate |
+
+**Behavior:**
+1. Writes a request file to `~/.atrophy/agents/<name>/avatar/.loop_requests/<name>.json`
+2. Launches `scripts/generate_loop_segment.py` in the background
+3. The script generates two clips (neutral→expression, expression→neutral), crossfades them, and rebuilds the master `ambient_loop.mp4`
+
+**Returns:** "Loop segment '{name}' queued for generation." or a status update if the segment already exists.
+
+**Example:**
+```json
+{
+  "name": "add_avatar_loop",
+  "arguments": {
+    "name": "curiosity",
+    "prompt": "A slight tilt of the head, eyes narrowing with interest, one eyebrow lifting faintly"
+  }
+}
+```
+
+---
+
 ## Scheduling & Audit
 
 ### manage_schedule

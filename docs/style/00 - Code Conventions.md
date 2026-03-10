@@ -14,8 +14,8 @@ Style guide for The Atrophied Mind codebase.
 
 ## Architecture Patterns
 
-- **Agent-aware** — All paths derive from `AGENT_NAME`, loaded from `agents/<name>/`. Config reads the agent manifest at import time. Per-agent isolation means separate databases, data directories, and identity files.
-- **Env-var driven** — Every setting has an env var override. The agent manifest can also override voice, heartbeat, display, and Telegram settings. Env vars win over manifest values where both exist.
+- **Agent-aware** — All paths derive from `AGENT_NAME`. Config reads the agent manifest at import time from `BUNDLE_ROOT/agents/<name>/` or `USER_DATA/agents/<name>/`. Per-agent isolation means separate databases, data directories, and identity files. Runtime state lives in `~/.atrophy/agents/<name>/`, not in the bundle.
+- **Three-tier config** — Resolution order: env vars → `~/.atrophy/config.json` → agent manifest → defaults. Env vars win outright. Agent manifest overrides voice, heartbeat, display, and Telegram settings.
 - **Obsidian optional** — Always check existence before reading Obsidian paths. Provide fallbacks. The system must work without a vault connected.
 - **Streaming-first** — Prefer generators and event streams over blocking calls. Inference streams token-by-token; TTS streams audio chunks.
 - **Async where it matters** — Background threads for I/O-bound work (embedding writes, TTS synthesis). Not forced everywhere. The main conversation loop is synchronous.
@@ -32,7 +32,7 @@ display/            GUI only (PyQt5 window, HTML canvas overlay)
 channels/           External communication (Telegram)
 mcp/                MCP server (runs as subprocess, exposes memory tools)
 scripts/            CLI tools and scheduled jobs
-agents/<name>/      Per-agent identity (prompts/), data (data/), avatar assets
+agents/<name>/      Per-agent identity (prompts/), manifest (data/), source avatar assets
 db/                 Schema only (databases live in agent dirs)
 docs/               All documentation
 ```

@@ -36,7 +36,13 @@ All buttons use custom `paintEvent` rendering (no image assets) with dark semi-t
 
 ### Settings Panel
 
-`SettingsPanel` is a full-screen overlay (`QWidget`) with a scrollable form. Sections: Agent Identity, Window, Voice & TTS, Input, Audio Capture, Inference, Memory & Context, Session, Heartbeat, Paths, Telegram.
+`SettingsPanel` is a full-screen overlay (`QWidget`) with a scrollable form. Sections: Agents, Agent Identity, Tools, Window, Voice & TTS, Input, Notifications, Audio Capture, Inference, Memory & Context, Session, Heartbeat, Paths, Telegram, About.
+
+The **Agents** section lists all discovered agents with Switch/Muted/Enabled controls per agent, plus a **+ New Agent** button that launches `scripts/create_agent.py` in a Terminal window.
+
+The **Tools** section has per-agent checkboxes to enable/disable specific MCP tools (deferral, Telegram, reminders, timers, etc.).
+
+The **About** section shows the current version (from `VERSION` file), install path, and a **Check for Updates** button. If updates are available (checked via `git fetch` + `git rev-list`), an **Update Now** button appears that runs `git pull --ff-only`.
 
 Control types: sliders (for floats like stability/similarity), combo boxes (for enums like TTS backend), checkboxes (for booleans like avatar enabled), spinboxes (for integers like sample rate), text inputs (for strings like API keys, with password mode for secrets), and read-only info labels (for paths).
 

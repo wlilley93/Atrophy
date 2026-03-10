@@ -72,7 +72,7 @@
 - [[09_Grounding|Chapter 45: Grounding and Care]]
 
 ### Part X: Extended Systems
-- [[08_Extended|Chapter 46: iMessage, Notifications, and Scheduled Tasks]]
+- [[08_Extended|Chapter 46: HTTP Server, Menu Bar App, Notifications, and Scheduled Tasks]]
 
 ### Part XI: Future Directions and Philosophical Implications
 - [[10_Future|Chapter 47: Future Development]]

@@ -76,8 +76,8 @@ When a session starts:
 ```python
 if not session.cli_session_id:
     opening = "Ready. Where are we?"
-    session.add_turn("companion", opening)
-    print(f"  Companion: {opening}")
+    session.add_turn("agent", opening)
+    print(f"  {AGENT_DISPLAY_NAME}: {opening}")
     await speak(opening)
 else:
     # Resuming — proactive memory check

@@ -20,7 +20,7 @@ The user retains override authority through:
 The companion interacts with the local system exclusively through the MCP memory server (`mcp/memory_server.py`), which runs as a subprocess. The Claude CLI is invoked with `--allowedTools mcp__memory__*`, restricting tool access to the memory server's declared tool set. A separate `--disallowedTools` flag enforces a tool blacklist (see below).
 
 The MCP server has access to:
-- A single SQLite database (`agents/<name>/data/memory.db`)
+- A single SQLite database (`~/.atrophy/agents/<name>/data/memory.db`)
 - The agent's subdirectory within the Obsidian vault
 - Outbound Telegram API (rate-limited)
 - The local filesystem for canvas rendering (one file: `.canvas_content.html`)
@@ -76,6 +76,7 @@ Tool categories:
 - **Communication**: `ask_will`, `send_telegram`
 - **State**: `update_emotional_state`, `update_trust`
 - **Display**: `render_canvas`, `render_memory_graph`
+- **Avatar**: `add_avatar_loop`
 - **Admin**: `review_audit`, `manage_schedule`
 
 ### No Arbitrary Code Execution
@@ -88,11 +89,11 @@ The companion cannot write or execute code. It can write Markdown notes to Obsid
 
 ### Local Storage
 
-All persistent data is stored in per-agent SQLite databases at `agents/<name>/data/memory.db`. Databases use WAL journal mode for concurrent read safety and foreign keys for referential integrity.
+All persistent data is stored in per-agent SQLite databases at `~/.atrophy/agents/<name>/data/memory.db`. Databases use WAL journal mode for concurrent read safety and foreign keys for referential integrity.
 
 Each agent's data is fully isolated:
 - Separate database file
-- Separate data directory (`agents/<name>/data/`)
+- Separate data directory (`~/.atrophy/agents/<name>/data/`)
 - Separate Obsidian subdirectory
 - Separate Telegram bot token (referenced by environment variable name in `agent.json`, not stored directly)
 
@@ -105,7 +106,7 @@ The system sends no analytics, telemetry, or usage data to any party. The only o
 
 ### Obsidian Vault Access
 
-The companion reads and writes to its agent subdirectory within the Obsidian vault (`OBSIDIAN_AGENT_NOTES`). The `read_note` tool can read from any path within the vault root (allowing the companion to reference the user's notes), but `write_note` creates files within the vault structure. New notes receive automatic YAML frontmatter with agent attribution.
+The companion reads and writes to its agent subdirectory within the Obsidian vault (`OBSIDIAN_AGENT_NOTES`). The `read_note` and `write_note` tools accept paths relative to the vault root. All paths are validated against traversal attacks — the MCP server resolves the real path via `os.path.realpath()` and verifies it stays within `VAULT_PATH`. Paths containing `../` sequences that escape the vault boundary are rejected with an error. New notes receive automatic YAML frontmatter with agent attribution.
 
 ### Embedding Storage
 
@@ -144,7 +145,7 @@ Sessions trigger a soft limit check at 60 minutes (`SESSION_SOFT_LIMIT_MINS`). T
 
 ## Network Exposure
 
-The system opens no listening ports. All network communication is outbound.
+In default mode (`--app`, `--gui`, `--cli`, `--text`), the system opens no listening ports. All network communication is outbound.
 
 | Service | Protocol | Direction | Purpose |
 |---|---|---|---|
@@ -153,7 +154,19 @@ The system opens no listening ports. All network communication is outbound.
 | ElevenLabs API | HTTPS | Outbound | Text-to-speech synthesis |
 | Fal API | HTTPS | Outbound | Alternative TTS endpoint |
 
-The system cannot be reached from the network. There is no web server, no WebSocket listener, no SSH daemon, and no API endpoint.
+### Server Mode (`--server`)
+
+When run with `--server`, the system exposes an HTTP API. Security measures:
+
+- **Localhost only**: Binds to `127.0.0.1` by default. Must explicitly pass `--host 0.0.0.0` to expose to the network.
+- **Bearer token auth**: All endpoints except `/health` require `Authorization: Bearer <token>`. The token is auto-generated on first run using `secrets.token_urlsafe(32)` and stored at `~/.atrophy/server_token` with `0600` permissions.
+- **No CORS**: Flask default — no cross-origin requests permitted.
+- **No WebSocket**: Simple request/response only. No persistent connections that could be hijacked (unlike OpenClaw's ClawJacked vulnerability).
+
+To use the API:
+```bash
+curl -H "Authorization: Bearer $(cat ~/.atrophy/server_token)" http://localhost:5000/chat -d '{"message":"hello"}'
+```
 
 ---
 
@@ -165,9 +178,11 @@ All secrets are loaded from environment variables or a `.env` file at the projec
 
 Secrets managed:
 - `ELEVENLABS_API_KEY`: TTS API authentication
+- `FAL_KEY`: Image/video generation and alternative TTS
 - `TELEGRAM_BOT_TOKEN`: Per-agent Telegram bot (referenced by env var name in `agent.json`)
 - `TELEGRAM_CHAT_ID`: Per-agent chat target
 - `FAL_VOICE_ID`: Alternative TTS voice identifier
+- `~/.atrophy/server_token`: HTTP API bearer token (generated, not user-provided)
 
 ### Agent Configuration
 

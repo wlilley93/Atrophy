@@ -79,14 +79,16 @@ def _generate_plist(name: str, job: dict) -> dict:
 
     log_path = str(LOGS_DIR / f"{name}.log")
 
+    extra_args = job.get("args", [])
     plist = {
         'Label': label,
-        'ProgramArguments': [PYTHON, script_path],
+        'ProgramArguments': [PYTHON, script_path] + extra_args,
         'WorkingDirectory': str(PROJECT_ROOT),
         'StandardOutPath': log_path,
         'StandardErrorPath': log_path,
         'EnvironmentVariables': {
             'PATH': f"/usr/local/bin:/usr/bin:/bin:{Path(PYTHON).parent}",
+            'AGENT': AGENT_NAME,
         },
     }
 
@@ -199,10 +201,12 @@ def cmd_run(args):
         print(f"  Job '{name}' not found.")
         return
 
-    script_path = PROJECT_ROOT / jobs[name]["script"]
-    print(f"  Running {script_path}...")
+    job = jobs[name]
+    script_path = PROJECT_ROOT / job["script"]
+    extra_args = job.get("args", [])
+    print(f"  Running {script_path} {' '.join(extra_args)}...")
     result = subprocess.run(
-        [PYTHON, str(script_path)],
+        [PYTHON, str(script_path)] + extra_args,
         cwd=str(PROJECT_ROOT),
     )
     sys.exit(result.returncode)

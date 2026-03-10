@@ -6,9 +6,11 @@ Text streams token-by-token; TTS fires per-sentence in parallel.
 Memory writes are non-blocking.
 
 Modes:
+  --app     Menu bar app — no Dock icon, lives in system tray (primary)
+  --gui     Full PyQt5 window with avatar
   --cli     Voice/text loop in terminal (default)
   --text    Text-only mode (no mic, no TTS)
-  --gui     Full PyQt5 window with avatar
+  --server  HTTP API server (headless, for remote/web access)
 """
 import argparse
 import asyncio
@@ -179,7 +181,7 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
         session.set_cli_session_id(session_id)
 
     if full_text:
-        loop.run_in_executor(None, session.add_turn, "companion", full_text)
+        loop.run_in_executor(None, session.add_turn, "agent", full_text)
 
     # Pre-compaction memory flush
     if needs_memory_flush:
@@ -224,7 +226,7 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
 
         print("\n")
         if followup_text:
-            session.add_turn("companion", followup_text)
+            session.add_turn("agent", followup_text)
 
     # Signal TTS to finish, wait for remaining audio
     await tts_queue.put(None)
@@ -290,7 +292,7 @@ async def _process_turn_text_only(user_text: str, session: Session, system_promp
         session.set_cli_session_id(session_id)
 
     if full_text:
-        session.add_turn("companion", full_text)
+        session.add_turn("agent", full_text)
 
     # Pre-compaction memory flush
     if needs_memory_flush:
@@ -333,7 +335,7 @@ async def _process_turn_text_only(user_text: str, session: Session, system_promp
 
         print("\n")
         if followup_text:
-            session.add_turn("companion", followup_text)
+            session.add_turn("agent", followup_text)
 
 
 # ── CLI mode ──
@@ -368,7 +370,7 @@ async def run_cli():
     # First-ever session: opening line
     if not session.cli_session_id:
         opening = OPENING_LINE
-        session.add_turn("companion", opening)
+        session.add_turn("agent", opening)
         print(f"  {AGENT_DISPLAY_NAME}: {opening}")
         print()
         try:
@@ -401,7 +403,7 @@ async def run_cli():
                     await speak(limit_msg)
                 except Exception:
                     pass
-                session.add_turn("companion", limit_msg)
+                session.add_turn("agent", limit_msg)
 
             if mode == "voice":
                 print("  [hold Ctrl to speak...]", flush=True)
@@ -446,7 +448,7 @@ async def run_text_only():
 
     if not session.cli_session_id:
         opening = OPENING_LINE
-        session.add_turn("companion", opening)
+        session.add_turn("agent", opening)
         print(f"  {AGENT_DISPLAY_NAME}: {opening}")
         print()
     else:
@@ -589,7 +591,7 @@ def _cache_next_opening(system: str, cli_session_id: str | None, synth_fn):
         print(f"  [Failed to cache opening: {e}]")
 
 
-def run_gui():
+def run_gui(menu_bar_mode=False):
     from core.context import load_system_prompt
     from voice.tts import synthesise_sync
 
@@ -610,6 +612,7 @@ def run_gui():
         cli_session_id=session.cli_session_id,
         session=session,
         cached_opening_audio="",
+        menu_bar_mode=menu_bar_mode,
     )
 
 
@@ -618,9 +621,13 @@ def run_gui():
 def main():
     parser = argparse.ArgumentParser(description="The Atrophied Mind")
     parser.add_argument("--agent", default=None, help="Agent name (default: from AGENT env var)")
+    parser.add_argument("--app", action="store_true", help="Menu bar app — no Dock icon, lives in system tray")
     parser.add_argument("--gui", action="store_true", help="Launch with PyQt5 display")
-    parser.add_argument("--text", action="store_true", help="Text-only mode (no mic/TTS)")
     parser.add_argument("--cli", action="store_true", help="Voice+text loop (default)")
+    parser.add_argument("--text", action="store_true", help="Text-only mode (no mic/TTS)")
+    parser.add_argument("--server", action="store_true", help="HTTP API server (headless)")
+    parser.add_argument("--port", type=int, default=5000, help="Server port (default: 5000)")
+    parser.add_argument("--host", default="127.0.0.1", help="Server bind address (default: 127.0.0.1)")
     args = parser.parse_args()
 
     if args.agent:
@@ -630,8 +637,13 @@ def main():
         import config as _cfg
         importlib.reload(_cfg)
 
-    if args.gui:
+    if args.app:
+        run_gui(menu_bar_mode=True)
+    elif args.gui:
         run_gui()
+    elif args.server:
+        from server import run_server
+        run_server(port=args.port, host=args.host)
     elif args.text:
         asyncio.run(run_text_only())
     else:

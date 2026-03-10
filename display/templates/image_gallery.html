@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a1a; color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100vh; overflow: hidden;
+    user-select: none;
+  }
+  .gallery { position: relative; width: 100%; max-width: 480px; text-align: center; padding: 16px; }
+  .preview-container {
+    position: relative; width: 100%; aspect-ratio: 3/4;
+    border-radius: 10px; overflow: hidden; background: #111;
+  }
+  .preview-container img {
+    width: 100%; height: 100%; object-fit: cover;
+    transition: opacity 0.25s ease;
+  }
+  .preview-container img.loading { opacity: 0.3; }
+  .nav {
+    display: flex; justify-content: center; align-items: center;
+    gap: 24px; margin-top: 16px;
+  }
+  .nav button {
+    background: #2a2a2a; border: 1px solid #444; color: #e0e0e0;
+    width: 48px; height: 48px; border-radius: 50%; cursor: pointer;
+    font-size: 20px; display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .nav button:hover { background: #3a3a3a; border-color: #666; }
+  .nav button:active { transform: scale(0.95); }
+  .counter {
+    font-size: 22px; font-weight: 600; min-width: 70px;
+    text-align: center; font-variant-numeric: tabular-nums;
+  }
+  .thumbnails {
+    display: flex; gap: 6px; margin-top: 14px;
+    justify-content: center; flex-wrap: wrap;
+  }
+  .thumb {
+    width: 40px; height: 53px; border-radius: 4px; overflow: hidden;
+    border: 2px solid transparent; cursor: pointer;
+    transition: all 0.15s; opacity: 0.5;
+  }
+  .thumb.active { border-color: #fff; opacity: 1; }
+  .thumb:hover { opacity: 0.8; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .hint {
+    color: #666; font-size: 13px; margin-top: 14px;
+    line-height: 1.4;
+  }
+  .title {
+    font-size: 14px; font-weight: 500; color: #888;
+    margin-bottom: 12px; letter-spacing: 0.5px; text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="gallery">
+  <div class="title">Choose a face</div>
+  <div class="preview-container">
+    <img id="preview" src="" alt="Candidate" />
+  </div>
+  <div class="nav">
+    <button onclick="prev()" aria-label="Previous">&#9664;</button>
+    <span class="counter" id="counter">1 / 10</span>
+    <button onclick="next()" aria-label="Next">&#9654;</button>
+  </div>
+  <div class="thumbnails" id="thumbs"></div>
+  <p class="hint">Arrow keys to browse. Tell me which number you like.</p>
+</div>
+<script id="gallery-data" type="application/json">__IMAGES_JSON__</script>
+<script>
+  const images = JSON.parse(document.getElementById('gallery-data').textContent);
+  let current = 0;
+  const img = document.getElementById('preview');
+  const counter = document.getElementById('counter');
+  const thumbsEl = document.getElementById('thumbs');
+
+  // Build thumbnails
+  images.forEach((url, i) => {
+    const div = document.createElement('div');
+    div.className = 'thumb' + (i === 0 ? ' active' : '');
+    const thumbImg = document.createElement('img');
+    thumbImg.src = url;
+    div.appendChild(thumbImg);
+    div.onclick = () => show(i);
+    thumbsEl.appendChild(div);
+  });
+
+  function show(i) {
+    current = ((i % images.length) + images.length) % images.length;
+    img.classList.add('loading');
+    img.onload = () => img.classList.remove('loading');
+    img.src = images[current];
+    counter.textContent = (current + 1) + ' / ' + images.length;
+    document.querySelectorAll('.thumb').forEach((t, j) => {
+      t.classList.toggle('active', j === current);
+    });
+  }
+
+  function prev() { show(current - 1); }
+  function next() { show(current + 1); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') prev();
+    else if (e.key === 'ArrowRight') next();
+  });
+
+  // Preload all images
+  images.forEach(url => { new Image().src = url; });
+  show(0);
+</script>
+</body>
+</html>

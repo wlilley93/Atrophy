@@ -11,7 +11,14 @@ def send_notification(title: str, body: str, subtitle: str = ""):
 
     Uses AppleScript for reliability — no pyobjc dependency required.
     If the companion app is running, clicking the notification brings it forward.
+    Gated by NOTIFICATIONS_ENABLED config — silenced when disabled.
     """
+    try:
+        from config import NOTIFICATIONS_ENABLED
+        if not NOTIFICATIONS_ENABLED:
+            return
+    except ImportError:
+        pass
     # Escape for AppleScript string literals
     for char in (('\\', '\\\\'), ('"', '\\"')):
         title = title.replace(*char)

@@ -1,15 +1,152 @@
-"""Central configuration. Agent-aware — loads identity from agents/<name>/."""
+"""Central configuration — three-tier path resolution.
+
+Resolution order (highest wins):
+  1. Environment variables
+  2. User config     (~/.atrophy/config.json)
+  3. Agent manifest  (agents/<name>/data/agent.json — bundled or user-installed)
+  4. Hardcoded defaults
+
+Two root paths:
+  BUNDLE_ROOT — where the code lives (repo checkout or .app bundle)
+  USER_DATA   — ~/.atrophy/ — runtime state, memory DBs, user config
+
+Agent definitions (agent.json, prompts/) are searched in USER_DATA first,
+then BUNDLE_ROOT. This lets users install custom agents by dropping a folder
+into ~/.atrophy/agents/<name>/.
+"""
 import json
 import os
 from pathlib import Path
 
-# Paths
-PROJECT_ROOT = Path(__file__).parent
-SCHEMA_PATH = PROJECT_ROOT / "db" / "schema.sql"
+
+# ── Root paths ──
+BUNDLE_ROOT = Path(os.environ.get("ATROPHY_BUNDLE", str(Path(__file__).parent)))
+USER_DATA = Path(os.environ.get("ATROPHY_DATA", str(Path.home() / ".atrophy")))
+
+
+def ensure_user_data():
+    """Create ~/.atrophy/ structure on first run. Safe to call repeatedly."""
+    dirs = [
+        USER_DATA,
+        USER_DATA / "agents",
+        USER_DATA / "logs",
+        USER_DATA / "models",
+    ]
+    for d in dirs:
+        d.mkdir(parents=True, exist_ok=True)
+
+    # Seed config.json if missing
+    cfg_path = USER_DATA / "config.json"
+    if not cfg_path.exists():
+        cfg_path.write_text(json.dumps({}, indent=2) + "\n")
+
+    # Migrate legacy data from bundle (agents/<name>/data/) to ~/.atrophy/agents/<name>/data/
+    _migrate_legacy_data()
+
+
+def _migrate_legacy_data():
+    """One-time migration: copy runtime data from repo to ~/.atrophy/."""
+    import shutil
+    bundle_agents = BUNDLE_ROOT / "agents"
+    if not bundle_agents.is_dir():
+        return
+    for agent_dir in bundle_agents.iterdir():
+        if not agent_dir.is_dir():
+            continue
+        # Migrate data/ files
+        old_data = agent_dir / "data"
+        new_data = USER_DATA / "agents" / agent_dir.name / "data"
+        if old_data.is_dir():
+            new_data.mkdir(parents=True, exist_ok=True)
+            for f in old_data.iterdir():
+                if f.name == "agent.json":
+                    continue  # manifest stays in bundle
+                dest = new_data / f.name
+                if not dest.exists() and f.is_file():
+                    shutil.copy2(f, dest)
+        # Migrate avatar/loops/ and avatar/*.mp4 to user cache
+        old_avatar = agent_dir / "avatar"
+        new_avatar = USER_DATA / "agents" / agent_dir.name / "avatar"
+        if old_avatar.is_dir():
+            # Copy loops/
+            old_loops = old_avatar / "loops"
+            if old_loops.is_dir():
+                new_loops = new_avatar / "loops"
+                new_loops.mkdir(parents=True, exist_ok=True)
+                for f in old_loops.iterdir():
+                    dest = new_loops / f.name
+                    if not dest.exists() and f.is_file():
+                        shutil.copy2(f, dest)
+            # Copy top-level video files
+            for f in old_avatar.iterdir():
+                if f.is_file() and f.suffix == ".mp4":
+                    new_avatar.mkdir(parents=True, exist_ok=True)
+                    dest = new_avatar / f.name
+                    if not dest.exists():
+                        shutil.copy2(f, dest)
+
+
+# Run on import — lightweight, idempotent
+ensure_user_data()
+
+
+# ── User config (from ~/.atrophy/config.json) ──
+_user_cfg_path = USER_DATA / "config.json"
+_user_cfg: dict = {}
+if _user_cfg_path.exists():
+    try:
+        _user_cfg = json.loads(_user_cfg_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        _user_cfg = {}
+
+
+def _cfg(key: str, default=None):
+    """Read from env var first, then config.json, then default."""
+    env = os.environ.get(key)
+    if env is not None:
+        return env
+    return _user_cfg.get(key, default)
+
+
+def save_user_config(updates: dict):
+    """Merge updates into ~/.atrophy/config.json and write."""
+    global _user_cfg
+    _user_cfg.update(updates)
+    _user_cfg_path.write_text(json.dumps(_user_cfg, indent=2) + "\n")
+
+
+# ── Version ──
+_version_file = BUNDLE_ROOT / "VERSION"
+VERSION = _version_file.read_text().strip() if _version_file.exists() else "0.0.0"
+
+# ── Schema ──
+SCHEMA_PATH = BUNDLE_ROOT / "db" / "schema.sql"
 
 # ── Active agent ──
-AGENT_NAME = os.environ.get("AGENT", "companion")
-AGENT_DIR = PROJECT_ROOT / "agents" / AGENT_NAME
+AGENT_NAME = _cfg("AGENT", "companion")
+
+
+def _find_agent_dir(name: str) -> Path:
+    """Find agent definition — user-installed agents take precedence over bundled."""
+    user_agent = USER_DATA / "agents" / name
+    bundle_agent = BUNDLE_ROOT / "agents" / name
+    if (user_agent / "data" / "agent.json").exists():
+        return user_agent
+    if (bundle_agent / "data" / "agent.json").exists():
+        return bundle_agent
+    # Fallback: prefer user dir (for new agents being created)
+    return user_agent
+
+
+def _agent_data_dir(name: str) -> Path:
+    """Runtime data always lives in USER_DATA, never in the bundle."""
+    d = USER_DATA / "agents" / name / "data"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+AGENT_DIR = _find_agent_dir(AGENT_NAME)
+DATA_DIR = _agent_data_dir(AGENT_NAME)
 
 # Load agent manifest
 _manifest_path = AGENT_DIR / "data" / "agent.json"
@@ -23,10 +160,12 @@ AGENT_DISPLAY_NAME = AGENT.get("display_name", AGENT_NAME.title())
 USER_NAME = AGENT.get("user_name", "User")
 OPENING_LINE = AGENT.get("opening_line", "Hello.")
 WAKE_WORDS = AGENT.get("wake_words", [f"hey {AGENT_NAME}", AGENT_NAME])
+TELEGRAM_EMOJI = AGENT.get("telegram_emoji", "")
 
 # ── Per-agent paths ──
-DATA_DIR = AGENT_DIR / "data"
+# Prompts come from the agent definition (bundle or user-installed)
 PROMPTS_DIR = AGENT_DIR / "prompts"
+# Runtime state always in USER_DATA
 DB_PATH = DATA_DIR / "memory.db"
 OPENING_CACHE = DATA_DIR / ".opening_cache.json"
 MESSAGE_QUEUE = DATA_DIR / ".message_queue.json"
@@ -37,35 +176,43 @@ SYSTEM_PROMPT_PATH = PROMPTS_DIR / "system_prompt.md"
 SOUL_PATH = PROMPTS_DIR / "soul.md"
 HEARTBEAT_PATH = PROMPTS_DIR / "heartbeat.md"
 IDENTITY_QUEUE = DATA_DIR / ".identity_review_queue.json"
+ARTEFACT_REQUEST_FILE = DATA_DIR / ".artefact_request.json"
+ARTEFACT_DISPLAY_FILE = DATA_DIR / ".artefact_display.json"
+ARTEFACT_INDEX_FILE = DATA_DIR / ".artefact_index.json"
 
 # ── Per-agent avatar ──
+# Source assets (face, driver audio) live in the bundle
 AVATAR_DIR = AGENT_DIR / "avatar"
 SOURCE_IMAGE = AVATAR_DIR / "source" / "face.png"
-IDLE_LOOP = AVATAR_DIR / "ambient_loop.mp4"
-IDLE_LOOPS_DIR = AVATAR_DIR / "loops"
-IDLE_THINKING = AVATAR_DIR / "idle_thinking.mp4"
-IDLE_LISTENING = AVATAR_DIR / "idle_listening.mp4"
 IDLE_DRIVER = AVATAR_DIR / "source" / "idle_driver.wav"
 AVATAR_RESOLUTION = 512
-AVATAR_ENABLED = os.environ.get("AVATAR_ENABLED", "false").lower() == "true"
-LIVEPORTRAIT_PATH = Path.home() / "LivePortrait"
+AVATAR_ENABLED = _cfg("AVATAR_ENABLED", "false").lower() == "true"
+# Generated content (loops, master video) lives in user data
+AVATAR_CACHE = USER_DATA / "agents" / AGENT_NAME / "avatar"
+IDLE_LOOPS_DIR = AVATAR_CACHE / "loops"
+IDLE_LOOP = AVATAR_CACHE / "ambient_loop.mp4"
+IDLE_THINKING = AVATAR_CACHE / "idle_thinking.mp4"
+IDLE_LISTENING = AVATAR_CACHE / "idle_listening.mp4"
+
+# ── Per-agent tool disabling ──
+DISABLED_TOOLS = AGENT.get("disabled_tools", [])
 
 # ── Voice — TTS (per-agent from manifest) ──
 _voice = AGENT.get("voice", {})
-TTS_BACKEND = _voice.get("tts_backend", os.environ.get("TTS_BACKEND", "elevenlabs"))
-ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = _voice.get("elevenlabs_voice_id", os.environ.get("ELEVENLABS_VOICE_ID", ""))
-ELEVENLABS_MODEL = _voice.get("elevenlabs_model", os.environ.get("ELEVENLABS_MODEL", "eleven_v3"))
-ELEVENLABS_STABILITY = _voice.get("elevenlabs_stability", float(os.environ.get("ELEVENLABS_STABILITY", "0.5")))
-ELEVENLABS_SIMILARITY = _voice.get("elevenlabs_similarity", float(os.environ.get("ELEVENLABS_SIMILARITY", "0.75")))
-ELEVENLABS_STYLE = _voice.get("elevenlabs_style", float(os.environ.get("ELEVENLABS_STYLE", "0.35")))
-TTS_PLAYBACK_RATE = _voice.get("playback_rate", float(os.environ.get("TTS_PLAYBACK_RATE", "1.12")))
+TTS_BACKEND = _voice.get("tts_backend", _cfg("TTS_BACKEND", "elevenlabs"))
+ELEVENLABS_API_KEY = _cfg("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = _voice.get("elevenlabs_voice_id", _cfg("ELEVENLABS_VOICE_ID", ""))
+ELEVENLABS_MODEL = _voice.get("elevenlabs_model", _cfg("ELEVENLABS_MODEL", "eleven_v3"))
+ELEVENLABS_STABILITY = _voice.get("elevenlabs_stability", float(_cfg("ELEVENLABS_STABILITY", "0.5")))
+ELEVENLABS_SIMILARITY = _voice.get("elevenlabs_similarity", float(_cfg("ELEVENLABS_SIMILARITY", "0.75")))
+ELEVENLABS_STYLE = _voice.get("elevenlabs_style", float(_cfg("ELEVENLABS_STYLE", "0.35")))
+TTS_PLAYBACK_RATE = _voice.get("playback_rate", float(_cfg("TTS_PLAYBACK_RATE", "1.12")))
 FAL_TTS_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3"
-FAL_VOICE_ID = _voice.get("fal_voice_id", os.environ.get("FAL_VOICE_ID", ""))
+FAL_VOICE_ID = _voice.get("fal_voice_id", _cfg("FAL_VOICE_ID", ""))
 
 # ── Voice — Input ──
 PTT_KEY = "ctrl"
-INPUT_MODE = os.environ.get("INPUT_MODE", "dual")
+INPUT_MODE = _cfg("INPUT_MODE", "dual")
 
 # ── Audio capture ──
 SAMPLE_RATE = 16000
@@ -73,30 +220,28 @@ CHANNELS = 1
 MAX_RECORD_SEC = 120
 
 # ── Wake word detection ──
-WAKE_WORD_ENABLED = os.environ.get("WAKE_WORD_ENABLED", "false").lower() == "true"
+WAKE_WORD_ENABLED = _cfg("WAKE_WORD_ENABLED", "false").lower() == "true"
 WAKE_CHUNK_SECONDS = 2
 
 # ── Whisper ──
-WHISPER_PATH = PROJECT_ROOT / "vendor" / "whisper.cpp"
+WHISPER_PATH = BUNDLE_ROOT / "vendor" / "whisper.cpp"
 WHISPER_BIN = WHISPER_PATH / "build" / "bin" / "whisper-cli"
 WHISPER_MODEL = WHISPER_PATH / "models" / "ggml-tiny.en.bin"
 
 # ── Claude Code CLI ──
-CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
-CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "medium")
-ADAPTIVE_EFFORT = os.environ.get("ADAPTIVE_EFFORT", "true").lower() == "true"
+CLAUDE_BIN = _cfg("CLAUDE_BIN", "claude")
+CLAUDE_EFFORT = _cfg("CLAUDE_EFFORT", "medium")
+ADAPTIVE_EFFORT = _cfg("ADAPTIVE_EFFORT", "true").lower() == "true"
 
 # ── MCP Memory Server ──
-MCP_DIR = PROJECT_ROOT / "mcp"
+MCP_DIR = BUNDLE_ROOT / "mcp"
 MCP_SERVER_SCRIPT = MCP_DIR / "memory_server.py"
 
-# ── Obsidian vault ──
-_obsidian_base = Path(os.environ.get(
-    "OBSIDIAN_VAULT",
-    str(Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "The Atrophied Mind"),
-))
+# ── Obsidian vault (optional — graceful when absent) ──
+_obsidian_default = str(Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "The Atrophied Mind")
+_obsidian_base = Path(_cfg("OBSIDIAN_VAULT", _obsidian_default))
 OBSIDIAN_VAULT = _obsidian_base
-OBSIDIAN_PROJECT_DIR = _obsidian_base / "Projects" / PROJECT_ROOT.name
+OBSIDIAN_PROJECT_DIR = _obsidian_base / "Projects" / BUNDLE_ROOT.name
 OBSIDIAN_AGENT_DIR = OBSIDIAN_PROJECT_DIR / "Agent Workspace" / AGENT_NAME
 OBSIDIAN_AGENT_NOTES = OBSIDIAN_AGENT_DIR
 
@@ -107,7 +252,7 @@ MAX_CONTEXT_TOKENS = 180000
 # ── Embeddings & Vector Search ──
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
-MODELS_DIR = PROJECT_ROOT / ".models"
+MODELS_DIR = USER_DATA / "models"
 VECTOR_SEARCH_WEIGHT = 0.7
 
 # ── Session ──
@@ -115,25 +260,32 @@ SESSION_SOFT_LIMIT_MINS = 60
 
 # ── Heartbeat (per-agent from manifest) ──
 _hb = AGENT.get("heartbeat", {})
-HEARTBEAT_ACTIVE_START = _hb.get("active_start", int(os.environ.get("HEARTBEAT_ACTIVE_START", "9")))
-HEARTBEAT_ACTIVE_END = _hb.get("active_end", int(os.environ.get("HEARTBEAT_ACTIVE_END", "22")))
-HEARTBEAT_INTERVAL_MINS = _hb.get("interval_mins", int(os.environ.get("HEARTBEAT_INTERVAL_MINS", "30")))
+HEARTBEAT_ACTIVE_START = _hb.get("active_start", int(_cfg("HEARTBEAT_ACTIVE_START", "9")))
+HEARTBEAT_ACTIVE_END = _hb.get("active_end", int(_cfg("HEARTBEAT_ACTIVE_END", "22")))
+HEARTBEAT_INTERVAL_MINS = _hb.get("interval_mins", int(_cfg("HEARTBEAT_INTERVAL_MINS", "30")))
 
 # ── Telegram (per-agent from manifest) ──
 _tg = AGENT.get("telegram", {})
 TELEGRAM_BOT_TOKEN = os.environ.get(
     _tg.get("bot_token_env", "TELEGRAM_BOT_TOKEN"),
-    os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+    _cfg("TELEGRAM_BOT_TOKEN", ""),
 )
 TELEGRAM_CHAT_ID = os.environ.get(
     _tg.get("chat_id_env", "TELEGRAM_CHAT_ID"),
-    os.environ.get("TELEGRAM_CHAT_ID", ""),
+    _cfg("TELEGRAM_CHAT_ID", ""),
 )
 
+# ── Notifications ──
+NOTIFICATIONS_ENABLED = _cfg("NOTIFICATIONS_ENABLED", "true").lower() == "true"
+
 # ── Canvas ──
-CANVAS_TEMPLATES = PROJECT_ROOT / "display" / "templates"
+CANVAS_TEMPLATES = BUNDLE_ROOT / "display" / "templates"
 
 # ── Display (per-agent from manifest) ──
 _disp = AGENT.get("display", {})
 WINDOW_WIDTH = _disp.get("window_width", 622)
 WINDOW_HEIGHT = _disp.get("window_height", 830)
+
+# ── Backward compat ──
+# Some modules use PROJECT_ROOT — alias to BUNDLE_ROOT
+PROJECT_ROOT = BUNDLE_ROOT

@@ -76,7 +76,7 @@ com.atrophiedmind.<agent>.<job-name>
 
 For example: `com.atrophiedmind.companion.heartbeat`
 
-Logs go to `logs/<agent>/<job-name>.log`.
+Logs go to `~/.atrophy/logs/<agent>/<job-name>.log`.
 
 To stop all scheduled jobs: `python scripts/cron.py uninstall`
 

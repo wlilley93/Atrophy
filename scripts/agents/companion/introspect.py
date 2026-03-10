@@ -117,7 +117,7 @@ def _conversation_texture() -> dict:
     significant = conn.execute(
         "SELECT t.content, t.timestamp, t.weight FROM turns t "
         "JOIN sessions s ON t.session_id = s.id "
-        "WHERE (t.weight >= 3 OR s.notable = 1) AND t.role = 'companion' "
+        "WHERE (t.weight >= 3 OR s.notable = 1) AND t.role = 'agent' "
         "ORDER BY t.timestamp DESC LIMIT 10"
     ).fetchall()
     # Sample significant Will turns
@@ -167,6 +167,27 @@ def _read_own_journal(days: int = 7) -> str:
             if len(content) > 1200:
                 content = content[:1200] + "..."
             entries.append(f"### {date}\n{content}")
+    return "\n\n".join(entries) if entries else ""
+
+
+def _read_agent_conversations(days: int = 30) -> str:
+    """Read recent inter-agent conversation transcripts."""
+    conv_dir = OBSIDIAN_AGENT_NOTES / "notes" / "conversations"
+    if not conv_dir.is_dir():
+        return ""
+    entries = []
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    for f in sorted(conv_dir.glob("*.md"), reverse=True):
+        # Filename format: YYYY-MM-DD-partner.md
+        date_part = f.stem[:10] if len(f.stem) >= 10 else ""
+        if date_part < cutoff:
+            continue
+        content = f.read_text()
+        if len(content) > 1500:
+            content = content[:1500] + "..."
+        entries.append(content)
+        if len(entries) >= 3:  # cap at 3 most recent
+            break
     return "\n\n".join(entries) if entries else ""
 
 
@@ -298,6 +319,11 @@ def _build_material() -> str:
     journal = _read_own_journal(7)
     if journal:
         parts.append(f"## Your recent journal entries\n{journal}")
+
+    # Inter-agent conversations
+    conversations = _read_agent_conversations(30)
+    if conversations:
+        parts.append(f"## Recent conversations with other agents\n{conversations}")
 
     return "\n\n".join(parts)
 

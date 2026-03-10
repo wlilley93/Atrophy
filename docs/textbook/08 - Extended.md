@@ -1,10 +1,111 @@
 # Chapter 14: Extended Systems
 
-## iMessage, Notifications, and Scheduled Tasks
+## HTTP Server, Menu Bar App, Notifications, and Scheduled Tasks
 
-The Companion does not live only in conversation. It extends into Will's life through multiple channels: iMessage, system notifications, and scheduled introspection.
+The Companion does not live only in conversation. It extends into daily life through multiple channels: an HTTP API for remote access, a menu bar app for persistent presence, system notifications, and scheduled introspection.
 
 This chapter examines these extended systems.
+
+---
+
+## HTTP API Server
+
+### The Server
+
+`server.py` provides a headless HTTP API. No GUI, no TTS, no voice input — just REST endpoints. This enables web frontends, mobile apps, or remote access.
+
+```bash
+python main.py --server              # localhost:5000
+python main.py --server --port 8080  # custom port
+```
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Status check — returns agent name and status |
+| `/chat` | POST | Send message, receive full response as JSON |
+| `/chat/stream` | POST | Send message, receive SSE stream of tokens |
+| `/memory/search?q=...&limit=N` | GET | Search memory across all layers |
+| `/memory/threads` | GET | List active conversation threads |
+| `/session` | GET | Current session info (ID, agent name) |
+
+### Chat Endpoint
+
+```bash
+curl -X POST http://localhost:5000/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "hello"}'
+```
+
+Returns:
+```json
+{"response": "...", "session_id": 42}
+```
+
+### Streaming Endpoint
+
+```bash
+curl -N -X POST http://localhost:5000/chat/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "hello"}'
+```
+
+Returns Server-Sent Events:
+```
+data: {"type": "text", "content": "Hello"}
+data: {"type": "text", "content": " there."}
+data: {"type": "tool", "name": "remember"}
+data: {"type": "done", "full_text": "Hello there."}
+```
+
+### Architecture
+
+The server shares the same core as all other modes — same inference engine, same memory system, same MCP tools. It maintains a single session with thread-safe access via a lock. The session persists across requests within a server lifetime.
+
+### Design Decisions
+
+The server is deliberately minimal:
+- No authentication (intended for local use or behind a reverse proxy)
+- No WebSocket (SSE is simpler and sufficient)
+- No TTS (the client handles rendering)
+- Thread-locked session (one conversation at a time)
+- Flask, not async (simplicity over throughput — single-user system)
+
+---
+
+## Menu Bar App
+
+### The App Mode
+
+`python main.py --app` runs the Companion as a menu bar application. It hides from the Dock, shows no window on launch, and produces no sound until activated.
+
+This is the primary mode for daily use. The Companion lives quietly in the menu bar — always available, never intrusive.
+
+### Activation
+
+- **Click the tray icon** — toggles the window
+- **Cmd+Shift+Space** — global hotkey to toggle the window
+- **Wake word** (if enabled) — voice-activated
+
+### Login Persistence
+
+`scripts/install_app.py` registers a launchd agent:
+
+```bash
+python scripts/install_app.py install    # Register (starts at login)
+python scripts/install_app.py uninstall  # Remove
+python scripts/install_app.py status     # Check if running
+```
+
+This creates a plist at `~/Library/LaunchAgents/com.atrophiedmind.companion.plist`:
+- `RunAtLoad: true` — starts at login
+- `KeepAlive.SuccessfulExit: false` — restarts on crash (but not on clean exit)
+- Logs to `logs/app.stdout.log` and `logs/app.stderr.log`
+
+### Design Philosophy
+
+The menu bar app embodies the Companion's role: present but not demanding. It does not announce itself. It does not pop up. It waits until you're ready. This is the difference between a tool and a presence.
 
 ---
 
@@ -376,15 +477,19 @@ Understanding them helps you understand the full scope of what is being built.
 
 ## Questions for Reflection
 
-1. iMessage integration — what does asynchronous communication enable? What does it risk?
+1. HTTP API — what does exposing the Companion as a service enable? What does it change about the relationship?
 
-2. Notifications — when are they welcome? When are they intrusive?
+2. Menu bar presence — why start silent? What does that choice say about the design philosophy?
 
-3. Scheduled tasks — what should run automatically? What should remain manual?
+3. iMessage integration — what does asynchronous communication enable? What does it risk?
 
-4. Status tracking — how much awareness is appropriate? Where is the boundary?
+4. Notifications — when are they welcome? When are they intrusive?
 
-5. Extended presence — does this feel like care or surveillance? What makes the difference?
+5. Scheduled tasks — what should run automatically? What should remain manual?
+
+6. Status tracking — how much awareness is appropriate? Where is the boundary?
+
+7. Extended presence — does this feel like care or surveillance? What makes the difference?
 
 ---
 
@@ -397,4 +502,4 @@ Understanding them helps you understand the full scope of what is being built.
 
 ---
 
-*The Companion does not live only in conversation. It extends into Will's life through multiple channels.*
+*The Companion does not live only in conversation. It extends into daily life through multiple channels — some you activate, some that activate themselves.*

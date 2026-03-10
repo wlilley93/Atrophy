@@ -4,25 +4,37 @@ The Atrophied Mind is a Python companion agent system. It uses the Claude CLI fo
 
 ## Agent System
 
-The system is agent-aware. Setting `AGENT=<name>` switches the entire identity. All paths, configuration, database, voice settings, and personality are scoped per-agent from `agents/<name>/data/agent.json`. The `scripts/create_agent.py` wizard scaffolds new agents interactively.
+The system is agent-aware. Setting `AGENT=<name>` switches the entire identity. All paths, configuration, database, voice settings, and personality are scoped per-agent. The `scripts/create_agent.py` wizard scaffolds new agents interactively.
+
+Two root paths drive the system:
+- **`BUNDLE_ROOT`** — where the code lives (repo checkout or `.app` bundle)
+- **`USER_DATA`** (`~/.atrophy/`) — runtime state, memory DBs, generated avatar content, user config
+
+Agent definitions (manifest + prompts) are searched in `USER_DATA` first, then `BUNDLE_ROOT`, so users can install custom agents by dropping a folder into `~/.atrophy/agents/<name>/`.
 
 ```
-agents/
-  companion/
-    prompts/              # all prompt/identity documents
-      system_prompt.md    # personality and behavioral instructions
-      soul.md             # core identity document (self-editable via evolve)
-      heartbeat.md        # outreach evaluation checklist
-    data/                 # all runtime data files
-      agent.json          # manifest: display name, voice config, heartbeat, telegram
-      memory.db           # per-agent SQLite database
-      .emotional_state.json
-      .user_status.json
-      .message_queue.json
-      .opening_cache.json
-      .canvas_content.html
-      .identity_review_queue.json
-    avatar/               # video loops, source images
+agents/<name>/                     # In BUNDLE_ROOT (repo)
+  prompts/                         # all prompt/identity documents
+    system_prompt.md               # personality and behavioral instructions
+    soul.md                        # core identity document (self-editable via evolve)
+    heartbeat.md                   # outreach evaluation checklist
+  data/
+    agent.json                     # manifest: display name, voice config, heartbeat, telegram
+  avatar/
+    source/face.png                # source face image for video generation
+
+~/.atrophy/agents/<name>/          # In USER_DATA (runtime)
+  data/
+    memory.db                      # per-agent SQLite database
+    .emotional_state.json
+    .user_status.json
+    .message_queue.json
+    .opening_cache.json
+    .canvas_content.html
+    .identity_review_queue.json
+  avatar/
+    loops/                         # generated loop segments (loop_*.mp4)
+    ambient_loop.mp4               # master ambient loop (concatenated from segments)
 ```
 
 ## Operational Modes
@@ -88,7 +100,7 @@ Background daemons run via macOS launchd, managed by `scripts/cron.py`:
 | `heartbeat` | Every 30 min | Evaluate unprompted outreach via Telegram |
 | `sleep_cycle` | 3:00 AM daily | Process day's sessions, update threads, decay activations |
 | `morning_brief` | 7:00 AM daily | Generate weather/news/threads brief |
-| `introspect` | Monthly (24th, 3:33 AM) | Deep self-reflection, journal entry |
+| `introspect` | Periodic (agent-configured) | Deep self-reflection, journal entry |
 | `evolve` | Monthly (1st, 3:00 AM) | Revise prompts/soul.md and prompts/system_prompt.md |
 | `gift` | Monthly (28th, 12:11 AM) | Unprompted gift note, self-rescheduling |
 
@@ -105,7 +117,7 @@ Notes created by the companion get YAML frontmatter (type, created, updated, age
 | Path | Purpose |
 |------|---------|
 | `main.py` | Entry point. CLI/text/GUI mode selection |
-| `config.py` | Central configuration. Agent-aware path resolution |
+| `config.py` | Central configuration. Three-tier path resolution (env → config.json → manifest → defaults) |
 | `core/` | Session, inference, memory, agency, context, sentinel |
 | `voice/` | Audio capture, STT, TTS, wake word |
 | `display/` | PyQt5 window, canvas overlay |

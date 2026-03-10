@@ -4,6 +4,8 @@ Per-agent documentation. Each agent has a handbook (the textbook about that agen
 
 ## Companion
 
+The default agent. A personal companion — emotionally aware, memory-bearing, self-evolving.
+
 ```
 companion/
 ├── handbook/           ← The companion textbook (numbered chapters, book-form)
@@ -26,6 +28,33 @@ companion/
     └── 07 - Morning Brief
 ```
 
+## General Montgomery
+
+Military historian and strategist — tactical analysis, leadership, historical perspective. Analyses situations through five doctrinal lenses: Terrain, Interest, Capability, History, and Momentum.
+
+- **Wake words**: "general", "montgomery", "general montgomery", "monty", "hey general", "hey monty"
+- **Voice**: ElevenLabs v3, clipped British military register
+- **Heartbeat**: Every 45 minutes during active hours (7–22)
+- **Morning brief**: Daily intelligence assessment via BBC World + Reuters RSS, analysed through the five lenses
+- **Introspection**: After-action review — accuracy of prior assessments, emerging patterns, theatres needing attention
+
+```
+agents/general_montgomery/
+├── data/agent.json            ← Manifest
+├── prompts/
+│   ├── system_prompt.md       ← Full identity, doctrine, format
+│   ├── soul.md                ← Core identity distillation
+│   └── heartbeat.md           ← Outreach criteria
+└── avatar/
+    └── source/face.png        ← Source face for video generation
+
+scripts/agents/general_montgomery/
+├── jobs.json                  ← 6 jobs (morning_brief, heartbeat, introspect, sleep_cycle, observer, check_reminders)
+├── morning_brief.py           ← Intelligence brief through five lenses
+├── heartbeat.py               ← Situation assessment
+└── introspect.py              ← After-action review, self-rescheduling
+```
+
 ## Agent Anatomy
 
 Each agent has two homes:
@@ -35,9 +64,16 @@ Each agent has two homes:
 | Directory | Purpose |
 |-----------|---------|
 | `data/agent.json` | Manifest — voice, wake words, heartbeat, display |
-| `data/` | Runtime state, memory.db (gitignored) |
 | `prompts/` | Local fallback prompts |
-| `avatar/` | Visual assets (gitignored) |
+| `avatar/source/` | Source face image for video generation |
+
+### User data (`~/.atrophy/agents/<name>/`)
+
+| Directory | Purpose |
+|-----------|---------|
+| `data/` | Runtime state — memory.db, .emotional_state.json, etc. |
+| `avatar/loops/` | Generated loop segments (loop_*.mp4) |
+| `avatar/ambient_loop.mp4` | Master ambient loop (concatenated from segments) |
 
 ### Obsidian (`Projects/The Atrophied Mind/Agent Workspace/<name>/`)
 

@@ -10,7 +10,7 @@ import time
 import urllib.request
 import urllib.error
 
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, AGENT_DISPLAY_NAME, TELEGRAM_EMOJI
 
 log = logging.getLogger(__name__)
 
@@ -56,12 +56,19 @@ def _post(method: str, payload: dict) -> dict | None:
 # ── Sending ──
 
 
-def send_message(text: str, chat_id: str = "") -> bool:
-    """Send a plain Telegram message. Returns True on success."""
+def send_message(text: str, chat_id: str = "", prefix: bool = True) -> bool:
+    """Send a plain Telegram message. Returns True on success.
+
+    When prefix=True (default), prepends the agent's emoji and name
+    so the recipient knows which agent is speaking.
+    """
     target = chat_id or TELEGRAM_CHAT_ID
     if not target:
         log.error("TELEGRAM_CHAT_ID not configured")
         return False
+
+    if prefix and TELEGRAM_EMOJI:
+        text = f"{TELEGRAM_EMOJI} *{AGENT_DISPLAY_NAME}*\n\n{text}"
 
     result = _post("sendMessage", {
         "chat_id": target,
@@ -74,7 +81,8 @@ def send_message(text: str, chat_id: str = "") -> bool:
     return False
 
 
-def send_buttons(text: str, buttons: list[list[dict]], chat_id: str = "") -> int | None:
+def send_buttons(text: str, buttons: list[list[dict]], chat_id: str = "",
+                  prefix: bool = True) -> int | None:
     """Send a message with an inline keyboard. Returns message_id or None.
 
     buttons format: [[{"text": "Yes", "callback_data": "yes"}, ...], ...]
@@ -84,6 +92,9 @@ def send_buttons(text: str, buttons: list[list[dict]], chat_id: str = "") -> int
     if not target:
         log.error("TELEGRAM_CHAT_ID not configured")
         return None
+
+    if prefix and TELEGRAM_EMOJI:
+        text = f"{TELEGRAM_EMOJI} *{AGENT_DISPLAY_NAME}*\n\n{text}"
 
     result = _post("sendMessage", {
         "chat_id": target,

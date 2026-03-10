@@ -7,7 +7,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from config import DB_PATH, SCHEMA_PATH
+from config import DB_PATH, SCHEMA_PATH, AGENT_NAME
 
 
 def _connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -68,6 +68,33 @@ def _migrate(conn: sqlite3.Connection):
     bm_cols = {row[1] for row in conn.execute("PRAGMA table_info(bookmarks)").fetchall()}
     if "embedding" not in bm_cols:
         conn.execute("ALTER TABLE bookmarks ADD COLUMN embedding BLOB")
+        conn.commit()
+
+    # Migrate role 'companion' → 'agent' and drop CHECK constraint
+    # SQLite can't alter CHECK constraints, so we recreate the table
+    check_sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'"
+    ).fetchone()
+    if check_sql and "'companion'" in (check_sql[0] or ""):
+        conn.executescript("""
+            CREATE TABLE turns_new (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id  INTEGER REFERENCES sessions(id),
+                role        TEXT NOT NULL CHECK(role IN ('will', 'agent')),
+                content     TEXT NOT NULL,
+                timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                topic_tags  TEXT,
+                weight      INTEGER DEFAULT 1 CHECK(weight BETWEEN 1 AND 5),
+                channel     TEXT DEFAULT 'direct',
+                embedding   BLOB
+            );
+            INSERT INTO turns_new SELECT * FROM turns;
+            UPDATE turns_new SET role = 'agent' WHERE role = 'companion';
+            DROP TABLE turns;
+            ALTER TABLE turns_new RENAME TO turns;
+            CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
+            CREATE INDEX IF NOT EXISTS idx_turns_timestamp ON turns(timestamp);
+        """)
         conn.commit()
 
 
@@ -226,6 +253,7 @@ def write_observation(content: str, source_turn_id: int = None,
     conn.commit()
     conn.close()
     _embed_async("observations", obs_id, content, db_path)
+    return obs_id
 
 
 def write_identity_snapshot(content: str, trigger: str = None,
@@ -358,10 +386,10 @@ def get_recent_observations(n: int = 10, db_path: Path = DB_PATH) -> list[dict]:
 
 
 def get_recent_companion_turns(n: int = 5, db_path: Path = DB_PATH) -> list[str]:
-    """Get the N most recent companion turn contents."""
+    """Get the N most recent agent turn contents."""
     conn = _connect(db_path)
     rows = conn.execute(
-        "SELECT content FROM turns WHERE role = 'companion' "
+        "SELECT content FROM turns WHERE role = 'agent' "
         "ORDER BY timestamp DESC LIMIT ?",
         (n,),
     ).fetchall()
@@ -792,3 +820,93 @@ def write_bookmark(session_id: int, moment: str, quote: str = None,
     conn.close()
     _embed_async("bookmarks", bm_id, moment, db_path)
     return bm_id
+
+
+# ── Cross-agent memory ──
+
+
+def get_other_agents_recent_summaries(n_per_agent: int = 2, max_agents: int = 5,
+                                       current_agent: str = None) -> list[dict]:
+    """Get recent session summaries from other agents' databases.
+
+    Returns list of {"agent": name, "display_name": str, "summaries": [...]}.
+    """
+    from core.agent_manager import discover_agents
+    from config import _agent_data_dir
+
+    current = current_agent or AGENT_NAME
+    agents = discover_agents()
+    results = []
+
+    for agent in agents[:max_agents + 1]:
+        if agent["name"] == current:
+            continue
+        if len(results) >= max_agents:
+            break
+
+        db_path = _agent_data_dir(agent["name"]) / "memory.db"
+        if not db_path.exists():
+            continue
+
+        try:
+            conn = _connect(db_path)
+            rows = conn.execute(
+                "SELECT s.content, s.created_at, se.mood "
+                "FROM summaries s "
+                "LEFT JOIN sessions se ON s.session_id = se.id "
+                "ORDER BY s.created_at DESC LIMIT ?",
+                (n_per_agent,),
+            ).fetchall()
+            conn.close()
+
+            if rows:
+                results.append({
+                    "agent": agent["name"],
+                    "display_name": agent["display_name"],
+                    "summaries": [
+                        {"content": r["content"], "created_at": r["created_at"],
+                         "mood": r["mood"]}
+                        for r in rows
+                    ],
+                })
+        except Exception:
+            continue
+
+    return results
+
+
+def search_other_agent_memory(agent_name: str, query: str,
+                               limit: int = 10) -> dict:
+    """Search another agent's turns and summaries (not observations/identity)."""
+    from config import _agent_data_dir
+
+    db_path = _agent_data_dir(agent_name) / "memory.db"
+    if not db_path.exists():
+        return {"error": f"Agent '{agent_name}' has no memory database."}
+
+    try:
+        conn = _connect(db_path)
+
+        turns = conn.execute(
+            "SELECT id, session_id, role, content, timestamp "
+            "FROM turns WHERE content LIKE ? "
+            "ORDER BY timestamp DESC LIMIT ?",
+            (f"%{query}%", limit),
+        ).fetchall()
+
+        summaries = conn.execute(
+            "SELECT session_id, content, created_at "
+            "FROM summaries WHERE content LIKE ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (f"%{query}%", limit),
+        ).fetchall()
+
+        conn.close()
+
+        return {
+            "agent": agent_name,
+            "turns": [dict(t) for t in turns],
+            "summaries": [dict(s) for s in summaries],
+        }
+    except Exception as e:
+        return {"error": f"Failed to search {agent_name}'s memory: {e}"}

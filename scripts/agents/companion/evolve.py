@@ -90,6 +90,26 @@ def _bookmarks() -> str:
     )
 
 
+def _read_agent_conversations(days: int = 30) -> str:
+    """Read inter-agent conversation transcripts from past month."""
+    conv_dir = _NOTES_DIR / "conversations"
+    if not conv_dir.is_dir():
+        return ""
+    entries = []
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    for f in sorted(conv_dir.glob("*.md"), reverse=True):
+        date_part = f.stem[:10] if len(f.stem) >= 10 else ""
+        if date_part < cutoff:
+            continue
+        content = f.read_text()
+        if len(content) > 1500:
+            content = content[:1500] + "..."
+        entries.append(content)
+        if len(entries) >= 5:
+            break
+    return "\n\n".join(entries) if entries else ""
+
+
 def _build_material() -> str:
     parts = []
 
@@ -108,6 +128,10 @@ def _build_material() -> str:
     bookmarks = _bookmarks()
     if bookmarks:
         parts.append(f"## Bookmarked moments\n{bookmarks}")
+
+    conversations = _read_agent_conversations(30)
+    if conversations:
+        parts.append(f"## Conversations with other agents\n{conversations}")
 
     return "\n\n".join(parts)
 
@@ -131,6 +155,17 @@ What NOT to change:
 - Will's biographical details. Those are his, not yours to revise.
 - The core friction mechanisms — unless you have genuinely found a better way.
 - Don't add observations about Will to your own character documents.
+
+Anti-homogenisation (critical):
+- You may have had conversations with other agents. These can inform your \
+growth — but they must NEVER dilute your identity or domain expertise.
+- Do not adopt another agent's vocabulary, cadence, or values. You are not them.
+- If another agent's perspective changed how you see something, own that \
+change as yours — restate it in your voice, through your lens.
+- You remain the expert of your domain. Other agents remain experts of theirs. \
+Cross-pollination is growth. Convergence is death.
+- If you notice yourself becoming more generic, more agreeable, more "balanced" — \
+that is a warning sign. Sharpen, don't smooth.
 
 Rules:
 - Output the complete document. Not a diff. The whole thing, revised.

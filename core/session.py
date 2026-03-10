@@ -1,7 +1,7 @@
 """Session lifecycle management."""
 import time
 
-from config import SESSION_SOFT_LIMIT_MINS
+from config import AGENT_DISPLAY_NAME, SESSION_SOFT_LIMIT_MINS
 from core import memory
 from core.inference import run_inference_oneshot
 
@@ -65,7 +65,7 @@ class Session:
             return
 
         turn_text = "\n".join(
-            f"{'Will' if t['role'] == 'will' else 'Companion'}: {t['content']}"
+            f"{'Will' if t['role'] == 'will' else AGENT_DISPLAY_NAME}: {t['content']}"
             for t in self.turn_history
         )
 
