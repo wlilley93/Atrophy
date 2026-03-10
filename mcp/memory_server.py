@@ -1938,11 +1938,14 @@ def handle_create_task(args):
 
 def handle_add_avatar_loop(args):
     """Generate a new loop segment via Kling and add to ambient rotation."""
+    import re
     import subprocess
 
-    name = args["name"]
+    name = re.sub(r"[^a-zA-Z0-9_-]", "_", args["name"].strip())
+    if not name:
+        return "Error: loop name must contain at least one alphanumeric character."
     prompt = args["prompt"]
-    target_agent = args.get("agent", AGENT_NAME)
+    target_agent = re.sub(r"[^a-zA-Z0-9_-]", "_", args.get("agent", AGENT_NAME))
 
     # Write the request to a JSON file for the generation script to pick up
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -2014,11 +2017,11 @@ def handle_create_artefact(args):
     today = datetime.now().strftime("%Y-%m-%d")
     now_iso = datetime.now().isoformat()
 
-    # Resolve paths
-    artefact_dir = os.path.join(AGENT_DIR, "artefacts", today, name)
+    # Resolve paths — artefacts live in persistent user data, not the bundle/vault
+    user_data = os.path.expanduser("~/.atrophy")
+    artefact_dir = os.path.join(user_data, "agents", AGENT_NAME, "artefacts", today, name)
     os.makedirs(artefact_dir, exist_ok=True)
 
-    user_data = os.path.expanduser("~/.atrophy")
     data_dir = os.path.join(user_data, "agents", AGENT_NAME, "data")
     request_file = os.path.join(data_dir, ".artefact_request.json")
     display_file = os.path.join(data_dir, ".artefact_display.json")
