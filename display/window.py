@@ -27,7 +27,7 @@ from PyQt5.QtMultimedia import (
     QVideoFrame,
 )
 
-from config import WINDOW_WIDTH, WINDOW_HEIGHT, IDLE_LOOP, IDLE_LOOPS_DIR
+from config import WINDOW_WIDTH, WINDOW_HEIGHT, IDLE_LOOP
 
 _W = WINDOW_WIDTH
 _H = WINDOW_HEIGHT
@@ -981,84 +981,24 @@ class CompanionWindow(QWidget):
     # ── Video ──
 
     def _build_video(self):
-        # Dual player/surface setup for gapless playback
-        self._surfaces = [FrameGrabSurface(self), FrameGrabSurface(self)]
-        self._players = [QMediaPlayer(self), QMediaPlayer(self)]
-        self._active_idx = 0  # which player is currently rendering
+        # Single player + surface — ambient_loop.mp4 is pre-built 10-min cycle
+        self._surface = FrameGrabSurface(self)
+        self._surface.frame_ready.connect(self._on_frame)
+        self._player = QMediaPlayer(self)
+        self._player.setVideoOutput(self._surface)
+        self._player.setMuted(True)
+        self._player.mediaStatusChanged.connect(self._on_media_status)
 
-        for i, (player, surface) in enumerate(zip(self._players, self._surfaces)):
-            surface.frame_ready.connect(self._on_frame)
-            player.setVideoOutput(surface)
-            player.setMuted(True)
+        if IDLE_LOOP.exists():
+            self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(IDLE_LOOP))))
+            self._player.play()
 
-        # Connect status signals separately — lambdas with default args
-        self._players[0].mediaStatusChanged.connect(self._on_media_status_0)
-        self._players[1].mediaStatusChanged.connect(self._on_media_status_1)
-
-        # Convenience aliases
-        self._player = self._players[0]
-        self._surface = self._surfaces[0]
-
-        # Collect individual loop clips for shuffled playback
-        self._loop_clips = sorted(IDLE_LOOPS_DIR.glob("loop_*.mp4")) \
-            if IDLE_LOOPS_DIR.exists() else []
-        self._loop_queue = []
-        self._next_ready = False  # True when standby player is buffered
-
-        if self._loop_clips:
-            self._play_next_loop()
-        else:
-            self._load_video(IDLE_LOOP)
-
-    def _next_clip(self) -> Path:
-        """Get next clip from shuffled queue."""
-        if not self._loop_queue:
-            self._loop_queue = list(self._loop_clips)
-            random.shuffle(self._loop_queue)
-        return self._loop_queue.pop()
-
-    def _play_next_loop(self):
-        """Start playing a clip on the active player."""
-        clip = self._next_clip()
-        p = self._players[self._active_idx]
-        p.setMedia(QMediaContent(QUrl.fromLocalFile(str(clip))))
-        p.play()
-        # Preload next on the standby player
-        QTimer.singleShot(500, self._preload_next)
-
-    def _preload_next(self):
-        """Load and pause the next clip on the standby player."""
-        if not self._loop_clips:
-            return
-        self._preloading_idx = 1 - self._active_idx
-        clip = self._next_clip()
-        p = self._players[self._preloading_idx]
-        p.setMedia(QMediaContent(QUrl.fromLocalFile(str(clip))))
-        p.play()
-        # Pause after a short delay to let it decode first frames
-        QTimer.singleShot(300, self._pause_preloading)
-
-    def _pause_preloading(self):
-        """Pause the standby player once it's buffered."""
-        idx = getattr(self, '_preloading_idx', -1)
-        if idx >= 0 and idx != self._active_idx:  # still standby
-            self._players[idx].pause()
-            self._next_ready = True
-
-
-    def _load_video(self, path):
-        """Fallback: load directly on active player."""
-        p = Path(path)
-        if p.exists():
-            player = self._players[self._active_idx]
-            player.setMedia(QMediaContent(QUrl.fromLocalFile(str(p))))
-            player.play()
+    def _on_media_status(self, status):
+        if status == QMediaPlayer.EndOfMedia:
+            self._player.setPosition(0)
+            self._player.play()
 
     def _on_frame(self, img):
-        # Only accept frames from the active surface to prevent standby bleed
-        sender = self.sender()
-        if sender is not self._surfaces[self._active_idx]:
-            return
         self._frame = img
         self._scaled_frame = None
         if not self._eye_mode:
@@ -1082,37 +1022,6 @@ class CompanionWindow(QWidget):
         except RuntimeError:
             pass  # widget deleted during shutdown
 
-    def _on_media_status_0(self, status):
-        self._handle_media_end(status, 0)
-
-    def _on_media_status_1(self, status):
-        self._handle_media_end(status, 1)
-
-    def _handle_media_end(self, status, player_idx):
-        if status != QMediaPlayer.EndOfMedia:
-            return
-        if player_idx != self._active_idx:
-            return  # standby player finished somehow, ignore
-
-        if self._loop_clips and self._next_ready:
-            # Swap: standby becomes active, start playing immediately
-            old_idx = self._active_idx
-            self._active_idx = 1 - old_idx
-            self._next_ready = False
-            self._players[self._active_idx].play()
-            self._players[old_idx].stop()
-            # Update convenience alias
-            self._player = self._players[self._active_idx]
-            self._surface = self._surfaces[self._active_idx]
-            # Preload the next one on the now-free player
-            QTimer.singleShot(200, self._preload_next)
-        elif self._loop_clips:
-            # Standby wasn't ready, fall back to direct play
-            self._play_next_loop()
-        else:
-            # Single video loop
-            self._players[player_idx].setPosition(0)
-            self._players[player_idx].play()
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -1524,8 +1433,7 @@ class CompanionWindow(QWidget):
         self._shutdown_started = True
         self._shutdown_mode = True
         self._drift_timer.stop()
-        for p in self._players:
-            p.stop()
+        self._player.stop()
         self._audio_player.stop()
         # Kill any orphaned afplay processes
         import os, signal
