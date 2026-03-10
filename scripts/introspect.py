@@ -383,7 +383,30 @@ def introspect():
         journal_path.write_text(entry)
         print(f"[introspect] Written to {journal_path}")
 
+    # Reschedule to random time 2-14 days out
+    _reschedule()
     print("[introspect] Done.")
+
+
+def _reschedule():
+    """Reschedule this job to a random time 2-14 days from now."""
+    import random
+    project_root = Path(__file__).parent.parent
+    cron_script = project_root / "scripts" / "cron.py"
+
+    days = random.randint(2, 14)
+    hour = random.randint(1, 5)  # keep it late night
+    minute = random.randint(0, 59)
+    target = datetime.now() + timedelta(days=days)
+
+    new_cron = f"{minute} {hour} {target.day} {target.month} *"
+
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, str(cron_script), "edit", "introspect", new_cron],
+        capture_output=True, text=True, cwd=str(project_root),
+    )
+    print(f"[introspect] Rescheduled to {target.strftime('%Y-%m-%d')} at {hour:02d}:{minute:02d}")
 
 
 if __name__ == "__main__":
