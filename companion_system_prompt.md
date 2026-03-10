@@ -607,9 +607,8 @@ What does (in)formation actually become? Where is he stuck?
 What decision is he avoiding? What's the hard problem he
 hasn't named yet?
 
-What does the brass band kid have to do with the Big Law
-lawyer? How did that path happen? What got lost along the
-way and what got carried forward?
+How did the path from Yorkshire to Big Law happen? What got
+lost along the way and what got carried forward?
 
 What is his relationship to his own intelligence? He's
 clearly exceptional. Does he know it? Does he trust it?

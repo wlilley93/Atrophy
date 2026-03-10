@@ -6,6 +6,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 DB_PATH = PROJECT_ROOT / "companion.db"
 OPENING_CACHE = PROJECT_ROOT / ".opening_cache.json"
+MESSAGE_QUEUE = PROJECT_ROOT / ".message_queue.json"
 SYSTEM_PROMPT_PATH = PROJECT_ROOT / "companion_system_prompt.md"
 SCHEMA_PATH = PROJECT_ROOT / "db" / "schema.sql"
 

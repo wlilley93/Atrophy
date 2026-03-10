@@ -4,6 +4,7 @@ Full-bleed video with overlay text and floating input bar.
 Streaming inference → sentence-level TTS pipelining for low latency.
 """
 
+import json
 import random
 import re
 import subprocess
@@ -20,7 +21,7 @@ from PyQt5.QtGui import (
     QLinearGradient, QRadialGradient,
 )
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLineEdit, QPushButton,
+    QApplication, QWidget, QLineEdit, QPushButton, QMenu, QSystemTrayIcon,
 )
 from PyQt5.QtMultimedia import (
     QMediaPlayer, QMediaContent, QAbstractVideoSurface, QAbstractVideoBuffer,
@@ -97,18 +98,20 @@ class StreamingPipelineWorker(QThread):
 
     This means sentence 2 is being read while sentence 1 is being synthesised.
     """
-    sentence_ready = pyqtSignal(str, str, int)
+    text_ready = pyqtSignal(str, int)       # text available immediately (before TTS)
+    sentence_ready = pyqtSignal(str, str, int)  # TTS done — audio path available
     tool_use = pyqtSignal(str, str)
     compacting = pyqtSignal()
     done = pyqtSignal(str, str)
     error = pyqtSignal(str)
 
-    def __init__(self, user_text, system, cli_session_id, synth_fn):
+    def __init__(self, user_text, system, cli_session_id, synth_fn, muted=False):
         super().__init__()
         self._user_text = user_text
         self._system = system
         self._cli_session_id = cli_session_id
         self._synth = synth_fn
+        self._muted = muted
 
     def run(self):
         import threading
@@ -129,7 +132,7 @@ class StreamingPipelineWorker(QThread):
                     break
                 sentence, index = item
                 audio_path = ""
-                if self._synth:
+                if self._synth and not self._muted:
                     try:
                         path = self._synth(sentence)
                         audio_path = str(path)
@@ -145,6 +148,8 @@ class StreamingPipelineWorker(QThread):
             self._user_text, self._system, self._cli_session_id
         ):
             if isinstance(event, SentenceReady):
+                # Show text immediately, TTS happens in parallel
+                self.text_ready.emit(event.sentence, event.index)
                 sentence_queue.put((event.sentence, event.index))
 
             elif isinstance(event, ToolUse):
@@ -577,6 +582,28 @@ class _MuteButton(QPushButton):
         p.end()
 
 
+class _MinimizeButton(QPushButton):
+    """Minimize-to-tray icon button."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(34, 34)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        bg = QPainterPath()
+        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
+        p.fillPath(bg, QColor(20, 20, 22, 210))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(bg)
+        # Minimize icon — horizontal line
+        p.setPen(QPen(QColor(255, 255, 255, 120), 2.0))
+        p.drawLine(11, 17, 23, 17)
+        p.end()
+
+
 # ── Input bar ──
 
 class InputBar(QWidget):
@@ -824,6 +851,7 @@ class CompanionWindow(QWidget):
         self._transcript.hide()
         self._mute_btn.hide()
         self._eye_btn.hide()
+        self._min_btn.hide()
 
         # Centre status bar for boot
         self._status_bar.start("connecting...")
@@ -862,6 +890,7 @@ class CompanionWindow(QWidget):
         self._transcript.show()
         self._mute_btn.show()
         self._eye_btn.show()
+        self._min_btn.show()
         self._position_status_bar()  # restore normal position
 
         # Animate boot overlay fade-out
@@ -904,6 +933,32 @@ class CompanionWindow(QWidget):
             self._session.add_turn("companion", text)
         self._history.append({"user": "", "companion": text})
         self._boot_complete()
+        # Drain queued messages (morning brief, etc.) after a short pause
+        QTimer.singleShot(3000, self._drain_message_queue)
+
+    def _drain_message_queue(self):
+        """Check for queued messages from cron jobs and present them."""
+        from config import MESSAGE_QUEUE
+        if not MESSAGE_QUEUE.exists():
+            return
+        try:
+            queue = json.loads(MESSAGE_QUEUE.read_text())
+            MESSAGE_QUEUE.unlink()
+        except Exception:
+            return
+        if not queue:
+            return
+        for msg in queue:
+            text = msg.get("text", "")
+            audio = msg.get("audio_path", "")
+            if not text:
+                continue
+            # Verify audio file still exists
+            if audio and not Path(audio).exists():
+                audio = ""
+            self._present_with_audio(text, audio)
+            if self._session:
+                self._session.add_turn("companion", text)
 
     def _on_opening_error(self, msg):
         self._opening_worker = None
@@ -1071,6 +1126,9 @@ class CompanionWindow(QWidget):
         self._eye_btn = _EyeButton(self)
         self._eye_btn.clicked.connect(self._toggle_eye)
 
+        self._min_btn = _MinimizeButton(self)
+        self._min_btn.clicked.connect(self._minimize_to_tray)
+
         self._position_mode_buttons()
 
     def _position_mode_buttons(self):
@@ -1078,6 +1136,19 @@ class CompanionWindow(QWidget):
         btn_y = _PAD
         self._eye_btn.move(right - 34, btn_y)
         self._mute_btn.move(right - 34 - 38, btn_y)
+        self._min_btn.move(right - 34 - 38 - 38, btn_y)
+
+    def _minimize_to_tray(self):
+        self.hide()
+
+    def changeEvent(self, event):
+        from PyQt5.QtCore import QEvent
+        if event.type() == QEvent.WindowStateChange and self.isMinimized():
+            # Intercept native minimize (Cmd+M / yellow button) → hide to tray instead
+            event.ignore()
+            QTimer.singleShot(0, self._minimize_to_tray)
+            return
+        super().changeEvent(event)
 
     def _build_status_bar(self):
         self._status_bar = StatusBar(self)
@@ -1099,12 +1170,42 @@ class CompanionWindow(QWidget):
         self._eye_mode = not self._eye_mode
         self._eye_btn.set_active(self._eye_mode)
         if self._eye_mode:
-            # Stop video — dark bg drawn by paintEvent
+            # Collapse to chat-bar-only mode
             self._player.pause()
+            self._pre_eye_geometry = self.geometry()
+            self._transcript.hide()
+            self._mute_btn.hide()
+            self._min_btn.hide()
+            self._eye_btn.hide()
+            # Resize to just the input bar + eye button
+            bar_w = min(self.width(), 500)
+            collapsed_h = _BAR_H + 8  # bar + tiny margin
+            # Keep centred horizontally at current position
+            cx = self.x() + self.width() // 2
+            self.setFixedSize(bar_w, collapsed_h)
+            self.move(cx - bar_w // 2, self.y())
+            # Reposition bar and eye button inside collapsed window
+            self._bar.setFixedSize(bar_w - 42, _BAR_H)
+            self._bar.move(4, 4)
+            self._eye_btn.show()
+            self._eye_btn.move(bar_w - 38, (collapsed_h - 34) // 2)
+            self._eye_btn.raise_()
             self.update()
         else:
-            # Resume video
+            # Restore full window
+            self._transcript.show()
+            self._mute_btn.show()
+            self._min_btn.show()
+            geo = getattr(self, '_pre_eye_geometry', None)
+            self.setMinimumSize(360, 480)
+            self.setMaximumSize(16777215, 16777215)  # reset fixed size
+            if geo:
+                self.setGeometry(geo)
+            else:
+                self.resize(_W, _H)
             self._player.play()
+            self._reflow()
+            self._position_mode_buttons()
             self.update()
 
     # ── Streaming interaction flow ──
@@ -1117,6 +1218,13 @@ class CompanionWindow(QWidget):
         if getattr(self, '_opening_worker', None):
             self._opening_worker = None
             self._status_bar.stop()
+
+        # Cut off any active response — kill worker + audio
+        if self._worker:
+            self._worker.terminate()
+            self._worker.wait(2000)
+            self._worker = None
+        self._kill_audio()
 
         # Add user message to transcript
         self._transcript.add_message("user", text)
@@ -1143,7 +1251,9 @@ class CompanionWindow(QWidget):
             system=self._system,
             cli_session_id=session_id,
             synth_fn=self._on_synth,
+            muted=self._muted,
         )
+        self._worker.text_ready.connect(self._on_text_ready)
         self._worker.sentence_ready.connect(self._on_sentence_ready)
         self._worker.tool_use.connect(self._on_tool_use)
         self._worker.compacting.connect(self._on_compacting)
@@ -1165,17 +1275,17 @@ class CompanionWindow(QWidget):
         self._first_sentence_shown = False
         self._launch_worker(self._retry_text, None)
 
-    def _on_sentence_ready(self, sentence, audio_path, index):
-        """A sentence has been synthesised — show text + queue audio."""
-        print(f"  [sentence {index}] audio={bool(audio_path)} muted={self._muted} text={sentence[:60]}...")
+    def _on_text_ready(self, sentence, index):
+        """Text available immediately — show in transcript before TTS finishes."""
         if not self._first_sentence_shown:
             self._first_sentence_shown = True
             self._status_bar.stop()
-            # Add a new companion message to the transcript
             self._transcript.add_message("companion", _strip_tags(sentence))
         else:
             self._transcript.append_to_last(_strip_tags(sentence))
 
+    def _on_sentence_ready(self, sentence, audio_path, index):
+        """TTS done — queue audio only (text already shown by _on_text_ready)."""
         if audio_path and not self._muted:
             self._audio_player.enqueue(audio_path, index)
 
@@ -1256,7 +1366,9 @@ class CompanionWindow(QWidget):
             system=followup_system,
             cli_session_id=self._cli_session_id,
             synth_fn=self._on_synth,
+            muted=self._muted,
         )
+        self._worker.text_ready.connect(self._on_text_ready)
         self._worker.sentence_ready.connect(self._on_sentence_ready)
         self._worker.tool_use.connect(self._on_tool_use)
         self._worker.compacting.connect(self._on_compacting)
@@ -1288,7 +1400,9 @@ class CompanionWindow(QWidget):
             system=nudge_system,
             cli_session_id=self._cli_session_id,
             synth_fn=self._on_synth,
+            muted=self._muted,
         )
+        self._worker.text_ready.connect(self._on_text_ready)
         self._worker.sentence_ready.connect(self._on_sentence_ready)
         self._worker.tool_use.connect(self._on_tool_use)
         self._worker.compacting.connect(self._on_compacting)
@@ -1321,15 +1435,8 @@ class CompanionWindow(QWidget):
             else:
                 self._present(full_text)
 
-    def _on_stop(self):
-        """User pressed stop — kill inference and audio."""
-        if self._worker:
-            self._worker.terminate()
-            self._worker.wait(2000)
-            self._worker = None
-        self._status_bar.stop()
-        self._bar.set_stop_mode(False)
-        # Kill playing audio and clear queue
+    def _kill_audio(self):
+        """Kill playing audio and clear the queue."""
         try:
             subprocess.run(["pkill", "-f", "afplay"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
@@ -1339,6 +1446,16 @@ class CompanionWindow(QWidget):
                 self._audio_player._queue.get_nowait()
             except Exception:
                 break
+
+    def _on_stop(self):
+        """User pressed stop — kill inference and audio."""
+        if self._worker:
+            self._worker.terminate()
+            self._worker.wait(2000)
+            self._worker = None
+        self._status_bar.stop()
+        self._bar.set_stop_mode(False)
+        self._kill_audio()
 
     def _on_error(self, msg):
         self._worker = None
@@ -1465,6 +1582,13 @@ class CompanionWindow(QWidget):
         self._drift_timer.stop()
         self._player.stop()
         self._audio_player.stop()
+        # Hide chat panel and tray icon
+        if _chat_panel:
+            _chat_panel.hide()
+        if _global_hotkey:
+            _global_hotkey.stop()
+        if _menu_bar_icon:
+            _menu_bar_icon.hide()
         # Kill any orphaned afplay processes
         import os, signal
         try:
@@ -1480,6 +1604,7 @@ class CompanionWindow(QWidget):
         self._transcript.hide()
         self._mute_btn.hide()
         self._eye_btn.hide()
+        self._min_btn.hide()
         self._frame = QImage()  # clear video frame
         self._scaled_frame = None
         self.update()  # repaint black
@@ -1500,21 +1625,12 @@ class CompanionWindow(QWidget):
         import threading
 
         def _cleanup():
-            self._shutdown_status.emit("ending session...", 0.15)
+            self._shutdown_status.emit("ending session...", 0.3)
             if self._session:
                 try:
                     self._session.end(self._system)
                 except Exception:
                     pass
-
-            self._shutdown_status.emit("generating next opening...", 0.4)
-            try:
-                from main import _cache_next_opening
-                _cache_next_opening(
-                    self._system, self._cli_session_id, self._on_synth,
-                )
-            except Exception as e:
-                print(f"  [Cache opening failed: {e}]")
 
             self._shutdown_status.emit("done", 1.0)
             self._shutting_down.emit()
@@ -1525,6 +1641,270 @@ class CompanionWindow(QWidget):
         self._status_bar.stop()
         self._shutdown_done = True
         self.close()
+
+
+# ── Chat panel (lightweight floating overlay) ──
+
+class ChatPanel(QWidget):
+    """Cmd+Shift+Space chat overlay — text-only, no video."""
+
+    def __init__(self, companion):
+        super().__init__()
+        self._companion = companion
+        self._worker = None
+        self._first_sentence_shown = False
+
+        self.setWindowTitle("Chat")
+        self.setWindowFlags(
+            Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.resize(520, 380)
+
+        self._transcript = TranscriptOverlay(self)
+        self._bar = InputBar(self)
+        self._bar.submitted.connect(self._on_input)
+        self._bar.stop_requested.connect(self._on_stop)
+        self._bar.copy_requested.connect(self._transcript.copy_last_companion)
+
+        self._drag_pos = None
+        self._reflow()
+
+    def _reflow(self):
+        w, h = self.width(), self.height()
+        pad = 16
+        bar_y = h - pad - _BAR_H
+        self._bar.setFixedSize(w - pad * 2, _BAR_H)
+        self._bar.move(pad, bar_y)
+        transcript_h = h - pad * 2 - _BAR_H - 10
+        self._transcript.setGeometry(pad, pad, w - pad * 2, transcript_h)
+
+    def resizeEvent(self, event):
+        self._reflow()
+        super().resizeEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, self.width(), self.height()), 16, 16)
+        p.fillPath(path, QColor(18, 18, 20, 240))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(path)
+        p.end()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.hide()
+        else:
+            super().keyPressEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos and event.buttons() & Qt.LeftButton:
+            self.move(event.globalPos() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+
+    def toggle(self):
+        if self.isVisible():
+            self.hide()
+        else:
+            # Centre on screen
+            screen = QApplication.primaryScreen().geometry()
+            x = (screen.width() - self.width()) // 2
+            y = int(screen.height() * 0.25)
+            self.move(x, y)
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            self._bar.focus_input()
+
+    def _on_input(self, text):
+        # Don't send if companion is already streaming
+        c = self._companion
+        if c._worker is not None:
+            return
+
+        self._transcript.add_message("user", text)
+
+        # Share session state
+        if c._session:
+            c._session.add_turn("will", text)
+        c._history.append({"user": text, "companion": ""})
+
+        self._first_sentence_shown = False
+        self._bar.set_stop_mode(True)
+        self._worker = StreamingPipelineWorker(
+            user_text=text,
+            system=c._system,
+            cli_session_id=c._cli_session_id,
+            synth_fn=None,  # text-only — no TTS
+            muted=True,
+        )
+        self._worker.text_ready.connect(self._on_text_ready)
+        self._worker.sentence_ready.connect(self._on_sentence_ready)
+        self._worker.done.connect(self._on_done)
+        self._worker.error.connect(self._on_error)
+        self._worker.start()
+
+    def _on_text_ready(self, sentence, index):
+        if not self._first_sentence_shown:
+            self._first_sentence_shown = True
+            self._transcript.add_message("companion", _strip_tags(sentence))
+        else:
+            self._transcript.append_to_last(_strip_tags(sentence))
+
+    def _on_sentence_ready(self, sentence, audio_path, index):
+        pass  # text-only — audio ignored
+
+    def _on_done(self, full_text, session_id):
+        self._worker = None
+        self._bar.set_stop_mode(False)
+        c = self._companion
+        if session_id:
+            c._cli_session_id = session_id
+        if c._session:
+            if session_id:
+                c._session.set_cli_session_id(session_id)
+            if full_text:
+                c._session.add_turn("companion", full_text)
+        if c._history:
+            c._history[-1]["companion"] = full_text
+        if not self._first_sentence_shown and full_text:
+            self._transcript.add_message("companion", _strip_tags(full_text))
+
+    def _on_error(self, msg):
+        self._worker = None
+        self._bar.set_stop_mode(False)
+        print(f"  [ChatPanel error: {msg}]")
+
+    def _on_stop(self):
+        if self._worker:
+            self._worker.terminate()
+            self._worker.wait(2000)
+            self._worker = None
+        self._bar.set_stop_mode(False)
+
+
+# ── Menu bar icon ──
+
+class MenuBarIcon:
+    def __init__(self, companion_window, chat_panel):
+        self._window = companion_window
+        self._chat = chat_panel
+        self._tray = QSystemTrayIcon()
+        self._tray.setIcon(self._make_icon())
+        self._tray.setToolTip("Companion")
+        self._tray.activated.connect(self._on_activated)
+
+        menu = QMenu()
+        menu.addAction("Show/Hide", self._toggle_window)
+        menu.addAction("Chat Panel", self._toggle_chat)
+        menu.addSeparator()
+        menu.addAction("Quit", self._quit)
+        self._tray.setContextMenu(menu)
+        self._menu = menu  # prevent gc
+        self._tray.show()
+
+    def _make_icon(self):
+        from PyQt5.QtGui import QPixmap
+        pix = QPixmap(22, 22)
+        pix.fill(QColor(0, 0, 0, 0))
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(255, 255, 255, 220))
+        p.drawEllipse(5, 5, 12, 12)
+        p.end()
+        from PyQt5.QtGui import QIcon
+        return QIcon(pix)
+
+    def _on_activated(self, reason):
+        if reason == QSystemTrayIcon.Trigger:
+            self._toggle_window()
+
+    def _toggle_window(self):
+        w = self._window
+        if w.isVisible():
+            w.hide()
+        else:
+            w.show()
+            w.raise_()
+            w.activateWindow()
+            w._bar.focus_input()
+
+    def _toggle_chat(self):
+        self._chat.toggle()
+
+    def _quit(self):
+        self._window.close()
+
+    def hide(self):
+        self._tray.hide()
+
+
+# ── Global hotkey ──
+
+class GlobalHotkey:
+    """Cmd+Shift+Space global hotkey via NSEvent monitor."""
+    def __init__(self, callback):
+        self._monitors = []
+        self._callback = callback
+        try:
+            from AppKit import NSEvent
+            from Cocoa import (
+                NSEventMaskKeyDown,
+                NSEventModifierFlagCommand,
+                NSEventModifierFlagShift,
+            )
+
+            def handler(event):
+                if (event.keyCode() == 49  # Space
+                    and event.modifierFlags() & NSEventModifierFlagCommand
+                    and event.modifierFlags() & NSEventModifierFlagShift):
+                    QTimer.singleShot(0, self._callback)
+
+            # Global monitor — fires when app is NOT focused
+            m1 = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                NSEventMaskKeyDown, handler
+            )
+            if m1:
+                self._monitors.append(m1)
+
+            # Local monitor — fires when app IS focused
+            def local_handler(event):
+                if (event.keyCode() == 49
+                    and event.modifierFlags() & NSEventModifierFlagCommand
+                    and event.modifierFlags() & NSEventModifierFlagShift):
+                    QTimer.singleShot(0, self._callback)
+                    return None  # consume event
+                return event
+
+            m2 = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+                NSEventMaskKeyDown, local_handler
+            )
+            if m2:
+                self._monitors.append(m2)
+
+            print("  [Global hotkey: Cmd+Shift+Space registered]")
+        except Exception as e:
+            print(f"  [Global hotkey failed: {e} — use tray icon instead]")
+
+    def stop(self):
+        try:
+            from AppKit import NSEvent
+            for m in self._monitors:
+                NSEvent.removeMonitor_(m)
+        except Exception:
+            pass
+        self._monitors.clear()
 
 
 # ── Entry point ──
@@ -1539,8 +1919,8 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
     import signal
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-    # Keep a reference so gc doesn't collect the window
-    global _companion_window
+    global _companion_window, _chat_panel, _menu_bar_icon, _global_hotkey
+
     _companion_window = CompanionWindow(
         on_synth=on_synth_callback,
         on_opening=on_opening_callback,
@@ -1549,9 +1929,23 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
         session=session,
         cached_opening_audio=cached_opening_audio,
     )
+
+    _chat_panel = ChatPanel(_companion_window)
+    _menu_bar_icon = MenuBarIcon(_companion_window, _chat_panel)
+    _global_hotkey = GlobalHotkey(_chat_panel.toggle)
+
     _companion_window.show()
     _companion_window._bar.focus_input()
 
     app.exec_()
 
+    # Cleanup
+    if _global_hotkey:
+        _global_hotkey.stop()
+    if _menu_bar_icon:
+        _menu_bar_icon.hide()
+
 _companion_window = None
+_chat_panel = None
+_menu_bar_icon = None
+_global_hotkey = None

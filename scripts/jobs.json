@@ -1,0 +1,17 @@
+{
+  "introspect": {
+    "cron": "33 3 24 3 *",
+    "script": "scripts/introspect.py",
+    "description": "Daily self-reflection \u2014 reviews sessions, writes journal entry to Obsidian"
+  },
+  "gift": {
+    "cron": "11 0 28 3 *",
+    "script": "scripts/gift.py",
+    "description": "Unprompted gift note in Obsidian \u2014 self-rescheduling"
+  },
+  "morning_brief": {
+    "cron": "0 7 * * *",
+    "script": "scripts/morning_brief.py",
+    "description": "Daily morning brief \u2014 weather, news, threads, queued for next app launch"
+  }
+}
