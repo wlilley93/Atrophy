@@ -13,5 +13,10 @@
     "cron": "0 7 * * *",
     "script": "scripts/morning_brief.py",
     "description": "Daily morning brief \u2014 weather, news, threads, queued for next app launch"
+  },
+  "evolve": {
+    "cron": "0 3 1 * *",
+    "script": "scripts/evolve.py",
+    "description": "Monthly self-evolution \u2014 revises soul.md and system.md from journal reflections"
   }
 }
