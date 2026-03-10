@@ -196,39 +196,6 @@ class OpeningWorker(QThread):
 
 # ── Thinking spinner ──
 
-class ThinkingSpinner(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAutoFillBackground(False)
-        self.setFixedSize(24, 24)
-        self._angle = 0
-        self._timer = QTimer(self)
-        self._timer.setInterval(25)
-        self._timer.timeout.connect(self._tick)
-        self.hide()
-
-    def start(self):
-        self._angle = 0
-        self.show()
-        self._timer.start()
-
-    def stop(self):
-        self._timer.stop()
-        self.hide()
-
-    def _tick(self):
-        self._angle = (self._angle + 8) % 360
-        self.update()
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(QPen(QColor(255, 255, 255, 240), 2.0))
-        p.setBrush(Qt.NoBrush)
-        p.drawArc(3, 3, 18, 18, self._angle * 16, 270 * 16)
-        p.end()
-
 
 # ── Status bar — loading / shutting down ──
 
@@ -858,7 +825,6 @@ class CompanionWindow(QWidget):
 
         self._build_video()
         self._build_overlays()
-        self._build_spinner()
         self._build_input_bar()
         self._build_mode_buttons()
         self._build_status_bar()
@@ -932,7 +898,6 @@ class CompanionWindow(QWidget):
 
     def _on_opening_ready(self, text, audio_path):
         self._opening_worker = None
-        self._spinner.stop()
         self._present(text)
         play_audio = self._cached_opening_audio or audio_path
         if play_audio and not self._muted:
@@ -945,7 +910,6 @@ class CompanionWindow(QWidget):
 
     def _on_opening_error(self, msg):
         self._opening_worker = None
-        self._spinner.stop()
         print(f"  [Opening error: {msg}]")
         self._present("Ready. Where are we?")
         self._history.append({"user": "", "companion": "Ready. Where are we?"})
@@ -1031,7 +995,10 @@ class CompanionWindow(QWidget):
             return
         win_w, win_h = self.width(), self.height()
         img_w, img_h = self._frame.width(), self._frame.height()
-        scale = max(win_w / img_w, win_h / img_h) * 1.01
+        # Black background (visible as pillarbox bars when window is wider than video)
+        p.fillRect(self.rect(), QColor(0, 0, 0))
+        # Fit scaling — preserve aspect ratio, never crop
+        scale = min(win_w / img_w, win_h / img_h) * 1.01
         sw, sh = int(img_w * scale), int(img_h * scale)
         # Cache the scaled frame — only rescale when source or size changes
         if (self._scaled_frame is None
@@ -1067,17 +1034,6 @@ class CompanionWindow(QWidget):
             p.fillRect(self.rect(), QColor(0, 0, 0, int(255 * self._boot_opacity)))
         p.end()
 
-    # ── Spinner ──
-
-    def _build_spinner(self):
-        self._spinner = ThinkingSpinner(self)
-        self._position_spinner()
-
-    def _position_spinner(self):
-        # Just right of the input bar
-        bar_y = self.height() - _PAD - _BAR_H
-        self._spinner.move(self.width() - _PAD + 6, bar_y + (_BAR_H - 24) // 2)
-
     # ── Overlays ──
 
     def _build_overlays(self):
@@ -1108,9 +1064,8 @@ class CompanionWindow(QWidget):
         self._position_mode_buttons()
 
     def _position_mode_buttons(self):
-        bar_y = self.height() - _PAD - _BAR_H
-        btn_y = bar_y - 40
         right_edge = self.width() - _PAD
+        btn_y = _PAD
         self._eye_btn.move(right_edge - 34, btn_y)
         self._mute_btn.move(right_edge - 34 - 38, btn_y)
 
@@ -1148,7 +1103,6 @@ class CompanionWindow(QWidget):
         # Cancel opening if still loading — user went first
         if getattr(self, '_opening_worker', None):
             self._opening_worker = None
-            self._spinner.stop()
             self._status_bar.stop()
 
         # Add user message to transcript
@@ -1161,7 +1115,6 @@ class CompanionWindow(QWidget):
             self._session.add_turn("will", text)
 
         # Start streaming pipeline
-        self._spinner.start()
         self._bar.set_stop_mode(True)
         self._first_sentence_shown = False
         self._retry_text = text  # stash for auto-retry
@@ -1196,14 +1149,12 @@ class CompanionWindow(QWidget):
         if self._session:
             self._session.set_cli_session_id(None)
         self._first_sentence_shown = False
-        self._spinner.start()
         self._launch_worker(self._retry_text, None)
 
     def _on_sentence_ready(self, sentence, audio_path, index):
         """A sentence has been synthesised — show text + queue audio."""
         if not self._first_sentence_shown:
             self._first_sentence_shown = True
-            self._spinner.stop()
             self._status_bar.stop()
             # Add a new companion message to the transcript
             self._transcript.add_message("companion", _strip_tags(sentence))
@@ -1215,12 +1166,10 @@ class CompanionWindow(QWidget):
 
     def _on_tool_use(self, name, tool_id):
         """Claude invoked a tool — show in UI."""
-        self._spinner.start()
 
     def _on_compacting(self):
         """Context window is being compacted — show status."""
         self._status_bar.start("compacting memory...")
-        self._spinner.start()
 
     def _on_done(self, full_text, session_id):
         """Stream complete."""
@@ -1234,7 +1183,6 @@ class CompanionWindow(QWidget):
             self._auto_retry()
             return
 
-        self._spinner.stop()
         self._status_bar.stop()
         self._bar.set_stop_mode(False)
 
@@ -1310,7 +1258,6 @@ class CompanionWindow(QWidget):
             self._worker.terminate()
             self._worker.wait(2000)
             self._worker = None
-        self._spinner.stop()
         self._status_bar.stop()
         self._bar.set_stop_mode(False)
         # Kill playing audio and clear queue
@@ -1358,7 +1305,6 @@ class CompanionWindow(QWidget):
         bar_w = w - _PAD * 2
         self._bar.setFixedSize(bar_w, _BAR_H)
         self._bar.move(_PAD, h - _PAD - _BAR_H)
-        self._position_spinner()
         self._position_mode_buttons()
         self._position_status_bar()
         self._reflow()
@@ -1448,7 +1394,6 @@ class CompanionWindow(QWidget):
         # Cut to black — hide everything
         self._bar.hide()
         self._transcript.hide()
-        self._spinner.stop()
         self._mute_btn.hide()
         self._eye_btn.hide()
         self._frame = QImage()  # clear video frame

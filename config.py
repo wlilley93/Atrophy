@@ -16,7 +16,7 @@ WHISPER_MODEL = WHISPER_PATH / "models" / "ggml-tiny.en.bin"
 
 # Claude Code CLI
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
-CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "high")  # low, medium, high, max
+CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "medium")  # low, medium, high, max
 
 # MCP Memory Server
 MCP_DIR = PROJECT_ROOT / "mcp"
