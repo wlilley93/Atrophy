@@ -82,6 +82,9 @@ def _migrate(conn: sqlite3.Connection):
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'"
     ).fetchone()
     if check_sql and "'companion'" in (check_sql[0] or ""):
+        # Update roles first while old table has no constraint conflict
+        conn.execute("UPDATE turns SET role = 'agent' WHERE role = 'companion'")
+        conn.commit()
         conn.executescript("""
             CREATE TABLE turns_new (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,7 +98,6 @@ def _migrate(conn: sqlite3.Connection):
                 embedding   BLOB
             );
             INSERT INTO turns_new SELECT * FROM turns;
-            UPDATE turns_new SET role = 'agent' WHERE role = 'companion';
             DROP TABLE turns;
             ALTER TABLE turns_new RENAME TO turns;
             CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
