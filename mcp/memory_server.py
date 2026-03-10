@@ -1876,18 +1876,14 @@ def handle_create_task(args):
     import shlex
     import subprocess
 
-    name = args["name"]
+    name = _sanitise_name(args["name"])
+    if not name:
+        return "Error: task name must contain at least one alphanumeric character."
     prompt = args["prompt"]
     cron = args["cron"]
     deliver = args.get("deliver", "message_queue")
     voice = args.get("voice", True)
     sources = args.get("sources", [])
-
-    # Sanitise task name — alphanumeric, hyphens, underscores only
-    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name.strip())
-    if not safe_name:
-        return "Error: task name must contain at least one alphanumeric character."
-    name = safe_name
 
     # Validate cron expression — must be 5 space-separated fields of [0-9*/,-]
     cron_parts = cron.strip().split()
@@ -1936,16 +1932,26 @@ def handle_create_task(args):
     return f"Task '{name}' created.\nDefinition: {task_path}\nSchedule: {cron}\n{output}"
 
 
+def _sanitise_name(raw: str) -> str:
+    """Sanitise a user-provided name to safe filesystem/CLI characters."""
+    import re
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "_", raw.strip())
+    if not safe or not re.match(r'^[a-zA-Z0-9_-]+$', safe):
+        return ""
+    return safe
+
+
 def handle_add_avatar_loop(args):
     """Generate a new loop segment via Kling and add to ambient rotation."""
-    import re
     import subprocess
 
-    name = re.sub(r"[^a-zA-Z0-9_-]", "_", args["name"].strip())
+    name = _sanitise_name(args["name"])
     if not name:
         return "Error: loop name must contain at least one alphanumeric character."
     prompt = args["prompt"]
-    target_agent = re.sub(r"[^a-zA-Z0-9_-]", "_", args.get("agent", AGENT_NAME))
+    target_agent = _sanitise_name(args.get("agent", AGENT_NAME))
+    if not target_agent:
+        target_agent = AGENT_NAME
 
     # Write the request to a JSON file for the generation script to pick up
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1976,11 +1982,12 @@ def handle_add_avatar_loop(args):
     with open(request_path, "w") as f:
         json.dump(request, f, indent=2)
 
-    # Launch the generation script in background
+    # Launch the generation script in background — pass the request file
+    # instead of user-derived args to avoid command injection surface
     gen_script = os.path.join(project_root, "scripts", "generate_loop_segment.py")
     if os.path.exists(gen_script):
         subprocess.Popen(
-            [sys.executable, gen_script, "--agent", target_agent, "--name", name],
+            [sys.executable, gen_script, "--request", request_path],  # nosemgrep: dangerous-subprocess-use-tainted-env-args
             cwd=project_root,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1994,7 +2001,7 @@ def handle_add_avatar_loop(args):
     else:
         return (
             f"Loop '{name}' request saved to {request_path}.\n"
-            f"Run: python scripts/generate_loop_segment.py --agent {target_agent} --name {name}\n"
+            f"Run: python scripts/generate_loop_segment.py --request {request_path}\n"
             f"to generate it."
         )
 
