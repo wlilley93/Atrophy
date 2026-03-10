@@ -825,6 +825,7 @@ class CompanionWindow(QWidget):
         self._build_input_bar()
         self._build_mode_buttons()
         self._build_status_bar()
+        self._reflow()
 
         # Hide UI during boot
         self._bar.hide()
@@ -1035,7 +1036,6 @@ class CompanionWindow(QWidget):
 
     def _build_overlays(self):
         self._transcript = TranscriptOverlay(self)
-        self._reflow()
 
     # ── Input bar ──
 
@@ -1352,23 +1352,6 @@ class CompanionWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._pin_to_all_spaces()
-
-    def _pin_to_all_spaces(self):
-        """Make window visible on all macOS Spaces/desktops."""
-        try:
-            from AppKit import NSApplication
-            # Find our NSWindow — iterate app windows, match by title
-            for ns_window in NSApplication.sharedApplication().windows():
-                if ns_window.title() == self.windowTitle():
-                    # canJoinAllSpaces(1<<0) | stationary(1<<4) | fullScreenAuxiliary(1<<8)
-                    ns_window.setCollectionBehavior_((1 << 0) | (1 << 4) | (1 << 8))
-                    ns_window.setLevel_(3)  # NSFloatingWindowLevel
-                    print("  [Pinned to all Spaces]")
-                    return
-            print("  [Spaces pin: no matching NSWindow found]")
-        except Exception as e:
-            print(f"  [Spaces pin failed: {e}]")
 
     _shutting_down = pyqtSignal()
     _shutdown_status = pyqtSignal(str, float)  # (label, progress 0..1)
