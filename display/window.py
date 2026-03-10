@@ -536,18 +536,18 @@ class TranscriptOverlay(QWidget):
             return
         super().paintEvent(event)
 
-        # Fade mask — gradient from opaque (background) at top to transparent at 1/3
+        # Fade mask — gentle gradient at top so text doesn't end abruptly
         vis_h = self.height()
-        fade_h = vis_h / 3.0
+        fade_h = vis_h / 4.0
         if fade_h <= 0:
             return
 
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         grad = QLinearGradient(0, 0, 0, fade_h)
-        # Use parent's background color for fade (dark/black for video overlay)
-        grad.setColorAt(0.0, QColor(0, 0, 0, 255))
-        grad.setColorAt(0.7, QColor(0, 0, 0, 80))
+        # Subtle fade — just enough to soften the top edge, not a solid block
+        grad.setColorAt(0.0, QColor(0, 0, 0, 100))
+        grad.setColorAt(0.5, QColor(0, 0, 0, 30))
         grad.setColorAt(1.0, QColor(0, 0, 0, 0))
         p.fillRect(0, 0, self.width(), int(fade_h), grad)
         p.end()
