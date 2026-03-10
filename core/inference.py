@@ -302,6 +302,10 @@ def stream_inference(
     else:
         effort = CLAUDE_EFFORT
 
+    # Validate effort — only allow known values (prevents arg injection)
+    if effort not in ("low", "medium", "high"):
+        effort = "medium"
+
     if cli_session_id:
         cmd = [
             CLAUDE_BIN,
@@ -541,6 +545,16 @@ def run_inference_turn(
 def run_inference_oneshot(messages: list[dict], system: str,
                          model: str = "claude-sonnet-4-6",
                          effort: str = "low") -> str:
+    # Validate effort and model — only allow known values
+    if effort not in ("low", "medium", "high"):
+        effort = "low"
+    _ALLOWED_MODELS = {
+        "claude-haiku-4-5-20251001", "claude-sonnet-4-6",
+        "claude-opus-4-6", "claude-sonnet-4-5-20241022",
+    }
+    if model not in _ALLOWED_MODELS:
+        model = "claude-sonnet-4-6"
+
     prompt_parts = []
     for msg in messages:
         role_label = "Will" if msg["role"] == "user" else AGENT_DISPLAY_NAME

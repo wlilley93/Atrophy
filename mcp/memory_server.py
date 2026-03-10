@@ -994,7 +994,8 @@ def handle_recall_session(args):
     conn = _connect()
 
     session = conn.execute(
-        "SELECT * FROM sessions WHERE id = ?", (session_id,)
+        "SELECT id, started_at, ended_at, summary, mood, notable, cli_session_id "
+        "FROM sessions WHERE id = ?", (session_id,)
     ).fetchone()
 
     if not session:
@@ -1139,11 +1140,13 @@ def handle_get_threads(args):
 
     if status == "all":
         threads = conn.execute(
-            "SELECT * FROM threads ORDER BY last_updated DESC"
+            "SELECT id, name, last_updated, summary, status "
+            "FROM threads ORDER BY last_updated DESC"
         ).fetchall()
     else:
         threads = conn.execute(
-            "SELECT * FROM threads WHERE status = ? "
+            "SELECT id, name, last_updated, summary, status "
+            "FROM threads WHERE status = ? "
             "ORDER BY last_updated DESC",
             (status,),
         ).fetchall()
@@ -1869,6 +1872,8 @@ def handle_set_timer(args):
 
 def handle_create_task(args):
     """Create a task definition in Obsidian and schedule it via cron."""
+    import re
+    import shlex
     import subprocess
 
     name = args["name"]
@@ -1877,6 +1882,17 @@ def handle_create_task(args):
     deliver = args.get("deliver", "message_queue")
     voice = args.get("voice", True)
     sources = args.get("sources", [])
+
+    # Sanitise task name — alphanumeric, hyphens, underscores only
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name.strip())
+    if not safe_name:
+        return "Error: task name must contain at least one alphanumeric character."
+    name = safe_name
+
+    # Validate cron expression — must be 5 space-separated fields of [0-9*/,-]
+    cron_parts = cron.strip().split()
+    if len(cron_parts) != 5 or not all(re.match(r'^[0-9*/,-]+$', p) for p in cron_parts):
+        return "Error: invalid cron expression. Expected 5 fields (minute hour day month weekday)."
 
     # Write task definition to Obsidian
     tasks_dir = os.path.join(AGENT_DIR, "tasks")
@@ -1908,7 +1924,7 @@ def handle_create_task(args):
 
     # The script argument needs the task name appended
     # cron.py stores the full command, so we use a wrapper approach
-    script_with_arg = f"{task_runner} {name}"
+    script_with_arg = f"{shlex.quote(task_runner)} {shlex.quote(name)}"
 
     result = subprocess.run(
         [sys.executable, cron_script, "add", f"task-{name}", cron, script_with_arg, "--install"],
