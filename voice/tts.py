@@ -114,6 +114,9 @@ def _process_prosody(text: str) -> tuple[str, dict]:
     cleaned = _PROSODY_RE.sub(_replace, text).strip()
     # Clean up multiple spaces
     cleaned = re.sub(r'  +', ' ', cleaned)
+    # Strip text that is only punctuation/whitespace (ElevenLabs rejects these)
+    if cleaned and not re.sub(r'[\s.\-,;:!?\u2026]+', '', cleaned):
+        cleaned = ''
 
     overrides = {}
     if stability_d != 0:

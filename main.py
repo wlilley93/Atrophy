@@ -454,9 +454,26 @@ def run_gui():
 
     def on_opening(_ignored: str) -> str:
         """Generate dynamic opening line — she goes first."""
+        from core.agency import time_of_day_context, time_gap_note
+        from core.memory import get_active_threads, get_last_session_time
+
+        # Build context for a varied, grounded opening
+        context_parts = [time_of_day_context()]
+        gap = time_gap_note(get_last_session_time())
+        if gap:
+            context_parts.append(gap)
+        threads = get_active_threads()
+        if threads:
+            names = [t["name"] for t in threads[:3]]
+            context_parts.append(f"Active threads: {', '.join(names)}")
+        context = " ".join(context_parts)
+
         response, cli_id = run_inference_turn(
-            "(Session starting. You go first. One or two sentences max. "
-            "No greeting cliches. Be present.)",
+            f"[Context: {context}]\n\n"
+            "(Session starting. You go first. One or two sentences. "
+            "Be present — not a greeting, not a status update. "
+            "Say something real. Reference a thread, notice the time, "
+            "ask something pointed. Different every time.)",
             system,
             session.cli_session_id,
         )

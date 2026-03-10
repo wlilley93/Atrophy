@@ -558,13 +558,8 @@ class CompanionWindow(QWidget):
         self._drift_timer.timeout.connect(self._tick_drift)
         self._drift_timer.start()
 
-        # Silence detection
-        self._silence_timer = QTimer(self)
-        self._silence_timer.setInterval(1000)
-        self._silence_seconds = 0.0
-        self._silence_prompted = False
-        self._silence_timer.timeout.connect(self._tick_silence)
-        self._silence_timer.start()
+        # Silence detection (disabled)
+        self._silence_timer = None
 
         # Warm vignette overlay
         self._vignette_opacity = 0.0
@@ -626,8 +621,8 @@ class CompanionWindow(QWidget):
     # ── Silence detection ──
 
     def _tick_silence(self):
-        # Only count silence when not thinking/streaming
-        if self._worker is not None:
+        # Only count silence when not thinking/streaming/waiting for opening
+        if self._worker is not None or getattr(self, '_opening_worker', None) is not None:
             self._silence_seconds = 0.0
             return
         self._silence_seconds += 1.0
@@ -673,18 +668,21 @@ class CompanionWindow(QWidget):
         self.update()
 
     def _tick_drift(self):
-        self._drift_x += self._drift_dx
-        if abs(self._drift_x) > 3.0:
-            self._drift_dx = -self._drift_dx
-        self._drift_y += self._drift_dy
-        if abs(self._drift_y) > 3.0:
-            self._drift_dy = -self._drift_dy
-        # Smooth vignette interpolation
-        if abs(self._vignette_opacity - self._vignette_target) > 0.001:
-            self._vignette_opacity += (self._vignette_target - self._vignette_opacity) * 0.05
-        if self._drift_needs_update:
-            self.update()
-        self._drift_needs_update = True
+        try:
+            self._drift_x += self._drift_dx
+            if abs(self._drift_x) > 3.0:
+                self._drift_dx = -self._drift_dx
+            self._drift_y += self._drift_dy
+            if abs(self._drift_y) > 3.0:
+                self._drift_dy = -self._drift_dy
+            # Smooth vignette interpolation
+            if abs(self._vignette_opacity - self._vignette_target) > 0.001:
+                self._vignette_opacity += (self._vignette_target - self._vignette_opacity) * 0.05
+            if self._drift_needs_update:
+                self.update()
+            self._drift_needs_update = True
+        except RuntimeError:
+            pass  # widget deleted during shutdown
 
     def _on_media_status(self, status):
         if status == QMediaPlayer.EndOfMedia:
@@ -838,10 +836,6 @@ class CompanionWindow(QWidget):
     # ── Streaming interaction flow ──
 
     def _on_user_input(self, text):
-        # Reset silence detection
-        self._silence_seconds = 0.0
-        self._silence_prompted = False
-
         # Fade out old overlays
         self._anims.clear()
         self._anims.append(_fade(self._my_label, self._my_label.opacity, 0.0, 150))
@@ -1098,9 +1092,8 @@ class CompanionWindow(QWidget):
             self._browse_history(1)
 
     def closeEvent(self, event):
-        # Stop all timers
+        # Stop timers
         self._drift_timer.stop()
-        self._silence_timer.stop()
         self._audio_player.stop()
         if self._worker:
             self._worker.quit()
@@ -1116,6 +1109,9 @@ class CompanionWindow(QWidget):
             t.start()
             t.join(timeout=5)
         super().closeEvent(event)
+        app = QApplication.instance()
+        if app:
+            app.quit()
 
 
 # ── Entry point ──
@@ -1123,19 +1119,24 @@ class CompanionWindow(QWidget):
 def run_app(on_synth_callback=None, on_opening_callback=None,
             system_prompt="", cli_session_id=None, session=None):
     app = QApplication.instance() or QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
 
     # Handle Ctrl+C gracefully
     import signal
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-    win = CompanionWindow(
+    # Keep a reference so gc doesn't collect the window
+    global _companion_window
+    _companion_window = CompanionWindow(
         on_synth=on_synth_callback,
         on_opening=on_opening_callback,
         system_prompt=system_prompt,
         cli_session_id=cli_session_id,
         session=session,
     )
-    win.show()
-    win.raise_()
-    win._bar.focus_input()
-    sys.exit(app.exec_())
+    _companion_window.show()
+    _companion_window.raise_()
+    _companion_window._bar.focus_input()
+    app.exec_()
+
+_companion_window = None
