@@ -1141,6 +1141,34 @@ class CompanionWindow(QWidget):
         elif event.key() == Qt.Key_Down:
             self._browse_history(1)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Pin to all macOS Spaces so Cmd+Left/Right doesn't leave it behind
+        try:
+            import ctypes, ctypes.util
+            objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library('objc'))
+            objc.objc_getClass.restype = ctypes.c_void_p
+            objc.sel_registerName.restype = ctypes.c_void_p
+            objc.objc_msgSend.restype = ctypes.c_void_p
+            objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+
+            NSApp = objc.objc_msgSend(
+                objc.objc_getClass(b'NSApplication'),
+                objc.sel_registerName(b'sharedApplication'),
+            )
+            # Get the NSWindow for this QWidget's winId
+            view = ctypes.c_void_p(int(self.winId()))
+            sel_window = objc.sel_registerName(b'window')
+            objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            ns_window = objc.objc_msgSend(view, sel_window)
+            if ns_window:
+                # NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
+                sel_set = objc.sel_registerName(b'setCollectionBehavior:')
+                objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulonglong]
+                objc.objc_msgSend(ns_window, sel_set, 1 << 0)
+        except Exception:
+            pass
+
     def closeEvent(self, event):
         # Stop timers
         self._drift_timer.stop()
