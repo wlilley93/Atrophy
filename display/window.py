@@ -1014,6 +1014,12 @@ class CompanionWindow(QWidget):
         self._start_turn(text)
 
     def _start_turn(self, text):
+        # Cancel opening if still loading — user went first
+        if getattr(self, '_opening_worker', None):
+            self._opening_worker = None
+            self._spinner.stop()
+            self._status_bar.stop()
+
         # Add user message to transcript
         self._transcript.add_message("user", text)
 
@@ -1224,48 +1230,48 @@ class CompanionWindow(QWidget):
         except Exception as e:
             print(f"  [Spaces pin failed: {e}]")
 
+    _shutting_down = pyqtSignal()
+
     def closeEvent(self, event):
         if getattr(self, '_shutdown_done', False):
-            # Cleanup finished — actually close
             super().closeEvent(event)
             app = QApplication.instance()
             if app:
                 app.quit()
             return
 
-        # Don't close yet — show shutdown progress
+        if getattr(self, '_shutdown_started', False):
+            event.ignore()
+            return
+
         event.ignore()
         self._begin_shutdown()
 
     def _begin_shutdown(self):
         """Run cleanup with visible progress, then close."""
+        self._shutdown_started = True
         self._drift_timer.stop()
         self._audio_player.stop()
         if self._worker:
             self._worker.quit()
             self._worker.wait(2000)
 
-        # Hide input, show shutdown bar
         self._bar.hide()
         self._transcript.add_message("companion", "see you.", instant=True)
         self._status_bar.start("shutting down...")
 
+        # Connect signal for thread-safe close trigger
+        self._shutting_down.connect(self._finish_shutdown)
+
         import threading
 
         def _cleanup():
-            steps_done = 0
-            total_steps = 2
-
-            # Step 1: end session
             if self._session:
                 try:
                     self._session.end(self._system)
                 except Exception:
                     pass
-            steps_done += 1
-            self._status_bar.set_progress(steps_done / total_steps, "caching next opening...")
 
-            # Step 2: cache next opening
             try:
                 from main import _cache_next_opening
                 _cache_next_opening(
@@ -1273,18 +1279,15 @@ class CompanionWindow(QWidget):
                 )
             except Exception as e:
                 print(f"  [Cache opening failed: {e}]")
-            steps_done += 1
-            self._status_bar.set_progress(1.0, "done")
 
-        def _on_done():
-            self._shutdown_done = True
-            self.close()
+            self._shutting_down.emit()
 
-        def _run():
-            _cleanup()
-            QTimer.singleShot(0, _on_done)
+        threading.Thread(target=_cleanup, daemon=True).start()
 
-        threading.Thread(target=_run, daemon=True).start()
+    def _finish_shutdown(self):
+        self._status_bar.stop()
+        self._shutdown_done = True
+        self.close()
 
 
 # ── Entry point ──

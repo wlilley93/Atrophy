@@ -213,7 +213,7 @@ async def _synthesise_elevenlabs_stream(text: str) -> Path:
     url = (
         f"https://api.elevenlabs.io/v1/text-to-speech"
         f"/{ELEVENLABS_VOICE_ID}/stream"
-        f"?output_format=mp3_44100_192"
+        f"?output_format=mp3_44100_128"
     )
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
