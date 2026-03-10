@@ -1,0 +1,62 @@
+# CRITICAL = blocks deploy. HIGH findings are all in vendor/ (third-party).
+fail_on: CRITICAL
+
+tools:
+  semgrep:
+    enabled: true
+    exclude_paths:
+      - build/
+      - vendor/
+
+  bandit:
+    enabled: true
+    exclude_dirs:
+      - build
+      - vendor
+    skip:
+      - B101  # assert usage (test-style checks in non-test code)
+
+  gitleaks:
+    enabled: true
+    exclude_paths:
+      - .env
+      - vendor/
+
+  trufflehog:
+    enabled: true
+    exclude_paths:
+      - .env
+      - vendor/
+
+  detect-secrets:
+    enabled: true
+    exclude_paths:
+      - .env
+      - vendor/
+
+  trivy:
+    enabled: true
+
+  grype:
+    enabled: true
+
+  pip-audit:
+    enabled: true
+
+  licence:
+    enabled: true
+
+  codeql:
+    enabled: false  # slow, use --deep
+
+  snyk:
+    enabled: false  # requires SNYK_TOKEN
+
+  kics:
+    enabled: false  # no IaC in this project
+
+# Suppress false positives by rule
+ignore_rules:
+  # SQL f-strings only interpolate internal table/column names, all user
+  # values go through parameterised ? placeholders
+  - "bandit:B608"
