@@ -14,14 +14,14 @@ Style guide for The Atrophied Mind codebase.
 
 ## Architecture Patterns
 
-- **Agent-aware** — All paths derive from `AGENT_NAME`, loaded from `agents/<name>/`. Config reads the agent manifest at import time. Per-agent isolation means separate databases, state directories, and identity files.
+- **Agent-aware** — All paths derive from `AGENT_NAME`, loaded from `agents/<name>/`. Config reads the agent manifest at import time. Per-agent isolation means separate databases, data directories, and identity files.
 - **Env-var driven** — Every setting has an env var override. The agent manifest can also override voice, heartbeat, display, and Telegram settings. Env vars win over manifest values where both exist.
 - **Obsidian optional** — Always check existence before reading Obsidian paths. Provide fallbacks. The system must work without a vault connected.
 - **Streaming-first** — Prefer generators and event streams over blocking calls. Inference streams token-by-token; TTS streams audio chunks.
 - **Async where it matters** — Background threads for I/O-bound work (embedding writes, TTS synthesis). Not forced everywhere. The main conversation loop is synchronous.
 - **Background threads for I/O** — Embedding writes, TTS playback, and other non-blocking I/O use daemon threads. CPU-bound work stays on the main thread.
 - **SQLite with WAL mode** — All database connections enable WAL journal mode and foreign keys. One database per agent.
-- **Per-agent isolation** — Separate DBs, state dirs, identity files. No shared mutable state between agents.
+- **Per-agent isolation** — Separate DBs, data dirs, identity files. No shared mutable state between agents.
 
 ## File Organization
 
@@ -32,7 +32,7 @@ display/            GUI only (PyQt5 window, HTML canvas overlay)
 channels/           External communication (Telegram)
 mcp/                MCP server (runs as subprocess, exposes memory tools)
 scripts/            CLI tools and scheduled jobs
-agents/<name>/      Per-agent identity, state, avatar assets
+agents/<name>/      Per-agent identity (prompts/), data (data/), avatar assets
 db/                 Schema only (databases live in agent dirs)
 docs/               All documentation
 ```
@@ -54,7 +54,7 @@ docs/               All documentation
 - **Functions** — `snake_case`
 - **Config constants** — `UPPER_SNAKE_CASE`
 - **Agent manifest fields** — `snake_case` in JSON (`display_name`, `wake_words`, `elevenlabs_voice_id`)
-- **State files** — Dot-prefixed in the agent state dir (`.emotional_state.json`, `.dream_log.txt`)
+- **State files** — Dot-prefixed in the agent data dir (`.emotional_state.json`, `.message_queue.json`)
 
 ## Database Conventions
 

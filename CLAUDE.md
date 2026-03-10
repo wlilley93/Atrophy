@@ -19,16 +19,29 @@ Agent-aware: set `AGENT=<name>` to switch agents. Each agent has its own identit
 
 ## Agents
 
-`agents/` contains agent definitions — runtime resources for the companion system, **not** Claude Code skills.
+Each agent has two homes — the **repo** for config/state/assets, and **Obsidian** for living documents and canonical prompts.
 
-Each agent directory:
-- `agent.json` — manifest (display name, voice config, wake words, heartbeat schedule, window, Obsidian)
-- `system_prompt.md` — system prompt
-- `soul.md` — personality/identity document
-- `heartbeat.md` — outreach decision checklist
-- `memory.db` — SQLite memory database
-- `avatar/` — visual assets (source images, ambient loops)
-- `state/` — runtime state files (gitignored)
+### Repo (`agents/<name>/`)
+
+| Directory | Contents |
+|-----------|----------|
+| `data/agent.json` | Manifest (display name, voice, wake words, heartbeat, window) |
+| `data/` | Runtime state files, memory.db (gitignored) |
+| `prompts/` | Local fallback prompts (system_prompt.md, soul.md, heartbeat.md) |
+| `avatar/` | Visual assets — source images, ambient loops, clips (gitignored) |
+
+### Obsidian (`Projects/The Atrophied Mind/Agent Workspace/<name>/`)
+
+| Directory | Contents |
+|-----------|----------|
+| `skills/` | **Canonical** runtime prompts — system.md, soul.md, tools.md, gift.md, introspection.md, morning-brief.md |
+| `notes/` | Reflections, threads, for-will, gifts, journal-prompts |
+| `notes/journal/` | Timestamped journal entries |
+| `notes/evolution-log/` | Archived soul/prompt revisions |
+
+Obsidian skills take precedence over repo prompts. The agent reads and writes its notes directly in Obsidian.
+
+**Note:** `docs/agents/companion/prompts/` documents the prompt system — it is NOT the same as repo `agents/companion/prompts/` (local fallbacks) or Obsidian `Agent Workspace/companion/skills/` (canonical runtime prompts). The three locations are intentional: docs describe, repo stores fallbacks, Obsidian holds the canonical versions the agent actually uses.
 
 Create new agents: `python scripts/create_agent.py`
 
@@ -47,7 +60,7 @@ Each agent has unique wake words defined in `agent.json`. These are used by the 
 | `core/context.py` | Context building for conversations |
 | `core/agency.py` | Agent behaviour and autonomous actions |
 | `core/prompts.py` | Prompt construction |
-| `core/inner_life.py` | Dreaming, reflection, self-evolution |
+| `core/inner_life.py` | Reflection, self-evolution |
 | `core/embeddings.py` | Local embedding model (sentence-transformers) |
 | `core/vector_search.py` | Semantic memory retrieval |
 | `core/sentinel.py` | Content safety / coherence monitoring |
@@ -64,7 +77,7 @@ Each agent has unique wake words defined in `agent.json`. These are used by the 
 | `voice/wake_word.py` | Wake word detection |
 | `channels/` | I/O channels (terminal, Telegram) |
 | `scripts/create_agent.py` | Interactive agent creation |
-| `scripts/cron.py` | Scheduled jobs (heartbeat, dreams) |
+| `scripts/cron.py` | Scheduled jobs (heartbeat, introspection, etc.) |
 
 ## Configuration
 
@@ -104,7 +117,14 @@ The gear icon (or Cmd+,) opens a full settings panel in the GUI. All settings ca
 
 ## Documentation
 
-`docs/` is the source of truth:
+`docs/` is the source of truth for all project documentation. Any markdown files produced during development — guides, specs, architecture notes, references — should go in the appropriate `docs/` subdirectory.
+
+**Docs sync to Obsidian automatically:**
+- Writes to `docs/` auto-sync to `Projects/The Atrophied Mind/Docs/` in Obsidian (PostToolUse hook)
+- On session start, newer Obsidian edits are pulled back into `docs/` automatically
+- Manual full sync: `/sync-project-docs`
+
+### Structure
 
 - `docs/guides/` — Quick start, creating agents, configuration, memory system
 - `docs/codebase/` — Architecture, core modules, voice pipeline, display, memory, MCP, channels, scripts, skill routing
@@ -114,10 +134,14 @@ The gear icon (or Cmd+,) opens a full settings panel in the GUI. All settings ca
 - `docs/security/` — Trust model and safety
 - `docs/specs/` — Technical specifications
 
-## Skill Routing (three layers)
+## Skill System
 
-1. **Global skills** (Claude Code) — `~/.claude/skills/` → Obsidian `Skills/`
+Project skills are managed via Obsidian. Use `/project-skills` to discover project-specific skills, `/global-skills-directory` for global skills, and `/audit-skill-system` to check the system for consistency.
+
+### Three layers
+
+1. **Global skills** (Claude Code) — `~/.claude/skills/` → Obsidian `Global Skills/`
 2. **Project skills** (Claude Code) — `.claude/skills/project-skills/` → Obsidian `Projects/The Atrophied Mind/skills/`
-3. **Agent skills** (runtime) — Obsidian `Projects/The Atrophied Mind/<agent>/skills/` — loaded by the companion system, NOT Claude Code
+3. **Agent skills** (runtime) — Obsidian `Projects/The Atrophied Mind/Agent Workspace/<agent>/skills/` — loaded by the companion system, NOT Claude Code
 
-See `docs/codebase/skill-routing.md` for details.
+Agent skills are loaded at runtime by `core/context.py` and `core/prompts.py` from the Obsidian vault.

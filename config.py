@@ -12,7 +12,7 @@ AGENT_NAME = os.environ.get("AGENT", "companion")
 AGENT_DIR = PROJECT_ROOT / "agents" / AGENT_NAME
 
 # Load agent manifest
-_manifest_path = AGENT_DIR / "agent.json"
+_manifest_path = AGENT_DIR / "data" / "agent.json"
 if _manifest_path.exists():
     AGENT = json.loads(_manifest_path.read_text())
 else:
@@ -25,17 +25,18 @@ OPENING_LINE = AGENT.get("opening_line", "Hello.")
 WAKE_WORDS = AGENT.get("wake_words", [f"hey {AGENT_NAME}", AGENT_NAME])
 
 # ── Per-agent paths ──
-DB_PATH = AGENT_DIR / "memory.db"
-OPENING_CACHE = AGENT_DIR / "state" / ".opening_cache.json"
-MESSAGE_QUEUE = AGENT_DIR / "state" / ".message_queue.json"
-EMOTIONAL_STATE_FILE = AGENT_DIR / "state" / ".emotional_state.json"
-USER_STATUS_FILE = AGENT_DIR / "state" / ".user_status.json"
-CANVAS_CONTENT = AGENT_DIR / "state" / ".canvas_content.html"
-SYSTEM_PROMPT_PATH = AGENT_DIR / "system_prompt.md"
-SOUL_PATH = AGENT_DIR / "soul.md"
-HEARTBEAT_PATH = AGENT_DIR / "heartbeat.md"
-DREAM_LOG = AGENT_DIR / "state" / ".dream_log.txt"
-IDENTITY_QUEUE = AGENT_DIR / "state" / ".identity_review_queue.json"
+DATA_DIR = AGENT_DIR / "data"
+PROMPTS_DIR = AGENT_DIR / "prompts"
+DB_PATH = DATA_DIR / "memory.db"
+OPENING_CACHE = DATA_DIR / ".opening_cache.json"
+MESSAGE_QUEUE = DATA_DIR / ".message_queue.json"
+EMOTIONAL_STATE_FILE = DATA_DIR / ".emotional_state.json"
+USER_STATUS_FILE = DATA_DIR / ".user_status.json"
+CANVAS_CONTENT = DATA_DIR / ".canvas_content.html"
+SYSTEM_PROMPT_PATH = PROMPTS_DIR / "system_prompt.md"
+SOUL_PATH = PROMPTS_DIR / "soul.md"
+HEARTBEAT_PATH = PROMPTS_DIR / "heartbeat.md"
+IDENTITY_QUEUE = DATA_DIR / ".identity_review_queue.json"
 
 # ── Per-agent avatar ──
 AVATAR_DIR = AGENT_DIR / "avatar"
@@ -95,8 +96,9 @@ _obsidian_base = Path(os.environ.get(
     str(Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "The Atrophied Mind"),
 ))
 OBSIDIAN_VAULT = _obsidian_base
-OBSIDIAN_AGENT_DIR = _obsidian_base / AGENT.get("obsidian_subdir", AGENT_DISPLAY_NAME)
-OBSIDIAN_AGENT_NOTES = OBSIDIAN_AGENT_DIR / "agents" / AGENT_NAME
+OBSIDIAN_PROJECT_DIR = _obsidian_base / "Projects" / PROJECT_ROOT.name
+OBSIDIAN_AGENT_DIR = OBSIDIAN_PROJECT_DIR / "Agent Workspace" / AGENT_NAME
+OBSIDIAN_AGENT_NOTES = OBSIDIAN_AGENT_DIR
 
 # ── Memory ──
 CONTEXT_SUMMARIES = 3

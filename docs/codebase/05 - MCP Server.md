@@ -13,7 +13,7 @@ The MCP server is launched as a subprocess by the `claude` CLI. Configuration is
       "command": "/path/to/python",
       "args": ["mcp/memory_server.py"],
       "env": {
-        "COMPANION_DB": "agents/<name>/memory.db",
+        "COMPANION_DB": "agents/<name>/data/memory.db",
         "OBSIDIAN_VAULT": "~/Library/Mobile Documents/.../The Atrophied Mind",
         "OBSIDIAN_AGENT_DIR": "<vault>/<agent_display_name>",
         "OBSIDIAN_AGENT_NOTES": "<vault>/<agent>/agents/<name>",

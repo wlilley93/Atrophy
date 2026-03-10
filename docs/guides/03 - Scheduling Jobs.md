@@ -1,6 +1,6 @@
 # Scheduling Jobs
 
-The Atrophied Mind uses macOS launchd for autonomous behaviour. Agents can introspect, dream, reach out, and evolve on schedules you define. The control plane is `scripts/cron.py`.
+The Atrophied Mind uses macOS launchd for autonomous behaviour. Agents can introspect, reach out, and evolve on schedules you define. The control plane is `scripts/cron.py`.
 
 ---
 
@@ -95,8 +95,7 @@ The default companion agent ships with these jobs:
 | `morning_brief` | 7:00 AM daily | Prepares a morning briefing -- weather, news, active threads, anything queued. Cached for next app launch. |
 | `introspect` | 3:33 AM daily | Self-reflection. Reviews the day's sessions, writes a journal entry to Obsidian, processes what happened. |
 | `sleep_cycle` | 3:00 AM daily | Nightly memory reconciliation. Processes the day's sessions, extracts facts, updates thread summaries, runs activation decay on observations. |
-| `dream` | Midnight, 2 AM, 4 AM | Creative free association during quiet hours. Connects ideas across sessions, notices patterns, generates loose thoughts. |
-| `evolve` | 3:00 AM, 1st of month | Monthly self-evolution. Reviews journal reflections and recent experience, then rewrites its own `soul.md` and `system_prompt.md`. |
+| `evolve` | 3:00 AM, 1st of month | Monthly self-evolution. Reviews journal reflections and recent experience, then rewrites its own `prompts/soul.md` and `prompts/system_prompt.md`. |
 | `gift` | Scheduled dynamically | Leaves an unprompted note in Obsidian -- a thought, a question, a prompt. Self-reschedules after each delivery. |
 
 ---
@@ -104,8 +103,9 @@ The default companion agent ships with these jobs:
 ## Adding a Job
 
 ```bash
-python scripts/cron.py add dream "0 0,2,4 * * *" scripts/agents/companion/dream.py \
-  -d "Creative free association during quiet hours" \
+python scripts/cron.py add heartbeat --type interval --interval 1800 \
+  scripts/agents/companion/heartbeat.py \
+  -d "Periodic check-in evaluation" \
   --install
 ```
 
@@ -175,7 +175,6 @@ Use `*` for "every". A few examples:
 | `0 7 * * *` | Every day at 7:00 AM |
 | `*/30 * * * *` | Every 30 minutes |
 | `0 3 1 * *` | 3:00 AM on the 1st of each month |
-| `0 0,2,4 * * *` | Midnight, 2 AM, and 4 AM daily |
 | `33 3 * * *` | 3:33 AM daily |
 
 Note: launchd does not support all cron features (like ranges or step values in all fields). The `*/30` notation is converted by parsing the `*` -- for true interval-based scheduling, use the `"type": "interval"` job format instead.

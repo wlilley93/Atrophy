@@ -1,8 +1,8 @@
 # Agent Manifest Reference
 
-Each agent is defined by an `agent.json` file in its directory under `agents/{name}/`. The manifest configures identity, voice synthesis, communication channels, display, scheduled behaviors, and Obsidian integration.
+Each agent is defined by an `agent.json` file in its data directory under `agents/{name}/data/`. The manifest configures identity, voice synthesis, communication channels, display, scheduled behaviors, and Obsidian integration.
 
-File path: `agents/{name}/agent.json`
+File path: `agents/{name}/data/agent.json`
 
 ---
 
@@ -133,20 +133,15 @@ Heartbeats only fire during the active window (`active_start` to `active_end`). 
 
 ---
 
-## obsidian_subdir
+## Obsidian Path Resolution
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `obsidian_subdir` | string | Yes | Subdirectory within the Obsidian vault where this agent's files live. Used to resolve `OBSIDIAN_AGENT_DIR`. |
+Agent workspaces in Obsidian are resolved automatically from the agent name:
 
-The agent's notes are stored at `{OBSIDIAN_VAULT}/{obsidian_subdir}/agents/{name}/notes/`.
-
-**Example:**
-```json
-{
-  "obsidian_subdir": "Companion"
-}
 ```
+{OBSIDIAN_VAULT}/Projects/{project-name}/agents/{agent-name}/
+```
+
+No manifest field is needed — `config.py` derives the path from `PROJECT_ROOT.name` and `AGENT_NAME`.
 
 ---
 
@@ -182,7 +177,6 @@ The agent's notes are stored at `{OBSIDIAN_VAULT}/{obsidian_subdir}/agents/{name
     "active_start": 9,
     "active_end": 22,
     "interval_mins": 30
-  },
-  "obsidian_subdir": "Companion"
+  }
 }
 ```

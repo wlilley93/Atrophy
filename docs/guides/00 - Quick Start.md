@@ -124,9 +124,9 @@ The **Settings panel** (gear icon or Cmd+,) lets you adjust all configuration li
 
 On first run, the companion:
 
-1. Initializes its SQLite database from `db/schema.sql` (stored at `agents/companion/memory.db`)
+1. Initializes its SQLite database from `db/schema.sql` (stored at `agents/companion/data/memory.db`)
 2. Starts a new session
-3. Delivers its opening line (configured in `agents/companion/agent.json`)
+3. Delivers its opening line (configured in `agents/companion/data/agent.json`)
 
 Just start talking. The companion uses Claude Code as its inference backend, with an MCP memory server that gives it access to its own memory database. It can remember, search, create threads, write observations, and bookmark moments.
 
@@ -138,5 +138,5 @@ On subsequent runs, it resumes its Claude CLI session and checks recent memory f
 
 - [01 - Creating Agents](01%20-%20Creating%20Agents.md) -- build a second agent with its own identity and voice
 - [02 - Configuration Reference](02%20-%20Configuration%20Reference.md) -- every knob and switch
-- [03 - Scheduling Jobs](03%20-%20Scheduling%20Jobs.md) -- autonomous behaviour (heartbeats, introspection, dreams)
+- [03 - Scheduling Jobs](03%20-%20Scheduling%20Jobs.md) -- autonomous behaviour (heartbeats, introspection, evolution)
 - [04 - Memory System](04%20-%20Memory%20System.md) -- how the companion remembers

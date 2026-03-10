@@ -14,8 +14,8 @@ import sys
 
 DB_PATH = os.environ.get("COMPANION_DB", "companion.db")
 VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", os.path.expanduser("~/Documents/Obsidian"))
-AGENT_DIR = os.environ.get("OBSIDIAN_AGENT_DIR", os.path.join(VAULT_PATH, "Companion"))
-AGENT_NOTES = os.environ.get("OBSIDIAN_AGENT_NOTES", os.path.join(AGENT_DIR, "agents", "companion"))
+AGENT_DIR = os.environ.get("OBSIDIAN_AGENT_DIR", os.path.join(VAULT_PATH, "Projects", "The Atrophied Mind", "Agent Workspace", "companion"))
+AGENT_NOTES = os.environ.get("OBSIDIAN_AGENT_NOTES", AGENT_DIR)
 
 TOOLS = [
     {
@@ -973,9 +973,6 @@ def _make_frontmatter(path: str) -> str:
     if "journal" in parts:
         note_type = "journal"
         tags.append("journal")
-    elif "dreams" in parts:
-        note_type = "dream"
-        tags.append("dream")
     elif "gifts" in path.lower():
         note_type = "gift"
         tags.append("gift")

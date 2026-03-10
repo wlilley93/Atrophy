@@ -2,7 +2,7 @@
 
 All configuration flows through `config.py`, which reads from three sources in order of priority:
 
-1. **Agent manifest** (`agents/<name>/agent.json`) -- per-agent overrides
+1. **Agent manifest** (`agents/<name>/data/agent.json`) -- per-agent overrides
 2. **Environment variables** (from `.env` or shell)
 3. **Hardcoded defaults** in `config.py`
 
@@ -41,7 +41,7 @@ The agent manifest takes priority for voice, heartbeat, telegram, and display se
 
 ## Agent Manifest (agent.json)
 
-The agent manifest lives at `agents/<name>/agent.json`. It provides per-agent overrides for voice, display, heartbeat, and channel configuration.
+The agent manifest lives at `agents/<name>/data/agent.json`. It provides per-agent overrides for voice, display, heartbeat, and channel configuration.
 
 See [01 - Creating Agents](01%20-%20Creating%20Agents.md) for the full field reference and an annotated example.
 
@@ -147,12 +147,12 @@ All per-agent paths are derived from the agent name. For an agent named `oracle`
 
 | Path | Description |
 |------|-------------|
-| `agents/oracle/agent.json` | Agent manifest |
-| `agents/oracle/memory.db` | SQLite memory database |
-| `agents/oracle/system_prompt.md` | System prompt |
-| `agents/oracle/soul.md` | Identity / personality |
-| `agents/oracle/heartbeat.md` | Outreach decision checklist |
-| `agents/oracle/state/` | Runtime state files (gitignored) |
+| `agents/oracle/data/agent.json` | Agent manifest |
+| `agents/oracle/data/memory.db` | SQLite memory database |
+| `agents/oracle/prompts/system_prompt.md` | System prompt |
+| `agents/oracle/prompts/soul.md` | Identity / personality |
+| `agents/oracle/prompts/heartbeat.md` | Outreach decision checklist |
+| `agents/oracle/data/` | Runtime data files (gitignored) |
 | `agents/oracle/avatar/` | Visual assets |
 | `scripts/agents/oracle/jobs.json` | Scheduled job definitions |
 | `scripts/agents/oracle/` | Agent-specific scripts (heartbeat, introspect, etc.) |

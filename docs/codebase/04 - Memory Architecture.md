@@ -1,6 +1,6 @@
 # Memory Architecture
 
-The companion's memory is a three-layer SQLite system defined in `db/schema.sql` and operated through `core/memory.py`. Database is per-agent at `agents/<name>/memory.db`. WAL mode is enabled for concurrent reads.
+The companion's memory is a three-layer SQLite system defined in `db/schema.sql` and operated through `core/memory.py`. Database is per-agent at `agents/<name>/data/memory.db`. WAL mode is enabled for concurrent reads.
 
 ## Layer 1: Episodic
 

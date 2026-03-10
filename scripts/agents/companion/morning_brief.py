@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from config import DB_PATH, MESSAGE_QUEUE, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, DREAM_LOG
+from config import DB_PATH, MESSAGE_QUEUE, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES
 from core.memory import (
     _connect, get_active_threads, get_recent_summaries,
     get_recent_observations,
@@ -90,13 +90,6 @@ def _gather_context() -> str:
     if observations:
         lines = [f"- {o['content']}" for o in observations]
         parts.append(f"## Recent observations\n" + "\n".join(lines))
-
-    # Dream log from sleep cycle
-    dream_log_path = DREAM_LOG
-    if dream_log_path.is_file():
-        dream_log = dream_log_path.read_text().strip()
-        if dream_log:
-            parts.append(f"## Overnight thoughts\n{dream_log}")
 
     # Companion reflections (latest)
     reflections_path = OBSIDIAN_AGENT_NOTES / "notes" / "reflections.md"

@@ -12,13 +12,13 @@ Entry point: `main.py`. Three modes: `--cli` (voice+text), `--text` (text-only),
 
 1. **Load environment**: `.env` file loaded via `python-dotenv`. Agent name resolved from `--agent` flag or `AGENT` environment variable (default: `companion`).
 
-2. **Load configuration**: `config.py` reads `agents/<name>/agent.json` for identity, voice, display, heartbeat, and Telegram settings. All per-agent paths are derived from the agent name.
+2. **Load configuration**: `config.py` reads `agents/<name>/data/agent.json` for identity, voice, display, heartbeat, and Telegram settings. All per-agent paths are derived from the agent name.
 
 3. **Initialise database**: `memory.init_db()` executes `db/schema.sql` to create tables (idempotent via `IF NOT EXISTS`), then runs migrations for schema evolution on existing databases.
 
 4. **Start session**: `Session.start()` creates a new row in the `sessions` table and looks up the previous CLI session ID from the most recent session that has one. This allows inference to resume the same Claude CLI conversation thread across companion restarts.
 
-5. **Load system prompt**: `context.load_system_prompt()` reads from Obsidian first (`<agent_dir>/skills/system.md`), falling back to the local file (`agents/<name>/system_prompt.md`), then to a minimal default. The Obsidian-first approach allows the companion to edit its own system prompt via the self-evolution daemon.
+5. **Load system prompt**: `context.load_system_prompt()` reads from Obsidian first (`<agent_dir>/skills/system.md`), falling back to the local file (`agents/<name>/prompts/system_prompt.md`), then to a minimal default. The Obsidian-first approach allows the companion to edit its own system prompt via the self-evolution daemon.
 
 6. **Generate opening**: Behaviour depends on whether a CLI session ID exists:
    - **New session** (no prior CLI session): Display the static opening line from `agent.json`.
@@ -110,7 +110,7 @@ Triggered by `KeyboardInterrupt` or `EOFError` (Ctrl+C or Ctrl+D).
 
 2. **Write summary**: Summary stored in the `summaries` table with an async embedding. The session row is updated with `ended_at`, summary text, mood, and notable flag.
 
-3. **Save emotional state**: The inner life state (emotions + trust) is written to `agents/<name>/state/.emotional_state.json` with the current timestamp.
+3. **Save emotional state**: The inner life state (emotions + trust) is written to `agents/<name>/data/.emotional_state.json` with the current timestamp.
 
 4. **Update user status**: Presence tracking updated (if applicable).
 
@@ -127,7 +127,6 @@ Autonomous daemons run on launchd schedules defined in `scripts/agents/<name>/jo
 | **observer** | Reads recent turns, extracts factual observations with confidence scores | Every 15 minutes during active hours |
 | **heartbeat** | Evaluates whether to reach out via Telegram based on time since last interaction, active threads, and emotional state | Every 30 minutes during active hours (configurable per agent) |
 | **sleep_cycle** | End-of-day processing: decay observation activations, mark stale observations, generate daily reflection note | Once nightly |
-| **dream** | Creative/associative processing: finds unexpected connections between memories, writes dream-log entries | Once nightly |
 | **introspect** | Reviews recent observations, checks which still hold, updates identity snapshot if warranted | Periodic (agent-configured) |
 | **evolve** | Self-evolution: reviews conversation history and rewrites system prompt and soul document | Monthly |
 | **gift** | Generates a small creative offering (poem, observation, question) and leaves it in Obsidian | Periodic (agent-configured) |

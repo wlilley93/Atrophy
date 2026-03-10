@@ -4,18 +4,25 @@ The Atrophied Mind is a Python companion agent system. It uses the Claude CLI fo
 
 ## Agent System
 
-The system is agent-aware. Setting `AGENT=<name>` switches the entire identity. All paths, configuration, database, voice settings, and personality are scoped per-agent from `agents/<name>/agent.json`. The `scripts/create_agent.py` wizard scaffolds new agents interactively.
+The system is agent-aware. Setting `AGENT=<name>` switches the entire identity. All paths, configuration, database, voice settings, and personality are scoped per-agent from `agents/<name>/data/agent.json`. The `scripts/create_agent.py` wizard scaffolds new agents interactively.
 
 ```
 agents/
   companion/
-    agent.json          # manifest: display name, voice config, heartbeat, telegram
-    system_prompt.md    # personality and behavioral instructions
-    soul.md             # core identity document (self-editable via evolve)
-    heartbeat.md        # outreach evaluation checklist
-    memory.db           # per-agent SQLite database
-    state/              # runtime state files (.emotional_state.json, etc.)
-    avatar/             # video loops, source images
+    prompts/              # all prompt/identity documents
+      system_prompt.md    # personality and behavioral instructions
+      soul.md             # core identity document (self-editable via evolve)
+      heartbeat.md        # outreach evaluation checklist
+    data/                 # all runtime data files
+      agent.json          # manifest: display name, voice config, heartbeat, telegram
+      memory.db           # per-agent SQLite database
+      .emotional_state.json
+      .user_status.json
+      .message_queue.json
+      .opening_cache.json
+      .canvas_content.html
+      .identity_review_queue.json
+    avatar/               # video loops, source images
 ```
 
 ## Operational Modes
@@ -81,16 +88,15 @@ Background daemons run via macOS launchd, managed by `scripts/cron.py`:
 | `heartbeat` | Every 30 min | Evaluate unprompted outreach via Telegram |
 | `sleep_cycle` | 3:00 AM daily | Process day's sessions, update threads, decay activations |
 | `morning_brief` | 7:00 AM daily | Generate weather/news/threads brief |
-| `dream` | 12 AM, 2 AM, 4 AM | Creative free association, connect ideas |
 | `introspect` | Monthly (24th, 3:33 AM) | Deep self-reflection, journal entry |
-| `evolve` | Monthly (1st, 3:00 AM) | Revise soul.md and system_prompt.md |
+| `evolve` | Monthly (1st, 3:00 AM) | Revise prompts/soul.md and prompts/system_prompt.md |
 | `gift` | Monthly (28th, 12:11 AM) | Unprompted gift note, self-rescheduling |
 
 See [07 - Scripts and Automation](07%20-%20Scripts%20and%20Automation.md).
 
 ## Obsidian Integration
 
-The companion optionally reads from and writes to an Obsidian vault. The system prompt is loaded from Obsidian first (the agent can edit it there), falling back to the local `system_prompt.md`. Skill prompts live in `<agent>/skills/`. MCP tools provide `read_note`, `write_note`, `search_notes`, and `prompt_journal` for vault interaction.
+The companion optionally reads from and writes to an Obsidian vault. The system prompt is loaded from Obsidian first (the agent can edit it there), falling back to the local `prompts/system_prompt.md`. Skill prompts live in `<agent>/skills/`. MCP tools provide `read_note`, `write_note`, `search_notes`, and `prompt_journal` for vault interaction.
 
 Notes created by the companion get YAML frontmatter (type, created, updated, agent, tags). Obsidian features like `[[wiki links]]`, `#tags`, inline Dataview fields, and reminder syntax are supported.
 

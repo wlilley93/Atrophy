@@ -1084,8 +1084,6 @@ class SettingsPanel(QWidget):
         self._add_text("opening_line", "Opening Line", cfg.OPENING_LINE)
         self._add_text("wake_words", "Wake Words",
                        ", ".join(cfg.WAKE_WORDS))
-        self._add_text("obsidian_subdir", "Obsidian Subdir",
-                       cfg.AGENT.get("obsidian_subdir", cfg.AGENT_DISPLAY_NAME))
 
         # ── Display / Window ──
         self._add_section("WINDOW")
@@ -1324,7 +1322,7 @@ class SettingsPanel(QWidget):
         manifest["user_name"] = cfg.USER_NAME
         manifest["opening_line"] = cfg.OPENING_LINE
         manifest["wake_words"] = cfg.WAKE_WORDS
-        manifest["obsidian_subdir"] = self._get_value("obsidian_subdir") or cfg.AGENT_DISPLAY_NAME
+
 
         manifest.setdefault("voice", {})
         manifest["voice"]["tts_backend"] = cfg.TTS_BACKEND

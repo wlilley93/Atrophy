@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from config import DB_PATH, DREAM_LOG as _DREAM_LOG, IDENTITY_QUEUE as _IDENTITY_QUEUE
+from config import DB_PATH, IDENTITY_QUEUE as _IDENTITY_QUEUE
 from core.memory import (
     _connect,
     get_active_threads,
@@ -39,7 +39,6 @@ from core.inference import run_inference_oneshot
 
 # ── Output paths ──
 
-DREAM_LOG = _DREAM_LOG
 IDENTITY_QUEUE = _IDENTITY_QUEUE
 
 
@@ -69,10 +68,7 @@ PATTERN: <description>
 
 [IDENTITY]
 IDENTITY_FLAG: <observation that might warrant identity layer update>
-...
-
-[DREAM]
-<2-3 sentences of what you're thinking about overnight>"""
+..."""
 
 
 # ── Gather today's material ──
@@ -126,7 +122,7 @@ def _gather_material() -> str:
 
 def _parse_section(text: str, header: str) -> str:
     """Extract content between [HEADER] and the next [HEADER] or end."""
-    pattern = rf'\[{re.escape(header)}\]\s*\n(.*?)(?=\n\[(?:FACTS|THREADS|PATTERNS|IDENTITY|DREAM)\]|\Z)'
+    pattern = rf'\[{re.escape(header)}\]\s*\n(.*?)(?=\n\[(?:FACTS|THREADS|PATTERNS|IDENTITY)\]|\Z)'
     match = re.search(pattern, text, re.DOTALL)
     return match.group(1).strip() if match else ""
 
@@ -243,12 +239,6 @@ def _store_identity_flags(flags: list[str]):
         print(f"  [sleep] Flagged {len(flags)} item(s) for identity review")
 
 
-def _store_dream_log(dream: str):
-    """Write the dream log (overwritten nightly)."""
-    DREAM_LOG.write_text(dream.strip())
-    print(f"  [sleep] Dream log written ({len(dream)} chars)")
-
-
 # ── Confidence scoring on existing memories ──
 
 def _score_existing_memories():
@@ -277,7 +267,7 @@ def sleep_cycle():
 
     prompt = (
         "Here is today's material. Process it — extract facts, update threads, "
-        "identify patterns, flag anything for identity review, and write your dream log.\n\n"
+        "identify patterns, and flag anything for identity review.\n\n"
         + material
     )
 
@@ -303,7 +293,6 @@ def sleep_cycle():
     threads_section = _parse_section(response, "THREADS")
     patterns_section = _parse_section(response, "PATTERNS")
     identity_section = _parse_section(response, "IDENTITY")
-    dream_section = _parse_section(response, "DREAM")
 
     # Parse and store each section
     facts = _parse_facts(facts_section)
@@ -317,9 +306,6 @@ def sleep_cycle():
 
     identity_flags = _parse_identity_flags(identity_section)
     _store_identity_flags(identity_flags)
-
-    if dream_section:
-        _store_dream_log(dream_section)
 
     # Score existing memories
     _score_existing_memories()

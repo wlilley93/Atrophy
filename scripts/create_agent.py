@@ -486,7 +486,6 @@ def generate_agent_json(
             "active_end": heartbeat.get("active_end", 22),
             "interval_mins": heartbeat.get("interval_mins", 30),
         },
-        "obsidian_subdir": display,
     }
 
     if appearance.get("has_avatar"):
@@ -520,30 +519,31 @@ def scaffold_agent(
     (agent_dir / "avatar" / "source").mkdir(parents=True, exist_ok=True)
     (agent_dir / "avatar" / "loops").mkdir(parents=True, exist_ok=True)
     (agent_dir / "avatar" / "candidates").mkdir(parents=True, exist_ok=True)
-    (agent_dir / "state").mkdir(exist_ok=True)
+    (agent_dir / "data").mkdir(exist_ok=True)
+    (agent_dir / "prompts").mkdir(exist_ok=True)
 
     # agent.json
     manifest = generate_agent_json(identity, voice, channels, heartbeat, appearance)
-    (agent_dir / "agent.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print(f"  Created: agents/{name}/agent.json")
+    (agent_dir / "data" / "agent.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"  Created: agents/{name}/data/agent.json")
 
     # soul.md
     soul = generate_soul(identity, boundaries, voice)
-    (agent_dir / "soul.md").write_text(soul)
-    print(f"  Created: agents/{name}/soul.md")
+    (agent_dir / "prompts" / "soul.md").write_text(soul)
+    print(f"  Created: agents/{name}/prompts/soul.md")
 
     # system_prompt.md
     prompt = generate_system_prompt(identity, boundaries, voice)
-    (agent_dir / "system_prompt.md").write_text(prompt)
-    print(f"  Created: agents/{name}/system_prompt.md")
+    (agent_dir / "prompts" / "system_prompt.md").write_text(prompt)
+    print(f"  Created: agents/{name}/prompts/system_prompt.md")
 
     # heartbeat.md
     hb = generate_heartbeat(identity, heartbeat)
-    (agent_dir / "heartbeat.md").write_text(hb)
-    print(f"  Created: agents/{name}/heartbeat.md")
+    (agent_dir / "prompts" / "heartbeat.md").write_text(hb)
+    print(f"  Created: agents/{name}/prompts/heartbeat.md")
 
     # Database
-    db_path = agent_dir / "memory.db"
+    db_path = agent_dir / "data" / "memory.db"
     if not db_path.exists() and SCHEMA_PATH.exists():
         import sqlite3
         conn = sqlite3.connect(str(db_path))
@@ -552,35 +552,38 @@ def scaffold_agent(
         print(f"  Created: agents/{name}/memory.db (from schema)")
 
     # Obsidian vault structure
-    from config import OBSIDIAN_VAULT
-    vault_dir = Path(OBSIDIAN_VAULT) / identity["display_name"]
-    if vault_dir.exists():
-        print(f"  Obsidian dir already exists: {vault_dir}")
+    from config import OBSIDIAN_VAULT, PROJECT_ROOT
+    agent_obsidian = Path(OBSIDIAN_VAULT) / "Projects" / PROJECT_ROOT.name / "Agent Workspace" / name
+    if agent_obsidian.exists():
+        print(f"  Obsidian dir already exists: {agent_obsidian}")
     else:
-        agent_dir = vault_dir / "agents" / name
-        (agent_dir / "notes" / "journal").mkdir(parents=True, exist_ok=True)
-        (agent_dir / "notes" / "evolution-log").mkdir(parents=True, exist_ok=True)
-        (vault_dir / "skills").mkdir(parents=True, exist_ok=True)
+        (agent_obsidian / "notes" / "journal").mkdir(parents=True, exist_ok=True)
+        (agent_obsidian / "notes" / "evolution-log").mkdir(parents=True, exist_ok=True)
+        (agent_obsidian / "skills").mkdir(parents=True, exist_ok=True)
 
-        # Copy prompt files to Obsidian skills
-        (vault_dir / "skills" / "system.md").write_text(prompt)
-        (vault_dir / "skills" / "soul.md").write_text(soul)
+        # Copy prompt files to Obsidian skills (canonical location)
+        (agent_obsidian / "skills" / "system.md").write_text(prompt)
+        (agent_obsidian / "skills" / "soul.md").write_text(soul)
+        (agent_obsidian / "skills" / "heartbeat.md").write_text(hb)
 
-        # Starter notes (per-agent)
-        (agent_dir / "notes" / "reflections.md").write_text(
+        # Starter notes
+        (agent_obsidian / "notes" / "reflections.md").write_text(
             f"# Reflections\n\n*{identity['display_name']}'s working reflections.*\n"
         )
-        (agent_dir / "notes" / "for-will.md").write_text(
+        (agent_obsidian / "notes" / "for-will.md").write_text(
             f"# For {identity['user_name']}\n\n*Scratchpad for things to share.*\n"
         )
-        (agent_dir / "notes" / "threads.md").write_text(
+        (agent_obsidian / "notes" / "threads.md").write_text(
             "# Active Threads\n\n*Ongoing conversations and topics.*\n"
         )
-        (agent_dir / "notes" / "journal-prompts.md").write_text(
+        (agent_obsidian / "notes" / "journal-prompts.md").write_text(
             f"# Journal Prompts\n\n*Prompts left for {identity['user_name']}.*\n"
         )
+        (agent_obsidian / "notes" / "gifts.md").write_text(
+            f"# Gifts\n\n*Notes and gifts left for {identity['user_name']}.*\n"
+        )
 
-        print(f"  Created: Obsidian vault at {vault_dir}")
+        print(f"  Created: Obsidian agent dir at {agent_obsidian}")
 
     # .env additions
     env_lines = []
@@ -604,27 +607,45 @@ def scaffold_agent(
                     f.write(f"\n{line}")
         print(f"  Updated: .env with {', '.join(e.split('=')[0] for e in env_lines)}")
 
+    # Scaffold scripts directory and starter jobs.json
+    scripts_dir = PROJECT_ROOT / "scripts" / "agents" / name
+    if not scripts_dir.exists():
+        scripts_dir.mkdir(parents=True)
+        starter_jobs = {
+            "heartbeat": {
+                "type": "interval",
+                "interval_seconds": heartbeat.get("interval_mins", 30) * 60,
+                "script": f"scripts/agents/{name}/heartbeat.py",
+                "description": "Periodic check-in evaluation — decides whether to reach out unprompted",
+            },
+        }
+        (scripts_dir / "jobs.json").write_text(json.dumps(starter_jobs, indent=2) + "\n")
+        print(f"  Created: scripts/agents/{name}/jobs.json")
+
     # Summary
     print("\n" + "=" * 50)
     print(f"  Agent '{identity['display_name']}' created!")
     print("=" * 50)
     print(f"\n  To run:  python main.py --agent {name}")
     print(f"  Or:      AGENT={name} python main.py --gui")
-    print(f"\n  Files:")
-    print(f"    agents/{name}/agent.json      — manifest")
-    print(f"    agents/{name}/soul.md          — identity")
-    print(f"    agents/{name}/system_prompt.md — system prompt")
-    print(f"    agents/{name}/heartbeat.md     — outreach checklist")
-    print(f"    agents/{name}/memory.db        — memory database")
-    print(f"    agents/{name}/avatar/          — visual assets")
-    print(f"    agents/{name}/state/           — runtime state")
+    print(f"\n  Repo files:")
+    print(f"    agents/{name}/data/agent.json       — manifest")
+    print(f"    agents/{name}/data/memory.db         — memory database")
+    print(f"    agents/{name}/prompts/soul.md         — identity (fallback)")
+    print(f"    agents/{name}/prompts/system_prompt.md — system prompt (fallback)")
+    print(f"    agents/{name}/prompts/heartbeat.md     — outreach checklist (fallback)")
+    print(f"    agents/{name}/avatar/                  — visual assets")
+    print(f"    scripts/agents/{name}/jobs.json        — scheduled jobs")
+    print(f"\n  Obsidian (canonical):")
+    print(f"    Agent Workspace/{name}/skills/    — system, soul, heartbeat")
+    print(f"    Agent Workspace/{name}/notes/     — reflections, threads, journal")
 
     if appearance.get("has_avatar") and appearance.get("appearance_description"):
         print(f"\n  Avatar prompt saved. Generate with:")
         print(f"    python scripts/generate_face.py --agent {name}")
 
-    print(f"\n  Edit the system prompt and soul.md to refine.")
-    print(f"  The Obsidian vault at {vault_dir} is live — the agent can edit it.")
+    print(f"\n  Edit the soul and system prompt in Obsidian — those are the canonical versions.")
+    print(f"  Repo prompts/ are fallbacks used when Obsidian is unavailable.")
 
 
 # ── Main ──

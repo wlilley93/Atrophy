@@ -20,7 +20,7 @@ The user retains override authority through:
 The companion interacts with the local system exclusively through the MCP memory server (`mcp/memory_server.py`), which runs as a subprocess. The Claude CLI is invoked with `--allowedTools mcp__memory__*`, restricting tool access to the memory server's declared tool set. A separate `--disallowedTools` flag enforces a tool blacklist (see below).
 
 The MCP server has access to:
-- A single SQLite database (`agents/<name>/memory.db`)
+- A single SQLite database (`agents/<name>/data/memory.db`)
 - The agent's subdirectory within the Obsidian vault
 - Outbound Telegram API (rate-limited)
 - The local filesystem for canvas rendering (one file: `.canvas_content.html`)
@@ -88,11 +88,11 @@ The companion cannot write or execute code. It can write Markdown notes to Obsid
 
 ### Local Storage
 
-All persistent data is stored in per-agent SQLite databases at `agents/<name>/memory.db`. Databases use WAL journal mode for concurrent read safety and foreign keys for referential integrity.
+All persistent data is stored in per-agent SQLite databases at `agents/<name>/data/memory.db`. Databases use WAL journal mode for concurrent read safety and foreign keys for referential integrity.
 
 Each agent's data is fully isolated:
 - Separate database file
-- Separate state directory (`agents/<name>/state/`)
+- Separate data directory (`agents/<name>/data/`)
 - Separate Obsidian subdirectory
 - Separate Telegram bot token (referenced by environment variable name in `agent.json`, not stored directly)
 
@@ -171,7 +171,7 @@ Secrets managed:
 
 ### Agent Configuration
 
-Agent manifests (`agents/<name>/agent.json`) reference secrets by environment variable name, not by value. For example, a Telegram configuration specifies `"bot_token_env": "CLARA_TELEGRAM_BOT_TOKEN"`, and the system reads the actual token from `os.environ` at runtime. This means agent manifests can be committed to version control without exposing secrets.
+Agent manifests (`agents/<name>/data/agent.json`) reference secrets by environment variable name, not by value. For example, a Telegram configuration specifies `"bot_token_env": "CLARA_TELEGRAM_BOT_TOKEN"`, and the system reads the actual token from `os.environ` at runtime. This means agent manifests can be committed to version control without exposing secrets.
 
 ### Claude CLI Environment
 

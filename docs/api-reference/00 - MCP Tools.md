@@ -298,7 +298,6 @@ Write or append to a note in Will's Obsidian vault. New notes automatically rece
 
 **Frontmatter generation:** The `type` and `tags` are inferred from the file path:
 - Paths containing `journal` -> type: `journal`, tag: `journal`
-- Paths containing `dreams` -> type: `dream`, tag: `dream`
 - Paths containing `gifts` -> type: `gift`, tag: `gift`
 - Paths containing `reflections` -> type: `reflection`, tag: `reflection`
 - All others -> type: `note`, tag: `note`

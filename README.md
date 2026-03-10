@@ -2,7 +2,7 @@
 
 A companion agent system — voice-enabled, memory-bearing, self-evolving.
 
-Built on Claude, with persistent memory, emotional awareness, and autonomous behavior. The companion remembers conversations across sessions, maintains evolving observations about you, dreams at night, and reaches out when something matters.
+Built on Claude, with persistent memory, emotional awareness, and autonomous behavior. The companion remembers conversations across sessions, maintains evolving observations about you, reflects nightly, and reaches out when something matters.
 
 ## Features
 

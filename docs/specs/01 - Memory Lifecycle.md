@@ -14,7 +14,7 @@ Layer 2: Semantic    summaries, threads, entities   (summarised, mutable)
 Layer 3: Identity    observations, identity_snapshots (distilled, curated)
 ```
 
-All layers are stored in a single SQLite database per agent (`agents/<name>/memory.db`). The database uses WAL journal mode and foreign key constraints.
+All layers are stored in a single SQLite database per agent (`agents/<name>/data/memory.db`). The database uses WAL journal mode and foreign key constraints.
 
 ---
 

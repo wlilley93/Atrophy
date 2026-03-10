@@ -37,33 +37,38 @@ After confirmation, the script scaffolds the full agent directory:
 
 ```
 agents/<name>/
-  agent.json          # Manifest — all technical config
-  soul.md             # Identity and personality (the agent can self-modify this)
-  system_prompt.md    # Instructions for Claude (the agent's operating manual)
-  heartbeat.md        # Checklist for unprompted outreach decisions
-  memory.db           # SQLite database (initialized from db/schema.sql)
+  prompts/              # All prompt/identity documents
+    system_prompt.md    # Instructions for Claude (the agent's operating manual)
+    soul.md             # Identity and personality (the agent can self-modify this)
+    heartbeat.md        # Checklist for unprompted outreach decisions
+  data/                 # All runtime data (database, state files, config)
+    agent.json          # Manifest — all technical config
+    memory.db           # SQLite database (initialized from db/schema.sql)
+    .emotional_state.json
+    .user_status.json
+    .message_queue.json
+    ...                 # Other runtime state files (gitignored)
   avatar/
     source/           # Source face image for LivePortrait
     loops/            # Generated animation loops
     candidates/       # Face generation candidates
-  state/              # Runtime state files (gitignored)
 ```
 
-It also creates a matching Obsidian vault structure if configured:
+It also creates a matching Obsidian workspace at `Projects/<project>/Agent Workspace/<name>/`:
 
 ```
-<vault>/<DisplayName>/
-  skills/
+<name>/
+  skills/                 # Canonical runtime prompts (take precedence over repo prompts/)
     system.md
     soul.md
-  agents/<name>/
-    notes/
-      journal/
-      evolution-log/
-      reflections.md
-      for-will.md
-      threads.md
-      journal-prompts.md
+  notes/                  # Agent's living documents
+    reflections.md        # Working reflections
+    for-will.md           # Scratchpad for things to share with user
+    threads.md            # Active conversation threads
+    gifts.md              # Notes and gifts left for user
+    journal-prompts.md    # Journal prompts left in Obsidian
+    journal/              # Timestamped journal entries
+    evolution-log/        # Archived soul/prompt revisions
 ```
 
 If Telegram credentials are provided, they're appended to `.env` with agent-specific variable names.
@@ -110,8 +115,6 @@ This is the technical configuration file. All fields:
     "interval_mins": 30
   },
 
-  "obsidian_subdir": "Companion",
-
   "avatar": {
     "description": "Description for image generation...",
     "resolution": 512
@@ -142,7 +145,6 @@ This is the technical configuration file. All fields:
 | `heartbeat.active_start` | int | Hour (0-23) when heartbeat checks begin. |
 | `heartbeat.active_end` | int | Hour (0-23) when heartbeat checks stop. |
 | `heartbeat.interval_mins` | int | Minutes between heartbeat evaluations. |
-| `obsidian_subdir` | string | Subdirectory name within the Obsidian vault. |
 | `avatar.description` | string | Appearance description for image generation (Flux prompt). |
 | `avatar.resolution` | int | Avatar render resolution in pixels. |
 
@@ -166,11 +168,11 @@ All per-agent paths resolve automatically. Each agent has its own memory databas
 
 The three files you'll edit most:
 
-- **`system_prompt.md`** -- the agent's operating instructions. This is injected as the system prompt for every Claude inference call. Change how the agent behaves.
-- **`soul.md`** -- the agent's identity and personality. This is also injected into context. Change who the agent is. The agent itself can modify this file through its monthly self-evolution job.
-- **`heartbeat.md`** -- the checklist the agent runs through when deciding whether to reach out unprompted. Change when and why it initiates contact.
+- **`prompts/system_prompt.md`** -- the agent's operating instructions. This is injected as the system prompt for every Claude inference call. Change how the agent behaves.
+- **`prompts/soul.md`** -- the agent's identity and personality. This is also injected into context. Change who the agent is. The agent itself can modify this file through its monthly self-evolution job.
+- **`prompts/heartbeat.md`** -- the checklist the agent runs through when deciding whether to reach out unprompted. Change when and why it initiates contact.
 
-The `agent.json` manifest controls technical configuration (voice, display, scheduling). Edit it directly -- no rebuild needed, changes take effect on next launch.
+The `data/agent.json` manifest controls technical configuration (voice, display, scheduling). Edit it directly -- no rebuild needed, changes take effect on next launch.
 
 In GUI mode, all of these settings can also be edited live through the **Settings panel** (gear icon or Cmd+,). Changes can be applied immediately to the running session or saved to `.env` and `agent.json` for persistence. See [02 - Configuration Reference](02%20-%20Configuration%20Reference.md) for the full settings panel reference.
 

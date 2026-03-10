@@ -142,8 +142,8 @@ Speech-to-text via whisper.cpp with Metal acceleration. Model: ggml-tiny.en.bin.
 |------|---------|
 | `main.py` | Entry point. Dual input (voice/text). Streaming inference. Parallel TTS. |
 | `config.py` | Central configuration. All paths, settings, API keys. |
-| `companion_system_prompt.md` | The system prompt. 1394 lines. The Companion's constitution. |
-| `soul.md` | The Companion's self-understanding. Working notes. Not a spec. |
+| `agents/companion/prompts/system_prompt.md` | The system prompt. 1394 lines. The Companion's constitution. |
+| `agents/companion/prompts/soul.md` | The Companion's self-understanding. Working notes. Not a spec. |
 
 ### Core Module
 

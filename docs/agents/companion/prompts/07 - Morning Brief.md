@@ -1,0 +1,20 @@
+# Morning Brief
+
+The morning brief skill generates a greeting when Will opens the app in the morning.
+
+## Location
+
+Obsidian: `Projects/The Atrophied Mind/Agent Workspace/companion/skills/morning-brief.md`
+
+## Formula
+
+- 3-6 sentences, natural and warm but not performative
+- Greeting fitting time/weather
+- 1-2 news items if notable
+- Threads from recent sessions (brief)
+- Something the companion has been thinking about, or a question
+- Skip weather/news if missing — don't mention their absence
+
+## When Used
+
+Triggered by `scripts/agents/companion/morning_brief.py` on session start if it's morning and enough time has passed since the last brief. Output is queued via the message queue system.

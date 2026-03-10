@@ -271,7 +271,7 @@ Default: "Ready. Where are we?"
 ### Protected Files
 
 Certain files are off-limits:
-- companion_system_prompt.md — The prompt itself
+- agents/companion/prompts/system_prompt.md — The prompt itself
 - core/inference.py — Guardrails and session logic
 - core/agency.py — Behavioral signals
 - core/session.py — Session lifecycle

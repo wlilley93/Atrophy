@@ -47,11 +47,11 @@ Interactive questionnaire that creates a complete agent:
 
 **Generated files**:
 
-- `agents/<name>/agent.json` -- Full manifest
-- `agents/<name>/system_prompt.md` -- Generated personality prompt
-- `agents/<name>/soul.md` -- Core identity document
-- `agents/<name>/heartbeat.md` -- Outreach evaluation checklist
-- `agents/<name>/state/` -- State directory
+- `agents/<name>/data/agent.json` -- Full manifest
+- `agents/<name>/prompts/system_prompt.md` -- Generated personality prompt
+- `agents/<name>/prompts/soul.md` -- Core identity document
+- `agents/<name>/prompts/heartbeat.md` -- Outreach evaluation checklist
+- `agents/<name>/data/` -- Data directory (runtime state, database)
 - `agents/<name>/avatar/source/` -- Avatar directory
 - Obsidian vault structure
 - Database (via `init_db()`)
@@ -122,17 +122,6 @@ Generate a morning briefing:
 4. Generate a brief via inference
 5. Cache to `.message_queue.json` for delivery at next app launch
 
-### dream.py
-
-**Schedule**: 12 AM, 2 AM, 4 AM (three times nightly)
-
-Creative free association during quiet hours:
-
-1. Pull recent memories, observations, threads
-2. Run inference with a creative/associative prompt
-3. Look for connections between unrelated ideas
-4. Write dream log to `.dream_log.txt` and/or Obsidian
-
 ### introspect.py
 
 **Schedule**: Monthly (24th at 3:33 AM)
@@ -150,7 +139,7 @@ Deep self-reflection:
 
 Self-evolution of core identity documents:
 
-1. Read current `soul.md` and `system_prompt.md`
+1. Read current `prompts/soul.md` and `prompts/system_prompt.md`
 2. Review journal entries, observations, and session patterns from the past month
 3. Run inference to propose revisions
 4. Write updated versions to both local files and Obsidian

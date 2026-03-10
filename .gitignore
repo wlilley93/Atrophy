@@ -14,10 +14,9 @@ __pycache__/
 # Vendor (whisper.cpp is large, install separately)
 vendor/
 
-# Agent runtime state
-agents/*/state/
+# Agent runtime data (databases, state files)
+agents/*/data/
 agents/*/avatar/
-agents/*/memory*.db
 
 # Embedding models (cached locally, ~80MB+)
 .models/
