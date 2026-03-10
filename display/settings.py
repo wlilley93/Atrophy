@@ -947,6 +947,21 @@ class SettingsModal(QWidget):
                 current_lbl.setStyleSheet("color: rgba(255,255,255,0.3); font-size: 11px;")
                 row.addWidget(current_lbl)
 
+            # Share button
+            share_btn = QPushButton("Share")
+            share_btn.setFixedWidth(58)
+            share_btn.setCursor(Qt.PointingHandCursor)
+            share_btn.setStyleSheet(
+                "QPushButton { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); "
+                "border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 8px; "
+                "font-size: 11px; } "
+                "QPushButton:hover { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.8); }"
+            )
+            share_btn.clicked.connect(
+                lambda checked, a=name: self._share_agent(a)
+            )
+            row.addWidget(share_btn)
+
             row.addStretch()
             self._content_layout.addLayout(row)
             self._agent_controls[name] = {
@@ -955,7 +970,7 @@ class SettingsModal(QWidget):
                 "label": name_lbl,
             }
 
-        # New agent button
+        # New agent / Import buttons
         new_agent_row = QHBoxLayout()
         new_agent_btn = QPushButton("+ New Agent")
         new_agent_btn.setObjectName("saveButton")
@@ -969,6 +984,19 @@ class SettingsModal(QWidget):
         )
         new_agent_btn.clicked.connect(self._run_new_agent_flow)
         new_agent_row.addWidget(new_agent_btn)
+
+        import_btn = QPushButton("Import Agent")
+        import_btn.setFixedWidth(120)
+        import_btn.setCursor(Qt.PointingHandCursor)
+        import_btn.setStyleSheet(
+            "QPushButton { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); "
+            "border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 12px; "
+            "font-size: 12px; } "
+            "QPushButton:hover { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.9); }"
+        )
+        import_btn.clicked.connect(self._import_agent)
+        new_agent_row.addWidget(import_btn)
+
         new_agent_row.addStretch()
         self._content_layout.addLayout(new_agent_row)
 
@@ -1221,6 +1249,160 @@ class SettingsModal(QWidget):
             f'python3 {str(script).replace(chr(34), chr(92)+chr(34))}"'
         )
         subprocess.Popen(["osascript", "-e", cmd])
+
+    def _share_agent(self, agent_name: str):
+        """Export an agent as a portable .zip for sharing."""
+        import zipfile
+        import config as cfg
+
+        # Find the agent directory
+        agent_dir = None
+        for base in [cfg.USER_DATA / "agents", cfg.BUNDLE_ROOT / "agents"]:
+            candidate = base / agent_name
+            if candidate.is_dir():
+                agent_dir = candidate
+                break
+        if not agent_dir:
+            return
+
+        # Load display name for the zip filename
+        display_name = agent_name
+        manifest_path = agent_dir / "data" / "agent.json"
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text())
+                display_name = manifest.get("display_name", agent_name)
+            except Exception:
+                pass
+
+        # Build zip on Desktop
+        safe_name = display_name.replace(" ", "_").lower()
+        desktop = Path.home() / "Desktop"
+        zip_path = desktop / f"{safe_name}.agent.zip"
+
+        # Resolve conflicts
+        counter = 1
+        while zip_path.exists():
+            zip_path = desktop / f"{safe_name}_{counter}.agent.zip"
+            counter += 1
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            # agent.json — strip any API keys or sensitive fields
+            if manifest_path.exists():
+                try:
+                    manifest = json.loads(manifest_path.read_text())
+                    # Remove potentially sensitive fields
+                    for key in ["elevenlabs_api_key", "telegram_bot_token",
+                                "telegram_chat_id", "api_key"]:
+                        manifest.pop(key, None)
+                    zf.writestr(f"{agent_name}/data/agent.json",
+                                json.dumps(manifest, indent=2))
+                except Exception:
+                    zf.write(manifest_path, f"{agent_name}/data/agent.json")
+
+            # Prompts
+            prompts_dir = agent_dir / "prompts"
+            if prompts_dir.is_dir():
+                for p in prompts_dir.glob("*.md"):
+                    zf.write(p, f"{agent_name}/prompts/{p.name}")
+
+            # Also check Obsidian skills directory for canonical prompts
+            obsidian_skills = None
+            try:
+                obsidian_base = Path(cfg.OBSIDIAN_VAULT) / "Projects" / "The Atrophied Mind" / "Agent Workspace" / agent_name / "skills"
+                if obsidian_base.is_dir():
+                    obsidian_skills = obsidian_base
+            except Exception:
+                pass
+            if obsidian_skills:
+                for p in obsidian_skills.glob("*.md"):
+                    zf.write(p, f"{agent_name}/skills/{p.name}")
+
+            # Avatar source files (face image, voice sample — small, needed to regenerate)
+            source_dir = agent_dir / "avatar" / "source"
+            if source_dir.is_dir():
+                for f in source_dir.iterdir():
+                    if f.is_file() and f.stat().st_size < 50_000_000:  # <50MB
+                        zf.write(f, f"{agent_name}/avatar/source/{f.name}")
+
+        # Open Finder with the file selected
+        subprocess.Popen(["open", "-R", str(zip_path)])
+
+    def _import_agent(self):
+        """Import an agent from a .agent.zip file."""
+        from PyQt5.QtWidgets import QFileDialog
+        import zipfile
+        import config as cfg
+
+        zip_path, _ = QFileDialog.getOpenFileName(
+            self, "Import Agent",
+            str(Path.home() / "Desktop"),
+            "Agent Archives (*.zip);;All Files (*)",
+        )
+        if not zip_path:
+            return
+
+        zip_path = Path(zip_path)
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                names = zf.namelist()
+                if not names:
+                    return
+
+                # Detect the agent name from the top-level directory
+                agent_name = names[0].split("/")[0]
+                if not agent_name:
+                    return
+
+                # Check for agent.json
+                manifest_entry = f"{agent_name}/data/agent.json"
+                if manifest_entry not in names:
+                    # Try without data/ prefix
+                    manifest_entry = f"{agent_name}/agent.json"
+
+                agents_dir = cfg.USER_DATA / "agents"
+                target_dir = agents_dir / agent_name
+
+                # Don't overwrite existing agents silently
+                if target_dir.exists():
+                    from PyQt5.QtWidgets import QMessageBox
+                    reply = QMessageBox.question(
+                        self, "Agent Exists",
+                        f"Agent '{agent_name}' already exists.\nOverwrite its config and prompts?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No,
+                    )
+                    if reply != QMessageBox.Yes:
+                        return
+
+                # Extract into the agents directory
+                target_dir.mkdir(parents=True, exist_ok=True)
+                (target_dir / "data").mkdir(exist_ok=True)
+                (target_dir / "prompts").mkdir(exist_ok=True)
+
+                for entry in names:
+                    if entry.endswith("/"):
+                        continue
+                    # Strip the agent_name prefix and reconstruct path
+                    rel = entry[len(agent_name) + 1:]  # e.g. "data/agent.json"
+                    if not rel:
+                        continue
+                    dest = target_dir / rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(zf.read(entry))
+
+            # Show success
+            subprocess.Popen([
+                "osascript", "-e",
+                f'display notification "Agent \\"{agent_name}\\" imported successfully." '
+                f'with title "Atrophy" subtitle "Import Complete"'
+            ])
+
+        except Exception as e:
+            subprocess.Popen([
+                "osascript", "-e",
+                f'display alert "Import Failed" message "{str(e)[:200]}" as warning'
+            ])
 
     # ── Settings read/apply/save ─────────────────────────────────
 
