@@ -1565,7 +1565,9 @@ class SettingsModal(QWidget):
 
         manifest["name"] = cfg.AGENT_NAME
         manifest["display_name"] = cfg.AGENT_DISPLAY_NAME
-        manifest["user_name"] = cfg.USER_NAME
+
+        # User name is global — save to ~/.atrophy/config.json
+        cfg.save_user_config({"user_name": cfg.USER_NAME})
         manifest["opening_line"] = cfg.OPENING_LINE
         manifest["wake_words"] = cfg.WAKE_WORDS
 

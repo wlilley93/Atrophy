@@ -205,7 +205,18 @@ def session_info():
 
 
 def run_server(port=5000, host="127.0.0.1"):
+    import signal
+
     init()
+
+    def _shutdown(signum, frame):
+        if _session:
+            _session.end()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
     print(f"\n  The Atrophied Mind — HTTP API")
     print(f"  Agent: {AGENT_DISPLAY_NAME}")
     print(f"  http://{host}:{port}")

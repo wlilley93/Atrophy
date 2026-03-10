@@ -61,6 +61,94 @@ _BAR_H = 48
 _BAR_RADIUS = 24
 
 
+def _build_brain_frames(base: 'QImage') -> list:
+    """Generate 10 brain frames: organic(1-3) → cybernetic(4-7) → rot(8-10).
+
+    Uses QPainter compositing on the base brain_overlay.png to create each state.
+    """
+    from PyQt5.QtGui import QImage, QPainter, QColor
+    from PyQt5.QtCore import Qt
+
+    frames = []
+    # Convert to ARGB32 — QPainter can't paint on indexed/palette formats
+    if base.format() != QImage.Format_ARGB32_Premultiplied:
+        base = base.convertToFormat(QImage.Format_ARGB32_Premultiplied)
+    w, h = base.width(), base.height()
+
+    for i in range(10):
+        frame = QImage(base)  # copy base
+        fp = QPainter(frame)
+        fp.setCompositionMode(QPainter.CompositionMode_SourceAtop)
+
+        if i < 3:
+            # Organic — warm pink/flesh shift, mute the cyan nodes
+            warmth = 20 + i * 10  # 20, 30, 40
+            fp.fillRect(0, 0, w, h, QColor(warmth, 8, 0, 35 + i * 8))
+        elif i < 7:
+            # Cybernetic — cold blue intensifies, nodes glow
+            cyber = (i - 3) / 3.0  # 0.0 → 1.0
+            blue_a = int(30 + cyber * 60)
+            fp.fillRect(0, 0, w, h, QColor(0, 20, int(80 + cyber * 80), blue_a))
+            # Bright node glow overlay
+            fp.setCompositionMode(QPainter.CompositionMode_Screen)
+            glow_a = int(20 + cyber * 50)
+            fp.fillRect(0, 0, w, h, QColor(60, 180, 255, glow_a))
+        else:
+            # Rot — desaturate, green-brown decay, nodes die
+            rot = (i - 7) / 2.0  # 0.0 → 1.0
+            # Desaturate by overlaying grey
+            fp.setCompositionMode(QPainter.CompositionMode_SourceAtop)
+            desat_a = int(40 + rot * 80)
+            fp.fillRect(0, 0, w, h, QColor(60, 55, 40, desat_a))
+            # Green-brown decay tint
+            fp.setCompositionMode(QPainter.CompositionMode_Multiply)
+            fp.fillRect(0, 0, w, h, QColor(
+                int(140 - rot * 40),   # 140→100 (darken)
+                int(130 - rot * 30),   # 130→100
+                int(80 - rot * 30),    # 80→50
+                int(80 + rot * 80)))   # 80→160
+            # Kill the cyan glow
+            fp.setCompositionMode(QPainter.CompositionMode_SourceAtop)
+            fp.fillRect(0, 0, w, h, QColor(40, 30, 20, int(rot * 60)))
+
+        fp.end()
+        frames.append(frame)
+
+    return frames
+
+
+def _orb_colors_for_frame(frame_idx: int) -> list:
+    """Return 3 orb gradient layer colors matched to the brain frame state.
+
+    Each entry is ((r,g,b), (r,g,b), (r,g,b)) for inner/mid/outer stops.
+    Returns a list of 3 tuples (one per orb layer).
+    """
+    if frame_idx < 3:
+        # Organic — warm pink/amber glow
+        t = frame_idx / 2.0
+        return [
+            ((200 + int(t * 30), 150 + int(t * 20), 180), (150, 90 + int(t * 20), 120), (80, 40, 60)),
+            ((180 + int(t * 30), 130, 160), (120, 70 + int(t * 15), 100), (60, 35, 50)),
+            ((160 + int(t * 30), 110, 140), (100, 60, 80), (50, 30, 40)),
+        ]
+    elif frame_idx < 7:
+        # Cybernetic — cold blue/cyan
+        t = (frame_idx - 3) / 3.0
+        return [
+            ((100 + int(t * 50), 150 + int(t * 30), 255), (60 + int(t * 30), 100 + int(t * 20), 220), (30, 40, 140)),
+            ((80 + int(t * 40), 130 + int(t * 30), 240), (50, 80 + int(t * 20), 200), (25, 35, 120)),
+            ((60 + int(t * 30), 110 + int(t * 40), 220), (40, 70, 180), (20, 30, 100)),
+        ]
+    else:
+        # Rot — sickly green-brown
+        t = (frame_idx - 7) / 2.0
+        return [
+            ((120 - int(t * 30), 130 - int(t * 20), 60 - int(t * 20)), (80 - int(t * 20), 85 - int(t * 15), 40), (50, 45, 25)),
+            ((100 - int(t * 25), 110 - int(t * 15), 50 - int(t * 15)), (65 - int(t * 15), 70 - int(t * 10), 35), (40, 38, 20)),
+            ((80 - int(t * 20), 90 - int(t * 10), 40 - int(t * 10)), (55 - int(t * 10), 55, 30), (35, 30, 18)),
+        ]
+
+
 # ── Video surface ──
 
 class FrameGrabSurface(QAbstractVideoSurface):
@@ -1934,6 +2022,8 @@ class CompanionWindow(QWidget):
         self._boot_opacity = 1.0
         self._booting = True
         self._brain_overlay = None  # Lazy-loaded in paintEvent
+        self._brain_frames = None   # 10-frame cycle: organic → cybernetic → rot
+        self._brain_frame_dur = 0.8  # seconds per frame
 
         self._build_video()
         self._build_overlays()
@@ -2340,22 +2430,32 @@ class CompanionWindow(QWidget):
                 import math, time
                 pulse = 0.5 + 0.5 * math.sin(time.time() * 3.0)  # faster pulse for urgency
                 cx, cy = win_w / 2.0, win_h / 2.0 - 20
-                for layer_r, layer_a in [(60, 20), (35, 40), (18, 70)]:
-                    r = layer_r + int(pulse * 5)
-                    grad = QRadialGradient(QPointF(cx, cy), r)
-                    grad.setColorAt(0.0, QColor(255, 150, 150, layer_a))
-                    grad.setColorAt(0.5, QColor(180, 80, 80, layer_a // 3))
-                    grad.setColorAt(1.0, QColor(100, 40, 40, 0))
-                    p.setPen(Qt.NoPen)
-                    p.setBrush(grad)
-                    p.drawEllipse(QPointF(cx, cy), r, r)
-                # Brain overlay on top of orb
+
+                # Brain frames (reversed: rot → cybernetic → organic)
                 if self._brain_overlay is None:
                     brain_path = os.path.join(os.path.dirname(__file__), "icons", "brain_overlay.png")
                     self._brain_overlay = QImage(brain_path)
-                if not self._brain_overlay.isNull():
-                    brain_size = int(90 + pulse * 6)
-                    scaled = self._brain_overlay.scaled(
+                if self._brain_frames is None and not self._brain_overlay.isNull():
+                    self._brain_frames = _build_brain_frames(self._brain_overlay)
+                frame_idx = 9 - (int(time.time() / self._brain_frame_dur) % 10) if self._brain_frames else 0
+                orb_colors = _orb_colors_for_frame(frame_idx)
+
+                for (layer_r, layer_a), (c_inner, c_mid, c_outer) in zip(
+                    [(80, 18), (55, 35), (30, 60)], orb_colors
+                ):
+                    r = layer_r + int(pulse * 14)
+                    grad = QRadialGradient(QPointF(cx, cy), r)
+                    grad.setColorAt(0.0, QColor(*c_inner, layer_a))
+                    grad.setColorAt(0.5, QColor(*c_mid, layer_a // 3))
+                    grad.setColorAt(1.0, QColor(*c_outer, 0))
+                    p.setPen(Qt.NoPen)
+                    p.setBrush(grad)
+                    p.drawEllipse(QPointF(cx, cy), r, r)
+
+                brain_img = self._brain_frames[frame_idx] if self._brain_frames else self._brain_overlay
+                if brain_img and not brain_img.isNull():
+                    brain_size = 90
+                    scaled = brain_img.scaled(
                         brain_size, brain_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     p.setOpacity(0.9)
                     p.drawImage(int(cx - scaled.width() / 2), int(cy - scaled.height() / 2), scaled)
@@ -2462,25 +2562,36 @@ class CompanionWindow(QWidget):
             pulse = 0.5 + 0.5 * math.sin(time.time() * 2.0)
             cx, cy = win_w / 2.0, win_h / 2.0 - 20
 
-            # Pulsing glow — large soft orb behind the brain
-            for layer_r, layer_a in [(80, 25), (50, 50), (30, 80)]:
-                r = layer_r + int(pulse * 8)
+            # Determine brain frame index for orb color sync
+            if self._brain_overlay is None:
+                brain_path = os.path.join(os.path.dirname(__file__), "icons", "brain_overlay.png")
+                self._brain_overlay = QImage(brain_path)
+            if self._brain_frames is None and not self._brain_overlay.isNull():
+                self._brain_frames = _build_brain_frames(self._brain_overlay)
+            frame_idx = int(time.time() / self._brain_frame_dur) % 10 if self._brain_frames else 0
+
+            # Orb color shifts with brain state
+            orb_colors = _orb_colors_for_frame(frame_idx)
+
+            # Pulsing glow — large soft orb behind the brain, pulses beyond brain bounds
+            for (layer_r, layer_a), (c_inner, c_mid, c_outer) in zip(
+                [(100, 20), (70, 40), (45, 70)], orb_colors
+            ):
+                r = layer_r + int(pulse * 18)
                 a = int(layer_a * self._boot_opacity)
                 grad = QRadialGradient(QPointF(cx, cy), r)
-                grad.setColorAt(0.0, QColor(150, 170, 255, a))
-                grad.setColorAt(0.5, QColor(90, 110, 200, a // 3))
-                grad.setColorAt(1.0, QColor(40, 40, 120, 0))
+                grad.setColorAt(0.0, QColor(*c_inner, a))
+                grad.setColorAt(0.5, QColor(*c_mid, a // 3))
+                grad.setColorAt(1.0, QColor(*c_outer, 0))
                 p.setPen(Qt.NoPen)
                 p.setBrush(grad)
                 p.drawEllipse(QPointF(cx, cy), r, r)
 
-            # Brain overlay on top of orb
-            if self._brain_overlay is None:
-                brain_path = os.path.join(os.path.dirname(__file__), "icons", "brain_overlay.png")
-                self._brain_overlay = QImage(brain_path)
-            if not self._brain_overlay.isNull():
-                brain_size = int(110 + pulse * 8)
-                scaled = self._brain_overlay.scaled(
+            # Brain overlay — 10-frame cycle: organic → cybernetic → rot
+            if self._brain_frames:
+                brain_img = self._brain_frames[frame_idx]
+                brain_size = 110
+                scaled = brain_img.scaled(
                     brain_size, brain_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 p.setOpacity(self._boot_opacity * 0.95)
                 p.drawImage(int(cx - scaled.width() / 2), int(cy - scaled.height() / 2), scaled)

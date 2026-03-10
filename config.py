@@ -64,26 +64,19 @@ def _migrate_legacy_data():
                 dest = new_data / f.name
                 if not dest.exists() and f.is_file():
                     shutil.copy2(f, dest)
-        # Migrate avatar/loops/ and avatar/*.mp4 to user cache
+        # Migrate entire avatar/ tree (source images, loops, videos) to user data
         old_avatar = agent_dir / "avatar"
         new_avatar = USER_DATA / "agents" / agent_dir.name / "avatar"
         if old_avatar.is_dir():
-            # Copy loops/
-            old_loops = old_avatar / "loops"
-            if old_loops.is_dir():
-                new_loops = new_avatar / "loops"
-                new_loops.mkdir(parents=True, exist_ok=True)
-                for f in old_loops.iterdir():
-                    dest = new_loops / f.name
-                    if not dest.exists() and f.is_file():
-                        shutil.copy2(f, dest)
-            # Copy top-level video files
-            for f in old_avatar.iterdir():
-                if f.is_file() and f.suffix == ".mp4":
-                    new_avatar.mkdir(parents=True, exist_ok=True)
-                    dest = new_avatar / f.name
+            for dirpath, dirnames, filenames in os.walk(old_avatar):
+                rel = Path(dirpath).relative_to(old_avatar)
+                dest_dir = new_avatar / rel
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                for fname in filenames:
+                    src = Path(dirpath) / fname
+                    dest = dest_dir / fname
                     if not dest.exists():
-                        shutil.copy2(f, dest)
+                        shutil.copy2(src, dest)
 
 
 # Run on import — lightweight, idempotent
@@ -157,7 +150,7 @@ else:
 
 # ── Agent identity ──
 AGENT_DISPLAY_NAME = AGENT.get("display_name", AGENT_NAME.title())
-USER_NAME = AGENT.get("user_name", "User")
+USER_NAME = _user_cfg.get("user_name") or AGENT.get("user_name", "User")
 OPENING_LINE = AGENT.get("opening_line", "Hello.")
 WAKE_WORDS = AGENT.get("wake_words", [f"hey {AGENT_NAME}", AGENT_NAME])
 TELEGRAM_EMOJI = AGENT.get("telegram_emoji", "")
@@ -181,18 +174,27 @@ ARTEFACT_DISPLAY_FILE = DATA_DIR / ".artefact_display.json"
 ARTEFACT_INDEX_FILE = DATA_DIR / ".artefact_index.json"
 
 # ── Per-agent avatar ──
-# Source assets (face, driver audio) live in the bundle
-AVATAR_DIR = AGENT_DIR / "avatar"
-SOURCE_IMAGE = AVATAR_DIR / "source" / "face.png"
-IDLE_DRIVER = AVATAR_DIR / "source" / "idle_driver.wav"
+# All avatar assets live in user data (~/.atrophy/agents/<name>/avatar/).
+# Bundle path is a fallback for first-run before migration completes.
+_AVATAR_USER = USER_DATA / "agents" / AGENT_NAME / "avatar"
+_AVATAR_BUNDLE = AGENT_DIR / "avatar"
+AVATAR_DIR = _AVATAR_USER if _AVATAR_USER.is_dir() else _AVATAR_BUNDLE
+
+def _avatar_path(rel: str) -> Path:
+    """Resolve an avatar-relative path, preferring user data over bundle."""
+    user = _AVATAR_USER / rel
+    if user.exists():
+        return user
+    return _AVATAR_BUNDLE / rel
+
+SOURCE_IMAGE = _avatar_path("source/face.png")
+IDLE_DRIVER = _avatar_path("source/idle_driver.wav")
 AVATAR_RESOLUTION = 512
 AVATAR_ENABLED = _cfg("AVATAR_ENABLED", "false").lower() == "true"
-# Generated content (loops, master video) lives in user data
-AVATAR_CACHE = USER_DATA / "agents" / AGENT_NAME / "avatar"
-IDLE_LOOPS_DIR = AVATAR_CACHE / "loops"
-IDLE_LOOP = AVATAR_CACHE / "ambient_loop.mp4"
-IDLE_THINKING = AVATAR_CACHE / "idle_thinking.mp4"
-IDLE_LISTENING = AVATAR_CACHE / "idle_listening.mp4"
+IDLE_LOOPS_DIR = _AVATAR_USER / "loops"
+IDLE_LOOP = _AVATAR_USER / "ambient_loop.mp4"
+IDLE_THINKING = _AVATAR_USER / "idle_thinking.mp4"
+IDLE_LISTENING = _AVATAR_USER / "idle_listening.mp4"
 
 # ── Per-agent tool disabling ──
 DISABLED_TOOLS = AGENT.get("disabled_tools", [])

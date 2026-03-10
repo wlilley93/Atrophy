@@ -338,7 +338,7 @@ def get_tool_audit(session_id: int = None, flagged_only: bool = False,
         conditions.append("flagged = 1")
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     rows = conn.execute(
-        f"SELECT * FROM tool_calls {where} ORDER BY timestamp DESC LIMIT ?",
+        f"SELECT id, session_id, tool_name, input_json, output_json, flagged, flag_reason, timestamp FROM tool_calls {where} ORDER BY timestamp DESC LIMIT ?",
         params + [limit],
     ).fetchall()
     conn.close()
@@ -667,7 +667,7 @@ def decay_activations(half_life_days: int = 30, db_path: Path = DB_PATH):
 
     now = datetime.now()
     decay_constant = math.log(2) / half_life_days
-    updated = 0
+    updates = []
 
     for row in rows:
         # Use last_accessed if available, otherwise created_at
@@ -688,12 +688,15 @@ def decay_activations(half_life_days: int = 30, db_path: Path = DB_PATH):
         if new_activation < 0.01:
             new_activation = 0.0
 
-        conn.execute(
-            "UPDATE observations SET activation = ? WHERE id = ?",
-            (new_activation, row["id"]),
-        )
-        updated += 1
+        updates.append((new_activation, row["id"]))
 
+    if updates:
+        conn.executemany(
+            "UPDATE observations SET activation = ? WHERE id = ?",
+            updates,
+        )
+
+    updated = len(updates)
     conn.commit()
     conn.close()
     if updated:
@@ -738,22 +741,44 @@ def extract_entities(text: str, db_path: Path = DB_PATH) -> list[dict]:
             seen.add(term.lower())
             entities.append({"name": term, "entity_type": "concept"})
 
-    # Store/update entities in DB
+    # Store/update entities in DB — batch lookups and writes
     conn = _connect(db_path)
+
+    # Fetch all existing entities in one query
+    if entities:
+        placeholders = ",".join("?" for _ in entities)
+        existing_rows = conn.execute(
+            f"SELECT id, LOWER(name) as lower_name, mention_count FROM entities "
+            f"WHERE LOWER(name) IN ({placeholders})",
+            [ent["name"].lower() for ent in entities],
+        ).fetchall()
+        existing_map = {row["lower_name"]: dict(row) for row in existing_rows}
+    else:
+        existing_map = {}
+
+    # Separate into inserts and updates
+    to_update = []  # (id,) tuples for mention_count + 1
+    to_insert = []  # (name, entity_type) tuples
     for ent in entities:
-        existing = conn.execute(
-            "SELECT id, mention_count FROM entities WHERE LOWER(name) = LOWER(?)",
-            (ent["name"],),
-        ).fetchone()
-        if existing:
-            conn.execute(
-                "UPDATE entities SET mention_count = mention_count + 1, "
-                "last_seen = CURRENT_TIMESTAMP WHERE id = ?",
-                (existing["id"],),
-            )
+        lower_name = ent["name"].lower()
+        if lower_name in existing_map:
+            existing = existing_map[lower_name]
+            to_update.append((existing["id"],))
             ent["id"] = existing["id"]
             ent["mention_count"] = existing["mention_count"] + 1
         else:
+            to_insert.append((ent["name"], ent["entity_type"]))
+
+    if to_update:
+        conn.executemany(
+            "UPDATE entities SET mention_count = mention_count + 1, "
+            "last_seen = CURRENT_TIMESTAMP WHERE id = ?",
+            to_update,
+        )
+
+    # Insert new entities — need lastrowid per row, so iterate
+    for ent in entities:
+        if ent["name"].lower() not in existing_map:
             cursor = conn.execute(
                 "INSERT INTO entities (name, entity_type, last_seen) "
                 "VALUES (?, ?, CURRENT_TIMESTAMP)",
@@ -761,6 +786,7 @@ def extract_entities(text: str, db_path: Path = DB_PATH) -> list[dict]:
             )
             ent["id"] = cursor.lastrowid
             ent["mention_count"] = 1
+
     conn.commit()
     conn.close()
 

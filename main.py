@@ -596,6 +596,21 @@ def _cache_next_opening(system: str, cli_session_id: str | None, synth_fn):
 def run_gui(menu_bar_mode=False):
     from core.context import load_system_prompt
     from voice.tts import synthesise_sync
+    from display.setup_wizard import needs_setup, run_setup
+
+    # First-launch setup — ask user's name before anything else
+    if needs_setup():
+        from PyQt5.QtWidgets import QApplication
+        app = QApplication.instance() or QApplication(sys.argv)
+        name = run_setup(app)
+        if name:
+            # Reload config so USER_NAME picks up the new value
+            import importlib
+            import config as _cfg
+            importlib.reload(_cfg)
+            # Re-import into this module's namespace
+            global USER_NAME
+            USER_NAME = _cfg.USER_NAME
 
     session = _init()
     system = load_system_prompt()

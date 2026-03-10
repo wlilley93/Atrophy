@@ -28,6 +28,15 @@ SEARCHABLE_TABLES = {
     "entities": "name",
 }
 
+# Columns to fetch per table (excludes large embedding BLOBs)
+_TABLE_COLUMNS = {
+    "observations": "id, created_at, content, source_turn, incorporated, valid_from, valid_to, learned_at, expired_at, confidence, activation, last_accessed",
+    "summaries": "id, created_at, session_id, content, topics",
+    "turns": "id, session_id, role, content, timestamp, topic_tags, weight, channel",
+    "bookmarks": "id, session_id, created_at, moment, quote",
+    "entities": "id, name, entity_type, mention_count, first_seen, last_seen",
+}
+
 
 # ── Lightweight BM25 ──
 
@@ -201,20 +210,26 @@ def search(query: str, n: int = 5, vector_weight: float = None,
         # Merge
         merged = _merge_results(vec_results, txt_results, vector_weight)
 
-        # Fetch content for top results
-        conn = _connect(db_path)
-        for row_id, score in merged[:n * 2]:
-            row = conn.execute(
-                f"SELECT * FROM {table} WHERE id = ?", (row_id,)
-            ).fetchone()
-            if row:
-                result = dict(row)
-                result["_source_table"] = table
-                result["_score"] = score
-                # Remove embedding blob from results
-                result.pop("embedding", None)
-                all_results.append(result)
-        conn.close()
+        # Fetch content for top results in a single batch query
+        top_merged = merged[:n * 2]
+        if top_merged:
+            row_ids = [row_id for row_id, _ in top_merged]
+            score_by_id = {row_id: score for row_id, score in top_merged}
+            placeholders = ",".join("?" for _ in row_ids)
+            cols = _TABLE_COLUMNS.get(table, "*")
+            conn = _connect(db_path)
+            rows = conn.execute(
+                f"SELECT {cols} FROM {table} WHERE id IN ({placeholders})", row_ids
+            ).fetchall()
+            conn.close()
+            rows_by_id = {row["id"]: row for row in rows}
+            for row_id in row_ids:
+                row = rows_by_id.get(row_id)
+                if row:
+                    result = dict(row)
+                    result["_source_table"] = table
+                    result["_score"] = score_by_id[row_id]
+                    all_results.append(result)
 
     # Sort all results across tables by score
     all_results.sort(key=lambda x: x["_score"], reverse=True)
@@ -291,12 +306,14 @@ def reindex(table: str = None, db_path=DB_PATH):
             chunk_ids = ids[i:i + chunk_size]
             vectors = embed_batch(chunk_texts)
 
-            for row_id, vec in zip(chunk_ids, vectors):
-                blob = vector_to_blob(vec)
-                conn.execute(
-                    f"UPDATE {tbl} SET embedding = ? WHERE id = ?",
-                    (blob, row_id),
-                )
+            update_params = [
+                (vector_to_blob(vec), row_id)
+                for row_id, vec in zip(chunk_ids, vectors)
+            ]
+            conn.executemany(
+                f"UPDATE {tbl} SET embedding = ? WHERE id = ?",
+                update_params,
+            )
             embedded += len(chunk_texts)
 
         conn.commit()
