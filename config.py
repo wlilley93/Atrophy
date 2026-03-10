@@ -39,6 +39,7 @@ def ensure_user_data():
     cfg_path = USER_DATA / "config.json"
     if not cfg_path.exists():
         cfg_path.write_text(json.dumps({}, indent=2) + "\n")
+        cfg_path.chmod(0o600)
 
     # Migrate legacy data from bundle (agents/<name>/data/) to ~/.atrophy/agents/<name>/data/
     _migrate_legacy_data()

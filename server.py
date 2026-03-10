@@ -87,7 +87,7 @@ def chat():
     POST /chat {"message": "hello"}
     → {"response": "...", "session_id": "..."}
     """
-    data = request.get_json(force=True)
+    data = request.get_json()
     message = data.get("message", "").strip()
     if not message:
         return jsonify({"error": "empty message"}), 400
@@ -130,7 +130,7 @@ def chat_stream():
     """
     from flask import Response
 
-    data = request.get_json(force=True)
+    data = request.get_json()
     message = data.get("message", "").strip()
     if not message:
         return jsonify({"error": "empty message"}), 400
@@ -220,7 +220,7 @@ def run_server(port=5000, host="127.0.0.1"):
     print(f"\n  The Atrophied Mind — HTTP API")
     print(f"  Agent: {AGENT_DISPLAY_NAME}")
     print(f"  http://{host}:{port}")
-    print(f"  Token: {_SERVER_TOKEN}")
+    print(f"  Token: {_SERVER_TOKEN[:8]}...{_SERVER_TOKEN[-4:]}")
     print(f"  Token file: {_TOKEN_PATH}")
     print(f"  Endpoints: /health, /chat, /chat/stream, /memory/search, /memory/threads, /session")
     print(f"  Auth: Bearer token required on all endpoints except /health\n")
