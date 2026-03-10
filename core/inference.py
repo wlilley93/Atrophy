@@ -16,6 +16,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 
 from config import CLAUDE_BIN, CLAUDE_EFFORT, ADAPTIVE_EFFORT, DB_PATH, MCP_SERVER_SCRIPT, OBSIDIAN_VAULT, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, AGENT_NAME
 from core.thinking import classify_effort
@@ -69,26 +70,41 @@ def _env():
 _mcp_config: str | None = None
 
 def _mcp_config_path() -> str:
-    """Write MCP config once, return cached path on subsequent calls."""
+    """Write MCP config once, return cached path on subsequent calls.
+
+    Includes the memory server (always) plus any MCP servers from the
+    user's global Claude Code settings (~/.claude/settings.json).
+    """
     global _mcp_config
     if _mcp_config:
         return _mcp_config
     config_path = MCP_SERVER_SCRIPT.parent / "config.json"
-    config = {
-        "mcpServers": {
-            "memory": {
-                "command": sys.executable,
-                "args": [str(MCP_SERVER_SCRIPT)],
-                "env": {
-                    "COMPANION_DB": str(DB_PATH),
-                    "OBSIDIAN_VAULT": str(OBSIDIAN_VAULT),
-                    "OBSIDIAN_AGENT_DIR": str(OBSIDIAN_AGENT_DIR),
-                    "OBSIDIAN_AGENT_NOTES": str(OBSIDIAN_AGENT_NOTES),
-                    "AGENT": AGENT_NAME,
-                },
-            }
+    servers = {
+        "memory": {
+            "command": sys.executable,
+            "args": [str(MCP_SERVER_SCRIPT)],
+            "env": {
+                "COMPANION_DB": str(DB_PATH),
+                "OBSIDIAN_VAULT": str(OBSIDIAN_VAULT),
+                "OBSIDIAN_AGENT_DIR": str(OBSIDIAN_AGENT_DIR),
+                "OBSIDIAN_AGENT_NOTES": str(OBSIDIAN_AGENT_NOTES),
+                "AGENT": AGENT_NAME,
+            },
         }
     }
+
+    # Import global MCP servers from Claude Code settings
+    global_settings = Path.home() / ".claude" / "settings.json"
+    if global_settings.exists():
+        try:
+            settings = json.loads(global_settings.read_text())
+            for name, server in settings.get("mcpServers", {}).items():
+                if name not in servers:
+                    servers[name] = server
+        except Exception:
+            pass  # non-fatal — proceed with memory server only
+
+    config = {"mcpServers": servers}
     config_path.write_text(json.dumps(config, indent=2))
     _mcp_config = str(config_path)
     return _mcp_config
@@ -263,7 +279,7 @@ def stream_inference(
             "--include-partial-messages",
             "--resume", cli_session_id,
             "--mcp-config", mcp_config,
-            "--allowedTools", "mcp__memory__*",
+            "--allowedTools", "mcp__*",
             "-p", f"[Current context: {_agency_context(user_message)}]\n\n{user_message}",
         ]
     else:
@@ -278,7 +294,7 @@ def stream_inference(
             "--session-id", cli_session_id,
             "--system-prompt", system + "\n\n---\n\n## Current Context\n\n" + _agency_context(user_message),
             "--mcp-config", mcp_config,
-            "--allowedTools", "mcp__memory__*",
+            "--allowedTools", "mcp__*",
             "--disallowedTools", ",".join(_TOOL_BLACKLIST),
             "-p", user_message,
         ]

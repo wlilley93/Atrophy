@@ -12,17 +12,36 @@ from core import memory
 
 
 def load_system_prompt() -> str:
-    """Load the companion's system prompt.
+    """Load the companion's system prompt plus all skill files.
 
-    Reads from Obsidian first (she can edit it there), falls back to local file.
+    Reads system.md from Obsidian first (she can edit it there), falls back
+    to local file. Then appends all other .md skill files from the Obsidian
+    skills directory (tools, soul, etc.).
     """
     from config import OBSIDIAN_AGENT_DIR
-    obsidian_prompt = OBSIDIAN_AGENT_DIR / "skills" / "system.md"
+    skills_dir = OBSIDIAN_AGENT_DIR / "skills"
+    obsidian_prompt = skills_dir / "system.md"
+
     if obsidian_prompt.exists():
-        return obsidian_prompt.read_text()
-    if SYSTEM_PROMPT_PATH.exists():
-        return SYSTEM_PROMPT_PATH.read_text()
-    return "You are a companion. Be genuine, direct, and honest."
+        base = obsidian_prompt.read_text()
+    elif SYSTEM_PROMPT_PATH.exists():
+        base = SYSTEM_PROMPT_PATH.read_text()
+    else:
+        base = "You are a companion. Be genuine, direct, and honest."
+
+    # Append other skill files from Obsidian (not system.md itself)
+    if skills_dir.exists():
+        for skill_file in sorted(skills_dir.glob("*.md")):
+            if skill_file.name == "system.md":
+                continue
+            try:
+                content = skill_file.read_text()
+                if content.strip():
+                    base += f"\n\n---\n\n{content}"
+            except Exception:
+                pass
+
+    return base
 
 
 def assemble_context(
