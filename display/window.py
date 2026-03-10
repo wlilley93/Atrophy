@@ -64,6 +64,7 @@ _BAR_RADIUS = 24
 
 class FrameGrabSurface(QAbstractVideoSurface):
     frame_ready = pyqtSignal(QImage)
+    _frame_count = 0  # frame skip counter
 
     _FORMAT_MAP = {
         QVideoFrame.Format_ARGB32: QImage.Format_ARGB32,
@@ -86,6 +87,10 @@ class FrameGrabSurface(QAbstractVideoSurface):
     def present(self, frame: QVideoFrame):
         if not frame.isValid():
             return False
+        # Skip every other frame — ambient video doesn't need full framerate
+        self._frame_count += 1
+        if self._frame_count % 2 != 0:
+            return True
         frame.map(QAbstractVideoBuffer.ReadOnly)
         fmt = self._FORMAT_MAP.get(frame.pixelFormat())
         if fmt is None:
@@ -1898,10 +1903,19 @@ class InputBar(QWidget):
         from PyQt5.QtCore import QEvent
         if obj is self._input and event.type() == QEvent.KeyPress:
             mods = event.modifiers()
-            if event.key() == Qt.Key_C and (mods & Qt.ControlModifier or mods & Qt.MetaModifier):
+            key = event.key()
+            if key == Qt.Key_C and (mods & Qt.ControlModifier or mods & Qt.MetaModifier):
                 if not self._input.hasSelectedText():
                     self.copy_requested.emit()
                     return True
+            # Forward Cmd+Up/Down to parent for agent switching
+            if key in (Qt.Key_Up, Qt.Key_Down) and (mods & Qt.MetaModifier):
+                self.parent().keyPressEvent(event)
+                return True
+            # Forward plain Up/Down to parent for transcript scrolling
+            if key in (Qt.Key_Up, Qt.Key_Down) and not self._input.text():
+                self.parent().keyPressEvent(event)
+                return True
         return super().eventFilter(obj, event)
 
     def _on_keystroke(self):
@@ -2008,10 +2022,10 @@ class CompanionWindow(QWidget):
         # Ken Burns drift — slow, gentle movement
         self._drift_x = 0.0
         self._drift_y = 0.0
-        self._drift_dx = 0.04
-        self._drift_dy = 0.03
+        self._drift_dx = 0.08  # doubled — timer interval is 100ms not 50ms
+        self._drift_dy = 0.06
         self._drift_timer = QTimer(self)
-        self._drift_timer.setInterval(50)
+        self._drift_timer.setInterval(100)  # 10fps — drift is subtle, doesn't need 20fps
         self._drift_timer.timeout.connect(self._tick_drift)
         self._drift_timer.start()
 
@@ -2429,7 +2443,7 @@ class CompanionWindow(QWidget):
             # Smooth vignette interpolation — only repaint when actually changing
             diff = self._vignette_target - self._vignette_opacity
             if abs(diff) > 0.001:
-                self._vignette_opacity += diff * 0.05
+                self._vignette_opacity += diff * 0.10  # doubled — timer is 100ms not 50ms
                 self.update()
         except RuntimeError:
             pass  # widget deleted during shutdown
@@ -2559,9 +2573,38 @@ class CompanionWindow(QWidget):
             p.setBrush(QColor(0, 0, 0))
             p.drawPath(mask)
 
-        # Boot overlay — black screen that fades out when ready
+        # Boot overlay — dark screen with agent name and pulsing orb
         if self._booting and self._boot_opacity > 0.001:
-            p.fillRect(self.rect(), QColor(0, 0, 0, int(255 * self._boot_opacity)))
+            alpha = int(255 * self._boot_opacity)
+            p.fillRect(self.rect(), QColor(12, 12, 14, alpha))
+
+            # Pulsing orb in centre
+            import math, time
+            pulse = 0.5 + 0.5 * math.sin(time.time() * 2.0)
+            orb_r = 20 + int(pulse * 6)
+            orb_alpha = int((120 + pulse * 80) * self._boot_opacity)
+            cx, cy = win_w // 2, win_h // 2 - 30
+            orb_grad = QRadialGradient(QPointF(cx, cy), orb_r)
+            orb_grad.setColorAt(0.0, QColor(180, 200, 255, orb_alpha))
+            orb_grad.setColorAt(0.5, QColor(100, 120, 220, orb_alpha // 2))
+            orb_grad.setColorAt(1.0, QColor(60, 60, 140, 0))
+            p.setPen(Qt.NoPen)
+            p.setBrush(orb_grad)
+            p.drawEllipse(QPointF(cx, cy), orb_r, orb_r)
+
+            # Agent name below orb
+            name_alpha = int(180 * self._boot_opacity)
+            p.setPen(QColor(255, 255, 255, name_alpha))
+            from PyQt5.QtGui import QFont
+            font = QFont("Bricolage Grotesque", 13)
+            font.setLetterSpacing(QFont.AbsoluteSpacing, 3)
+            p.setFont(font)
+            p.drawText(QRectF(0, cy + 40, win_w, 30),
+                       Qt.AlignHCenter | Qt.AlignTop, AGENT_DISPLAY_NAME.upper())
+
+            # Force repaint during boot for animation
+            if self._booting:
+                QTimer.singleShot(33, self.update)
         p.end()
 
     # ── Overlays ──
@@ -2768,16 +2811,17 @@ class CompanionWindow(QWidget):
         self._voice_call = None
 
     def _minimize_to_tray(self):
-        self.hide()
+        self.showMinimized()
 
     def changeEvent(self, event):
-        from PyQt5.QtCore import QEvent
-        if event.type() == QEvent.WindowStateChange and self.isMinimized():
-            # Intercept native minimize (Cmd+M / yellow button) → hide to tray instead
-            event.ignore()
-            QTimer.singleShot(0, self._minimize_to_tray)
-            return
         super().changeEvent(event)
+
+    def showEvent(self, event):
+        """Resume video playback when window becomes visible again."""
+        super().showEvent(event)
+        if hasattr(self, '_player') and self._player.state() != QMediaPlayer.PlayingState:
+            if not self._frame.isNull():
+                self._player.play()
 
     def _build_status_bar(self):
         self._status_bar = StatusBar(self)
@@ -3945,9 +3989,6 @@ class CompanionWindow(QWidget):
             self._transcript.copy_last_companion()
         else:
             super().keyPressEvent(event)
-
-    def showEvent(self, event):
-        super().showEvent(event)
 
     _shutting_down = pyqtSignal()
     _shutdown_status = pyqtSignal(str, float)  # (label, progress 0..1)
