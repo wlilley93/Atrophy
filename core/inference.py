@@ -57,7 +57,10 @@ _CLAUSE_SPLIT_THRESHOLD = 120
 
 def _env():
     env = os.environ.copy()
-    env.pop("CLAUDECODE", None)
+    # Strip ALL Claude Code env vars — nested claude processes hang otherwise
+    for key in list(env):
+        if "CLAUDE" in key.upper():
+            env.pop(key)
     return env
 
 
@@ -135,6 +138,13 @@ def _agency_context(user_message: str) -> str:
     )
 
     parts = [time_of_day_context()]
+
+    # Status awareness — was he away?
+    from core.status import get_status
+    status = get_status()
+    if status.get("returned_from"):
+        parts.append(f"Will just came back (was: {status['returned_from']}). Don't make a big deal of it.")
+
     pattern = session_pattern_note(str(DB_PATH))
     if pattern:
         parts.append(pattern)
@@ -244,6 +254,7 @@ def stream_inference(
             stderr=subprocess.PIPE,
             text=True,
             env=_env(),
+            start_new_session=True,
         )
     except Exception as e:
         print(f"  [inference] failed to start: {e}")
@@ -436,15 +447,21 @@ def run_inference_oneshot(messages: list[dict], system: str) -> str:
         "--model", "claude-sonnet-4-6",
         "--effort", "low",
         "--no-session-persistence",
-        "--output-format", "json",
+        "--print",
         "--system-prompt", system,
         "-p", full_prompt,
     ]
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=120, env=_env(),
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, env=_env(), start_new_session=True,
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"CLI error: {result.stderr[:500]}")
+    try:
+        stdout, stderr = proc.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise RuntimeError("Oneshot inference timed out (30s)")
+    if proc.returncode != 0:
+        raise RuntimeError(f"CLI error: {stderr[:500]}")
 
-    data = json.loads(result.stdout)
-    return data.get("result", "")
+    return stdout.strip()

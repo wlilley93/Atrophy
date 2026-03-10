@@ -835,6 +835,14 @@ class CompanionWindow(QWidget):
         self._muted = False       # True = text-only (no audio playback)
         self._eye_mode = False    # True = minimal (chat bar only)
 
+        # Idle → away timer (10 min no input)
+        from core.status import IDLE_TIMEOUT_SECS, set_active
+        set_active()  # app launch = active
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.timeout.connect(self._on_idle_timeout)
+        self._idle_timer.start(IDLE_TIMEOUT_SECS * 1000)
+
         # Boot overlay — black screen that fades out when ready
         self._boot_opacity = 1.0
         self._booting = True
@@ -1210,10 +1218,26 @@ class CompanionWindow(QWidget):
 
     # ── Streaming interaction flow ──
 
+    def _on_idle_timeout(self):
+        from core.status import set_away
+        set_away("idle")
+
+    def _reset_idle_timer(self):
+        from core.status import IDLE_TIMEOUT_SECS, set_active
+        set_active()
+        self._idle_timer.start(IDLE_TIMEOUT_SECS * 1000)
+
     def _on_user_input(self, text):
+        self._reset_idle_timer()
         self._start_turn(text)
 
     def _start_turn(self, text):
+        # Detect away intent — set status before processing
+        from core.status import detect_away_intent, set_away
+        away_reason = detect_away_intent(text)
+        if away_reason:
+            set_away(away_reason)
+
         # Cancel opening if still loading — user went first
         if getattr(self, '_opening_worker', None):
             self._opening_worker = None
@@ -1808,6 +1832,8 @@ class MenuBarIcon:
         menu.addAction("Show/Hide", self._toggle_window)
         menu.addAction("Chat Panel", self._toggle_chat)
         menu.addSeparator()
+        self._status_action = menu.addAction("Set Away", self._toggle_status)
+        menu.addSeparator()
         menu.addAction("Quit", self._quit)
         self._tray.setContextMenu(menu)
         self._menu = menu  # prevent gc
@@ -1842,6 +1868,16 @@ class MenuBarIcon:
 
     def _toggle_chat(self):
         self._chat.toggle()
+
+    def _toggle_status(self):
+        from core.status import is_away, set_active, set_away
+        if is_away():
+            set_active()
+            self._status_action.setText("Set Away")
+            self._window._reset_idle_timer()
+        else:
+            set_away("manual")
+            self._status_action.setText("Set Active")
 
     def _quit(self):
         self._window.close()

@@ -22,6 +22,11 @@ avatar/loops/
 avatar/source/
 avatar/candidates/
 
+# Runtime state
+.opening_cache.json
+.message_queue.json
+.user_status.json
+
 # MCP generated config
 mcp/config.json
 
