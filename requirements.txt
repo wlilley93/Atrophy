@@ -21,9 +21,13 @@ PyQt5-sip
 # HTTP API (--server mode)
 flask
 
+# Icons
+python-lucide
+
 # Utilities
 python-dotenv
 rich
+defusedxml
 
 # Face generation (optional — only for scripts/generate_face.py)
 # replicate

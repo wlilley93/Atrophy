@@ -32,7 +32,7 @@ from core.prompts import load_prompt
 def _fetch_headlines() -> str:
     """Top headlines from BBC World, Reuters, and Al Jazeera RSS."""
     import urllib.request
-    import xml.etree.ElementTree as ET
+    import defusedxml.ElementTree as ET
 
     feeds = [
         ("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"),

@@ -128,7 +128,7 @@ def _gather_sources(sources: list[str]) -> str:
 
     if "headlines" in sources:
         import urllib.request
-        import xml.etree.ElementTree as ET
+        import defusedxml.ElementTree as ET
         try:
             req = urllib.request.Request(
                 "https://feeds.bbci.co.uk/news/rss.xml",

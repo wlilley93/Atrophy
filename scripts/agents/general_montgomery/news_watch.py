@@ -15,7 +15,7 @@ import os
 import sqlite3
 import sys
 import urllib.request
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
@@ -370,8 +370,9 @@ def run():
         for idx, info in batch_assessments.items():
             all_assessments[i + idx] = info
 
-    # Store items
+    # Store items — batch routine inserts, process notable individually
     notable_count = 0
+    routine_batch = []
     for i, item in enumerate(new_items):
         info = all_assessments.get(i, {})
         urgency = info.get("urgency", "routine")
@@ -379,16 +380,18 @@ def run():
 
         # Only store notable+ items (skip routine to avoid noise)
         if urgency == "routine" and not assessment:
-            # Still record the link so we don't re-process
-            conn.execute(
-                "INSERT INTO intelligence (headline, link, source, urgency) VALUES (?, ?, ?, 'routine')",
-                (item["headline"], item["link"], item["source"]),
-            )
+            routine_batch.append((item["headline"], item["link"], item["source"]))
             continue
 
         _store_item(conn, item, assessment, urgency)
         notable_count += 1
         print(f"  [{urgency.upper()}] {item['headline'][:80]}")
+
+    if routine_batch:
+        conn.executemany(
+            "INSERT INTO intelligence (headline, link, source, urgency) VALUES (?, ?, ?, 'routine')",
+            routine_batch,
+        )
 
     conn.commit()
 

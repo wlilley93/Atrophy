@@ -46,7 +46,7 @@ def _fetch_weather() -> str:
 def _fetch_headlines() -> str:
     """Fetch top UK headlines from BBC RSS (no deps)."""
     import urllib.request
-    import xml.etree.ElementTree as ET
+    import defusedxml.ElementTree as ET
     try:
         req = urllib.request.Request(
             "https://feeds.bbci.co.uk/news/rss.xml",
