@@ -22,9 +22,15 @@ def init_db(db_path: Path = DB_PATH):
     """Create all tables from schema.sql, then run migrations."""
     schema = SCHEMA_PATH.read_text()
     conn = _connect(db_path)
-    conn.executescript(schema)
+    # Run migrations first — adds missing columns that the schema's
+    # CREATE INDEX statements may reference (e.g. activation).
+    try:
+        conn.executescript(schema)
+    except sqlite3.OperationalError:
+        # Schema has new columns/indexes the old DB lacks — migrate first
+        _migrate(conn)
+        conn.executescript(schema)
     conn.commit()
-    # Migrations for existing databases
     _migrate(conn)
     conn.close()
 
