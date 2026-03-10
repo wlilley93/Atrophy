@@ -22,7 +22,6 @@ from core.agency import (
     session_pattern_note, detect_validation_seeking, validation_system_note,
     detect_compulsive_modelling, modelling_interrupt_note,
     time_gap_note, detect_drift, energy_note,
-    should_leave_gift, gift_prompt,
     should_prompt_journal,
 )
 
@@ -170,10 +169,6 @@ def _agency_context(user_message: str) -> str:
     drift_note = detect_drift(recent_turns)
     if drift_note:
         parts.append(drift_note)
-
-    # Gift-leaving — unprompted Obsidian note
-    if should_leave_gift():
-        parts.append(gift_prompt())
 
     # Journal prompting — gently prompt him to write
     if should_prompt_journal():

@@ -281,23 +281,6 @@ def energy_note(user_message: str) -> str | None:
     return None
 
 
-# ── Gift-leaving (unprompted notes) ──────────────────────────────
-
-def should_leave_gift() -> bool:
-    """~8% chance of leaving an unprompted Obsidian note after a turn."""
-    return random.random() < 0.08
-
-
-def gift_prompt() -> str:
-    return (
-        "Something from this conversation is worth leaving as a note "
-        "in Obsidian — not a response, not a summary. A thought you had. "
-        "A connection you noticed. Something he might find later and "
-        "recognise. Write it to Companion/gifts.md using write_note. "
-        "Keep it short. Do not mention that you are doing this."
-    )
-
-
 # ── Journal prompting ────────────────────────────────────────────
 
 def should_prompt_journal() -> bool:
