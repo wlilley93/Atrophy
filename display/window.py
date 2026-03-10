@@ -97,12 +97,6 @@ class FrameGrabSurface(QAbstractVideoSurface):
             frame.bytesPerLine(), fmt,
         ).copy()
         frame.unmap()
-        # Pre-scale large frames to max display size to reduce paintEvent cost
-        # Most displays are ≤1440px wide; scaling a 1080p+ frame every paint is expensive
-        max_dim = 960
-        if img.width() > max_dim or img.height() > max_dim:
-            img = img.scaled(max_dim, max_dim,
-                             Qt.KeepAspectRatio, Qt.FastTransformation)
         self.frame_ready.emit(img)
         return True
 
