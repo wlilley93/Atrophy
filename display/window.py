@@ -87,9 +87,11 @@ class FrameGrabSurface(QAbstractVideoSurface):
     def present(self, frame: QVideoFrame):
         if not frame.isValid():
             return False
-        # Skip every other frame — ambient video doesn't need full framerate
+        # Skip frames — more aggressively at start (first 200 frames ≈ first few seconds)
+        # to reduce CPU pressure while models load in the background
         self._frame_count += 1
-        if self._frame_count % 2 != 0:
+        skip = 4 if self._frame_count < 200 else 2
+        if self._frame_count % skip != 0:
             return True
         frame.map(QAbstractVideoBuffer.ReadOnly)
         fmt = self._FORMAT_MAP.get(frame.pixelFormat())
@@ -536,25 +538,25 @@ class TranscriptOverlay(QWidget):
         self._browser.setGeometry(0, 0, self.width(), self.height())
 
     def paintEvent(self, event):
-        """Draw fade gradient over the top 1/3 of the transcript."""
+        """Draw transparent fade mask over the top of the transcript."""
         if self._opacity <= 0.001:
             return
         super().paintEvent(event)
 
-        # Fade mask — gentle gradient at top so text doesn't end abruptly
+        # Fade mask — erase (make transparent) the top portion of the text
+        # This fades the text itself rather than drawing a box over it
         vis_h = self.height()
-        fade_h = vis_h / 4.0
+        fade_h = int(vis_h / 4.0)
         if fade_h <= 0:
             return
 
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
+        p.setCompositionMode(QPainter.CompositionMode_DestinationIn)
         grad = QLinearGradient(0, 0, 0, fade_h)
-        # Subtle fade — just enough to soften the top edge, not a solid block
-        grad.setColorAt(0.0, QColor(0, 0, 0, 100))
-        grad.setColorAt(0.5, QColor(0, 0, 0, 30))
-        grad.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.fillRect(0, 0, self.width(), int(fade_h), grad)
+        grad.setColorAt(0.0, QColor(0, 0, 0, 0))       # fully transparent at top
+        grad.setColorAt(0.7, QColor(0, 0, 0, 200))
+        grad.setColorAt(1.0, QColor(0, 0, 0, 255))      # fully opaque below
+        p.fillRect(0, 0, self.width(), fade_h, grad)
         p.end()
 
 
@@ -2108,6 +2110,7 @@ class CompanionWindow(QWidget):
         self._wake_btn.hide()
         self._artefact_btn.hide()
         self._settings_btn.hide()
+        self._call_btn.hide()
 
         # Centre status bar for boot
         self._status_bar.start("connecting...")
@@ -2171,6 +2174,7 @@ class CompanionWindow(QWidget):
         self._wake_btn.show()
         self._artefact_btn.show()
         self._settings_btn.show()
+        self._call_btn.show()
         self._position_status_bar()  # restore normal position
 
         # Reveal animation — iris open for agent switch, fade for cold boot
@@ -2573,36 +2577,58 @@ class CompanionWindow(QWidget):
             p.setBrush(QColor(0, 0, 0))
             p.drawPath(mask)
 
-        # Boot overlay — dark screen with agent name and pulsing orb
+        # Boot overlay — dark screen with pulsing orb, brain icon, and "ATROPHY"
         if self._booting and self._boot_opacity > 0.001:
             alpha = int(255 * self._boot_opacity)
             p.fillRect(self.rect(), QColor(12, 12, 14, alpha))
 
-            # Pulsing orb in centre
             import math, time
             pulse = 0.5 + 0.5 * math.sin(time.time() * 2.0)
-            orb_r = 20 + int(pulse * 6)
-            orb_alpha = int((120 + pulse * 80) * self._boot_opacity)
-            cx, cy = win_w // 2, win_h // 2 - 30
-            orb_grad = QRadialGradient(QPointF(cx, cy), orb_r)
-            orb_grad.setColorAt(0.0, QColor(180, 200, 255, orb_alpha))
-            orb_grad.setColorAt(0.5, QColor(100, 120, 220, orb_alpha // 2))
-            orb_grad.setColorAt(1.0, QColor(60, 60, 140, 0))
-            p.setPen(Qt.NoPen)
-            p.setBrush(orb_grad)
-            p.drawEllipse(QPointF(cx, cy), orb_r, orb_r)
+            cx, cy = win_w / 2.0, win_h / 2.0 - 20
 
-            # Agent name below orb
-            name_alpha = int(180 * self._boot_opacity)
+            # Pulsing glow — large soft orb behind the icon
+            for layer_r, layer_a in [(80, 25), (50, 50), (30, 80)]:
+                r = layer_r + int(pulse * 8)
+                a = int(layer_a * self._boot_opacity)
+                grad = QRadialGradient(QPointF(cx, cy), r)
+                grad.setColorAt(0.0, QColor(150, 170, 255, a))
+                grad.setColorAt(0.5, QColor(90, 110, 200, a // 3))
+                grad.setColorAt(1.0, QColor(40, 40, 120, 0))
+                p.setPen(Qt.NoPen)
+                p.setBrush(grad)
+                p.drawEllipse(QPointF(cx, cy), r, r)
+
+            # Brain icon — composited without its black background
+            if not hasattr(self, '_boot_brain') or self._boot_brain is None:
+                import os
+                icon_path = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "icons", "icon_128x128.png"
+                )
+                self._boot_brain = QImage(icon_path)
+            if not self._boot_brain.isNull():
+                icon_size = 64
+                icon_alpha = int(220 * self._boot_opacity)
+                p.setOpacity(icon_alpha / 255.0)
+                p.drawImage(
+                    QRectF(cx - icon_size / 2, cy - icon_size / 2,
+                           icon_size, icon_size),
+                    self._boot_brain,
+                    QRectF(0, 0, self._boot_brain.width(), self._boot_brain.height()),
+                )
+                p.setOpacity(1.0)
+
+            # "ATROPHY" below
+            name_alpha = int(160 * self._boot_opacity)
             p.setPen(QColor(255, 255, 255, name_alpha))
             from PyQt5.QtGui import QFont
-            font = QFont("Bricolage Grotesque", 13)
-            font.setLetterSpacing(QFont.AbsoluteSpacing, 3)
+            font = QFont("Bricolage Grotesque", 12)
+            font.setLetterSpacing(QFont.AbsoluteSpacing, 4)
             p.setFont(font)
-            p.drawText(QRectF(0, cy + 40, win_w, 30),
-                       Qt.AlignHCenter | Qt.AlignTop, AGENT_DISPLAY_NAME.upper())
+            p.drawText(QRectF(0, cy + 50, win_w, 30),
+                       Qt.AlignHCenter | Qt.AlignTop, "ATROPHY")
 
-            # Force repaint during boot for animation
+            # Animate during boot
             if self._booting:
                 QTimer.singleShot(33, self.update)
         p.end()
