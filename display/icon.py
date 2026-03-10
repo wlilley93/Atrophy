@@ -32,30 +32,6 @@ def _render_orb(size: int) -> QImage:
     cx, cy = size / 2, size / 2
     radius = size / 2
 
-    # -- Layer 0: Background fill with subtle corner gradients --
-    # Solid dark base
-    p.setPen(Qt.NoPen)
-    p.setBrush(QColor(12, 12, 14))
-    p.drawRect(QRectF(0, 0, size, size))
-
-    # Top-left corner: subtle lift towards grey
-    g_tl = QRadialGradient(QPointF(0, 0), radius * 1.2)
-    g_tl.setColorAt(0.0, QColor(55, 55, 60, 90))
-    g_tl.setColorAt(0.3, QColor(40, 40, 45, 55))
-    g_tl.setColorAt(0.6, QColor(25, 25, 28, 20))
-    g_tl.setColorAt(1.0, QColor(12, 12, 14, 0))
-    p.setBrush(g_tl)
-    p.drawRect(QRectF(0, 0, size, size))
-
-    # Bottom-right corner: matching subtle lift
-    g_br = QRadialGradient(QPointF(size, size), radius * 1.2)
-    g_br.setColorAt(0.0, QColor(55, 55, 60, 90))
-    g_br.setColorAt(0.3, QColor(40, 40, 45, 55))
-    g_br.setColorAt(0.6, QColor(25, 25, 28, 20))
-    g_br.setColorAt(1.0, QColor(12, 12, 14, 0))
-    p.setBrush(g_br)
-    p.drawRect(QRectF(0, 0, size, size))
-
     # -- Layer 1: Outermost ambient glow (very faint, large) --
     # Slightly off-center upward to suggest overhead light
     g_ambient = QRadialGradient(QPointF(cx, cy * 0.95), radius * 0.95)
@@ -183,20 +159,28 @@ def generate_icons(directory: str = ICONS_DIR, sizes: list = None) -> list:
 
 def get_app_icon() -> QIcon:
     """
-    Return a QIcon with all standard sizes loaded.
-    Generates icon files on first call if they don't exist.
+    Return a QIcon. Prefers the .icns file (hand-crafted brain icon)
+    over the generated orb PNGs, which are a fallback only.
     """
     global _cached_icon
     if _cached_icon is not None:
         return _cached_icon
 
-    # Check if icons exist; generate if missing
+    # Prefer .icns (the brain icon) if it exists
+    icns_path = os.path.join(ICONS_DIR, "TheAtrophiedMind.icns")
+    if os.path.exists(icns_path):
+        icon = QIcon(icns_path)
+        if not icon.isNull():
+            _cached_icon = icon
+            return icon
+
+    # Fallback: generated orb PNGs
     missing = any(
         not os.path.exists(os.path.join(ICONS_DIR, f"icon_{s}x{s}.png"))
         for s in ICON_SIZES
     )
     if missing:
-        print("Generating app icons...")
+        print("Generating fallback app icons...")
         generate_icons()
 
     icon = QIcon()

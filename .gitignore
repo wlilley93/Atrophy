@@ -39,6 +39,7 @@ mcp/config.json
 # Build artifacts
 build/
 *.icns
+!display/icons/TheAtrophiedMind.icns
 
 # OS
 .DS_Store
