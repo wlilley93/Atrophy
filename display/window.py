@@ -4450,16 +4450,15 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
         cli_session_id=cli_session_id,
         session=session,
         cached_opening_audio=cached_opening_audio,
-        dormant=menu_bar_mode,
+        dormant=False,
     )
 
     _chat_panel = ChatPanel(_companion_window)
     _menu_bar_icon = MenuBarIcon(_companion_window, _chat_panel)
     _global_hotkey = GlobalHotkey(_chat_panel.toggle)
 
-    if not menu_bar_mode:
-        _companion_window.show()
-        _companion_window._bar.focus_input()
+    _companion_window.show()
+    _companion_window._bar.focus_input()
 
     app.exec_()
 
