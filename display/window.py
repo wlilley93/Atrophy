@@ -87,12 +87,6 @@ class FrameGrabSurface(QAbstractVideoSurface):
     def present(self, frame: QVideoFrame):
         if not frame.isValid():
             return False
-        # Skip frames — more aggressively at start (first 200 frames ≈ first few seconds)
-        # to reduce CPU pressure while models load in the background
-        self._frame_count += 1
-        skip = 4 if self._frame_count < 200 else 2
-        if self._frame_count % skip != 0:
-            return True
         frame.map(QAbstractVideoBuffer.ReadOnly)
         fmt = self._FORMAT_MAP.get(frame.pixelFormat())
         if fmt is None:
@@ -103,6 +97,12 @@ class FrameGrabSurface(QAbstractVideoSurface):
             frame.bytesPerLine(), fmt,
         ).copy()
         frame.unmap()
+        # Pre-scale large frames to max display size to reduce paintEvent cost
+        # Most displays are ≤1440px wide; scaling a 1080p+ frame every paint is expensive
+        max_dim = 960
+        if img.width() > max_dim or img.height() > max_dim:
+            img = img.scaled(max_dim, max_dim,
+                             Qt.KeepAspectRatio, Qt.FastTransformation)
         self.frame_ready.emit(img)
         return True
 
@@ -867,29 +867,26 @@ class _CallButton(QPushButton):
             p.fillPath(bg, QColor(20, 20, 22, 210))
         p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
         p.drawPath(bg)
-        # Phone handset icon
+        # Phone icon — classic handset shape
         alpha = 240 if self._active else 120
         col = QColor(255, 255, 255, alpha)
-        p.setPen(QPen(col, 1.8))
-        p.setBrush(Qt.NoBrush)
-        # Handset — a curved path like a phone receiver
-        path = QPainterPath()
-        path.moveTo(10, 13)
-        path.quadTo(10, 10, 13, 10)
-        path.lineTo(15, 10)
-        path.quadTo(16, 10, 16, 12)
-        # Curved middle
-        path.quadTo(17, 17, 18, 22)
-        path.quadTo(18, 24, 19, 24)
-        path.lineTo(21, 24)
-        path.quadTo(24, 24, 24, 21)
-        # Hang-up slash when active
+        p.setPen(Qt.NoPen)
+        p.setBrush(col)
+        # Draw a filled phone handset using an arc + two earpieces
+        p.save()
+        p.translate(17, 17)  # centre of button
+        p.rotate(-135 if not self._active else -45)  # tilted handset; rotated when active (hang up)
+        # Earpiece top
+        p.drawRoundedRect(QRectF(-3, -9, 6, 6), 2, 2)
+        # Earpiece bottom
+        p.drawRoundedRect(QRectF(-3, 3, 6, 6), 2, 2)
+        # Handle connecting them
+        p.drawRoundedRect(QRectF(-2, -5, 4, 10), 2, 2)
+        p.restore()
+        # Red slash when active (hang up indicator)
         if self._active:
-            p.drawPath(path)
-            p.setPen(QPen(QColor(255, 100, 100, 220), 2.2))
-            p.drawLine(9, 25, 25, 9)
-        else:
-            p.drawPath(path)
+            p.setPen(QPen(QColor(255, 100, 100, 220), 2.0))
+            p.drawLine(10, 24, 24, 10)
         p.end()
 
 
@@ -2598,27 +2595,7 @@ class CompanionWindow(QWidget):
                 p.setBrush(grad)
                 p.drawEllipse(QPointF(cx, cy), r, r)
 
-            # Brain icon — composited without its black background
-            if not hasattr(self, '_boot_brain') or self._boot_brain is None:
-                import os
-                icon_path = os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)),
-                    "icons", "icon_128x128.png"
-                )
-                self._boot_brain = QImage(icon_path)
-            if not self._boot_brain.isNull():
-                icon_size = 64
-                icon_alpha = int(220 * self._boot_opacity)
-                p.setOpacity(icon_alpha / 255.0)
-                p.drawImage(
-                    QRectF(cx - icon_size / 2, cy - icon_size / 2,
-                           icon_size, icon_size),
-                    self._boot_brain,
-                    QRectF(0, 0, self._boot_brain.width(), self._boot_brain.height()),
-                )
-                p.setOpacity(1.0)
-
-            # "ATROPHY" below
+            # "ATROPHY" below orb
             name_alpha = int(160 * self._boot_opacity)
             p.setPen(QColor(255, 255, 255, name_alpha))
             from PyQt5.QtGui import QFont
