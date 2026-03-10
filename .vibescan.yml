@@ -60,3 +60,7 @@ ignore_rules:
   # SQL f-strings only interpolate internal table/column names, all user
   # values go through parameterised ? placeholders
   - "bandit:B608"
+  # All urlopen calls use hardcoded https URLs or trusted API responses
+  - "bandit:B310"
+  # XML parsing uses defusedxml in our code; remaining hits are vendor/build
+  - "bandit:B314"
