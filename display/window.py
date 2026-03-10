@@ -16,8 +16,8 @@ from PyQt5.QtCore import (
     pyqtProperty, QThread, QRectF, QRect, QSize,
 )
 from PyQt5.QtGui import (
-    QFont, QColor, QPainter, QPainterPath, QPen, QImage, QLinearGradient,
-    QRadialGradient,
+    QFont, QFontMetrics, QColor, QPainter, QPainterPath, QPen, QImage,
+    QLinearGradient, QRadialGradient,
 )
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLineEdit, QPushButton,
@@ -32,11 +32,15 @@ from config import WINDOW_WIDTH, WINDOW_HEIGHT, IDLE_LOOP, IDLE_LOOPS_DIR
 _W = WINDOW_WIDTH
 _H = WINDOW_HEIGHT
 _DISPLAY_TAG_RE = re.compile(r'\[[^\]]+\]')
+_CODE_BLOCK_RE = re.compile(r'```[\s\S]*?```')
+_INLINE_CODE_RE = re.compile(r'`[^`]+`')
 
 
 def _strip_tags(text: str) -> str:
-    """Strip audio/prosody tags for display."""
-    cleaned = _DISPLAY_TAG_RE.sub('', text)
+    """Strip audio/prosody tags and code blocks for display."""
+    cleaned = _CODE_BLOCK_RE.sub('', text)
+    cleaned = _INLINE_CODE_RE.sub('', cleaned)
+    cleaned = _DISPLAY_TAG_RE.sub('', cleaned)
     return re.sub(r'  +', ' ', cleaned).strip()
 _PAD = 24
 _BAR_H = 48
@@ -220,7 +224,7 @@ class ThinkingSpinner(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(QPen(QColor(255, 255, 255, 160), 2.0))
+        p.setPen(QPen(QColor(255, 255, 255, 240), 2.0))
         p.setBrush(Qt.NoBrush)
         p.drawArc(3, 3, 18, 18, self._angle * 16, 270 * 16)
         p.end()
@@ -308,11 +312,14 @@ class TranscriptOverlay(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAutoFillBackground(False)
         self._font = QFont(font_family, 14)
+        self._fm = QFontMetrics(self._font)
         # Each entry: {"role": "user"|"companion", "text": str, "revealed": int}
         self._messages = []
         self._opacity = 1.0
         self._scroll_offset = 0.0  # 0 = pinned to bottom, positive = scrolled up
         self._auto_scroll = True   # snap to bottom on new messages
+        self._layout_dirty = True  # recalc layout only when messages change
+        self._cached_blocks = []   # cached layout measurements
         self._reveal_timer = QTimer(self)
         self._reveal_timer.setInterval(18)
         self._reveal_timer.timeout.connect(self._tick_reveal)
@@ -326,6 +333,9 @@ class TranscriptOverlay(QWidget):
 
     opacity = pyqtProperty(float, _get_opacity, _set_opacity)
 
+    def _invalidate_layout(self):
+        self._layout_dirty = True
+
     def add_message(self, role: str, text: str, instant: bool = False):
         """Add a message. User messages reveal instantly, companion gradually."""
         revealed = len(text) if (instant or role == "user") else 0
@@ -336,6 +346,7 @@ class TranscriptOverlay(QWidget):
             self._reveal_timer.start()
         if self._auto_scroll:
             self._scroll_offset = 0.0
+        self._invalidate_layout()
         self.update()
 
     def append_to_last(self, text: str):
@@ -348,6 +359,7 @@ class TranscriptOverlay(QWidget):
             self._reveal_timer.start()
         if self._auto_scroll:
             self._scroll_offset = 0.0
+        self._invalidate_layout()
         self.update()
 
     def set_last_text(self, text: str):
@@ -358,11 +370,13 @@ class TranscriptOverlay(QWidget):
         msg["text"] = text
         if not self._reveal_timer.isActive():
             self._reveal_timer.start()
+        self._invalidate_layout()
         self.update()
 
     def clear_messages(self):
         self._messages.clear()
         self._scroll_offset = 0.0
+        self._invalidate_layout()
         self.update()
 
     def scroll_up(self):
@@ -395,6 +409,7 @@ class TranscriptOverlay(QWidget):
                 any_pending = True
         if not any_pending:
             self._reveal_timer.stop()
+        self._invalidate_layout()
         self.update()
 
     def _gap_before(self, index):
@@ -408,21 +423,34 @@ class TranscriptOverlay(QWidget):
             return self._PAIR_GAP
         return self._MSG_GAP
 
-    def _total_content_height(self):
-        """Total height of all messages."""
+    def _rebuild_layout(self):
+        """Rebuild cached block measurements."""
         w = self.width()
+        blocks = []
         if w <= 0:
-            return 0
-        from PyQt5.QtGui import QFontMetrics
-        fm = QFontMetrics(self._font)
-        total = 0
+            self._cached_blocks = blocks
+            self._layout_dirty = False
+            return
+        fm = self._fm
         for i, msg in enumerate(self._messages):
             text = msg["text"][:msg["revealed"]]
             if not text:
                 continue
             br = fm.boundingRect(QRect(0, 0, w, 99999), Qt.TextWordWrap, text)
-            total += br.height() + self._gap_before(i)
-        return total
+            blocks.append({
+                "text": text,
+                "role": msg["role"],
+                "height": br.height(),
+                "gap": self._gap_before(i),
+            })
+        self._cached_blocks = blocks
+        self._layout_dirty = False
+
+    def _total_content_height(self):
+        """Total height of all messages."""
+        if self._layout_dirty:
+            self._rebuild_layout()
+        return sum(b["height"] + b["gap"] for b in self._cached_blocks)
 
     def _max_scroll(self):
         return max(0.0, self._total_content_height() - self.height())
@@ -438,33 +466,19 @@ class TranscriptOverlay(QWidget):
         if not self._messages or self._opacity <= 0.001:
             return
 
+        if self._layout_dirty:
+            self._rebuild_layout()
+
+        blocks = self._cached_blocks
+        if not blocks:
+            return
+
         w = self.width()
         vis_h = self.height()
         p = QPainter(self)
         p.setRenderHint(QPainter.TextAntialiasing)
         p.setClipRect(0, 0, w, vis_h)
         p.setFont(self._font)
-
-        from PyQt5.QtGui import QFontMetrics
-        fm = QFontMetrics(self._font)
-
-        # Measure all messages with gaps
-        blocks = []
-        for i, msg in enumerate(self._messages):
-            text = msg["text"][:msg["revealed"]]
-            if not text:
-                continue
-            br = fm.boundingRect(QRect(0, 0, w, 99999), Qt.TextWordWrap, text)
-            blocks.append({
-                "text": text,
-                "role": msg["role"],
-                "height": br.height(),
-                "gap": self._gap_before(i),
-            })
-
-        if not blocks:
-            p.end()
-            return
 
         # Layout bottom-up, offset by scroll
         y = vis_h + self._scroll_offset
@@ -476,31 +490,33 @@ class TranscriptOverlay(QWidget):
 
         # Fade zone — top 1/3 of the widget
         fade_h = vis_h / 3.0
+        opacity = self._opacity
 
         # Draw each message
         for block, y_pos in layout:
-            if y_pos + block["height"] < 0:
-                continue
-            if y_pos > vis_h:
+            bottom = y_pos + block["height"]
+            if bottom < 0 or y_pos > vis_h:
                 continue
 
             # Fade based on vertical position — full at bottom, fading in top 1/3
             msg_center = y_pos + block["height"] / 2
-            if msg_center < fade_h:
-                fade_alpha = max(0.0, msg_center / fade_h)
-            else:
-                fade_alpha = 1.0
+            fade_alpha = min(1.0, max(0.0, msg_center / fade_h)) if msg_center < fade_h else 1.0
+            combined = opacity * fade_alpha
 
-            alpha = int(220 * self._opacity * fade_alpha)
+            alpha = int(220 * combined)
+            y_int = int(y_pos)
 
             # Shadow
-            p.setPen(QColor(0, 0, 0, int(120 * self._opacity * fade_alpha)))
-            shadow_rect = QRect(1, int(y_pos) + 1, w, block["height"] + 4)
-            p.drawText(shadow_rect, Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
-            # Text — same color for both roles
-            p.setPen(QColor(255, 255, 255, alpha))
-            text_rect = QRect(0, int(y_pos), w, block["height"] + 4)
-            p.drawText(text_rect, Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
+            p.setPen(QColor(0, 0, 0, int(120 * combined)))
+            p.drawText(QRect(1, y_int + 1, w, block["height"] + 4),
+                       Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
+            # Text — companion white, user greyed
+            if block["role"] == "user":
+                p.setPen(QColor(180, 180, 180, alpha))
+            else:
+                p.setPen(QColor(255, 255, 255, alpha))
+            p.drawText(QRect(0, y_int, w, block["height"] + 4),
+                       Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
 
         p.end()
 
@@ -521,7 +537,7 @@ class _EyeButton(QPushButton):
     """Eye icon toggle button."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(28, 28)
+        self.setFixedSize(34, 34)
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self._active = False
@@ -533,25 +549,29 @@ class _EyeButton(QPushButton):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        cx, cy = 14, 14
-        alpha = 220 if self._active else 100
+        # Background pill
+        bg = QPainterPath()
+        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
+        p.fillPath(bg, QColor(20, 20, 22, 210))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(bg)
+        # Icon — centred in the pill
+        cx, cy = 17, 17
+        alpha = 220 if self._active else 120
         col = QColor(255, 255, 255, alpha)
         p.setPen(QPen(col, 1.6))
         p.setBrush(Qt.NoBrush)
-        # Eye outline — two arcs forming an almond shape
         path = QPainterPath()
-        path.moveTo(4, cy)
-        path.cubicTo(8, cy - 6, 20, cy - 6, 24, cy)
-        path.cubicTo(20, cy + 6, 8, cy + 6, 4, cy)
+        path.moveTo(7, cy)
+        path.cubicTo(11, cy - 6, 23, cy - 6, 27, cy)
+        path.cubicTo(23, cy + 6, 11, cy + 6, 7, cy)
         p.drawPath(path)
-        # Pupil
         p.setBrush(col)
         p.setPen(Qt.NoPen)
         p.drawEllipse(cx - 3, cy - 3, 6, 6)
-        # Strike-through when active (eye "closed")
         if self._active:
             p.setPen(QPen(col, 1.8))
-            p.drawLine(6, 22, 22, 6)
+            p.drawLine(9, 25, 25, 9)
         p.end()
 
 
@@ -559,7 +579,7 @@ class _MuteButton(QPushButton):
     """Speaker/mute icon toggle button."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(28, 28)
+        self.setFixedSize(34, 34)
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self._active = False
@@ -571,30 +591,34 @@ class _MuteButton(QPushButton):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        alpha = 220 if self._active else 100
+        # Background pill
+        bg = QPainterPath()
+        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
+        p.fillPath(bg, QColor(20, 20, 22, 210))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(bg)
+        # Icon — centred
+        alpha = 220 if self._active else 120
         col = QColor(255, 255, 255, alpha)
         p.setPen(QPen(col, 1.6))
         p.setBrush(col)
-        # Speaker body — small rectangle
-        p.drawRect(6, 10, 4, 8)
-        # Speaker cone — triangle
+        p.drawRect(9, 13, 4, 8)
         path = QPainterPath()
-        path.moveTo(10, 10)
-        path.lineTo(16, 6)
-        path.lineTo(16, 22)
-        path.lineTo(10, 18)
+        path.moveTo(13, 13)
+        path.lineTo(19, 9)
+        path.lineTo(19, 25)
+        path.lineTo(13, 21)
         path.closeSubpath()
         p.drawPath(path)
         p.setBrush(Qt.NoBrush)
         if not self._active:
-            # Sound waves
-            p.drawArc(17, 9, 5, 10, -60 * 16, 120 * 16)
-            p.drawArc(19, 7, 6, 14, -60 * 16, 120 * 16)
+            p.drawArc(20, 12, 5, 10, -60 * 16, 120 * 16)
+            p.drawArc(22, 10, 6, 14, -60 * 16, 120 * 16)
         else:
             # X mark for muted
             p.setPen(QPen(col, 2.0))
-            p.drawLine(19, 10, 25, 18)
-            p.drawLine(25, 10, 19, 18)
+            p.drawLine(22, 13, 28, 21)
+            p.drawLine(28, 13, 22, 21)
         p.end()
 
 
@@ -603,6 +627,8 @@ class _MuteButton(QPushButton):
 class InputBar(QWidget):
     submitted = pyqtSignal(str)
     mic_pressed = pyqtSignal()
+    copy_requested = pyqtSignal()  # Cmd+C with no selection → copy companion text
+    stop_requested = pyqtSignal()  # stop button pressed during inference
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -624,6 +650,7 @@ class InputBar(QWidget):
             }
         """)
         self._input.returnPressed.connect(self._on_submit)
+        self._input.installEventFilter(self)
 
         # Keystroke sounds
         self._keystroke_proc = None
@@ -636,7 +663,18 @@ class InputBar(QWidget):
             QPushButton { background: transparent; border: none; }
             QPushButton:hover { background: transparent; }
         """)
-        self._mic.clicked.connect(self.mic_pressed.emit)
+        self._mic.clicked.connect(self._on_mic_click)
+        self._stop_mode = False
+
+    def set_stop_mode(self, active: bool):
+        self._stop_mode = active
+        self.update()
+
+    def _on_mic_click(self):
+        if self._stop_mode:
+            self.stop_requested.emit()
+        else:
+            self.mic_pressed.emit()
 
     def resizeEvent(self, event):
         w = self.width()
@@ -658,12 +696,30 @@ class InputBar(QWidget):
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(255, 255, 255, 40))
         p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
-        p.setPen(QPen(QColor(255, 255, 255, 180), 1.8))
-        p.setBrush(Qt.NoBrush)
-        p.drawLine(cx, cy + 5, cx, cy - 5)
-        p.drawLine(cx, cy - 5, cx - 4, cy - 1)
-        p.drawLine(cx, cy - 5, cx + 4, cy - 1)
+        if self._stop_mode:
+            # Stop square
+            p.setBrush(QColor(255, 255, 255, 200))
+            s = 8
+            p.drawRoundedRect(QRectF(cx - s/2, cy - s/2, s, s), 2, 2)
+        else:
+            # Send arrow
+            p.setPen(QPen(QColor(255, 255, 255, 180), 1.8))
+            p.setBrush(Qt.NoBrush)
+            p.drawLine(cx, cy + 5, cx, cy - 5)
+            p.drawLine(cx, cy - 5, cx - 4, cy - 1)
+            p.drawLine(cx, cy - 5, cx + 4, cy - 1)
         p.end()
+
+    def eventFilter(self, obj, event):
+        from PyQt5.QtCore import QEvent
+        if (obj is self._input
+                and event.type() == QEvent.KeyPress
+                and event.key() == Qt.Key_C
+                and event.modifiers() & Qt.ControlModifier
+                and not self._input.hasSelectedText()):
+            self.copy_requested.emit()
+            return True  # consume the event
+        return super().eventFilter(obj, event)
 
     def _on_keystroke(self):
         if self._keystroke_proc is not None and self._keystroke_proc.poll() is None:
@@ -716,8 +772,9 @@ class AudioPlayer(QThread):
                 continue
             self.file_started.emit(index)
             try:
+                from config import TTS_PLAYBACK_RATE
                 subprocess.run(
-                    ["afplay", audio_path],
+                    ["afplay", "-r", str(TTS_PLAYBACK_RATE), audio_path],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -770,6 +827,8 @@ class CompanionWindow(QWidget):
         # Warm vignette overlay
         self._vignette_opacity = 0.0
         self._vignette_target = 0.0
+        self._vignette_img = None  # cached vignette image
+        self._vignette_size = (0, 0)  # size it was rendered at
 
         self.setWindowTitle("Companion")
         self.resize(_W, _H)
@@ -920,24 +979,29 @@ class CompanionWindow(QWidget):
     # ── Video ──
 
     def _build_video(self):
-        self._surface = FrameGrabSurface(self)
-        self._surface.frame_ready.connect(self._on_frame)
+        # Dual player/surface setup for gapless playback
+        self._surfaces = [FrameGrabSurface(self), FrameGrabSurface(self)]
+        self._players = [QMediaPlayer(self), QMediaPlayer(self)]
+        self._active_idx = 0  # which player is currently rendering
 
-        # Primary player — renders to surface
-        self._player = QMediaPlayer(self)
-        self._player.setVideoOutput(self._surface)
-        self._player.setMuted(True)
-        self._player.mediaStatusChanged.connect(self._on_media_status)
+        for i, (player, surface) in enumerate(zip(self._players, self._surfaces)):
+            surface.frame_ready.connect(self._on_frame)
+            player.setVideoOutput(surface)
+            player.setMuted(True)
 
-        # Preload player — buffers next clip silently
-        self._preload_player = QMediaPlayer(self)
-        self._preload_player.setMuted(True)
-        self._preloaded_path = None
+        # Connect status signals separately — lambdas with default args
+        self._players[0].mediaStatusChanged.connect(self._on_media_status_0)
+        self._players[1].mediaStatusChanged.connect(self._on_media_status_1)
+
+        # Convenience aliases
+        self._player = self._players[0]
+        self._surface = self._surfaces[0]
 
         # Collect individual loop clips for shuffled playback
         self._loop_clips = sorted(IDLE_LOOPS_DIR.glob("loop_*.mp4")) \
             if IDLE_LOOPS_DIR.exists() else []
         self._loop_queue = []
+        self._next_ready = False  # True when standby player is buffered
 
         if self._loop_clips:
             self._play_next_loop()
@@ -952,32 +1016,47 @@ class CompanionWindow(QWidget):
         return self._loop_queue.pop()
 
     def _play_next_loop(self):
-        """Play the next clip, using preloaded one if available."""
+        """Start playing a clip on the active player."""
         clip = self._next_clip()
-        self._load_video(clip)
-        # Preload the one after that
-        self._preload_next()
+        p = self._players[self._active_idx]
+        p.setMedia(QMediaContent(QUrl.fromLocalFile(str(clip))))
+        p.play()
+        # Preload next on the standby player
+        QTimer.singleShot(500, self._preload_next)
 
     def _preload_next(self):
-        """Buffer the next clip in the background player."""
+        """Load and pause the next clip on the standby player."""
         if not self._loop_clips:
             return
+        standby_idx = 1 - self._active_idx
         clip = self._next_clip()
-        self._preloaded_path = clip
-        self._preload_player.setMedia(
-            QMediaContent(QUrl.fromLocalFile(str(clip)))
-        )
-        # Just load, don't play — QMediaPlayer will buffer it
+        p = self._players[standby_idx]
+        p.setMedia(QMediaContent(QUrl.fromLocalFile(str(clip))))
+        p.play()
+        # Pause after a short delay to let it decode first frames
+        QTimer.singleShot(300, lambda: self._pause_standby(standby_idx))
+
+    def _pause_standby(self, idx):
+        """Pause the standby player once it's buffered."""
+        if idx != self._active_idx:  # still standby
+            self._players[idx].pause()
+            self._next_ready = True
 
     def _load_video(self, path):
+        """Fallback: load directly on active player."""
         p = Path(path)
         if p.exists():
-            self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(p))))
-            self._player.play()
+            player = self._players[self._active_idx]
+            player.setMedia(QMediaContent(QUrl.fromLocalFile(str(p))))
+            player.play()
 
     def _on_frame(self, img):
+        # Only accept frames from the active surface to prevent standby bleed
+        sender = self.sender()
+        if sender is not self._surfaces[self._active_idx]:
+            return
         self._frame = img
-        self._scaled_frame = None  # invalidate cache
+        self._scaled_frame = None
         if not self._eye_mode:
             self.update()
 
@@ -991,26 +1070,45 @@ class CompanionWindow(QWidget):
             self._drift_y += self._drift_dy
             if abs(self._drift_y) > 2.0:
                 self._drift_dy = -self._drift_dy
-            # Smooth vignette interpolation
-            if abs(self._vignette_opacity - self._vignette_target) > 0.001:
-                self._vignette_opacity += (self._vignette_target - self._vignette_opacity) * 0.05
+            # Smooth vignette interpolation — only repaint when actually changing
+            diff = self._vignette_target - self._vignette_opacity
+            if abs(diff) > 0.001:
+                self._vignette_opacity += diff * 0.05
                 self.update()
         except RuntimeError:
             pass  # widget deleted during shutdown
 
-    def _on_media_status(self, status):
-        if status == QMediaPlayer.EndOfMedia:
-            if self._loop_clips:
-                if self._preloaded_path:
-                    # Swap to preloaded clip instantly
-                    self._load_video(self._preloaded_path)
-                    self._preloaded_path = None
-                    self._preload_next()
-                else:
-                    self._play_next_loop()
-            else:
-                self._player.setPosition(0)
-                self._player.play()
+    def _on_media_status_0(self, status):
+        self._handle_media_end(status, 0)
+
+    def _on_media_status_1(self, status):
+        self._handle_media_end(status, 1)
+
+    def _handle_media_end(self, status, player_idx):
+        if status != QMediaPlayer.EndOfMedia:
+            return
+        if player_idx != self._active_idx:
+            return  # standby player finished somehow, ignore
+
+        if self._loop_clips and self._next_ready:
+            # Swap: standby becomes active, start playing immediately
+            old_idx = self._active_idx
+            self._active_idx = 1 - old_idx
+            self._next_ready = False
+            self._players[self._active_idx].play()
+            self._players[old_idx].stop()
+            # Update convenience alias
+            self._player = self._players[self._active_idx]
+            self._surface = self._surfaces[self._active_idx]
+            # Preload the next one on the now-free player
+            QTimer.singleShot(200, self._preload_next)
+        elif self._loop_clips:
+            # Standby wasn't ready, fall back to direct play
+            self._play_next_loop()
+        else:
+            # Single video loop
+            self._players[player_idx].setPosition(0)
+            self._players[player_idx].play()
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -1032,14 +1130,25 @@ class CompanionWindow(QWidget):
         x = (win_w - sw) // 2 + int(self._drift_x)
         y = (win_h - sh) // 2 + int(self._drift_y)
         p.drawImage(x, y, self._scaled_frame)
-        # Warm vignette overlay
+        # Warm vignette overlay (cached image, alpha-blended)
         if self._vignette_opacity > 0.01:
-            cx, cy = win_w / 2, win_h / 2
-            radius = max(win_w, win_h) * 0.7
-            grad = QRadialGradient(cx, cy, radius)
-            grad.setColorAt(0.0, QColor(0, 0, 0, 0))
-            grad.setColorAt(1.0, QColor(40, 25, 10, int(120 * self._vignette_opacity)))
-            p.fillRect(self.rect(), grad)
+            if self._vignette_img is None or self._vignette_size != (win_w, win_h):
+                # Render vignette to an image at full intensity — modulate via opacity
+                vig = QImage(win_w, win_h, QImage.Format_ARGB32_Premultiplied)
+                vig.fill(QColor(0, 0, 0, 0))
+                vp = QPainter(vig)
+                cx, cy = win_w / 2, win_h / 2
+                radius = max(win_w, win_h) * 0.7
+                grad = QRadialGradient(cx, cy, radius)
+                grad.setColorAt(0.0, QColor(0, 0, 0, 0))
+                grad.setColorAt(1.0, QColor(40, 25, 10, 120))
+                vp.fillRect(vig.rect(), grad)
+                vp.end()
+                self._vignette_img = vig
+                self._vignette_size = (win_w, win_h)
+            p.setOpacity(self._vignette_opacity)
+            p.drawImage(0, 0, self._vignette_img)
+            p.setOpacity(1.0)
         # Boot overlay — black screen that fades out when ready
         if self._booting and self._boot_opacity > 0.001:
             p.fillRect(self.rect(), QColor(0, 0, 0, int(255 * self._boot_opacity)))
@@ -1052,9 +1161,9 @@ class CompanionWindow(QWidget):
         self._position_spinner()
 
     def _position_spinner(self):
-        # Right of the send button area
+        # Just right of the input bar
         bar_y = self.height() - _PAD - _BAR_H
-        self._spinner.move(self.width() - _PAD - 28 - 30, bar_y + (_BAR_H - 24) // 2)
+        self._spinner.move(self.width() - _PAD + 6, bar_y + (_BAR_H - 24) // 2)
 
     # ── Overlays ──
 
@@ -1070,6 +1179,8 @@ class CompanionWindow(QWidget):
         self._bar.setFixedSize(bar_w, _BAR_H)
         self._bar.move(_PAD, self.height() - _PAD - _BAR_H)
         self._bar.submitted.connect(self._on_user_input)
+        self._bar.copy_requested.connect(self._transcript.copy_last_companion)
+        self._bar.stop_requested.connect(self._on_stop)
         self._bar.raise_()
 
     # ── Mode toggle buttons ──
@@ -1085,10 +1196,10 @@ class CompanionWindow(QWidget):
 
     def _position_mode_buttons(self):
         bar_y = self.height() - _PAD - _BAR_H
-        btn_y = bar_y - 34
+        btn_y = bar_y - 40
         right_edge = self.width() - _PAD
-        self._eye_btn.move(right_edge - 28, btn_y)
-        self._mute_btn.move(right_edge - 28 - 32, btn_y)
+        self._eye_btn.move(right_edge - 34, btn_y)
+        self._mute_btn.move(right_edge - 34 - 38, btn_y)
 
     def _build_status_bar(self):
         self._status_bar = StatusBar(self)
@@ -1138,6 +1249,7 @@ class CompanionWindow(QWidget):
 
         # Start streaming pipeline
         self._spinner.start()
+        self._bar.set_stop_mode(True)
         self._first_sentence_shown = False
         self._retry_text = text  # stash for auto-retry
         self._retried = False
@@ -1163,6 +1275,7 @@ class CompanionWindow(QWidget):
         """Reset session and retry the last message once."""
         if self._retried:
             self._present("[couldn't connect — try again]")
+            self._bar.set_stop_mode(False)
             return
         self._retried = True
         print("  [Session reset — retrying...]")
@@ -1210,6 +1323,7 @@ class CompanionWindow(QWidget):
 
         self._spinner.stop()
         self._status_bar.stop()
+        self._bar.set_stop_mode(False)
 
         # Update session
         if self._session:
@@ -1265,6 +1379,7 @@ class CompanionWindow(QWidget):
     def _on_followup_done(self, full_text, session_id):
         """Follow-up complete."""
         self._worker = None
+        self._bar.set_stop_mode(False)
         self._cli_session_id = session_id
         if self._session:
             self._session.set_cli_session_id(session_id)
@@ -1275,6 +1390,26 @@ class CompanionWindow(QWidget):
             self._history[-1]["companion"] += "\n\n" + full_text
         if not self._first_sentence_shown and full_text:
             self._present(full_text)
+
+    def _on_stop(self):
+        """User pressed stop — kill inference and audio."""
+        if self._worker:
+            self._worker.terminate()
+            self._worker.wait(2000)
+            self._worker = None
+        self._spinner.stop()
+        self._status_bar.stop()
+        self._bar.set_stop_mode(False)
+        # Kill playing audio and clear queue
+        try:
+            subprocess.run(["pkill", "-f", "afplay"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        while not self._audio_player._queue.empty():
+            try:
+                self._audio_player._queue.get_nowait()
+            except Exception:
+                break
 
     def _on_error(self, msg):
         self._worker = None
@@ -1304,6 +1439,8 @@ class CompanionWindow(QWidget):
 
     def resizeEvent(self, event):
         self._scaled_frame = None  # invalidate cache
+        self._vignette_img = None  # invalidate vignette cache
+        self._transcript._invalidate_layout()
         w, h = self.width(), self.height()
         bar_w = w - _PAD * 2
         self._bar.setFixedSize(bar_w, _BAR_H)
@@ -1383,11 +1520,17 @@ class CompanionWindow(QWidget):
         self._shutdown_started = True
         self._shutdown_mode = True
         self._drift_timer.stop()
-        self._player.stop()
-        self._preload_player.stop()
+        for p in self._players:
+            p.stop()
         self._audio_player.stop()
+        # Kill any orphaned afplay processes
+        import os, signal
+        try:
+            subprocess.run(["pkill", "-f", "afplay"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
         if self._worker:
-            self._worker.quit()
+            self._worker.terminate()
             self._worker.wait(2000)
 
         # Cut to black — hide everything

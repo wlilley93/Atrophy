@@ -51,7 +51,7 @@ _SENTENCE_RE = re.compile(r'(?<=[.!?])\s+|(?<=[.!?])$')
 # Clause boundary: comma/semicolon/dash followed by space (used after char threshold)
 _CLAUSE_RE = re.compile(r'(?<=[,;—–\-])\s+')
 # Min chars before we'll split on a clause boundary (avoids tiny chunks)
-_CLAUSE_SPLIT_THRESHOLD = 60
+_CLAUSE_SPLIT_THRESHOLD = 120
 
 
 def _env():

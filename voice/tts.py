@@ -24,9 +24,12 @@ from config import (
     TTS_BACKEND, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID,
     ELEVENLABS_MODEL, ELEVENLABS_STABILITY, ELEVENLABS_SIMILARITY,
     ELEVENLABS_STYLE, FAL_TTS_ENDPOINT, FAL_VOICE_ID,
+    TTS_PLAYBACK_RATE,
 )
 
 _TAG_RE = re.compile(r"\[[\w\s]+\]")
+_CODE_BLOCK_RE = re.compile(r'```[\s\S]*?```')
+_INLINE_CODE_RE = re.compile(r'`[^`]+`')
 
 _PROSODY_RE = re.compile(r'\[([^\]]+)\]')
 
@@ -133,10 +136,13 @@ def _process_prosody(text: str) -> tuple[str, dict]:
 
 async def synthesise(text: str) -> Path:
     """Generate speech audio file. Returns path to audio."""
+    # Strip code blocks before processing
+    text = _CODE_BLOCK_RE.sub('', text)
+    text = _INLINE_CODE_RE.sub('', text)
     # Strip tags and check for empty text
     cleaned, _ = _process_prosody(text)
-    if not cleaned or not cleaned.strip():
-        # Nothing to speak — return a silent placeholder
+    # Skip if empty or too short — ElevenLabs hallucinates on tiny fragments
+    if not cleaned or len(cleaned.strip()) < 8:
         tmp = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False)
         tmp.close()
         return Path(tmp.name)
@@ -170,7 +176,7 @@ def synthesise_sync(text: str) -> Path:
 async def play(audio_path: Path) -> None:
     """Play audio file through system speakers."""
     proc = await asyncio.create_subprocess_exec(
-        "afplay", str(audio_path),
+        "afplay", "-r", str(TTS_PLAYBACK_RATE), str(audio_path),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
     )
@@ -180,7 +186,7 @@ async def play(audio_path: Path) -> None:
 def play_sync(audio_path: Path) -> None:
     """Blocking play — for use in threads."""
     subprocess.run(
-        ["afplay", str(audio_path)],
+        ["afplay", "-r", str(TTS_PLAYBACK_RATE), str(audio_path)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

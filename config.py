@@ -16,7 +16,7 @@ WHISPER_MODEL = WHISPER_PATH / "models" / "ggml-tiny.en.bin"
 
 # Claude Code CLI
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "claude")
-CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "max")  # low, medium, high, max
+CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "high")  # low, medium, high, max
 
 # MCP Memory Server
 MCP_DIR = PROJECT_ROOT / "mcp"
@@ -30,6 +30,7 @@ ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_v3")
 ELEVENLABS_STABILITY = float(os.environ.get("ELEVENLABS_STABILITY", "0.5"))
 ELEVENLABS_SIMILARITY = float(os.environ.get("ELEVENLABS_SIMILARITY", "0.75"))
 ELEVENLABS_STYLE = float(os.environ.get("ELEVENLABS_STYLE", "0.35"))
+TTS_PLAYBACK_RATE = float(os.environ.get("TTS_PLAYBACK_RATE", "1.12"))  # afplay -r rate
 
 # Fal TTS fallback (ElevenLabs v3 via Fal, uses FAL_KEY from .env)
 FAL_TTS_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3"
