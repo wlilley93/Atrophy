@@ -5,6 +5,7 @@ Streaming inference → sentence-level TTS pipelining for low latency.
 """
 
 import json
+import os
 import random
 import re
 import subprocess
@@ -18,7 +19,7 @@ from PyQt5.QtCore import (
 )
 from PyQt5.QtGui import (
     QFont, QFontMetrics, QColor, QPainter, QPainterPath, QPen, QImage,
-    QLinearGradient, QRadialGradient,
+    QLinearGradient, QRadialGradient, QPixmap,
 )
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLineEdit, QPushButton, QMenu, QSystemTrayIcon,
@@ -566,13 +567,32 @@ def _fade(widget, start, end, duration_ms):
 
 # ── Icon buttons ──
 
-class _EyeButton(QPushButton):
+class _PillButton(QPushButton):
+    """Base class for pill-shaped icon buttons using Lucide icons."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(34, 34)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
+
+    def _draw_pill(self, p: QPainter, bg_color=None):
+        bg = QPainterPath()
+        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
+        p.fillPath(bg, bg_color or QColor(20, 20, 22, 210))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(bg)
+
+    def _draw_icon(self, p: QPainter, name: str, alpha: int = 120):
+        from display.lucide import pixmap as lucide_pixmap
+        color = f"rgba(255,255,255,{alpha/255:.2f})"
+        pix = lucide_pixmap(name, size=18, color=color, stroke_width=1.8)
+        p.drawPixmap(8, 8, pix)
+
+
+class _EyeButton(_PillButton):
     """Eye icon toggle button."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(34, 34)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self._active = False
 
     def set_active(self, active):
@@ -582,39 +602,16 @@ class _EyeButton(QPushButton):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        # Background pill
-        bg = QPainterPath()
-        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
-        p.fillPath(bg, QColor(20, 20, 22, 210))
-        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
-        p.drawPath(bg)
-        # Icon — centred in the pill
-        cx, cy = 17, 17
-        alpha = 220 if self._active else 120
-        col = QColor(255, 255, 255, alpha)
-        p.setPen(QPen(col, 1.6))
-        p.setBrush(Qt.NoBrush)
-        path = QPainterPath()
-        path.moveTo(7, cy)
-        path.cubicTo(11, cy - 6, 23, cy - 6, 27, cy)
-        path.cubicTo(23, cy + 6, 11, cy + 6, 7, cy)
-        p.drawPath(path)
-        p.setBrush(col)
-        p.setPen(Qt.NoPen)
-        p.drawEllipse(cx - 3, cy - 3, 6, 6)
-        if self._active:
-            p.setPen(QPen(col, 1.8))
-            p.drawLine(9, 25, 25, 9)
+        self._draw_pill(p)
+        self._draw_icon(p, "eye-off" if self._active else "eye",
+                        220 if self._active else 120)
         p.end()
 
 
-class _MuteButton(QPushButton):
+class _MuteButton(_PillButton):
     """Speaker/mute icon toggle button."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(34, 34)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self._active = False
 
     def set_active(self, active):
@@ -624,66 +621,26 @@ class _MuteButton(QPushButton):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        # Background pill
-        bg = QPainterPath()
-        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
-        p.fillPath(bg, QColor(20, 20, 22, 210))
-        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
-        p.drawPath(bg)
-        # Icon — centred
-        alpha = 220 if self._active else 120
-        col = QColor(255, 255, 255, alpha)
-        p.setPen(QPen(col, 1.6))
-        p.setBrush(col)
-        p.drawRect(9, 13, 4, 8)
-        path = QPainterPath()
-        path.moveTo(13, 13)
-        path.lineTo(19, 9)
-        path.lineTo(19, 25)
-        path.lineTo(13, 21)
-        path.closeSubpath()
-        p.drawPath(path)
-        p.setBrush(Qt.NoBrush)
-        if not self._active:
-            p.drawArc(20, 12, 5, 10, -60 * 16, 120 * 16)
-            p.drawArc(22, 10, 6, 14, -60 * 16, 120 * 16)
-        else:
-            # X mark for muted
-            p.setPen(QPen(col, 2.0))
-            p.drawLine(22, 13, 28, 21)
-            p.drawLine(28, 13, 22, 21)
+        self._draw_pill(p)
+        self._draw_icon(p, "volume-x" if self._active else "volume-2",
+                        220 if self._active else 120)
         p.end()
 
 
-class _MinimizeButton(QPushButton):
+class _MinimizeButton(_PillButton):
     """Minimize-to-tray icon button."""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(34, 34)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
-
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        bg = QPainterPath()
-        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
-        p.fillPath(bg, QColor(20, 20, 22, 210))
-        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
-        p.drawPath(bg)
-        # Minimize icon — horizontal line
-        p.setPen(QPen(QColor(255, 255, 255, 120), 2.0))
-        p.drawLine(11, 17, 23, 17)
+        self._draw_pill(p)
+        self._draw_icon(p, "minus", 120)
         p.end()
 
 
-class _WakeButton(QPushButton):
+class _WakeButton(_PillButton):
     """Wake word listener toggle button — microphone with radio waves."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(34, 34)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self._active = False
 
     def set_active(self, active):
@@ -693,47 +650,17 @@ class _WakeButton(QPushButton):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        # Background pill
-        bg = QPainterPath()
-        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
-        if self._active:
-            # Subtle green tint when active
-            p.fillPath(bg, QColor(30, 80, 40, 210))
-        else:
-            p.fillPath(bg, QColor(20, 20, 22, 210))
-        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
-        p.drawPath(bg)
-        # Microphone icon
-        cx, cy = 17, 15
-        alpha = 220 if self._active else 120
-        col = QColor(255, 255, 255, alpha)
-        p.setPen(QPen(col, 1.6))
-        p.setBrush(col)
-        # Mic body (rounded rect)
-        p.drawRoundedRect(QRectF(cx - 3, cy - 6, 6, 10), 3, 3)
-        # Mic cup
-        p.setBrush(Qt.NoBrush)
-        p.drawArc(cx - 6, cy - 4, 12, 14, 0, -180 * 16)
-        # Stand
-        p.drawLine(cx, cy + 10, cx, cy + 13)
-        p.drawLine(cx - 4, cy + 13, cx + 4, cy + 13)
-        # Radio waves when active
-        if self._active:
-            wave_col = QColor(100, 255, 130, 160)
-            p.setPen(QPen(wave_col, 1.2))
-            p.setBrush(Qt.NoBrush)
-            p.drawArc(cx - 10, cy - 10, 20, 20, 30 * 16, 120 * 16)
-            p.drawArc(cx - 13, cy - 13, 26, 26, 30 * 16, 120 * 16)
+        bg_color = QColor(30, 80, 40, 210) if self._active else None
+        self._draw_pill(p, bg_color)
+        self._draw_icon(p, "mic" if self._active else "mic-off",
+                        220 if self._active else 120)
         p.end()
 
 
-class _ArtefactButton(QPushButton):
+class _ArtefactButton(_PillButton):
     """File/document icon button for artefact gallery."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(34, 34)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self._has_new = False
 
     def set_has_new(self, has_new):
@@ -743,34 +670,8 @@ class _ArtefactButton(QPushButton):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        bg = QPainterPath()
-        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
-        p.fillPath(bg, QColor(20, 20, 22, 210))
-        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
-        p.drawPath(bg)
-        # Document icon
-        alpha = 220 if self._has_new else 120
-        col = QColor(255, 255, 255, alpha)
-        p.setPen(QPen(col, 1.6))
-        p.setBrush(Qt.NoBrush)
-        # Page outline with folded corner
-        path = QPainterPath()
-        path.moveTo(10, 8)
-        path.lineTo(21, 8)
-        path.lineTo(25, 12)
-        path.lineTo(25, 26)
-        path.lineTo(10, 26)
-        path.closeSubpath()
-        p.drawPath(path)
-        # Corner fold
-        p.drawLine(21, 8, 21, 12)
-        p.drawLine(21, 12, 25, 12)
-        # Content lines
-        p.setPen(QPen(col, 1.0))
-        p.drawLine(13, 16, 22, 16)
-        p.drawLine(13, 19, 20, 19)
-        p.drawLine(13, 22, 21, 22)
-        # New indicator dot
+        self._draw_pill(p)
+        self._draw_icon(p, "file-text", 220 if self._has_new else 120)
         if self._has_new:
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(100, 180, 255, 220))
@@ -781,13 +682,10 @@ class _ArtefactButton(QPushButton):
 from display.settings import SettingsModal
 
 
-class _SettingsButton(QPushButton):
+class _SettingsButton(_PillButton):
     """Gear icon button for settings panel."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(34, 34)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self._active = False
 
     def set_active(self, active):
@@ -797,41 +695,16 @@ class _SettingsButton(QPushButton):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        bg = QPainterPath()
-        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
-        if self._active:
-            p.fillPath(bg, QColor(40, 40, 50, 210))
-        else:
-            p.fillPath(bg, QColor(20, 20, 22, 210))
-        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
-        p.drawPath(bg)
-        # Gear icon
-        cx, cy = 17, 17
-        alpha = 220 if self._active else 120
-        col = QColor(255, 255, 255, alpha)
-        p.setPen(QPen(col, 1.6))
-        p.setBrush(Qt.NoBrush)
-        # Inner circle
-        p.drawEllipse(cx - 4, cy - 4, 8, 8)
-        # Gear teeth (8 lines radiating out)
-        import math
-        for i in range(8):
-            angle = i * math.pi / 4
-            x1 = cx + 6 * math.cos(angle)
-            y1 = cy + 6 * math.sin(angle)
-            x2 = cx + 9 * math.cos(angle)
-            y2 = cy + 9 * math.sin(angle)
-            p.drawLine(int(x1), int(y1), int(x2), int(y2))
+        bg_color = QColor(40, 40, 50, 210) if self._active else None
+        self._draw_pill(p, bg_color)
+        self._draw_icon(p, "settings", 220 if self._active else 120)
         p.end()
 
 
-class _CallButton(QPushButton):
+class _CallButton(_PillButton):
     """Phone icon button for voice call mode."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(34, 34)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
         self._active = False
         self._status = "idle"  # idle, listening, thinking, speaking
 
@@ -846,41 +719,18 @@ class _CallButton(QPushButton):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        bg = QPainterPath()
-        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
         if self._active:
-            if self._status == "listening":
-                p.fillPath(bg, QColor(30, 120, 50, 220))
-            elif self._status == "thinking":
-                p.fillPath(bg, QColor(80, 80, 30, 220))
-            elif self._status == "speaking":
-                p.fillPath(bg, QColor(30, 60, 120, 220))
-            else:
-                p.fillPath(bg, QColor(120, 30, 30, 220))
+            colors = {
+                "listening": QColor(30, 120, 50, 220),
+                "thinking": QColor(80, 80, 30, 220),
+                "speaking": QColor(30, 60, 120, 220),
+            }
+            bg_color = colors.get(self._status, QColor(120, 30, 30, 220))
         else:
-            p.fillPath(bg, QColor(20, 20, 22, 210))
-        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
-        p.drawPath(bg)
-        # Phone icon — classic handset shape
-        alpha = 240 if self._active else 120
-        col = QColor(255, 255, 255, alpha)
-        p.setPen(Qt.NoPen)
-        p.setBrush(col)
-        # Draw a filled phone handset using an arc + two earpieces
-        p.save()
-        p.translate(17, 17)  # centre of button
-        p.rotate(-135 if not self._active else -45)  # tilted handset; rotated when active (hang up)
-        # Earpiece top
-        p.drawRoundedRect(QRectF(-3, -9, 6, 6), 2, 2)
-        # Earpiece bottom
-        p.drawRoundedRect(QRectF(-3, 3, 6, 6), 2, 2)
-        # Handle connecting them
-        p.drawRoundedRect(QRectF(-2, -5, 4, 10), 2, 2)
-        p.restore()
-        # Red slash when active (hang up indicator)
-        if self._active:
-            p.setPen(QPen(QColor(255, 100, 100, 220), 2.0))
-            p.drawLine(10, 24, 24, 10)
+            bg_color = None
+        self._draw_pill(p, bg_color)
+        icon_name = "phone-off" if self._active else "phone"
+        self._draw_icon(p, icon_name, 240 if self._active else 120)
         p.end()
 
 
@@ -2083,6 +1933,7 @@ class CompanionWindow(QWidget):
         # Boot overlay — black screen that fades out when ready
         self._boot_opacity = 1.0
         self._booting = True
+        self._brain_overlay = None  # Lazy-loaded in paintEvent
 
         self._build_video()
         self._build_overlays()
@@ -2483,7 +2334,7 @@ class CompanionWindow(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         if self._eye_mode or self._frame.isNull():
             p.fillRect(self.rect(), QColor(12, 12, 14))
-            # Shutdown overlay — pulsing orb + ATROPHY (mirrors boot screen)
+            # Shutdown overlay — pulsing orb + brain + ATROPHY (mirrors boot screen)
             if self._shutdown_mode:
                 win_w, win_h = self.width(), self.height()
                 import math, time
@@ -2498,6 +2349,17 @@ class CompanionWindow(QWidget):
                     p.setPen(Qt.NoPen)
                     p.setBrush(grad)
                     p.drawEllipse(QPointF(cx, cy), r, r)
+                # Brain overlay on top of orb
+                if self._brain_overlay is None:
+                    brain_path = os.path.join(os.path.dirname(__file__), "icons", "brain_overlay.png")
+                    self._brain_overlay = QImage(brain_path)
+                if not self._brain_overlay.isNull():
+                    brain_size = int(90 + pulse * 6)
+                    scaled = self._brain_overlay.scaled(
+                        brain_size, brain_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    p.setOpacity(0.9)
+                    p.drawImage(int(cx - scaled.width() / 2), int(cy - scaled.height() / 2), scaled)
+                    p.setOpacity(1.0)
                 p.setPen(QColor(255, 255, 255, 140))
                 from PyQt5.QtGui import QFont
                 font = QFont("Bricolage Grotesque", 12)
@@ -2600,7 +2462,7 @@ class CompanionWindow(QWidget):
             pulse = 0.5 + 0.5 * math.sin(time.time() * 2.0)
             cx, cy = win_w / 2.0, win_h / 2.0 - 20
 
-            # Pulsing glow — large soft orb behind the icon
+            # Pulsing glow — large soft orb behind the brain
             for layer_r, layer_a in [(80, 25), (50, 50), (30, 80)]:
                 r = layer_r + int(pulse * 8)
                 a = int(layer_a * self._boot_opacity)
@@ -2611,6 +2473,18 @@ class CompanionWindow(QWidget):
                 p.setPen(Qt.NoPen)
                 p.setBrush(grad)
                 p.drawEllipse(QPointF(cx, cy), r, r)
+
+            # Brain overlay on top of orb
+            if self._brain_overlay is None:
+                brain_path = os.path.join(os.path.dirname(__file__), "icons", "brain_overlay.png")
+                self._brain_overlay = QImage(brain_path)
+            if not self._brain_overlay.isNull():
+                brain_size = int(110 + pulse * 8)
+                scaled = self._brain_overlay.scaled(
+                    brain_size, brain_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                p.setOpacity(self._boot_opacity * 0.95)
+                p.drawImage(int(cx - scaled.width() / 2), int(cy - scaled.height() / 2), scaled)
+                p.setOpacity(1.0)
 
             # "ATROPHY" below orb
             name_alpha = int(160 * self._boot_opacity)

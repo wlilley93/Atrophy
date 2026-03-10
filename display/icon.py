@@ -140,7 +140,10 @@ def _render_orb(size: int) -> QImage:
 
 
 def generate_icons(directory: str = ICONS_DIR, sizes: list = None) -> list:
-    """Generate orb icon PNGs at multiple sizes. Returns list of file paths."""
+    """Generate orb icon PNGs at multiple sizes. Returns list of file paths.
+
+    Skips any size where a hand-crafted PNG already exists (brain icons).
+    """
     if sizes is None:
         sizes = ICON_SIZES
 
@@ -149,6 +152,10 @@ def generate_icons(directory: str = ICONS_DIR, sizes: list = None) -> list:
 
     for s in sizes:
         path = os.path.join(directory, f"icon_{s}x{s}.png")
+        if os.path.exists(path):
+            print(f"  Skipping {path} (already exists)")
+            paths.append(path)
+            continue
         image = _render_orb(s)
         image.save(path, "PNG")
         paths.append(path)
