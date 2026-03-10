@@ -4198,8 +4198,7 @@ class MenuBarIcon:
         self._window = companion_window
         self._chat = chat_panel
         self._tray = QSystemTrayIcon()
-        from display.icon import get_app_icon
-        self._tray.setIcon(get_app_icon())
+        self._tray.setIcon(self._make_icon())
         self._tray.setToolTip(AGENT_DISPLAY_NAME)
         self._tray.activated.connect(self._on_activated)
 
