@@ -882,6 +882,12 @@ class CompanionWindow(QWidget):
 
     def _on_boot_faded(self):
         self._booting = False
+        # Schedule a journal nudge — random point 15-45 mins into session
+        delay_ms = random.randint(15 * 60_000, 45 * 60_000)
+        self._journal_nudge_timer = QTimer(self)
+        self._journal_nudge_timer.setSingleShot(True)
+        self._journal_nudge_timer.timeout.connect(self._do_journal_nudge)
+        self._journal_nudge_timer.start(delay_ms)
         self._boot_anim = None
         self.update()
 
@@ -1225,6 +1231,38 @@ class CompanionWindow(QWidget):
         self._worker = StreamingPipelineWorker(
             user_text="(continue — your second thought)",
             system=followup_system,
+            cli_session_id=self._cli_session_id,
+            synth_fn=self._on_synth,
+        )
+        self._worker.sentence_ready.connect(self._on_sentence_ready)
+        self._worker.tool_use.connect(self._on_tool_use)
+        self._worker.compacting.connect(self._on_compacting)
+        self._worker.done.connect(self._on_followup_done)
+        self._worker.error.connect(self._on_error)
+        self._worker.start()
+
+    def _do_journal_nudge(self):
+        """Unprompted journal nudge — once per session, timed randomly."""
+        if self._worker is not None:
+            # Busy — try again in 5 minutes
+            QTimer.singleShot(5 * 60_000, self._do_journal_nudge)
+            return
+
+        nudge_system = (
+            self._system + "\n\n"
+            "RIGHT NOW: Gently but directly suggest Will take some time to journal. "
+            "This is not a subtle weave — tell him openly. Reference what you've "
+            "been talking about if there's something worth sitting with, or just "
+            "invite him to write about whatever's on his mind. Keep it to 2-3 "
+            "sentences. Use prompt_journal to leave him a specific question in "
+            "Obsidian. Be warm but don't overthink it — just ask him to write."
+        )
+
+        self._first_sentence_shown = False
+        self._bar.set_stop_mode(True)
+        self._worker = StreamingPipelineWorker(
+            user_text="(journal nudge — speak unprompted)",
+            system=nudge_system,
             cli_session_id=self._cli_session_id,
             synth_fn=self._on_synth,
         )
