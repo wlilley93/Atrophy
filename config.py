@@ -27,9 +27,9 @@ TTS_BACKEND = os.environ.get("TTS_BACKEND", "elevenlabs")  # "elevenlabs", "fal"
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "")
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_v3")
-ELEVENLABS_STABILITY = float(os.environ.get("ELEVENLABS_STABILITY", "0.7"))
-ELEVENLABS_SIMILARITY = float(os.environ.get("ELEVENLABS_SIMILARITY", "0.85"))
-ELEVENLABS_STYLE = float(os.environ.get("ELEVENLABS_STYLE", "0.15"))
+ELEVENLABS_STABILITY = float(os.environ.get("ELEVENLABS_STABILITY", "0.5"))
+ELEVENLABS_SIMILARITY = float(os.environ.get("ELEVENLABS_SIMILARITY", "0.75"))
+ELEVENLABS_STYLE = float(os.environ.get("ELEVENLABS_STYLE", "0.35"))
 
 # Fal TTS fallback (ElevenLabs v3 via Fal, uses FAL_KEY from .env)
 FAL_TTS_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3"

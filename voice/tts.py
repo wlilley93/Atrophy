@@ -202,10 +202,10 @@ async def _synthesise_elevenlabs_stream(text: str) -> Path:
     if not text or not text.strip():
         raise ValueError("Empty text after prosody stripping")
 
-    # Clamp overrides to ±0.1 so timbre stays consistent across sentences
-    stab_d = max(-0.1, min(0.1, prosody_overrides.get('stability', 0)))
-    sim_d = max(-0.1, min(0.1, prosody_overrides.get('similarity_boost', 0)))
-    sty_d = max(-0.1, min(0.1, prosody_overrides.get('style', 0)))
+    # Clamp overrides to ±0.15 — enough to be expressive without losing coherence
+    stab_d = max(-0.15, min(0.15, prosody_overrides.get('stability', 0)))
+    sim_d = max(-0.15, min(0.15, prosody_overrides.get('similarity_boost', 0)))
+    sty_d = max(-0.15, min(0.15, prosody_overrides.get('style', 0)))
     stab = max(0.0, min(1.0, ELEVENLABS_STABILITY + stab_d))
     sim = max(0.0, min(1.0, ELEVENLABS_SIMILARITY + sim_d))
     sty = max(0.0, min(1.0, ELEVENLABS_STYLE + sty_d))

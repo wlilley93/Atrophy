@@ -95,6 +95,7 @@ class StreamingPipelineWorker(QThread):
     """
     sentence_ready = pyqtSignal(str, str, int)
     tool_use = pyqtSignal(str, str)
+    compacting = pyqtSignal()
     done = pyqtSignal(str, str)
     error = pyqtSignal(str)
 
@@ -109,7 +110,7 @@ class StreamingPipelineWorker(QThread):
         import threading
         from core.inference import (
             stream_inference, SentenceReady, ToolUse,
-            StreamDone, StreamError, TextDelta,
+            StreamDone, StreamError, TextDelta, Compacting,
         )
 
         sentence_queue = Queue()
@@ -144,6 +145,9 @@ class StreamingPipelineWorker(QThread):
 
             elif isinstance(event, ToolUse):
                 self.tool_use.emit(event.name, event.tool_id)
+
+            elif isinstance(event, Compacting):
+                self.compacting.emit()
 
             elif isinstance(event, StreamDone):
                 full_text = event.full_text
@@ -295,16 +299,15 @@ class StatusBar(QWidget):
 
 class TranscriptOverlay(QWidget):
     """Scrolling chat transcript — messages accumulate bottom-aligned."""
-    _FADE_EDGE = 24
-    _MSG_GAP = 8
+    _MSG_GAP = 6       # gap within a pair (user → companion)
+    _PAIR_GAP = 20     # gap between pairs
     _SCROLL_STEP = 40
 
     def __init__(self, parent=None, font_family="Bricolage Grotesque"):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAutoFillBackground(False)
-        self._font_companion = QFont(font_family, 15)
-        self._font_user = QFont(font_family, 13)
+        self._font = QFont(font_family, 14)
         # Each entry: {"role": "user"|"companion", "text": str, "revealed": int}
         self._messages = []
         self._opacity = 1.0
@@ -394,22 +397,32 @@ class TranscriptOverlay(QWidget):
             self._reveal_timer.stop()
         self.update()
 
+    def _gap_before(self, index):
+        """Gap before message at index — bigger between pairs."""
+        if index == 0:
+            return 0
+        prev_role = self._messages[index - 1]["role"]
+        curr_role = self._messages[index]["role"]
+        # New pair starts at each user message (unless first)
+        if curr_role == "user" and prev_role == "companion":
+            return self._PAIR_GAP
+        return self._MSG_GAP
+
     def _total_content_height(self):
         """Total height of all messages."""
         w = self.width()
         if w <= 0:
             return 0
+        from PyQt5.QtGui import QFontMetrics
+        fm = QFontMetrics(self._font)
         total = 0
-        for msg in self._messages:
+        for i, msg in enumerate(self._messages):
             text = msg["text"][:msg["revealed"]]
             if not text:
                 continue
-            font = self._font_companion if msg["role"] == "companion" else self._font_user
-            from PyQt5.QtGui import QFontMetrics
-            fm = QFontMetrics(font)
             br = fm.boundingRect(QRect(0, 0, w, 99999), Qt.TextWordWrap, text)
-            total += br.height() + self._MSG_GAP
-        return max(0, total - self._MSG_GAP)  # no gap after last
+            total += br.height() + self._gap_before(i)
+        return total
 
     def _max_scroll(self):
         return max(0.0, self._total_content_height() - self.height())
@@ -430,22 +443,23 @@ class TranscriptOverlay(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.TextAntialiasing)
         p.setClipRect(0, 0, w, vis_h)
+        p.setFont(self._font)
 
-        # Measure all messages
+        from PyQt5.QtGui import QFontMetrics
+        fm = QFontMetrics(self._font)
+
+        # Measure all messages with gaps
         blocks = []
-        for msg in self._messages:
+        for i, msg in enumerate(self._messages):
             text = msg["text"][:msg["revealed"]]
             if not text:
                 continue
-            font = self._font_companion if msg["role"] == "companion" else self._font_user
-            from PyQt5.QtGui import QFontMetrics
-            fm = QFontMetrics(font)
             br = fm.boundingRect(QRect(0, 0, w, 99999), Qt.TextWordWrap, text)
             blocks.append({
                 "text": text,
                 "role": msg["role"],
-                "font": font,
                 "height": br.height(),
+                "gap": self._gap_before(i),
             })
 
         if not blocks:
@@ -458,7 +472,10 @@ class TranscriptOverlay(QWidget):
         for block in reversed(blocks):
             y -= block["height"]
             layout.insert(0, (block, y))
-            y -= self._MSG_GAP
+            y -= block["gap"]
+
+        # Fade zone — top 1/3 of the widget
+        fade_h = vis_h / 3.0
 
         # Draw each message
         for block, y_pos in layout:
@@ -467,26 +484,23 @@ class TranscriptOverlay(QWidget):
             if y_pos > vis_h:
                 continue
 
-            p.setFont(block["font"])
-            alpha = int(150 * self._opacity) if block["role"] == "user" else int(240 * self._opacity)
+            # Fade based on vertical position — full at bottom, fading in top 1/3
+            msg_center = y_pos + block["height"] / 2
+            if msg_center < fade_h:
+                fade_alpha = max(0.0, msg_center / fade_h)
+            else:
+                fade_alpha = 1.0
+
+            alpha = int(220 * self._opacity * fade_alpha)
+
             # Shadow
-            p.setPen(QColor(0, 0, 0, int(140 * self._opacity)))
+            p.setPen(QColor(0, 0, 0, int(120 * self._opacity * fade_alpha)))
             shadow_rect = QRect(1, int(y_pos) + 1, w, block["height"] + 4)
             p.drawText(shadow_rect, Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
-            # Text
+            # Text — same color for both roles
             p.setPen(QColor(255, 255, 255, alpha))
             text_rect = QRect(0, int(y_pos), w, block["height"] + 4)
             p.drawText(text_rect, Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, block["text"])
-
-        # Fade at top edge
-        fade = self._FADE_EDGE
-        if layout and layout[0][1] < fade:
-            grad = QLinearGradient(0, 0, 0, fade)
-            grad.setColorAt(0, QColor(0, 0, 0, int(255 * self._opacity)))
-            grad.setColorAt(1, QColor(0, 0, 0, 0))
-            p.setCompositionMode(QPainter.CompositionMode_DestinationOut)
-            p.fillRect(0, 0, w, fade, grad)
-            p.setCompositionMode(QPainter.CompositionMode_SourceOver)
 
         p.end()
 
@@ -731,11 +745,14 @@ class CompanionWindow(QWidget):
         self._anims = []
         self._frame = QImage()
         self._scaled_frame = None
+        self._shutdown_mode = False
         self._first_sentence_shown = False
 
         # Conversation history
         # Each entry: {"user": str, "companion": str}
         self._history = []
+        self._approx_tokens = 0  # rough context size tracker
+        self._compaction_warned = False
 
         # Ken Burns drift — slow, gentle movement
         self._drift_x = 0.0
@@ -774,6 +791,10 @@ class CompanionWindow(QWidget):
         self._muted = False       # True = text-only (no audio playback)
         self._eye_mode = False    # True = minimal (chat bar only)
 
+        # Boot overlay — black screen that fades out when ready
+        self._boot_opacity = 1.0
+        self._booting = True
+
         self._build_video()
         self._build_overlays()
         self._build_spinner()
@@ -781,41 +802,93 @@ class CompanionWindow(QWidget):
         self._build_mode_buttons()
         self._build_status_bar()
 
+        # Hide UI during boot
+        self._bar.hide()
+        self._transcript.hide()
+        self._mute_btn.hide()
+        self._eye_btn.hide()
+
+        # Centre status bar for boot
+        self._status_bar.start("connecting...")
+        self._centre_status_bar()
+
         # Dynamic opening
         if on_opening:
             if cached_opening_audio:
                 synth_for_opening = None
+                self._status_bar.set_progress(0.5, "loading cached opening...")
             else:
-                self._status_bar.start("loading...")
+                self._status_bar.set_progress(0.1, "generating opening...")
                 synth_for_opening = on_synth
             self._opening_worker = OpeningWorker(on_opening, synth_for_opening)
             self._opening_worker.ready.connect(self._on_opening_ready)
             self._opening_worker.error_signal.connect(self._on_opening_error)
             QTimer.singleShot(300, self._opening_worker.start)
         else:
-            QTimer.singleShot(600, lambda: self._present("Ready. Where are we?"))
+            def _default_boot():
+                self._present("Ready. Where are we?")
+                self._history.append({"user": "", "companion": "Ready. Where are we?"})
+                self._boot_complete()
+            QTimer.singleShot(600, _default_boot)
+
+    def _centre_status_bar(self):
+        self._status_bar.setFixedWidth(self.width() - _PAD * 4)
+        cx = (self.width() - self._status_bar.width()) // 2
+        cy = self.height() // 2
+        self._status_bar.move(cx, cy)
+
+    def _boot_complete(self):
+        """Fade from black to live UI."""
+        self._status_bar.stop()
+        self._bar.show()
+        self._transcript.show()
+        self._mute_btn.show()
+        self._eye_btn.show()
+        self._position_status_bar()  # restore normal position
+
+        # Animate boot overlay fade-out
+        self._boot_anim = QPropertyAnimation(self, b"boot_opacity", self)
+        self._boot_anim.setStartValue(1.0)
+        self._boot_anim.setEndValue(0.0)
+        self._boot_anim.setDuration(600)
+        self._boot_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._boot_anim.finished.connect(self._on_boot_faded)
+        self._boot_anim.start()
+
+    def _on_boot_faded(self):
+        self._booting = False
+        self._boot_anim = None
+        self.update()
+
+    def _get_boot_opacity(self):
+        return self._boot_opacity
+
+    def _set_boot_opacity(self, val):
+        self._boot_opacity = val
+        self.update()
+
+    boot_opacity = pyqtProperty(float, _get_boot_opacity, _set_boot_opacity)
 
     def _on_opening_ready(self, text, audio_path):
         self._opening_worker = None
         self._spinner.stop()
-        self._status_bar.stop()
         self._present(text)
-        # Use cached audio if available, otherwise use what TTS produced
         play_audio = self._cached_opening_audio or audio_path
         if play_audio and not self._muted:
             self._audio_player.enqueue(play_audio, 0)
-        self._cached_opening_audio = ""  # consumed
+        self._cached_opening_audio = ""
         if self._session:
             self._session.add_turn("companion", text)
         self._history.append({"user": "", "companion": text})
+        self._boot_complete()
 
     def _on_opening_error(self, msg):
         self._opening_worker = None
         self._spinner.stop()
-        self._status_bar.stop()
         print(f"  [Opening error: {msg}]")
         self._present("Ready. Where are we?")
         self._history.append({"user": "", "companion": "Ready. Where are we?"})
+        self._boot_complete()
 
     # ── Silence detection ──
 
@@ -849,10 +922,17 @@ class CompanionWindow(QWidget):
     def _build_video(self):
         self._surface = FrameGrabSurface(self)
         self._surface.frame_ready.connect(self._on_frame)
+
+        # Primary player — renders to surface
         self._player = QMediaPlayer(self)
         self._player.setVideoOutput(self._surface)
         self._player.setMuted(True)
         self._player.mediaStatusChanged.connect(self._on_media_status)
+
+        # Preload player — buffers next clip silently
+        self._preload_player = QMediaPlayer(self)
+        self._preload_player.setMuted(True)
+        self._preloaded_path = None
 
         # Collect individual loop clips for shuffled playback
         self._loop_clips = sorted(IDLE_LOOPS_DIR.glob("loop_*.mp4")) \
@@ -864,13 +944,30 @@ class CompanionWindow(QWidget):
         else:
             self._load_video(IDLE_LOOP)
 
-    def _play_next_loop(self):
-        """Play the next clip from a shuffled queue."""
+    def _next_clip(self) -> Path:
+        """Get next clip from shuffled queue."""
         if not self._loop_queue:
             self._loop_queue = list(self._loop_clips)
             random.shuffle(self._loop_queue)
-        clip = self._loop_queue.pop()
+        return self._loop_queue.pop()
+
+    def _play_next_loop(self):
+        """Play the next clip, using preloaded one if available."""
+        clip = self._next_clip()
         self._load_video(clip)
+        # Preload the one after that
+        self._preload_next()
+
+    def _preload_next(self):
+        """Buffer the next clip in the background player."""
+        if not self._loop_clips:
+            return
+        clip = self._next_clip()
+        self._preloaded_path = clip
+        self._preload_player.setMedia(
+            QMediaContent(QUrl.fromLocalFile(str(clip)))
+        )
+        # Just load, don't play — QMediaPlayer will buffer it
 
     def _load_video(self, path):
         p = Path(path)
@@ -904,7 +1001,13 @@ class CompanionWindow(QWidget):
     def _on_media_status(self, status):
         if status == QMediaPlayer.EndOfMedia:
             if self._loop_clips:
-                self._play_next_loop()
+                if self._preloaded_path:
+                    # Swap to preloaded clip instantly
+                    self._load_video(self._preloaded_path)
+                    self._preloaded_path = None
+                    self._preload_next()
+                else:
+                    self._play_next_loop()
             else:
                 self._player.setPosition(0)
                 self._player.play()
@@ -937,6 +1040,9 @@ class CompanionWindow(QWidget):
             grad.setColorAt(0.0, QColor(0, 0, 0, 0))
             grad.setColorAt(1.0, QColor(40, 25, 10, int(120 * self._vignette_opacity)))
             p.fillRect(self.rect(), grad)
+        # Boot overlay — black screen that fades out when ready
+        if self._booting and self._boot_opacity > 0.001:
+            p.fillRect(self.rect(), QColor(0, 0, 0, int(255 * self._boot_opacity)))
         p.end()
 
     # ── Spinner ──
@@ -946,8 +1052,9 @@ class CompanionWindow(QWidget):
         self._position_spinner()
 
     def _position_spinner(self):
+        # Right of the send button area
         bar_y = self.height() - _PAD - _BAR_H
-        self._spinner.move(_PAD, bar_y - 12 - 24)
+        self._spinner.move(self.width() - _PAD - 28 - 30, bar_y + (_BAR_H - 24) // 2)
 
     # ── Overlays ──
 
@@ -1047,6 +1154,7 @@ class CompanionWindow(QWidget):
         )
         self._worker.sentence_ready.connect(self._on_sentence_ready)
         self._worker.tool_use.connect(self._on_tool_use)
+        self._worker.compacting.connect(self._on_compacting)
         self._worker.done.connect(self._on_done)
         self._worker.error.connect(self._on_error)
         self._worker.start()
@@ -1070,6 +1178,7 @@ class CompanionWindow(QWidget):
         if not self._first_sentence_shown:
             self._first_sentence_shown = True
             self._spinner.stop()
+            self._status_bar.stop()
             # Add a new companion message to the transcript
             self._transcript.add_message("companion", _strip_tags(sentence))
         else:
@@ -1080,6 +1189,11 @@ class CompanionWindow(QWidget):
 
     def _on_tool_use(self, name, tool_id):
         """Claude invoked a tool — show in UI."""
+        self._spinner.start()
+
+    def _on_compacting(self):
+        """Context window is being compacted — show status."""
+        self._status_bar.start("compacting memory...")
         self._spinner.start()
 
     def _on_done(self, full_text, session_id):
@@ -1095,6 +1209,7 @@ class CompanionWindow(QWidget):
             return
 
         self._spinner.stop()
+        self._status_bar.stop()
 
         # Update session
         if self._session:
@@ -1105,6 +1220,14 @@ class CompanionWindow(QWidget):
         # Update history with full companion text
         if self._history:
             self._history[-1]["companion"] = full_text
+
+        # Track approximate context usage (~4 chars per token)
+        user_text = self._history[-1]["user"] if self._history else ""
+        self._approx_tokens += (len(user_text) + len(full_text)) // 4
+        if self._approx_tokens > 150000 and not self._compaction_warned:
+            self._compaction_warned = True
+            self._status_bar.start("context getting full — compaction soon")
+            QTimer.singleShot(5000, self._status_bar.stop)
 
         # If no sentences came through streaming, show full text now
         if not self._first_sentence_shown and full_text:
@@ -1134,6 +1257,7 @@ class CompanionWindow(QWidget):
         )
         self._worker.sentence_ready.connect(self._on_sentence_ready)
         self._worker.tool_use.connect(self._on_tool_use)
+        self._worker.compacting.connect(self._on_compacting)
         self._worker.done.connect(self._on_followup_done)
         self._worker.error.connect(self._on_error)
         self._worker.start()
@@ -1208,7 +1332,13 @@ class CompanionWindow(QWidget):
         elif event.key() == Qt.Key_Down:
             self._transcript.scroll_down()
         elif event.key() == Qt.Key_C and event.modifiers() & Qt.ControlModifier:
+            # If input bar has selected text, let it handle copy
+            if self._bar._input.hasSelectedText():
+                super().keyPressEvent(event)
+                return
             self._transcript.copy_last_companion()
+        else:
+            super().keyPressEvent(event)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -1231,6 +1361,7 @@ class CompanionWindow(QWidget):
             print(f"  [Spaces pin failed: {e}]")
 
     _shutting_down = pyqtSignal()
+    _shutdown_status = pyqtSignal(str, float)  # (label, progress 0..1)
 
     def closeEvent(self, event):
         if getattr(self, '_shutdown_done', False):
@@ -1250,28 +1381,49 @@ class CompanionWindow(QWidget):
     def _begin_shutdown(self):
         """Run cleanup with visible progress, then close."""
         self._shutdown_started = True
+        self._shutdown_mode = True
         self._drift_timer.stop()
+        self._player.stop()
+        self._preload_player.stop()
         self._audio_player.stop()
         if self._worker:
             self._worker.quit()
             self._worker.wait(2000)
 
+        # Cut to black — hide everything
         self._bar.hide()
-        self._transcript.add_message("companion", "see you.", instant=True)
-        self._status_bar.start("shutting down...")
+        self._transcript.hide()
+        self._spinner.stop()
+        self._mute_btn.hide()
+        self._eye_btn.hide()
+        self._frame = QImage()  # clear video frame
+        self._scaled_frame = None
+        self.update()  # repaint black
 
-        # Connect signal for thread-safe close trigger
+        # Centre the status bar
+        self._status_bar.setFixedWidth(self.width() - _PAD * 4)
+        cx = (self.width() - self._status_bar.width()) // 2
+        cy = self.height() // 2
+        self._status_bar.move(cx, cy)
+        self._status_bar.start("stopping audio...")
+
+        # Connect signals for thread-safe updates
         self._shutting_down.connect(self._finish_shutdown)
+        self._shutdown_status.connect(
+            lambda label, prog: self._status_bar.set_progress(prog, label)
+        )
 
         import threading
 
         def _cleanup():
+            self._shutdown_status.emit("ending session...", 0.15)
             if self._session:
                 try:
                     self._session.end(self._system)
                 except Exception:
                     pass
 
+            self._shutdown_status.emit("generating next opening...", 0.4)
             try:
                 from main import _cache_next_opening
                 _cache_next_opening(
@@ -1280,6 +1432,7 @@ class CompanionWindow(QWidget):
             except Exception as e:
                 print(f"  [Cache opening failed: {e}]")
 
+            self._shutdown_status.emit("done", 1.0)
             self._shutting_down.emit()
 
         threading.Thread(target=_cleanup, daemon=True).start()

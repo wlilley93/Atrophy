@@ -116,6 +116,11 @@ class StreamError:
     """Error during streaming."""
     message: str
 
+@dataclass
+class Compacting:
+    """Context window is being compacted."""
+    pass
+
 
 # ── Agency context ──
 
@@ -259,9 +264,13 @@ def stream_inference(
 
             evt_type = event.get("type", "")
 
-            # Capture session_id from init
-            if evt_type == "system" and event.get("subtype") == "init":
-                session_id = event.get("session_id", session_id)
+            # System events
+            if evt_type == "system":
+                subtype = event.get("subtype", "")
+                if subtype == "init":
+                    session_id = event.get("session_id", session_id)
+                elif "compact" in subtype or "compress" in subtype:
+                    yield Compacting()
                 continue
 
             # Stream events (token-level)

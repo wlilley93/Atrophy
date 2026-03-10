@@ -26,7 +26,7 @@ from core.session import Session
 from core.context import load_system_prompt
 from core.inference import (
     stream_inference, run_inference_turn,
-    TextDelta, SentenceReady, ToolUse, StreamDone, StreamError,
+    TextDelta, SentenceReady, ToolUse, StreamDone, StreamError, Compacting,
 )
 from core.agency import detect_mood_shift, should_follow_up, followup_prompt
 from voice.tts import synthesise, play, speak
@@ -445,8 +445,12 @@ async def run_text_only():
 # ── GUI mode ──
 
 def _generate_opening(system: str, cli_session_id: str | None) -> tuple[str, str]:
-    """Generate an opening line. Returns (text, cli_session_id)."""
-    from core.inference import run_inference_turn
+    """Generate an opening line. Returns (text, cli_session_id).
+
+    Uses oneshot inference (low effort, no MCP) for speed — the opening
+    is just a one-liner that doesn't need tools or session state.
+    """
+    from core.inference import run_inference_oneshot
     from core.agency import time_of_day_context, time_gap_note
     from core.memory import get_active_threads, get_last_session_time
 
@@ -460,16 +464,19 @@ def _generate_opening(system: str, cli_session_id: str | None) -> tuple[str, str
         context_parts.append(f"Active threads: {', '.join(names)}")
     context = " ".join(context_parts)
 
-    response, cli_id = run_inference_turn(
+    prompt = (
         f"[Context: {context}]\n\n"
         "(Session starting. You go first. One or two sentences. "
         "Be present — not a greeting, not a status update. "
         "Say something real. Reference a thread, notice the time, "
-        "ask something pointed. Different every time.)",
-        system,
-        cli_session_id,
+        "ask something pointed. Different every time.)"
     )
-    return response, cli_id
+
+    response = run_inference_oneshot(
+        [{"role": "user", "content": prompt}],
+        system,
+    )
+    return response, cli_session_id or ""
 
 
 def _load_cached_opening() -> dict | None:
