@@ -395,6 +395,89 @@ def _fade(label, start, end, duration_ms):
     return anim
 
 
+# ── Icon buttons ──
+
+class _EyeButton(QPushButton):
+    """Eye icon toggle button."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(28, 28)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self._active = False
+
+    def set_active(self, active):
+        self._active = active
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        cx, cy = 14, 14
+        alpha = 220 if self._active else 100
+        col = QColor(255, 255, 255, alpha)
+        p.setPen(QPen(col, 1.6))
+        p.setBrush(Qt.NoBrush)
+        # Eye outline — two arcs forming an almond shape
+        path = QPainterPath()
+        path.moveTo(4, cy)
+        path.cubicTo(8, cy - 6, 20, cy - 6, 24, cy)
+        path.cubicTo(20, cy + 6, 8, cy + 6, 4, cy)
+        p.drawPath(path)
+        # Pupil
+        p.setBrush(col)
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(cx - 3, cy - 3, 6, 6)
+        # Strike-through when active (eye "closed")
+        if self._active:
+            p.setPen(QPen(col, 1.8))
+            p.drawLine(6, 22, 22, 6)
+        p.end()
+
+
+class _MuteButton(QPushButton):
+    """Speaker/mute icon toggle button."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(28, 28)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self._active = False
+
+    def set_active(self, active):
+        self._active = active
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        alpha = 220 if self._active else 100
+        col = QColor(255, 255, 255, alpha)
+        p.setPen(QPen(col, 1.6))
+        p.setBrush(col)
+        # Speaker body — small rectangle
+        p.drawRect(6, 10, 4, 8)
+        # Speaker cone — triangle
+        path = QPainterPath()
+        path.moveTo(10, 10)
+        path.lineTo(16, 6)
+        path.lineTo(16, 22)
+        path.lineTo(10, 18)
+        path.closeSubpath()
+        p.drawPath(path)
+        p.setBrush(Qt.NoBrush)
+        if not self._active:
+            # Sound waves
+            p.drawArc(17, 9, 5, 10, -60 * 16, 120 * 16)
+            p.drawArc(19, 7, 6, 14, -60 * 16, 120 * 16)
+        else:
+            # X mark for muted
+            p.setPen(QPen(col, 2.0))
+            p.drawLine(19, 10, 25, 18)
+            p.drawLine(25, 10, 19, 18)
+        p.end()
+
+
 # ── Input bar ──
 
 class InputBar(QWidget):
@@ -547,14 +630,13 @@ class CompanionWindow(QWidget):
         self._history_index = -1  # -1 = live (current turn)
         self._browsing = False
 
-        # Ken Burns drift
+        # Ken Burns drift — slow, gentle movement
         self._drift_x = 0.0
         self._drift_y = 0.0
-        self._drift_dx = 0.3
-        self._drift_dy = 0.2
-        self._drift_needs_update = True
+        self._drift_dx = 0.04
+        self._drift_dy = 0.03
         self._drift_timer = QTimer(self)
-        self._drift_timer.setInterval(33)
+        self._drift_timer.setInterval(50)
         self._drift_timer.timeout.connect(self._tick_drift)
         self._drift_timer.start()
 
@@ -664,23 +746,23 @@ class CompanionWindow(QWidget):
 
     def _on_frame(self, img):
         self._frame = img
-        self._drift_needs_update = False
-        self.update()
+        if not self._eye_mode:
+            self.update()
 
     def _tick_drift(self):
         try:
+            if self._eye_mode:
+                return
             self._drift_x += self._drift_dx
-            if abs(self._drift_x) > 3.0:
+            if abs(self._drift_x) > 2.0:
                 self._drift_dx = -self._drift_dx
             self._drift_y += self._drift_dy
-            if abs(self._drift_y) > 3.0:
+            if abs(self._drift_y) > 2.0:
                 self._drift_dy = -self._drift_dy
             # Smooth vignette interpolation
             if abs(self._vignette_opacity - self._vignette_target) > 0.001:
                 self._vignette_opacity += (self._vignette_target - self._vignette_opacity) * 0.05
-            if self._drift_needs_update:
                 self.update()
-            self._drift_needs_update = True
         except RuntimeError:
             pass  # widget deleted during shutdown
 
@@ -690,15 +772,13 @@ class CompanionWindow(QWidget):
             self._player.play()
 
     def paintEvent(self, event):
-        if self._frame.isNull():
-            p = QPainter(self)
-            p.fillRect(self.rect(), QColor(0, 0, 0))
+        p = QPainter(self)
+        if self._eye_mode or self._frame.isNull():
+            p.fillRect(self.rect(), QColor(18, 18, 20))
             p.end()
             return
-        p = QPainter(self)
         win_w, win_h = self.width(), self.height()
         img_w, img_h = self._frame.width(), self._frame.height()
-        # Scale slightly larger (1.01x) to hide edges during drift
         scale = max(win_w / img_w, win_h / img_h) * 1.01
         sw, sh = int(img_w * scale), int(img_h * scale)
         x = (win_w - sw) // 2 + int(self._drift_x)
@@ -747,91 +827,36 @@ class CompanionWindow(QWidget):
     # ── Mode toggle buttons ──
 
     def _build_mode_buttons(self):
-        btn_style_off = """
-            QPushButton {
-                background: rgba(20, 20, 22, 180);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 14px;
-                color: rgba(255, 255, 255, 0.5);
-                font-size: 14px;
-                font-family: "Bricolage Grotesque";
-            }
-            QPushButton:hover { background: rgba(40, 40, 44, 200); }
-        """
-        btn_style_on = """
-            QPushButton {
-                background: rgba(255, 255, 255, 0.15);
-                border: 1px solid rgba(255, 255, 255, 0.25);
-                border-radius: 14px;
-                color: rgba(255, 255, 255, 0.9);
-                font-size: 14px;
-                font-family: "Bricolage Grotesque";
-            }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.22); }
-        """
-        self._btn_style_off = btn_style_off
-        self._btn_style_on = btn_style_on
-
-        self._mute_btn = QPushButton("mute", self)
-        self._mute_btn.setFixedSize(52, 28)
-        self._mute_btn.setCursor(Qt.PointingHandCursor)
-        self._mute_btn.setStyleSheet(btn_style_off)
+        self._mute_btn = _MuteButton(self)
         self._mute_btn.clicked.connect(self._toggle_mute)
 
-        self._eye_btn = QPushButton("eye", self)
-        self._eye_btn.setFixedSize(42, 28)
-        self._eye_btn.setCursor(Qt.PointingHandCursor)
-        self._eye_btn.setStyleSheet(btn_style_off)
+        self._eye_btn = _EyeButton(self)
         self._eye_btn.clicked.connect(self._toggle_eye)
 
         self._position_mode_buttons()
 
     def _position_mode_buttons(self):
-        if self._eye_mode:
-            # In eye mode, place eye button to the right of the bar
-            self._eye_btn.move(self.width() - _PAD - 42, _PAD + (_BAR_H - 28) // 2)
-        else:
-            bar_y = self.height() - _PAD - _BAR_H
-            btn_y = bar_y - 36
-            right_edge = self.width() - _PAD
-            self._eye_btn.move(right_edge - 42, btn_y)
-            self._mute_btn.move(right_edge - 42 - 56, btn_y)
+        bar_y = self.height() - _PAD - _BAR_H
+        btn_y = bar_y - 34
+        right_edge = self.width() - _PAD
+        self._eye_btn.move(right_edge - 28, btn_y)
+        self._mute_btn.move(right_edge - 28 - 32, btn_y)
 
     def _toggle_mute(self):
         self._muted = not self._muted
-        self._mute_btn.setStyleSheet(
-            self._btn_style_on if self._muted else self._btn_style_off
-        )
-        self._mute_btn.setText("muted" if self._muted else "mute")
-        self._mute_btn.setFixedSize(58 if self._muted else 52, 28)
-        self._position_mode_buttons()
+        self._mute_btn.set_active(self._muted)
 
     def _toggle_eye(self):
         self._eye_mode = not self._eye_mode
-        self._eye_btn.setStyleSheet(
-            self._btn_style_on if self._eye_mode else self._btn_style_off
-        )
+        self._eye_btn.set_active(self._eye_mode)
         if self._eye_mode:
-            # Hide video, overlays, spinner — show only input bar
+            # Stop video — dark bg drawn by paintEvent
             self._player.pause()
-            self._my_label.hide()
-            self._her_label.hide()
-            self._spinner.hide()
-            self._mute_btn.hide()
-            # Collapse window to just the bar
-            self._pre_eye_height = self.height()
-            self.setFixedHeight(_BAR_H + _PAD * 2)
-            self._bar.move(_PAD, _PAD)
+            self.update()
         else:
-            # Restore everything
-            self.setMinimumSize(360, 480)
-            self.setMaximumSize(16777215, 16777215)
-            self.resize(self.width(), getattr(self, '_pre_eye_height', _H))
+            # Resume video
             self._player.play()
-            self._my_label.show()
-            self._her_label.show()
-            self._mute_btn.show()
-            self._reflow()
+            self.update()
 
     # ── Streaming interaction flow ──
 
@@ -847,12 +872,11 @@ class CompanionWindow(QWidget):
         self._browsing = False
         self._history_index = -1
 
-        # Show user message (unless eye mode)
+        # Show user message
         self._her_label.setText("")
         self._my_label.setText(text)
-        if not self._eye_mode:
-            self._reflow()
-            self._anims.append(_fade(self._my_label, 0.0, 1.0, 200))
+        self._reflow()
+        self._anims.append(_fade(self._my_label, 0.0, 1.0, 200))
 
         # Record user turn — companion text filled in when done
         self._history.append({"user": text, "companion": ""})
@@ -861,8 +885,7 @@ class CompanionWindow(QWidget):
             self._session.add_turn("will", text)
 
         # Start streaming pipeline
-        if not self._eye_mode:
-            self._spinner.start()
+        self._spinner.start()
         self._first_sentence_shown = False
 
         self._worker = StreamingPipelineWorker(
@@ -1007,10 +1030,7 @@ class CompanionWindow(QWidget):
         w, h = self.width(), self.height()
         bar_w = w - _PAD * 2
         self._bar.setFixedSize(bar_w, _BAR_H)
-        if self._eye_mode:
-            self._bar.move(_PAD, _PAD)
-        else:
-            self._bar.move(_PAD, h - _PAD - _BAR_H)
+        self._bar.move(_PAD, h - _PAD - _BAR_H)
         self._position_spinner()
         self._position_mode_buttons()
         self._reflow()
