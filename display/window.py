@@ -4194,40 +4194,89 @@ class ChatPanel(QWidget):
 # ── Menu bar icon ──
 
 class MenuBarIcon:
+    """Native macOS status bar icon using NSStatusBar.
+
+    QSystemTrayIcon doesn't work on modern macOS (zero-height geometry),
+    so we use pyobjc to create a native NSStatusItem instead.
+    """
     def __init__(self, companion_window, chat_panel):
         self._window = companion_window
         self._chat = chat_panel
+        self._status_item = None
+        self._away = False
+
+        try:
+            from AppKit import (
+                NSStatusBar, NSImage, NSMenu, NSMenuItem,
+                NSVariableStatusItemLength,
+            )
+            from objc import selector
+
+            # Create status bar item
+            bar = NSStatusBar.systemStatusBar()
+            self._status_item = bar.statusItemWithLength_(
+                NSVariableStatusItemLength
+            )
+
+            # Create a small circle icon as NSImage
+            self._status_item.button().setTitle_("●")
+
+            # Build native menu
+            menu = NSMenu.alloc().init()
+
+            show_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Show/Hide", "toggleWindow:", "")
+            show_item.setTarget_(self)
+            menu.addItem_(show_item)
+
+            chat_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Chat Panel", "toggleChat:", "")
+            chat_item.setTarget_(self)
+            menu.addItem_(chat_item)
+
+            menu.addItem_(NSMenuItem.separatorItem())
+
+            # Agent submenu
+            from core.agent_manager import discover_agents
+            agents = discover_agents()
+            if len(agents) > 1:
+                agents_submenu = NSMenu.alloc().init()
+                for agent in agents:
+                    a_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                        agent["display_name"], "switchAgent:", "")
+                    a_item.setTarget_(self)
+                    a_item.setRepresentedObject_(agent["name"])
+                    agents_submenu.addItem_(a_item)
+                agents_parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                    "Agents", "", "")
+                agents_parent.setSubmenu_(agents_submenu)
+                menu.addItem_(agents_parent)
+                menu.addItem_(NSMenuItem.separatorItem())
+
+            self._status_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Set Away", "toggleStatus:", "")
+            self._status_menu_item.setTarget_(self)
+            menu.addItem_(self._status_menu_item)
+
+            menu.addItem_(NSMenuItem.separatorItem())
+
+            quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Quit", "quitApp:", "")
+            quit_item.setTarget_(self)
+            menu.addItem_(quit_item)
+
+            self._status_item.setMenu_(menu)
+            self._menu = menu  # prevent gc
+
+        except ImportError:
+            print("  [AppKit unavailable — no menu bar icon]")
+            # Fallback to QSystemTrayIcon
+            self._setup_qt_fallback()
+
+    def _setup_qt_fallback(self):
+        """Fallback for non-macOS or missing pyobjc."""
         self._tray = QSystemTrayIcon()
-        self._tray.setIcon(self._make_icon())
-        self._tray.setToolTip(AGENT_DISPLAY_NAME)
-        self._tray.activated.connect(self._on_activated)
-
-        menu = QMenu()
-        menu.addAction("Show/Hide", self._toggle_window)
-        menu.addAction("Chat Panel", self._toggle_chat)
-        menu.addSeparator()
-
-        # Agent submenu
-        from core.agent_manager import discover_agents
-        agents = discover_agents()
-        if len(agents) > 1:
-            agents_menu = menu.addMenu("Agents")
-            for agent in agents:
-                action = agents_menu.addAction(agent["display_name"])
-                action.triggered.connect(
-                    lambda checked, a=agent["name"]: self._switch_to(a)
-                )
-            menu.addSeparator()
-
-        self._status_action = menu.addAction("Set Away", self._toggle_status)
-        menu.addSeparator()
-        menu.addAction("Quit", self._quit)
-        self._tray.setContextMenu(menu)
-        self._menu = menu  # prevent gc
-        self._tray.show()
-
-    def _make_icon(self):
-        from PyQt5.QtGui import QPixmap
+        from PyQt5.QtGui import QPixmap, QIcon
         pix = QPixmap(22, 22)
         pix.fill(QColor(0, 0, 0, 0))
         p = QPainter(pix)
@@ -4236,19 +4285,40 @@ class MenuBarIcon:
         p.setBrush(QColor(255, 255, 255, 220))
         p.drawEllipse(5, 5, 12, 12)
         p.end()
-        from PyQt5.QtGui import QIcon
-        return QIcon(pix)
+        self._tray.setIcon(QIcon(pix))
+        self._tray.setToolTip(AGENT_DISPLAY_NAME)
+        menu = QMenu()
+        menu.addAction("Show/Hide", self._toggle_window)
+        menu.addAction("Quit", self._quit)
+        self._tray.setContextMenu(menu)
+        self._tray.show()
 
-    def _on_activated(self, reason):
-        if reason == QSystemTrayIcon.Trigger:
-            self._toggle_window()
+    # ── NSMenu action selectors ──
+
+    def toggleWindow_(self, sender):
+        self._toggle_window()
+
+    def toggleChat_(self, sender):
+        self._toggle_chat()
+
+    def switchAgent_(self, sender):
+        name = sender.representedObject()
+        self._switch_to(name)
+
+    def toggleStatus_(self, sender):
+        self._toggle_status()
+
+    def quitApp_(self, sender):
+        self._quit()
+
+    # ── Shared logic ──
 
     def _toggle_window(self):
         w = self._window
         if w.isVisible():
             w.hide()
         else:
-            w.wake_up()  # no-op if already awake
+            w.wake_up()
             w.show()
             w.raise_()
             w.activateWindow()
@@ -4258,28 +4328,33 @@ class MenuBarIcon:
         self._chat.toggle()
 
     def _switch_to(self, agent_name):
-        """Switch agent from tray menu."""
         self._window.wake_up()
         self._window.switch_agent(agent_name)
-        # Update tray tooltip
-        import config as cfg
-        self._tray.setToolTip(cfg.AGENT_DISPLAY_NAME)
 
     def _toggle_status(self):
         from core.status import is_away, set_active, set_away
         if is_away():
             set_active()
-            self._status_action.setText("Set Away")
+            self._away = False
+            if self._status_item:
+                self._status_menu_item.setTitle_("Set Away")
             self._window._reset_idle_timer()
         else:
             set_away("manual")
-            self._status_action.setText("Set Active")
+            self._away = True
+            if self._status_item:
+                self._status_menu_item.setTitle_("Set Active")
 
     def _quit(self):
         self._window.close()
 
     def hide(self):
-        self._tray.hide()
+        if self._status_item:
+            from AppKit import NSStatusBar
+            NSStatusBar.systemStatusBar().removeStatusItem_(self._status_item)
+            self._status_item = None
+        elif hasattr(self, '_tray'):
+            self._tray.hide()
 
 
 # ── Global hotkey ──
