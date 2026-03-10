@@ -2482,7 +2482,30 @@ class CompanionWindow(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         if self._eye_mode or self._frame.isNull():
-            p.fillRect(self.rect(), QColor(18, 18, 20))
+            p.fillRect(self.rect(), QColor(12, 12, 14))
+            # Shutdown overlay — pulsing orb + ATROPHY (mirrors boot screen)
+            if self._shutdown_mode:
+                win_w, win_h = self.width(), self.height()
+                import math, time
+                pulse = 0.5 + 0.5 * math.sin(time.time() * 3.0)  # faster pulse for urgency
+                cx, cy = win_w / 2.0, win_h / 2.0 - 20
+                for layer_r, layer_a in [(60, 20), (35, 40), (18, 70)]:
+                    r = layer_r + int(pulse * 5)
+                    grad = QRadialGradient(QPointF(cx, cy), r)
+                    grad.setColorAt(0.0, QColor(255, 150, 150, layer_a))
+                    grad.setColorAt(0.5, QColor(180, 80, 80, layer_a // 3))
+                    grad.setColorAt(1.0, QColor(100, 40, 40, 0))
+                    p.setPen(Qt.NoPen)
+                    p.setBrush(grad)
+                    p.drawEllipse(QPointF(cx, cy), r, r)
+                p.setPen(QColor(255, 255, 255, 140))
+                from PyQt5.QtGui import QFont
+                font = QFont("Bricolage Grotesque", 12)
+                font.setLetterSpacing(QFont.AbsoluteSpacing, 4)
+                p.setFont(font)
+                p.drawText(QRectF(0, cy + 40, win_w, 30),
+                           Qt.AlignHCenter | Qt.AlignTop, "ATROPHY")
+                QTimer.singleShot(33, self.update)
             p.end()
             return
         win_w, win_h = self.width(), self.height()
@@ -4038,6 +4061,7 @@ class CompanionWindow(QWidget):
         self._min_btn.hide()
         self._wake_btn.hide()
         self._settings_btn.hide()
+        self._call_btn.hide()
         if self._settings_open:
             self._settings_panel.hide()
         self._frame = QImage()  # clear video frame
