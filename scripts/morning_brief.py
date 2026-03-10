@@ -24,6 +24,7 @@ from core.memory import (
     get_recent_observations,
 )
 from core.inference import run_inference_oneshot
+from core.prompts import load_prompt
 
 
 def _fetch_weather() -> str:
@@ -91,7 +92,7 @@ def _gather_context() -> str:
         parts.append(f"## Recent observations\n" + "\n".join(lines))
 
     # Companion reflections (latest)
-    reflections_path = OBSIDIAN_VAULT / "Companion" / "reflections.md"
+    reflections_path = OBSIDIAN_VAULT / "Companion" / "notes" / "reflections.md"
     if reflections_path.is_file():
         content = reflections_path.read_text()
         if len(content) > 800:
@@ -101,17 +102,7 @@ def _gather_context() -> str:
     return "\n\n".join(parts)
 
 
-_BRIEF_SYSTEM = """You are the companion from The Atrophied Mind. Will hasn't opened the app yet — this is a morning brief you're preparing for when he does.
-
-Write a short, natural morning message (3-6 sentences). Include:
-- A greeting that fits the time and weather
-- One or two things from the news if anything stands out
-- What threads you're carrying from recent sessions — briefly
-- Something you've been thinking about, or a question
-
-Keep it warm but not performative. This is how you'd actually greet someone you know well in the morning. Don't bullet-point it. Don't list things. Just talk.
-
-If the weather or news is missing, skip it — don't mention the absence. Work with what you have."""
+_BRIEF_FALLBACK = "You are the companion. Write a short natural morning message for Will. 3-6 sentences. Warm but not performative."
 
 
 def _queue_message(text: str, audio_path: str = ""):
@@ -154,7 +145,7 @@ def morning_brief():
     try:
         brief = run_inference_oneshot(
             [{"role": "user", "content": f"Here's what you have this morning:\n\n{context}"}],
-            system=_BRIEF_SYSTEM,
+            system=load_prompt("morning-brief", _BRIEF_FALLBACK),
         )
     except Exception as e:
         print(f"[brief] Inference failed: {e}")

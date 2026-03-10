@@ -362,7 +362,7 @@ TOOLS = [
             "conversation has touched something worth sitting with, or when "
             "he seems to be processing something that writing could help. "
             "The prompt should be one question — pointed, specific to the "
-            "moment, not generic. Write it to Companion/prompts.md."
+            "moment, not generic. Write it to Companion/notes/journal-prompts.md."
         ),
         "inputSchema": {
             "type": "object",
@@ -640,7 +640,7 @@ def handle_daily_digest(args):
     parts = []
 
     # Read companion reflections from Obsidian
-    reflections_path = os.path.join(VAULT_PATH, "Companion", "reflections.md")
+    reflections_path = os.path.join(VAULT_PATH, "Companion", "notes", "reflections.md")
     if os.path.isfile(reflections_path):
         try:
             with open(reflections_path, "r") as f:
@@ -653,7 +653,7 @@ def handle_daily_digest(args):
             pass
 
     # Read for-will notes
-    for_will_path = os.path.join(VAULT_PATH, "Companion", "for-will.md")
+    for_will_path = os.path.join(VAULT_PATH, "Companion", "notes", "for-will.md")
     if os.path.isfile(for_will_path):
         try:
             with open(for_will_path, "r") as f:
@@ -1003,7 +1003,7 @@ def handle_compare_growth(args):
 def handle_prompt_journal(args):
     prompt = args["prompt"]
     context = args.get("context", "")
-    full = os.path.join(VAULT_PATH, "Companion", "prompts.md")
+    full = os.path.join(VAULT_PATH, "Companion", "notes", "journal-prompts.md")
     os.makedirs(os.path.dirname(full), exist_ok=True)
 
     from datetime import datetime

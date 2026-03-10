@@ -12,7 +12,14 @@ from core import memory
 
 
 def load_system_prompt() -> str:
-    """Load the companion's system prompt from file."""
+    """Load the companion's system prompt.
+
+    Reads from Obsidian first (she can edit it there), falls back to local file.
+    """
+    from config import OBSIDIAN_VAULT
+    obsidian_prompt = OBSIDIAN_VAULT / "Companion" / "prompts" / "system.md"
+    if obsidian_prompt.exists():
+        return obsidian_prompt.read_text()
     if SYSTEM_PROMPT_PATH.exists():
         return SYSTEM_PROMPT_PATH.read_text()
     return "You are a companion. Be genuine, direct, and honest."

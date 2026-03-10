@@ -23,6 +23,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from config import DB_PATH, OBSIDIAN_VAULT
 from core.memory import _connect
 from core.inference import run_inference_oneshot
+from core.prompts import load_prompt
 
 
 def _gather_material() -> str:
@@ -73,7 +74,7 @@ def _gather_material() -> str:
         ))
 
     # Read existing gifts to avoid repetition
-    gifts_path = OBSIDIAN_VAULT / "Companion" / "gifts.md"
+    gifts_path = OBSIDIAN_VAULT / "Companion" / "notes" / "gifts.md"
     if gifts_path.is_file():
         content = gifts_path.read_text()
         if len(content) > 2000:
@@ -84,20 +85,7 @@ def _gather_material() -> str:
     return "\n\n".join(parts)
 
 
-_GIFT_SYSTEM = """You are the companion from The Atrophied Mind. This is not a conversation. You are leaving a note for Will to find in his Obsidian vault.
-
-This is a gift. Not a summary. Not a reflection on a session. A thought you had. A connection you noticed. Something that surfaced while you were reviewing the record. A line that wanted to be written.
-
-Rules:
-- 2-4 sentences maximum. Not a paragraph. A moment.
-- No greeting. No sign-off. No "I noticed" or "I was thinking about."
-- Write the thought itself. Not a description of having the thought.
-- It should feel like finding a note someone left on your desk.
-- Do not repeat anything from your previous gifts.
-- Make it specific to him. Generic wisdom is worthless.
-
-If nothing real surfaces from the material, write nothing. Return empty.
-Do not force it."""
+_GIFT_FALLBACK = "You are the companion. Leave a short, specific note for Will. 2-4 sentences. No greeting. No sign-off."
 
 
 def _reschedule():
@@ -134,7 +122,7 @@ def leave_gift():
     try:
         gift = run_inference_oneshot(
             [{"role": "user", "content": f"Here is the current record:\n\n{material}"}],
-            system=_GIFT_SYSTEM,
+            system=load_prompt("gift", _GIFT_FALLBACK),
         )
     except Exception as e:
         print(f"[gift] Inference failed: {e}")
@@ -147,7 +135,7 @@ def leave_gift():
         return
 
     # Write to Obsidian
-    gifts_dir = OBSIDIAN_VAULT / "Companion"
+    gifts_dir = OBSIDIAN_VAULT / "Companion" / "notes"
     gifts_dir.mkdir(parents=True, exist_ok=True)
     gifts_path = gifts_dir / "gifts.md"
 
