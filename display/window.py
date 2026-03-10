@@ -200,13 +200,12 @@ class OpeningWorker(QThread):
 # ── Status bar — loading / shutting down ──
 
 class StatusBar(QWidget):
-    """Thin animated progress bar with label."""
+    """Thin animated progress line — sits as top stroke of the chat bar."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAutoFillBackground(False)
-        self.setFixedHeight(20)
-        self._label = ""
+        self.setFixedHeight(2)
         self._progress = 0.0  # 0..1, or -1 for indeterminate
         self._timer = QTimer(self)
         self._timer.setInterval(30)
@@ -215,7 +214,6 @@ class StatusBar(QWidget):
         self.hide()
 
     def start(self, label: str = "", indeterminate: bool = True):
-        self._label = label
         self._progress = -1.0 if indeterminate else 0.0
         self._sweep = 0.0
         self.show()
@@ -223,8 +221,6 @@ class StatusBar(QWidget):
 
     def set_progress(self, value: float, label: str = None):
         self._progress = max(0.0, min(1.0, value))
-        if label is not None:
-            self._label = label
         self.update()
 
     def stop(self):
@@ -232,36 +228,26 @@ class StatusBar(QWidget):
         self.hide()
 
     def _tick(self):
-        self._sweep = (self._sweep + 0.02) % 1.0
+        self._sweep = (self._sweep + 0.015) % 1.0
         self.update()
 
     def paintEvent(self, event):
-        w, h = self.width(), self.height()
+        w = self.width()
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-
-        # Background track
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(255, 255, 255, 15))
-        p.drawRoundedRect(0, h - 3, w, 3, 1, 1)
 
-        # Progress fill
-        p.setBrush(QColor(255, 255, 255, 80))
         if self._progress < 0:
             # Indeterminate — sliding highlight
             bar_w = int(w * 0.3)
             x = int(self._sweep * (w + bar_w)) - bar_w
-            p.drawRoundedRect(max(0, x), h - 3, min(bar_w, w - max(0, x)), 3, 1, 1)
+            p.setBrush(QColor(255, 255, 255, 100))
+            p.drawRoundedRect(max(0, x), 0, min(bar_w, w - max(0, x)), 2, 1, 1)
         else:
             fill_w = int(w * self._progress)
             if fill_w > 0:
-                p.drawRoundedRect(0, h - 3, fill_w, 3, 1, 1)
-
-        # Label
-        if self._label:
-            p.setFont(QFont("Bricolage Grotesque", 10))
-            p.setPen(QColor(255, 255, 255, 120))
-            p.drawText(QRect(0, 0, w, h - 4), Qt.AlignLeft | Qt.AlignVCenter, self._label)
+                p.setBrush(QColor(255, 255, 255, 100))
+                p.drawRoundedRect(0, 0, fill_w, 2, 1, 1)
 
         p.end()
 
@@ -682,7 +668,7 @@ class InputBar(QWidget):
         if (obj is self._input
                 and event.type() == QEvent.KeyPress
                 and event.key() == Qt.Key_C
-                and event.modifiers() & Qt.ControlModifier
+                and (event.modifiers() & Qt.ControlModifier or event.modifiers() & Qt.MetaModifier)
                 and not self._input.hasSelectedText()):
             self.copy_requested.emit()
             return True  # consume the event
@@ -857,10 +843,11 @@ class CompanionWindow(QWidget):
             QTimer.singleShot(600, _default_boot)
 
     def _centre_status_bar(self):
-        self._status_bar.setFixedWidth(self.width() - _PAD * 4)
-        cx = (self.width() - self._status_bar.width()) // 2
-        cy = self.height() // 2
-        self._status_bar.move(cx, cy)
+        # During boot — centre horizontally, middle of screen
+        w = self.width()
+        bar_w = w - _PAD * 4
+        self._status_bar.setFixedWidth(bar_w)
+        self._status_bar.move((w - bar_w) // 2, self.height() // 2)
 
     def _boot_complete(self):
         """Fade from black to live UI."""
@@ -1077,9 +1064,12 @@ class CompanionWindow(QWidget):
         self._position_status_bar()
 
     def _position_status_bar(self):
-        w = self.width()
-        self._status_bar.setFixedWidth(w - _PAD * 2)
-        self._status_bar.move(_PAD, self.height() - _PAD - _BAR_H - 28)
+        # Sits as top stroke of the chat bar — same x/width, just above it
+        bar_x = self._bar.x()
+        bar_y = self._bar.y()
+        bar_w = self._bar.width()
+        self._status_bar.setFixedWidth(bar_w)
+        self._status_bar.move(bar_x, bar_y - 2)
 
     def _toggle_mute(self):
         self._muted = not self._muted
@@ -1341,12 +1331,22 @@ class CompanionWindow(QWidget):
         img_w, img_h = self._frame.width(), self._frame.height()
         scale = max(win_w / img_w, win_h / img_h) * 1.01
         sw = int(img_w * scale)
-        # Horizontal clamp — video may be narrower than window
+        sh = int(img_h * scale)
+        # Clamp to whichever is smaller: video extent or window
         vid_left = max(0, (win_w - sw) // 2)
         vid_right = min(win_w, vid_left + sw)
+        vid_top = max(0, (win_h - sh) // 2)
+        vid_bottom = min(win_h, vid_top + sh)
         left = vid_left + _PAD
         right = vid_right - _PAD
-        return left, right, 0, win_h
+        # Cap width to a readable maximum (avoids ultra-wide text lines)
+        max_content = 700
+        content_w = right - left
+        if content_w > max_content:
+            cx = (left + right) // 2
+            left = cx - max_content // 2
+            right = cx + max_content // 2
+        return left, right, vid_top, vid_bottom
 
     def resizeEvent(self, event):
         self._scaled_frame = None  # invalidate cache
@@ -1379,7 +1379,7 @@ class CompanionWindow(QWidget):
             self._transcript.scroll_up()
         elif event.key() == Qt.Key_Down:
             self._transcript.scroll_down()
-        elif event.key() == Qt.Key_C and event.modifiers() & Qt.ControlModifier:
+        elif event.key() == Qt.Key_C and (event.modifiers() & Qt.ControlModifier or event.modifiers() & Qt.MetaModifier):
             # If input bar has selected text, let it handle copy
             if self._bar._input.hasSelectedText():
                 super().keyPressEvent(event)
@@ -1501,40 +1501,7 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
         cached_opening_audio=cached_opening_audio,
     )
     _companion_window.show()
-    _companion_window.raise_()
     _companion_window._bar.focus_input()
-
-    # Watch for Space changes — re-show window on the active Space
-    try:
-        from AppKit import NSWorkspace, NSWorkspaceActiveSpaceDidChangeNotification
-        from Foundation import NSObject
-        import objc
-
-        class _SpaceObserver(NSObject):
-            def spaceChanged_(self, notification):
-                if _companion_window:
-                    # Move to current Space by hiding and re-showing
-                    QTimer.singleShot(100, _reshow)
-
-        def _reshow():
-            if _companion_window:
-                pos = _companion_window.pos()
-                _companion_window.hide()
-                _companion_window.move(pos)
-                _companion_window.show()
-                _companion_window.raise_()
-
-        observer = _SpaceObserver.alloc().init()
-        NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
-            observer,
-            objc.selector(observer.spaceChanged_, signature=b'v@:@'),
-            NSWorkspaceActiveSpaceDidChangeNotification,
-            None,
-        )
-        # prevent gc
-        _companion_window._space_observer = observer
-    except Exception as e:
-        print(f"  [Space observer failed: {e}]")
 
     app.exec_()
 

@@ -147,19 +147,19 @@ async def synthesise(text: str) -> Path:
         tmp.close()
         return Path(tmp.name)
 
-    # Primary: ElevenLabs streaming (lowest latency)
-    if ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
-        try:
-            return await _synthesise_elevenlabs_stream(text)
-        except Exception as e:
-            print(f"[TTS] ElevenLabs stream failed ({e}), trying batch...")
-
-    # Fallback: Fal
+    # Primary: Fal
     if FAL_VOICE_ID:
         try:
             return await _synthesise_fal(text)
         except Exception as e:
-            print(f"[TTS] Fal failed ({e}), falling back to macOS")
+            print(f"[TTS] Fal failed ({e}), trying ElevenLabs...")
+
+    # Fallback: ElevenLabs streaming
+    if ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
+        try:
+            return await _synthesise_elevenlabs_stream(text)
+        except Exception as e:
+            print(f"[TTS] ElevenLabs failed ({e}), falling back to macOS")
 
     return await _synthesise_macos(text)
 
