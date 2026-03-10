@@ -18,10 +18,21 @@ LABEL = "com.atrophiedmind.companion"
 PLIST_DIR = Path.home() / "Library" / "LaunchAgents"
 PLIST_PATH = PLIST_DIR / f"{LABEL}.plist"
 
-APP_NAME = "The Atrophied Mind"
+APP_NAME = "Atrophy"
 USER_DATA = Path.home() / ".atrophy"
 LOG_DIR = USER_DATA / "logs"
-APP_PATH = Path.home() / "Applications" / f"{APP_NAME}.app"
+
+
+def _find_app() -> Path:
+    """Find the installed .app — check /Applications first, then ~/Applications."""
+    for base in [Path("/Applications"), Path.home() / "Applications"]:
+        candidate = base / f"{APP_NAME}.app"
+        if candidate.exists():
+            return candidate
+    return Path.home() / "Applications" / f"{APP_NAME}.app"
+
+
+APP_PATH = _find_app()
 
 
 def _plist_content() -> str:

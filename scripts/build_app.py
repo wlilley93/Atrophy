@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a macOS .app bundle for The Atrophied Mind.
+"""Build a macOS .app bundle for Atrophy.
 
 Usage:
   python scripts/build_app.py              — Build to build/
@@ -11,7 +11,7 @@ Architecture:
   (a git clone). On every launch the app pulls updates from git in the
   background, so pushing to the repo is all you need to ship changes.
 
-  ~/Applications/The Atrophied Mind.app   — launcher (rarely changes)
+  ~/Applications/Atrophy.app   — launcher (rarely changes)
   ~/.atrophy/src/                         — git clone (auto-updates)
   ~/.atrophy/venv/                        — Python virtual environment
   ~/.atrophy/agents/, config.json, etc.   — user data
@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
-APP_NAME = "The Atrophied Mind"
+APP_NAME = "Atrophy"
 BUNDLE_ID = "com.atrophiedmind.companion"
 BUILD_DIR = PROJECT_DIR / "build"
 APP_PATH = BUILD_DIR / f"{APP_NAME}.app"
@@ -157,7 +157,7 @@ def build_app():
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>The Atrophied Mind needs microphone access for voice input.</string>
+    <string>Atrophy needs microphone access for voice input.</string>
 </dict>
 </plist>
 """
@@ -166,7 +166,7 @@ def build_app():
     # ── Launcher script ──
     launcher = f"""#!/bin/bash
 # ─────────────────────────────────────────────────────
-#  The Atrophied Mind — App Launcher
+#  Atrophy — App Launcher
 # ─────────────────────────────────────────────────────
 #
 #  Code lives in ~/.atrophy/src/ (git-managed).
@@ -211,7 +211,7 @@ if [ ! -d "$SRC_DIR/.git" ]; then
     fi
 
     if [ ! -f "$SRC_DIR/main.py" ]; then
-        osascript -e 'display alert "Setup Failed" message "Could not set up The Atrophied Mind. Check ~/.atrophy/logs/launcher.log" as critical'
+        osascript -e 'display alert "Setup Failed" message "Could not set up Atrophy. Check ~/.atrophy/logs/launcher.log" as critical'
         exit 1
     fi
 fi
@@ -272,7 +272,7 @@ fi
 
 # ── Check for Claude Code ──
 if ! command -v claude &>/dev/null; then
-    osascript -e 'display alert "Claude Code Required" message "Install Claude Code to use The Atrophied Mind.\\n\\nnpm install -g @anthropic-ai/claude-code\\n\\nOr download from claude.ai/download" as warning' &
+    osascript -e 'display alert "Claude Code Required" message "Install Claude Code to use Atrophy.\\n\\nnpm install -g @anthropic-ai/claude-code\\n\\nOr download from claude.ai/download" as warning' &
 fi
 
 # ── Launch ──
@@ -297,9 +297,22 @@ exec python main.py --app 2>>"$LOG_DIR/app.stderr.log"
     return APP_PATH
 
 
+def _install_dir() -> Path:
+    """Pick install location — /Applications if writable, else ~/Applications."""
+    system_apps = Path("/Applications")
+    try:
+        # Test write access
+        test = system_apps / ".atrophy_write_test"
+        test.touch()
+        test.unlink()
+        return system_apps
+    except (PermissionError, OSError):
+        return Path.home() / "Applications"
+
+
 def install():
-    """Install to ~/Applications."""
-    apps_dir = Path.home() / "Applications"
+    """Install to Applications folder."""
+    apps_dir = _install_dir()
     apps_dir.mkdir(exist_ok=True)
     dest = apps_dir / f"{APP_NAME}.app"
     if dest.exists():

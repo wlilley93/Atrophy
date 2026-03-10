@@ -777,6 +777,9 @@ class _ArtefactButton(QPushButton):
         p.end()
 
 
+from display.settings import SettingsModal
+
+
 class _SettingsButton(QPushButton):
     """Gear icon button for settings panel."""
     def __init__(self, parent=None):
@@ -821,9 +824,73 @@ class _SettingsButton(QPushButton):
         p.end()
 
 
-# ── Settings panel ──
+class _CallButton(QPushButton):
+    """Phone icon button for voice call mode."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(34, 34)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self._active = False
+        self._status = "idle"  # idle, listening, thinking, speaking
 
-_SETTINGS_STYLE = """
+    def set_active(self, active):
+        self._active = active
+        self.update()
+
+    def set_status(self, status):
+        self._status = status
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        bg = QPainterPath()
+        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
+        if self._active:
+            if self._status == "listening":
+                p.fillPath(bg, QColor(30, 120, 50, 220))
+            elif self._status == "thinking":
+                p.fillPath(bg, QColor(80, 80, 30, 220))
+            elif self._status == "speaking":
+                p.fillPath(bg, QColor(30, 60, 120, 220))
+            else:
+                p.fillPath(bg, QColor(120, 30, 30, 220))
+        else:
+            p.fillPath(bg, QColor(20, 20, 22, 210))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(bg)
+        # Phone handset icon
+        alpha = 240 if self._active else 120
+        col = QColor(255, 255, 255, alpha)
+        p.setPen(QPen(col, 1.8))
+        p.setBrush(Qt.NoBrush)
+        # Handset — a curved path like a phone receiver
+        path = QPainterPath()
+        path.moveTo(10, 13)
+        path.quadTo(10, 10, 13, 10)
+        path.lineTo(15, 10)
+        path.quadTo(16, 10, 16, 12)
+        # Curved middle
+        path.quadTo(17, 17, 18, 22)
+        path.quadTo(18, 24, 19, 24)
+        path.lineTo(21, 24)
+        path.quadTo(24, 24, 24, 21)
+        # Hang-up slash when active
+        if self._active:
+            p.drawPath(path)
+            p.setPen(QPen(QColor(255, 100, 100, 220), 2.2))
+            p.drawLine(9, 25, 25, 9)
+        else:
+            p.drawPath(path)
+        p.end()
+
+
+# ── Settings panel (moved to display/settings.py) ──
+# Old _SETTINGS_STYLE and SettingsPanel class removed.
+# Import is at the top of this section: from display.settings import SettingsModal
+
+_OLD_SETTINGS_STYLE = """
     QWidget#settingsPanel {
         background: transparent;
     }
@@ -971,14 +1038,14 @@ _SETTINGS_STYLE = """
 """
 
 
-class SettingsPanel(QWidget):
-    """Full-screen settings overlay — dark, scrollable, grouped by category."""
+class _LegacySettingsPanel(QWidget):
+    """DEPRECATED — replaced by display.settings.SettingsModal."""
     closed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("settingsPanel")
-        self.setStyleSheet(_SETTINGS_STYLE)
+        self.setStyleSheet(_OLD_SETTINGS_STYLE)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self._controls = {}  # key → widget, for reading values back
         self._build_ui()
@@ -2597,8 +2664,12 @@ class CompanionWindow(QWidget):
         self._settings_btn = _SettingsButton(self)
         self._settings_btn.clicked.connect(self._toggle_settings)
 
-        # Settings panel
-        self._settings_panel = SettingsPanel(self)
+        self._call_btn = _CallButton(self)
+        self._call_btn.clicked.connect(self._toggle_call)
+        self._voice_call = None  # VoiceCall thread
+
+        # Settings panel (tabbed modal)
+        self._settings_panel = SettingsModal(self)
         self._settings_panel.closed.connect(lambda: self._settings_btn.set_active(False))
         self._settings_open = False
 
@@ -2633,8 +2704,9 @@ class CompanionWindow(QWidget):
         self._mute_btn.move(right - 34 - 38, btn_y)
         self._min_btn.move(right - 34 - 38 - 38, btn_y)
         self._wake_btn.move(right - 34 - 38 - 38 - 38, btn_y)
-        self._artefact_btn.move(right - 34 - 38 - 38 - 38 - 38, btn_y)
-        self._settings_btn.move(right - 34 - 38 - 38 - 38 - 38 - 38, btn_y)
+        self._call_btn.move(right - 34 - 38 - 38 - 38 - 38, btn_y)
+        self._artefact_btn.move(right - 34 - 38 - 38 - 38 - 38 - 38, btn_y)
+        self._settings_btn.move(right - 34 - 38 - 38 - 38 - 38 - 38 - 38, btn_y)
 
     def _toggle_settings(self):
         self._settings_open = not self._settings_open
@@ -2645,6 +2717,55 @@ class CompanionWindow(QWidget):
             self._settings_panel.raise_()
         else:
             self._settings_panel.hide()
+
+    def _toggle_call(self):
+        """Start or end a voice call."""
+        if self._voice_call and self._voice_call.isRunning():
+            # End call
+            self._voice_call.stop()
+            self._call_btn.set_active(False)
+            self._call_btn.set_status("idle")
+            self._status_bar.set_status("")
+            return
+
+        # Start call
+        from voice.call import VoiceCall
+        self._voice_call = VoiceCall(
+            system_prompt=self._system,
+            cli_session_id=self._session.cli_session_id if self._session else None,
+            session=self._session,
+            synth_fn=self._on_synth,
+        )
+        self._voice_call.status_changed.connect(self._on_call_status)
+        self._voice_call.user_said.connect(self._on_call_user_said)
+        self._voice_call.agent_said.connect(self._on_call_agent_said)
+        self._voice_call.error.connect(lambda e: print(f"  [Call] {e}"))
+        self._voice_call.call_ended.connect(self._on_call_ended)
+
+        self._call_btn.set_active(True)
+        self._call_btn.set_status("listening")
+        self._status_bar.start("Call active", indeterminate=True)
+        self._voice_call.start()
+
+    def _on_call_status(self, status: str):
+        self._call_btn.set_status(status)
+
+    def _on_call_user_said(self, text: str):
+        self._transcript.add_message("user", text)
+
+    def _on_call_agent_said(self, text: str):
+        self._transcript.add_message("companion", _strip_tags(text))
+
+    def _on_call_ended(self):
+        self._call_btn.set_active(False)
+        self._call_btn.set_status("idle")
+        self._status_bar.stop()
+        # Sync CLI session ID back from the call
+        if self._voice_call and self._session:
+            new_id = self._voice_call.cli_session_id
+            if new_id and new_id != self._session.cli_session_id:
+                self._session.set_cli_session_id(new_id)
+        self._voice_call = None
 
     def _minimize_to_tray(self):
         self.hide()

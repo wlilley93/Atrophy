@@ -488,6 +488,21 @@ def stream_inference(
         tools_str = f" | tools: {', '.join(tool_calls)}" if tool_calls else ""
         print(f"  [inference] {mode} | {len(full_text)} chars, {n_sentences} sentences{tools_str} | {elapsed:.1f}s")
 
+        # Log usage (estimated tokens: ~4 chars per token)
+        try:
+            from core.usage import log_usage
+            tokens_out = len(full_text) // 4
+            # Rough input estimate from prompt length
+            tokens_in = len(prompt) // 4 if prompt else 0
+            log_usage(
+                DB_PATH, source="conversation",
+                tokens_in=tokens_in, tokens_out=tokens_out,
+                duration_ms=int(elapsed * 1000),
+                tool_count=len(tool_calls),
+            )
+        except Exception:
+            pass
+
         yield StreamDone(full_text=full_text, session_id=session_id)
 
     except Exception as e:
@@ -545,6 +560,7 @@ def run_inference_oneshot(messages: list[dict], system: str,
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, env=_env(), start_new_session=True,
     )
+    t0 = time.time()
     try:
         stdout, stderr = proc.communicate(timeout=30)
     except subprocess.TimeoutExpired:
@@ -554,7 +570,22 @@ def run_inference_oneshot(messages: list[dict], system: str,
     if proc.returncode != 0:
         raise RuntimeError(f"CLI error: {stderr[:500]}")
 
-    return stdout.strip()
+    result = stdout.strip()
+
+    # Log usage
+    try:
+        from core.usage import log_usage
+        elapsed = time.time() - t0
+        log_usage(
+            DB_PATH, source="oneshot",
+            tokens_in=len(full_prompt) // 4,
+            tokens_out=len(result) // 4,
+            duration_ms=int(elapsed * 1000),
+        )
+    except Exception:
+        pass
+
+    return result
 
 
 # ── Pre-compaction memory flush ──

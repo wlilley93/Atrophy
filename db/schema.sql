@@ -169,6 +169,19 @@ CREATE TABLE IF NOT EXISTS intelligence (
   embedding     BLOB
 );
 
+-- ── USAGE LOG ──────────────────────────────────────────────────
+-- Per-inference token/time tracking for usage dashboards.
+
+CREATE TABLE IF NOT EXISTS usage_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  source      TEXT NOT NULL,       -- 'conversation', 'heartbeat', 'morning_brief', 'news_watch', 'task', 'oneshot'
+  tokens_in   INTEGER DEFAULT 0,   -- estimated input tokens
+  tokens_out  INTEGER DEFAULT 0,   -- estimated output tokens
+  duration_ms INTEGER DEFAULT 0,
+  tool_count  INTEGER DEFAULT 0
+);
+
 -- ── INDEXES ───────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_turns_session
