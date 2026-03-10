@@ -165,12 +165,45 @@ async def synthesise(text: str) -> Path:
 
 
 def synthesise_sync(text: str) -> Path:
-    """Blocking synthesise — for use in QThread workers."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(synthesise(text))
-    finally:
-        loop.close()
+    """Blocking synthesise — for use in QThread workers. No event loop needed."""
+    # Strip code blocks before processing
+    text = _CODE_BLOCK_RE.sub('', text)
+    text = _INLINE_CODE_RE.sub('', text)
+    cleaned, _ = _process_prosody(text)
+    if not cleaned or len(cleaned.strip()) < 8:
+        tmp = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False)
+        tmp.close()
+        return Path(tmp.name)
+
+    # Primary: Fal (fully synchronous)
+    if FAL_VOICE_ID:
+        try:
+            return _synthesise_fal_sync(text)
+        except Exception as e:
+            print(f"[TTS] Fal failed ({e}), trying ElevenLabs...")
+
+    # Fallback: ElevenLabs (needs event loop)
+    if ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(_synthesise_elevenlabs_stream(text))
+            finally:
+                loop.close()
+        except Exception as e:
+            print(f"[TTS] ElevenLabs failed ({e}), falling back to macOS")
+
+    # Last resort: macOS say (synchronous)
+    tmp = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False)
+    tmp.close()
+    audio_path = Path(tmp.name)
+    clean = _TAG_RE.sub("", text).strip()
+    import subprocess
+    subprocess.run(
+        ["say", "-v", "Samantha", "-r", "175", "-o", str(audio_path), clean],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return audio_path
 
 
 async def play(audio_path: Path) -> None:
@@ -258,7 +291,8 @@ async def _synthesise_elevenlabs_stream(text: str) -> Path:
 async def _synthesise_fal(text: str) -> Path:
     import fal_client
 
-    loop = asyncio.get_event_loop()
+    # fal_client.subscribe is blocking — run in executor to not block the event loop
+    loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         None,
         lambda: fal_client.subscribe(
@@ -276,6 +310,29 @@ async def _synthesise_fal(text: str) -> Path:
     async with httpx.AsyncClient() as client:
         response = await client.get(audio_url, timeout=30.0)
         response.raise_for_status()
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    tmp.write(response.content)
+    tmp.close()
+    return Path(tmp.name)
+
+
+def _synthesise_fal_sync(text: str) -> Path:
+    """Fully synchronous Fal TTS — no event loop needed."""
+    import fal_client
+
+    result = fal_client.subscribe(
+        FAL_TTS_ENDPOINT,
+        arguments={
+            "text": text,
+            "voice": FAL_VOICE_ID,
+            "stability": ELEVENLABS_STABILITY,
+        },
+    )
+
+    audio_url = result["audio"]["url"]
+    response = httpx.get(audio_url, timeout=30.0)
+    response.raise_for_status()
 
     tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
     tmp.write(response.content)

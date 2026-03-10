@@ -352,7 +352,9 @@ class TranscriptOverlay(QWidget):
                 app = QApplication.instance()
                 if app:
                     app.clipboard().setText(msg["text"])
+                    print(f"  [Copied: {msg['text'][:60]}...]")
                 return
+        print("  [Copy: no companion message found]")
 
     def _tick_reveal(self):
         any_pending = False
@@ -665,13 +667,12 @@ class InputBar(QWidget):
 
     def eventFilter(self, obj, event):
         from PyQt5.QtCore import QEvent
-        if (obj is self._input
-                and event.type() == QEvent.KeyPress
-                and event.key() == Qt.Key_C
-                and (event.modifiers() & Qt.ControlModifier or event.modifiers() & Qt.MetaModifier)
-                and not self._input.hasSelectedText()):
-            self.copy_requested.emit()
-            return True  # consume the event
+        if obj is self._input and event.type() == QEvent.KeyPress:
+            mods = event.modifiers()
+            if event.key() == Qt.Key_C and (mods & Qt.ControlModifier or mods & Qt.MetaModifier):
+                if not self._input.hasSelectedText():
+                    self.copy_requested.emit()
+                    return True
         return super().eventFilter(obj, event)
 
     def _on_keystroke(self):
@@ -725,16 +726,21 @@ class AudioPlayer(QThread):
                 break
             audio_path, index = item
             if not audio_path:
+                print(f"  [AudioPlayer] empty path for index {index}")
                 continue
+            import os
+            size = os.path.getsize(audio_path) if os.path.exists(audio_path) else -1
+            print(f"  [AudioPlayer] playing index={index} size={size} path={audio_path}")
             self.file_started.emit(index)
             try:
-                subprocess.run(
+                result = subprocess.run(
                     ["afplay", "-r", rate, audio_path],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    capture_output=True, text=True,
                 )
-            except Exception:
-                pass
+                if result.returncode != 0:
+                    print(f"  [AudioPlayer] afplay error: {result.stderr[:200]}")
+            except Exception as e:
+                print(f"  [AudioPlayer] exception: {e}")
             self.file_done.emit(index)
 
 
@@ -1042,6 +1048,20 @@ class CompanionWindow(QWidget):
         self._bar.stop_requested.connect(self._on_stop)
         self._bar.raise_()
 
+        # Global Cmd+C shortcut — copies last companion message when no text selected
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+        copy_shortcut = QShortcut(QKeySequence.Copy, self)
+        copy_shortcut.activated.connect(self._handle_copy)
+        self._copy_shortcut = copy_shortcut  # prevent gc
+
+    def _handle_copy(self):
+        """Global Cmd+C handler — copy selected input text, or last companion message."""
+        if self._bar._input.hasSelectedText():
+            self._bar._input.copy()
+        else:
+            self._transcript.copy_last_companion()
+
     # ── Mode toggle buttons ──
 
     def _build_mode_buttons(self):
@@ -1147,6 +1167,7 @@ class CompanionWindow(QWidget):
 
     def _on_sentence_ready(self, sentence, audio_path, index):
         """A sentence has been synthesised — show text + queue audio."""
+        print(f"  [sentence {index}] audio={bool(audio_path)} muted={self._muted} text={sentence[:60]}...")
         if not self._first_sentence_shown:
             self._first_sentence_shown = True
             self._status_bar.stop()

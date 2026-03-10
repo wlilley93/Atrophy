@@ -206,7 +206,7 @@ def stream_inference(
     if cli_session_id:
         cmd = [
             CLAUDE_BIN,
-            "--model", "claude-sonnet-4-6",
+            "--model", "claude-haiku-4-5-20251001",
             "--effort", CLAUDE_EFFORT,
             "--verbose",
             "--output-format", "stream-json",
@@ -219,7 +219,7 @@ def stream_inference(
         cli_session_id = str(uuid.uuid4())
         cmd = [
             CLAUDE_BIN,
-            "--model", "claude-sonnet-4-6",
+            "--model", "claude-haiku-4-5-20251001",
             "--effort", CLAUDE_EFFORT,
             "--verbose",
             "--output-format", "stream-json",
@@ -231,6 +231,7 @@ def stream_inference(
             "-p", user_message,
         ]
 
+    print(f"  [inference] cmd[0:5]={cmd[:5]} session={cli_session_id[:12] if cli_session_id else 'new'}...")
     try:
         proc = subprocess.Popen(
             cmd,
@@ -240,6 +241,7 @@ def stream_inference(
             env=_env(),
         )
     except Exception as e:
+        print(f"  [inference] Popen failed: {e}")
         yield StreamError(message=str(e))
         return
 
@@ -255,11 +257,14 @@ def stream_inference(
             if not line:
                 continue
 
+            if not got_any_output:
+                print(f"  [inference] first output line: {line[:120]}")
             got_any_output = True
 
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
+                print(f"  [inference] bad JSON: {line[:120]}")
                 continue
 
             evt_type = event.get("type", "")
@@ -318,6 +323,7 @@ def stream_inference(
                 elif inner_type == "content_block_start":
                     block = inner.get("content_block", {})
                     if block.get("type") == "tool_use":
+                        print(f"  [inference] tool_use: {block.get('name', '?')}")
                         yield ToolUse(
                             name=block.get("name", ""),
                             tool_id=block.get("id", ""),
@@ -341,8 +347,8 @@ def stream_inference(
             # Result — final event
             if evt_type == "result":
                 session_id = event.get("session_id", session_id)
-                # If we got a result text and missed streaming, use it
                 result_text = event.get("result", "")
+                print(f"  [inference] result: {len(result_text)} chars, streamed: {len(full_text)} chars")
                 if result_text and not full_text:
                     full_text = result_text
                 continue
