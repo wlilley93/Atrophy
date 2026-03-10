@@ -1,0 +1,183 @@
+# Creating Agents
+
+Each agent in The Atrophied Mind is a self-contained identity with its own voice, memory, personality, and autonomous behaviour. The default agent is `companion`, but you can create as many as you need.
+
+---
+
+## The Quick Way
+
+Run the interactive creation script:
+
+```bash
+python scripts/create_agent.py
+```
+
+Or skip the first question by passing a name:
+
+```bash
+python scripts/create_agent.py --name oracle
+```
+
+The questionnaire walks through six sections:
+
+1. **Identity** -- name, origin story, core nature, character traits, values, relationship with the user, opening line
+2. **Boundaries & Friction** -- what the agent will never do, how it pushes back, session time-limit behaviour
+3. **Voice** -- TTS backend, ElevenLabs configuration, writing style description
+4. **Appearance** -- whether it has a visual avatar, appearance description for image generation
+5. **Channels** -- Telegram bot setup, wake words for voice activation
+6. **Heartbeat & Autonomy** -- active hours, check interval, outreach decision criteria
+
+At the end, it shows a review summary and asks for confirmation before creating anything.
+
+---
+
+## What Gets Created
+
+After confirmation, the script scaffolds the full agent directory:
+
+```
+agents/<name>/
+  agent.json          # Manifest — all technical config
+  soul.md             # Identity and personality (the agent can self-modify this)
+  system_prompt.md    # Instructions for Claude (the agent's operating manual)
+  heartbeat.md        # Checklist for unprompted outreach decisions
+  memory.db           # SQLite database (initialized from db/schema.sql)
+  avatar/
+    source/           # Source face image for LivePortrait
+    loops/            # Generated animation loops
+    candidates/       # Face generation candidates
+  state/              # Runtime state files (gitignored)
+```
+
+It also creates a matching Obsidian vault structure if configured:
+
+```
+<vault>/<DisplayName>/
+  skills/
+    system.md
+    soul.md
+  agents/<name>/
+    notes/
+      journal/
+      evolution-log/
+      reflections.md
+      for-will.md
+      threads.md
+      journal-prompts.md
+```
+
+If Telegram credentials are provided, they're appended to `.env` with agent-specific variable names.
+
+---
+
+## The Agent Manifest (agent.json)
+
+This is the technical configuration file. All fields:
+
+```json
+{
+  "name": "companion",
+  "display_name": "Companion",
+  "user_name": "Will",
+  "opening_line": "Ready. Where are we?",
+  "wake_words": ["hey companion", "companion"],
+
+  "voice": {
+    "tts_backend": "elevenlabs",
+    "elevenlabs_voice_id": "VvTkMBKVXTwrKi71xpvq",
+    "elevenlabs_model": "eleven_v3",
+    "elevenlabs_stability": 0.5,
+    "elevenlabs_similarity": 0.75,
+    "elevenlabs_style": 0.35,
+    "fal_voice_id": "cYsq7mdPbLaqB47hYCkA",
+    "playback_rate": 1.12
+  },
+
+  "telegram": {
+    "bot_token_env": "TELEGRAM_BOT_TOKEN_COMPANION",
+    "chat_id_env": "TELEGRAM_CHAT_ID_COMPANION"
+  },
+
+  "display": {
+    "window_width": 622,
+    "window_height": 830,
+    "title": "THE ATROPHIED MIND -- Companion"
+  },
+
+  "heartbeat": {
+    "active_start": 9,
+    "active_end": 22,
+    "interval_mins": 30
+  },
+
+  "obsidian_subdir": "Companion",
+
+  "avatar": {
+    "description": "Description for image generation...",
+    "resolution": 512
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Internal slug (lowercase, underscores). Used for directory names and labels. |
+| `display_name` | string | Human-readable name. Used in UI, prompts, and logs. |
+| `user_name` | string | The human's name. Used in prompts and turn labels. |
+| `opening_line` | string | First thing the agent ever says (first session only). |
+| `wake_words` | string[] | Phrases that activate voice input when wake word detection is enabled. **Must be unique per agent** to avoid cross-activation when multiple agents are running. |
+| `voice.tts_backend` | string | TTS engine: `elevenlabs`, `fal`, or `macos`. |
+| `voice.elevenlabs_voice_id` | string | ElevenLabs voice ID (from their voice library). |
+| `voice.elevenlabs_model` | string | ElevenLabs model name. Default `eleven_v3`. |
+| `voice.elevenlabs_stability` | float | Voice stability (0.0-1.0). Lower = more expressive. |
+| `voice.elevenlabs_similarity` | float | Voice similarity boost (0.0-1.0). Higher = closer to original voice. |
+| `voice.elevenlabs_style` | float | Style exaggeration (0.0-1.0). |
+| `voice.fal_voice_id` | string | Alternative voice ID for Fal TTS fallback. |
+| `voice.playback_rate` | float | Audio playback speed multiplier. 1.0 = normal, 1.12 = slightly faster. |
+| `telegram.bot_token_env` | string | Environment variable name for this agent's Telegram bot token. |
+| `telegram.chat_id_env` | string | Environment variable name for this agent's Telegram chat ID. |
+| `display.window_width` | int | GUI window width in pixels. |
+| `display.window_height` | int | GUI window height in pixels. |
+| `display.title` | string | GUI window title bar text. |
+| `heartbeat.active_start` | int | Hour (0-23) when heartbeat checks begin. |
+| `heartbeat.active_end` | int | Hour (0-23) when heartbeat checks stop. |
+| `heartbeat.interval_mins` | int | Minutes between heartbeat evaluations. |
+| `obsidian_subdir` | string | Subdirectory name within the Obsidian vault. |
+| `avatar.description` | string | Appearance description for image generation (Flux prompt). |
+| `avatar.resolution` | int | Avatar render resolution in pixels. |
+
+---
+
+## Running a Specific Agent
+
+Set the agent with `--agent` or the `AGENT` environment variable:
+
+```bash
+python main.py --agent oracle --text
+# or
+AGENT=oracle python main.py --gui
+```
+
+All per-agent paths resolve automatically. Each agent has its own memory database, state files, system prompt, and soul.
+
+---
+
+## Customizing After Creation
+
+The three files you'll edit most:
+
+- **`system_prompt.md`** -- the agent's operating instructions. This is injected as the system prompt for every Claude inference call. Change how the agent behaves.
+- **`soul.md`** -- the agent's identity and personality. This is also injected into context. Change who the agent is. The agent itself can modify this file through its monthly self-evolution job.
+- **`heartbeat.md`** -- the checklist the agent runs through when deciding whether to reach out unprompted. Change when and why it initiates contact.
+
+The `agent.json` manifest controls technical configuration (voice, display, scheduling). Edit it directly -- no rebuild needed, changes take effect on next launch.
+
+In GUI mode, all of these settings can also be edited live through the **Settings panel** (gear icon or Cmd+,). Changes can be applied immediately to the running session or saved to `.env` and `agent.json` for persistence. See [02 - Configuration Reference](02%20-%20Configuration%20Reference.md) for the full settings panel reference.
+
+---
+
+## Scheduling Jobs for a New Agent
+
+After creating an agent, you'll likely want to set up its autonomous behaviour. See [03 - Scheduling Jobs](03%20-%20Scheduling%20Jobs.md) for how to configure heartbeats, introspection, and other scheduled tasks.
+
+The jobs configuration lives at `scripts/agents/<name>/jobs.json` and is managed through `scripts/cron.py`.

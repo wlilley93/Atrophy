@@ -286,3 +286,89 @@ def energy_note(user_message: str) -> str | None:
 def should_prompt_journal() -> bool:
     """~10% chance of gently prompting him to write."""
     return random.random() < 0.10
+
+
+# ── Emotional signal detection ──────────────────────────────────
+
+_vulnerable_phrases: list[str] = [
+    "i feel", "i'm scared", "i'm afraid", "i don't know if",
+    "it hurts", "i miss", "i need", "i've been struggling",
+    "i can't stop thinking", "i haven't told anyone",
+    "this is hard to say", "honestly", "the truth is",
+    "i'm not okay", "i've been crying", "i'm lonely",
+]
+
+_dismissive_phrases: list[str] = [
+    "fine", "whatever", "idk", "doesn't matter", "i guess",
+    "sure", "okay", "nvm", "nevermind", "forget it",
+    "not really", "who cares",
+]
+
+_help_phrases: list[str] = [
+    "can you help", "i need help", "how do i", "what should i",
+    "could you", "any advice", "what do you think i should",
+]
+
+_creative_phrases: list[str] = [
+    "i wrote", "i made", "i've been working on", "check this out",
+    "here's something", "i want to show you", "been building",
+    "started writing", "new project", "draft",
+]
+
+_deflection_phrases: list[str] = [
+    "anyway", "moving on", "let's talk about something else",
+    "that's enough about", "doesn't matter anyway",
+    "forget i said", "it's nothing",
+]
+
+
+def detect_emotional_signals(user_message: str) -> dict[str, float]:
+    """Lightweight keyword detection that suggests emotion deltas.
+
+    Returns a dict of deltas (may be empty if no signals detected).
+    Runs every turn — kept fast and simple.
+    """
+    lower = user_message.lower().strip()
+    length = len(user_message.strip())
+    deltas: dict[str, float] = {}
+
+    # Long, thoughtful message
+    if length > 400:
+        deltas["curiosity"] = deltas.get("curiosity", 0) + 0.1
+        deltas["connection"] = deltas.get("connection", 0) + 0.05
+
+    # Short dismissive reply
+    if length < 30 and any(p in lower for p in _dismissive_phrases):
+        deltas["connection"] = deltas.get("connection", 0) - 0.1
+        deltas["frustration"] = deltas.get("frustration", 0) + 0.1
+
+    # Vulnerability / openness
+    if any(p in lower for p in _vulnerable_phrases):
+        deltas["connection"] = deltas.get("connection", 0) + 0.15
+        deltas["warmth"] = deltas.get("warmth", 0) + 0.1
+
+    # Asking for help (trust signal)
+    if any(p in lower for p in _help_phrases):
+        deltas["confidence"] = deltas.get("confidence", 0) + 0.05
+        # trust(practical) handled separately via return value convention
+        deltas["_trust_practical"] = 0.02
+
+    # Sharing creative work
+    if any(p in lower for p in _creative_phrases):
+        deltas["curiosity"] = deltas.get("curiosity", 0) + 0.1
+        deltas["_trust_creative"] = 0.02
+
+    # Deflecting / changing subject
+    if any(p in lower for p in _deflection_phrases):
+        deltas["frustration"] = deltas.get("frustration", 0) + 0.05
+
+    # Playfulness signals — exclamation marks, haha, lol, emojis
+    if any(x in lower for x in ["haha", "lol", "lmao", "😂", "😄"]):
+        deltas["playfulness"] = deltas.get("playfulness", 0) + 0.1
+
+    # Mood shift (leveraging existing detection)
+    if detect_mood_shift(user_message):
+        deltas["warmth"] = deltas.get("warmth", 0) + 0.1
+        deltas["playfulness"] = deltas.get("playfulness", 0) - 0.1
+
+    return deltas

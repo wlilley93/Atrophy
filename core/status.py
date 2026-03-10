@@ -78,6 +78,30 @@ def is_away() -> bool:
     return get_status()["status"] == "away"
 
 
+def is_mac_idle(threshold_secs: int = IDLE_TIMEOUT_SECS) -> bool:
+    """Check if the Mac has been idle (no keyboard/mouse) for threshold seconds.
+
+    Uses macOS IOKit HIDIdleTime. Returns True if idle, False if active.
+    Falls back to False (assume active) on error.
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["ioreg", "-c", "IOHIDSystem", "-d", "4"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            if "HIDIdleTime" in line and "=" in line:
+                # Value is in nanoseconds
+                ns_str = line.split("=")[-1].strip()
+                idle_ns = int(ns_str)
+                idle_secs = idle_ns / 1_000_000_000
+                return idle_secs >= threshold_secs
+    except Exception:
+        pass
+    return False  # assume active on error
+
+
 def detect_away_intent(text: str) -> str | None:
     """Check if user's message implies they're leaving.
     Returns the matched reason phrase, or None.

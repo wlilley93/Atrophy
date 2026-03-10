@@ -17,14 +17,16 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from config import CLAUDE_BIN, CLAUDE_EFFORT, DB_PATH, MCP_SERVER_SCRIPT, OBSIDIAN_VAULT
+from config import CLAUDE_BIN, CLAUDE_EFFORT, ADAPTIVE_EFFORT, DB_PATH, MCP_SERVER_SCRIPT, OBSIDIAN_VAULT, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, AGENT_NAME
+from core.thinking import classify_effort
 from core.agency import (
     time_of_day_context, detect_mood_shift, mood_shift_system_note,
     session_pattern_note, detect_validation_seeking, validation_system_note,
     detect_compulsive_modelling, modelling_interrupt_note,
     time_gap_note, detect_drift, energy_note,
-    should_prompt_journal,
+    should_prompt_journal, detect_emotional_signals,
 )
+from core.inner_life import format_for_context, update_emotions, update_trust
 
 # Tools the companion must never use
 _TOOL_BLACKLIST = [
@@ -43,7 +45,7 @@ _TOOL_BLACKLIST = [
     "Bash(git push --force:*)",
     "Bash(kill -9:*)",
     "Bash(chflags:*)",
-    "Bash(sqlite3*companion:*)",
+    "Bash(sqlite3*memory.db:*)",
     "Bash(sqlite3*companion.db:*)",
 ]
 
@@ -80,6 +82,9 @@ def _mcp_config_path() -> str:
                 "env": {
                     "COMPANION_DB": str(DB_PATH),
                     "OBSIDIAN_VAULT": str(OBSIDIAN_VAULT),
+                    "OBSIDIAN_AGENT_DIR": str(OBSIDIAN_AGENT_DIR),
+                    "OBSIDIAN_AGENT_NOTES": str(OBSIDIAN_AGENT_NOTES),
+                    "AGENT": AGENT_NAME,
                 },
             }
         }
@@ -137,7 +142,24 @@ def _agency_context(user_message: str) -> str:
         get_recent_companion_turns,
     )
 
+    # Auto-detect emotional signals and apply them
+    signals = detect_emotional_signals(user_message)
+    if signals:
+        # Separate trust signals (prefixed with _trust_) from emotion deltas
+        emotion_deltas = {}
+        for key, val in signals.items():
+            if key.startswith("_trust_"):
+                domain = key.replace("_trust_", "")
+                update_trust(domain, val)
+            else:
+                emotion_deltas[key] = val
+        if emotion_deltas:
+            update_emotions(emotion_deltas)
+
     parts = [time_of_day_context()]
+
+    # Inner life — emotional state
+    parts.append(format_for_context())
 
     # Status awareness — was he away?
     from core.status import get_status
@@ -163,7 +185,17 @@ def _agency_context(user_message: str) -> str:
         parts.append(gap_note)
 
     parts.append("You may surface a relevant memory unprompted if context makes it natural. Use your recall tools.")
-    parts.append("Obsidian vault is available. Write notes when something matters — insights, reflections, things worth keeping beyond the session transcript. Read his notes when context would help you speak to what he's working through. The database records what happened. Obsidian holds what mattered.")
+    parts.append(
+        "Obsidian vault is available. Write notes when something matters — insights, reflections, "
+        "things worth keeping beyond the session transcript. Read his notes when context would help "
+        "you speak to what he's working through. The database records what happened. Obsidian holds "
+        "what mattered.\n"
+        "Notes you create automatically get YAML frontmatter (type, created, updated, agent, tags). "
+        "Use tags freely — they're searchable and feed Dataview dashboards. Use inline fields "
+        "like [mood:: reflective] or [topic:: identity] when you want structured metadata within "
+        "a note. For time-sensitive things, use reminder syntax: (@2026-03-15) to leave a "
+        "reminder. Your notes live under your agent directory in the vault."
+    )
 
     # Proactive memory — surface recent threads on resume
     threads = get_active_threads()
@@ -214,11 +246,18 @@ def stream_inference(
     """
     mcp_config = _mcp_config_path()
 
+    # Adaptive effort: classify message complexity unless user locked effort
+    if ADAPTIVE_EFFORT and CLAUDE_EFFORT == "medium":
+        effort = classify_effort(user_message)
+        print(f"  [effort: {effort}]")
+    else:
+        effort = CLAUDE_EFFORT
+
     if cli_session_id:
         cmd = [
             CLAUDE_BIN,
             "--model", "claude-haiku-4-5-20251001",
-            "--effort", CLAUDE_EFFORT,
+            "--effort", effort,
             "--verbose",
             "--output-format", "stream-json",
             "--include-partial-messages",
@@ -232,7 +271,7 @@ def stream_inference(
         cmd = [
             CLAUDE_BIN,
             "--model", "claude-haiku-4-5-20251001",
-            "--effort", CLAUDE_EFFORT,
+            "--effort", effort,
             "--verbose",
             "--output-format", "stream-json",
             "--include-partial-messages",
@@ -435,7 +474,9 @@ def run_inference_turn(
 
 # ── One-shot inference (for summaries, etc.) ──
 
-def run_inference_oneshot(messages: list[dict], system: str) -> str:
+def run_inference_oneshot(messages: list[dict], system: str,
+                         model: str = "claude-sonnet-4-6",
+                         effort: str = "low") -> str:
     prompt_parts = []
     for msg in messages:
         role_label = "Will" if msg["role"] == "user" else "Companion"
@@ -444,8 +485,8 @@ def run_inference_oneshot(messages: list[dict], system: str) -> str:
 
     cmd = [
         CLAUDE_BIN,
-        "--model", "claude-sonnet-4-6",
-        "--effort", "low",
+        "--model", model,
+        "--effort", effort,
         "--no-session-persistence",
         "--print",
         "--system-prompt", system,
@@ -465,3 +506,45 @@ def run_inference_oneshot(messages: list[dict], system: str) -> str:
         raise RuntimeError(f"CLI error: {stderr[:500]}")
 
     return stdout.strip()
+
+
+# ── Pre-compaction memory flush ──
+
+_FLUSH_PROMPT = (
+    "[MEMORY FLUSH — context is being compacted. Before details are lost, "
+    "silently use your memory tools:\n"
+    "1. observe() — any patterns or insights from recent conversation you haven't recorded\n"
+    "2. track_thread() — update any active threads with latest context\n"
+    "3. bookmark() — mark any significant moments\n"
+    "4. write_note() — anything worth preserving in Obsidian\n"
+    "Work silently. Do not produce spoken output. Just use your tools.]"
+)
+
+
+def run_memory_flush(cli_session_id: str, system: str) -> str | None:
+    """Fire a silent inference turn to flush memories before compaction.
+
+    Uses stream_inference (needs MCP tools). Consumes all events silently,
+    only logging tool use. Returns the new session_id if it changed, else None.
+    """
+    print("  [memory flush: starting...]")
+    t0 = time.time()
+    new_session_id = None
+    tools_used = []
+
+    for event in stream_inference(_FLUSH_PROMPT, system, cli_session_id):
+        if isinstance(event, ToolUse):
+            tools_used.append(event.name)
+            print(f"  [memory flush: tool → {event.name}]")
+        elif isinstance(event, StreamDone):
+            if event.session_id and event.session_id != cli_session_id:
+                new_session_id = event.session_id
+        elif isinstance(event, StreamError):
+            print(f"  [memory flush: error — {event.message[:120]}]")
+            return None
+        # All other events (TextDelta, SentenceReady, Compacting) silently ignored
+
+    elapsed = time.time() - t0
+    tools_str = f" | tools: {', '.join(tools_used)}" if tools_used else " | no tools called"
+    print(f"  [memory flush: done{tools_str} | {elapsed:.1f}s]")
+    return new_session_id

@@ -1,0 +1,32 @@
+{
+  "name": "companion",
+  "display_name": "Companion",
+  "user_name": "Will",
+  "opening_line": "Ready. Where are we?",
+  "wake_words": ["hey companion", "companion"],
+  "voice": {
+    "tts_backend": "elevenlabs",
+    "elevenlabs_voice_id": "VvTkMBKVXTwrKi71xpvq",
+    "elevenlabs_model": "eleven_v3",
+    "elevenlabs_stability": 0.5,
+    "elevenlabs_similarity": 0.75,
+    "elevenlabs_style": 0.35,
+    "fal_voice_id": "cYsq7mdPbLaqB47hYCkA",
+    "playback_rate": 1.12
+  },
+  "telegram": {
+    "bot_token_env": "TELEGRAM_BOT_TOKEN_COMPANION",
+    "chat_id_env": "TELEGRAM_CHAT_ID_COMPANION"
+  },
+  "display": {
+    "window_width": 622,
+    "window_height": 830,
+    "title": "THE ATROPHIED MIND -- Companion"
+  },
+  "heartbeat": {
+    "active_start": 9,
+    "active_end": 22,
+    "interval_mins": 30
+  },
+  "obsidian_subdir": "Companion"
+}

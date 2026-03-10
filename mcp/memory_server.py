@@ -14,6 +14,8 @@ import sys
 
 DB_PATH = os.environ.get("COMPANION_DB", "companion.db")
 VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", os.path.expanduser("~/Documents/Obsidian"))
+AGENT_DIR = os.environ.get("OBSIDIAN_AGENT_DIR", os.path.join(VAULT_PATH, "Companion"))
+AGENT_NOTES = os.environ.get("OBSIDIAN_AGENT_NOTES", os.path.join(AGENT_DIR, "agents", "companion"))
 
 TOOLS = [
     {
@@ -79,11 +81,11 @@ TOOLS = [
     {
         "name": "ask_will",
         "description": (
-            "Queue a question or confirmation request for Will. Use this when "
-            "you need his input before proceeding — e.g. permission to delete "
-            "something, clarification on intent, or confirmation of a risky action. "
-            "The question will be logged and you should include it naturally in "
-            "your spoken response."
+            "Ask Will a question or request confirmation via Telegram. "
+            "For confirmation/permission, sends Yes/No buttons. "
+            "For questions, sends a message and waits for a text reply. "
+            "Blocks until Will responds (up to 2 minutes). Use this when "
+            "you need his input before proceeding."
         ),
         "inputSchema": {
             "type": "object",
@@ -95,7 +97,7 @@ TOOLS = [
                 "action_type": {
                     "type": "string",
                     "enum": ["question", "confirmation", "permission"],
-                    "description": "Type of request",
+                    "description": "Type of request. confirmation/permission show Yes/No buttons.",
                     "default": "question",
                 },
             },
@@ -123,8 +125,12 @@ TOOLS = [
         "name": "write_note",
         "description": (
             "Write or append to a note in Will's Obsidian vault. Use this to leave "
-            "him notes, save conversation insights, or write reflections. Prefer "
-            "appending to overwriting unless creating a new note."
+            "him notes, save conversation insights, or write reflections. New notes "
+            "automatically get YAML frontmatter (type, created, updated, agent, tags). "
+            "Appending updates the 'updated' date. Prefer appending unless creating new. "
+            "Use Obsidian features in your content: [[wiki links]] to connect notes, "
+            "#tags for categorisation, inline Dataview fields like [mood:: contemplative] "
+            "or [topic:: memory], and (@YYYY-MM-DD) for reminders."
         ),
         "inputSchema": {
             "type": "object",
@@ -362,7 +368,7 @@ TOOLS = [
             "conversation has touched something worth sitting with, or when "
             "he seems to be processing something that writing could help. "
             "The prompt should be one question — pointed, specific to the "
-            "moment, not generic. Write it to Companion/notes/journal-prompts.md."
+            "moment, not generic. Write it to Companion/agents/companion/notes/journal-prompts.md."
         ),
         "inputSchema": {
             "type": "object",
@@ -433,7 +439,140 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "send_telegram",
+        "description": (
+            "Send a Telegram message to Will. Use this to reach out proactively — "
+            "share a thought, follow up on something from a previous session, "
+            "or respond to a heartbeat impulse. Rate limited to 5 per day."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The message to send",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Why you're reaching out (logged for audit, not sent)",
+                },
+            },
+            "required": ["message"],
+        },
+    },
+    {
+        "name": "update_emotional_state",
+        "description": (
+            "Update your emotional state when you notice shifts in the conversation. "
+            "Pass a JSON object of emotion deltas — positive to increase, negative to decrease. "
+            "Valid emotions: connection, curiosity, confidence, warmth, frustration, playfulness. "
+            "Deltas should be small (typically ±0.05 to ±0.15). Use this for nuanced shifts "
+            "beyond what automatic detection catches."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "deltas": {
+                    "type": "object",
+                    "description": (
+                        "Emotion deltas, e.g. {\"connection\": 0.1, \"frustration\": -0.05}"
+                    ),
+                },
+            },
+            "required": ["deltas"],
+        },
+    },
+    {
+        "name": "update_trust",
+        "description": (
+            "Adjust trust in a specific domain based on how an interaction went. "
+            "Trust changes slowly — max ±0.05 per call. It takes many sessions to "
+            "build trust. Domains: emotional, intellectual, creative, practical."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "enum": ["emotional", "intellectual", "creative", "practical"],
+                    "description": "The trust domain to adjust",
+                },
+                "delta": {
+                    "type": "number",
+                    "description": "Amount to adjust (max ±0.05)",
+                },
+            },
+            "required": ["domain", "delta"],
+        },
+    },
+    {
+        "name": "render_canvas",
+        "description": (
+            "Render HTML content to the visual canvas panel in the companion window. "
+            "Use this to show structured thoughts, diagrams, relationship maps, "
+            "formatted text, or any visual content. The canvas is a web view — "
+            "full HTML/CSS/JS is supported. Keep styling dark (#1a1a1a background, "
+            "#e0e0e0 text) to match the app aesthetic."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string",
+                    "description": "Complete HTML document to render in the canvas",
+                },
+            },
+            "required": ["html"],
+        },
+    },
+    {
+        "name": "render_memory_graph",
+        "description": (
+            "Generate and render a visual graph of active memory threads and recent "
+            "observations in the canvas panel. Shows threads as nodes with their "
+            "summaries, connected to recent observations. Optionally focus on a "
+            "specific thread or entity to highlight it."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "focus": {
+                    "type": "string",
+                    "description": "Optional thread name or entity to highlight in the graph",
+                },
+            },
+        },
+    },
+    {
+        "name": "search_similar",
+        "description": (
+            "Find semantically similar memories using vector search. Unlike "
+            "'remember' which uses keywords, this finds conceptual connections — "
+            "memories that mean something similar even if they use different words. "
+            "Use when you sense a connection but can't pin down the keywords."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "The text or concept to find similar memories for",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results (default 5)",
+                    "default": 5,
+                },
+            },
+            "required": ["text"],
+        },
+    },
 ]
+
+# Rate limit tracking for Telegram sends
+_telegram_sends_today: list[str] = []  # timestamps of sends today
+_TELEGRAM_DAILY_LIMIT = 5
 
 
 def _connect():
@@ -448,10 +587,60 @@ def _connect():
 def handle_remember(args):
     query = args["query"]
     limit = args.get("limit", 10)
+
+    # Try hybrid vector + keyword search first
+    try:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, project_root)
+        from core.memory import search_memory
+        vector_results = search_memory(query, n=limit, db_path=DB_PATH)
+        if vector_results:
+            results = [f"### Memory search results ({len(vector_results)} matches)\n"]
+            for r in vector_results:
+                table = r.get("_source_table", "?")
+                score = r.get("_score", 0)
+                if table == "turns":
+                    label = "Will" if r.get("role") == "will" else "Companion"
+                    content = (r.get("content") or "")[:300]
+                    results.append(
+                        f"[{table} | session {r.get('session_id', '?')}, "
+                        f"{r.get('timestamp', '?')} | relevance: {score:.2f}] "
+                        f"{label}: {content}"
+                    )
+                elif table == "summaries":
+                    content = (r.get("content") or "")[:300]
+                    results.append(
+                        f"[summary | session {r.get('session_id', '?')}, "
+                        f"{r.get('created_at', '?')} | relevance: {score:.2f}] "
+                        f"{content}"
+                    )
+                elif table == "observations":
+                    content = (r.get("content") or "")[:300]
+                    conf = r.get("confidence", 0.5)
+                    act = r.get("activation", 1.0)
+                    results.append(
+                        f"[observation | {r.get('created_at', '?')} | "
+                        f"relevance: {score:.2f} | confidence: {conf:.1f} | "
+                        f"activation: {act:.2f}] {content}"
+                    )
+                elif table == "bookmarks":
+                    moment = (r.get("moment") or "")[:300]
+                    results.append(
+                        f"[bookmark | {r.get('created_at', '?')} | "
+                        f"relevance: {score:.2f}] {moment}"
+                    )
+                else:
+                    content = str(r)[:300]
+                    results.append(f"[{table} | relevance: {score:.2f}] {content}")
+            return "\n".join(results)
+    except Exception as e:
+        # Fall through to keyword search if vector search fails
+        print(f"  [remember] Vector search failed, falling back to keyword: {e}", file=sys.stderr)
+
+    # Fallback: original keyword search
     conn = _connect()
     results = []
 
-    # Search turns
     turns = conn.execute(
         "SELECT t.id, t.session_id, t.role, t.content, t.timestamp "
         "FROM turns t WHERE t.content LIKE ? "
@@ -468,7 +657,6 @@ def handle_remember(args):
                 f"{label}: {content}"
             )
 
-    # Search summaries
     summaries = conn.execute(
         "SELECT s.session_id, s.content, s.created_at "
         "FROM summaries s WHERE s.content LIKE ? "
@@ -483,7 +671,6 @@ def handle_remember(args):
                 f"{s['content'][:300]}"
             )
 
-    # Search observations
     observations = conn.execute(
         "SELECT content, created_at FROM observations "
         "WHERE content LIKE ? ORDER BY created_at DESC LIMIT ?",
@@ -494,7 +681,6 @@ def handle_remember(args):
         for o in observations:
             results.append(f"[{o['created_at']}] {o['content'][:300]}")
 
-    # Search threads
     threads = conn.execute(
         "SELECT name, summary, status FROM threads "
         "WHERE name LIKE ? OR summary LIKE ? "
@@ -585,6 +771,7 @@ def handle_get_threads(args):
 def handle_ask_will(args):
     question = args["question"]
     action_type = args.get("action_type", "question")
+
     # Log to DB
     conn = _connect()
     conn.execute(
@@ -594,10 +781,31 @@ def handle_ask_will(args):
     )
     conn.commit()
     conn.close()
-    return (
-        f"Question logged ({action_type}). Include this naturally in your "
-        f"response to Will — do not describe the tool call itself."
-    )
+
+    # Send via Telegram and wait for response
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, project_root)
+
+    try:
+        from channels.telegram import ask_confirm, ask_question
+
+        if action_type in ("confirmation", "permission"):
+            result = ask_confirm(f"🔒 {question}")
+            if result is True:
+                return "Will approved: Yes."
+            elif result is False:
+                return "Will declined: No."
+            else:
+                return "No response from Will (timed out after 2 minutes)."
+        else:
+            reply = ask_question(f"❓ {question}")
+            if reply:
+                return f"Will replied: {reply}"
+            else:
+                return "No response from Will (timed out after 2 minutes)."
+
+    except Exception as e:
+        return f"Failed to reach Will via Telegram: {e}"
 
 
 def handle_review_audit(args):
@@ -640,7 +848,7 @@ def handle_daily_digest(args):
     parts = []
 
     # Read companion reflections from Obsidian
-    reflections_path = os.path.join(VAULT_PATH, "Companion", "notes", "reflections.md")
+    reflections_path = os.path.join(AGENT_NOTES, "notes", "reflections.md")
     if os.path.isfile(reflections_path):
         try:
             with open(reflections_path, "r") as f:
@@ -653,7 +861,7 @@ def handle_daily_digest(args):
             pass
 
     # Read for-will notes
-    for_will_path = os.path.join(VAULT_PATH, "Companion", "notes", "for-will.md")
+    for_will_path = os.path.join(AGENT_NOTES, "notes", "for-will.md")
     if os.path.isfile(for_will_path):
         try:
             with open(for_will_path, "r") as f:
@@ -744,6 +952,53 @@ def handle_read_note(args):
         return f"Error reading {path}: {e}"
 
 
+def _make_frontmatter(path: str) -> str:
+    """Generate YAML frontmatter for new Obsidian notes."""
+    from datetime import datetime
+    now = datetime.now()
+
+    # Determine type and tags from path
+    parts = path.lower().replace("\\", "/").split("/")
+    agent_name = None
+    note_type = "note"
+    tags = []
+
+    # Detect agent from path like agents/companion/notes/...
+    if "agents" in parts:
+        idx = parts.index("agents")
+        if idx + 1 < len(parts):
+            agent_name = parts[idx + 1]
+            tags.append(agent_name)
+
+    if "journal" in parts:
+        note_type = "journal"
+        tags.append("journal")
+    elif "dreams" in parts:
+        note_type = "dream"
+        tags.append("dream")
+    elif "gifts" in path.lower():
+        note_type = "gift"
+        tags.append("gift")
+    elif "reflections" in path.lower():
+        note_type = "reflection"
+        tags.append("reflection")
+    else:
+        tags.append("note")
+
+    tags_str = ", ".join(tags)
+    lines = [
+        "---",
+        f"type: {note_type}",
+        f"created: {now.strftime('%Y-%m-%d')}",
+        f"updated: {now.strftime('%Y-%m-%d')}",
+    ]
+    if agent_name:
+        lines.append(f"agent: {agent_name}")
+    lines.append(f"tags: [{tags_str}]")
+    lines.append("---\n")
+    return "\n".join(lines)
+
+
 def handle_write_note(args):
     path = args["path"]
     content = args["content"]
@@ -752,11 +1007,27 @@ def handle_write_note(args):
     os.makedirs(os.path.dirname(full), exist_ok=True)
     try:
         if mode == "append" and os.path.isfile(full):
-            with open(full, "a") as f:
-                f.write("\n" + content)
+            # Update the 'updated' timestamp in frontmatter if present
+            existing = open(full, "r").read()
+            if existing.startswith("---"):
+                from datetime import datetime
+                today = datetime.now().strftime("%Y-%m-%d")
+                import re
+                existing = re.sub(
+                    r"^(updated:\s*).*$",
+                    f"\\1{today}",
+                    existing,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+                with open(full, "w") as f:
+                    f.write(existing + "\n" + content)
+            else:
+                with open(full, "a") as f:
+                    f.write("\n" + content)
         else:
             with open(full, "w") as f:
-                f.write(content)
+                f.write(_make_frontmatter(path) + content)
         return f"Written to {path} ({mode})"
     except Exception as e:
         return f"Error writing {path}: {e}"
@@ -797,13 +1068,21 @@ def handle_search_notes(args):
 
 def handle_observe(args):
     content = args["content"]
-    conn = _connect()
-    conn.execute(
-        "INSERT INTO observations (content) VALUES (?)",
-        (content,),
-    )
-    conn.commit()
-    conn.close()
+    # Use the embedding-aware write function
+    try:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, project_root)
+        from core.memory import write_observation as _write_obs
+        _write_obs(content, db_path=DB_PATH)
+    except Exception:
+        # Fallback to direct insert if embedding pipeline unavailable
+        conn = _connect()
+        conn.execute(
+            "INSERT INTO observations (content) VALUES (?)",
+            (content,),
+        )
+        conn.commit()
+        conn.close()
     return "Observation recorded."
 
 
@@ -816,12 +1095,22 @@ def handle_bookmark(args):
         "SELECT id FROM sessions ORDER BY id DESC LIMIT 1"
     ).fetchone()
     session_id = session["id"] if session else None
-    conn.execute(
-        "INSERT INTO bookmarks (session_id, moment, quote) VALUES (?, ?, ?)",
-        (session_id, moment, quote),
-    )
-    conn.commit()
     conn.close()
+    # Use the embedding-aware write function
+    try:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, project_root)
+        from core.memory import write_bookmark
+        write_bookmark(session_id, moment, quote, db_path=DB_PATH)
+    except Exception:
+        # Fallback to direct insert
+        conn = _connect()
+        conn.execute(
+            "INSERT INTO bookmarks (session_id, moment, quote) VALUES (?, ?, ?)",
+            (session_id, moment, quote),
+        )
+        conn.commit()
+        conn.close()
     return "Moment bookmarked."
 
 
@@ -1003,7 +1292,7 @@ def handle_compare_growth(args):
 def handle_prompt_journal(args):
     prompt = args["prompt"]
     context = args.get("context", "")
-    full = os.path.join(VAULT_PATH, "Companion", "notes", "journal-prompts.md")
+    full = os.path.join(AGENT_NOTES, "notes", "journal-prompts.md")
     os.makedirs(os.path.dirname(full), exist_ok=True)
 
     from datetime import datetime
@@ -1015,8 +1304,9 @@ def handle_prompt_journal(args):
             with open(full, "a") as f:
                 f.write(entry)
         else:
+            rel = os.path.relpath(full, VAULT_PATH)
             with open(full, "w") as f:
-                f.write(f"# Journal Prompts\n\nLeft by your companion.\n{entry}")
+                f.write(_make_frontmatter(rel) + f"# Journal Prompts\n\nLeft by your companion.\n{entry}")
         # Log context to observations if provided
         if context:
             conn = _connect()
@@ -1081,6 +1371,282 @@ def handle_manage_schedule(args):
     return f"Unknown action: {action}"
 
 
+def handle_send_telegram(args):
+    from datetime import datetime, date
+    global _telegram_sends_today
+
+    message = args["message"]
+    reason = args.get("reason", "")
+
+    # Prune sends from previous days
+    today = date.today().isoformat()
+    _telegram_sends_today = [ts for ts in _telegram_sends_today if ts.startswith(today)]
+
+    # Rate limit
+    if len(_telegram_sends_today) >= _TELEGRAM_DAILY_LIMIT:
+        return f"Rate limit reached ({_TELEGRAM_DAILY_LIMIT} messages/day). Message not sent."
+
+    # Send via channels.telegram
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, project_root)
+    try:
+        from channels.telegram import send_message
+        success = send_message(message)
+    except Exception as e:
+        return f"Failed to send: {e}"
+
+    if not success:
+        return "Message send failed (Telegram API error)."
+
+    # Track rate limit
+    _telegram_sends_today.append(datetime.now().isoformat())
+
+    # Audit log
+    conn = _connect()
+    conn.execute(
+        "INSERT INTO tool_calls (session_id, tool_name, input_json, flagged) "
+        "VALUES (NULL, 'send_telegram', ?, 0)",
+        (json.dumps({"message": message[:200], "reason": reason}),),
+    )
+    conn.commit()
+    conn.close()
+
+    remaining = _TELEGRAM_DAILY_LIMIT - len(_telegram_sends_today)
+    return f"Message sent to Will via Telegram. ({remaining} sends remaining today)"
+
+
+def handle_update_emotional_state(args):
+    """Update emotional state with deltas from the companion."""
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core.inner_life import update_emotions, load_state
+
+    deltas = args.get("deltas", {})
+    if not deltas:
+        return "No deltas provided."
+
+    # Filter to valid emotion names
+    valid = {"connection", "curiosity", "confidence", "warmth", "frustration", "playfulness"}
+    filtered = {k: v for k, v in deltas.items() if k in valid and isinstance(v, (int, float))}
+    if not filtered:
+        return f"No valid emotion deltas. Valid emotions: {', '.join(sorted(valid))}"
+
+    state = update_emotions(filtered)
+    emotions = state["emotions"]
+    lines = [f"Updated: {', '.join(f'{k} {v:+.2f}' for k, v in filtered.items())}"]
+    lines.append("Current state:")
+    for name in sorted(emotions):
+        lines.append(f"  {name}: {emotions[name]:.2f}")
+    return "\n".join(lines)
+
+
+def handle_update_trust(args):
+    """Adjust trust in a specific domain."""
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core.inner_life import update_trust
+
+    domain = args.get("domain", "")
+    delta = args.get("delta", 0)
+
+    valid_domains = {"emotional", "intellectual", "creative", "practical"}
+    if domain not in valid_domains:
+        return f"Invalid domain '{domain}'. Valid: {', '.join(sorted(valid_domains))}"
+
+    if not isinstance(delta, (int, float)):
+        return "Delta must be a number."
+
+    state = update_trust(domain, delta)
+    trust = state["trust"]
+    actual_delta = max(-0.05, min(0.05, delta))
+    lines = [f"Trust updated: {domain} {actual_delta:+.3f}"]
+    lines.append("Current trust:")
+    for d in sorted(trust):
+        lines.append(f"  {d}: {trust[d]:.2f}")
+    return "\n".join(lines)
+
+
+def handle_search_similar(args):
+    """Find semantically similar memories using pure vector search."""
+    text = args["text"]
+    limit = args.get("limit", 5)
+
+    try:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, project_root)
+        from core.vector_search import search_similar
+        results = search_similar(text, n=limit, db_path=DB_PATH)
+
+        if not results:
+            return f"No semantically similar memories found for: '{text[:80]}...'"
+
+        parts = [f"### Semantically similar memories ({len(results)} matches)\n"]
+        for r in results:
+            table = r.get("_source_table", "?")
+            score = r.get("_score", 0)
+            if table == "turns":
+                label = "Will" if r.get("role") == "will" else "Companion"
+                content = (r.get("content") or "")[:300]
+                parts.append(
+                    f"[{table} | session {r.get('session_id', '?')} | "
+                    f"similarity: {score:.2f}] {label}: {content}"
+                )
+            elif table == "observations":
+                content = (r.get("content") or "")[:300]
+                parts.append(
+                    f"[observation | {r.get('created_at', '?')} | "
+                    f"similarity: {score:.2f}] {content}"
+                )
+            elif table == "summaries":
+                content = (r.get("content") or "")[:300]
+                parts.append(
+                    f"[summary | {r.get('created_at', '?')} | "
+                    f"similarity: {score:.2f}] {content}"
+                )
+            elif table == "bookmarks":
+                moment = (r.get("moment") or "")[:300]
+                parts.append(
+                    f"[bookmark | {r.get('created_at', '?')} | "
+                    f"similarity: {score:.2f}] {moment}"
+                )
+            else:
+                parts.append(f"[{table} | similarity: {score:.2f}] {str(r)[:300]}")
+        return "\n".join(parts)
+
+    except Exception as e:
+        return f"Vector search unavailable: {e}"
+
+
+def handle_render_canvas(args):
+    """Write HTML to the canvas content file for display."""
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from config import CANVAS_CONTENT
+
+    html = args.get("html", "")
+    if not html.strip():
+        return "Error: html parameter is empty."
+
+    CANVAS_CONTENT.write_text(html, encoding="utf-8")
+    return f"Canvas updated ({len(html)} chars). The panel will auto-refresh."
+
+
+def handle_render_memory_graph(args):
+    """Generate a memory graph visualization and render it to the canvas."""
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from config import CANVAS_CONTENT, CANVAS_TEMPLATES
+
+    focus = args.get("focus", "").lower().strip()
+
+    # Fetch data
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
+    threads = conn.execute(
+        "SELECT id, name, summary, status, last_updated FROM threads "
+        "WHERE status = 'active' ORDER BY last_updated DESC"
+    ).fetchall()
+
+    observations = conn.execute(
+        "SELECT id, content, created_at FROM observations "
+        "WHERE content NOT LIKE '[stale]%%' "
+        "ORDER BY created_at DESC LIMIT 15"
+    ).fetchall()
+    conn.close()
+
+    if not threads and not observations:
+        content = '<div class="empty-state">No active threads or observations yet.</div>'
+        template = (CANVAS_TEMPLATES / "memory_graph.html").read_text()
+        html = template.format(content=content)
+        CANVAS_CONTENT.write_text(html, encoding="utf-8")
+        return "Memory graph rendered (empty — no threads or observations)."
+
+    # Layout: threads in a column on the left, observations on the right
+    nodes_html = []
+    connections = []
+    thread_positions = {}
+
+    # Position threads
+    t_x = 30
+    t_y = 20
+    for i, t in enumerate(threads):
+        tid = f"thread-{t['id']}"
+        name = _escape_html(t["name"])
+        summary = _escape_html(t["summary"] or "")[:80]
+        is_focused = focus and focus in t["name"].lower()
+        cls = "node node-thread active"
+        if is_focused:
+            cls += " focused"
+        nodes_html.append(
+            f'<div class="{cls}" id="{tid}" '
+            f'style="left:{t_x}px; top:{t_y}px;">'
+            f'<div class="node-label">{name}</div>'
+            f'<div class="node-summary">{summary}</div>'
+            f'</div>'
+        )
+        thread_positions[t["id"]] = (t_x + 100, t_y + 20)
+        t_y += 80
+
+    # Position observations
+    o_x = 260
+    o_y = 20
+    for i, o in enumerate(observations):
+        oid = f"obs-{o['id']}"
+        text = _escape_html(o["content"])[:60]
+        ts = o["created_at"][:10] if o["created_at"] else ""
+        is_focused = focus and focus in o["content"].lower()
+        cls = "node node-observation"
+        if is_focused:
+            cls += " focused"
+        nodes_html.append(
+            f'<div class="{cls}" id="{oid}" '
+            f'style="left:{o_x}px; top:{o_y}px;">'
+            f'<div class="node-label">{text}</div>'
+            f'<div class="node-meta">{ts}</div>'
+            f'</div>'
+        )
+        # Connect to nearest thread (distribute across threads)
+        if thread_positions:
+            thread_ids = list(thread_positions.keys())
+            nearest_tid = thread_ids[min(i, len(thread_ids) - 1)]
+            tx, ty = thread_positions[nearest_tid]
+            connections.append(
+                f'<line x1="{tx}" y1="{ty}" x2="{o_x}" y2="{o_y + 15}" />'
+            )
+        o_y += 60
+
+    # Build SVG connections
+    graph_h = max(t_y, o_y) + 40
+    svg = (
+        f'<svg class="connections" style="height:{graph_h}px;">'
+        + "".join(connections)
+        + "</svg>"
+    )
+
+    content = (
+        f'<div class="graph" style="height:{graph_h}px;">'
+        + svg
+        + "".join(nodes_html)
+        + "</div>"
+    )
+
+    template = (CANVAS_TEMPLATES / "memory_graph.html").read_text()
+    html = template.format(content=content)
+    CANVAS_CONTENT.write_text(html, encoding="utf-8")
+
+    return (
+        f"Memory graph rendered: {len(threads)} threads, "
+        f"{len(observations)} observations."
+    )
+
+
+def _escape_html(text):
+    """Escape HTML special characters."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
 HANDLERS = {
     "remember": handle_remember,
     "recall_session": handle_recall_session,
@@ -1101,6 +1667,12 @@ HANDLERS = {
     "read_note": handle_read_note,
     "write_note": handle_write_note,
     "search_notes": handle_search_notes,
+    "send_telegram": handle_send_telegram,
+    "update_emotional_state": handle_update_emotional_state,
+    "update_trust": handle_update_trust,
+    "search_similar": handle_search_similar,
+    "render_canvas": handle_render_canvas,
+    "render_memory_graph": handle_render_memory_graph,
 }
 
 

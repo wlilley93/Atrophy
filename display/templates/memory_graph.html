@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{
+    background: #1a1a1a;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    padding: 24px;
+    overflow: auto;
+  }}
+  h1 {{
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #777;
+    margin-bottom: 20px;
+  }}
+  .graph {{
+    position: relative;
+    min-height: 400px;
+  }}
+  svg.connections {{
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }}
+  svg.connections line {{
+    stroke: #444;
+    stroke-width: 1;
+    opacity: 0.6;
+  }}
+  .node {{
+    position: absolute;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    line-height: 1.4;
+    max-width: 200px;
+    word-wrap: break-word;
+  }}
+  .node-thread {{
+    background: #2a2a3a;
+    border: 1px solid #4a4a6a;
+    color: #c8c8e8;
+  }}
+  .node-thread.active {{
+    border-color: #6a6aaa;
+    animation: pulse 3s ease-in-out infinite;
+  }}
+  .node-observation {{
+    background: #2a3a2a;
+    border: 1px solid #4a6a4a;
+    color: #c8e8c8;
+    font-size: 11px;
+    max-width: 160px;
+    opacity: 0.85;
+  }}
+  .node-label {{
+    font-weight: 500;
+    margin-bottom: 4px;
+  }}
+  .node-summary {{
+    font-size: 11px;
+    color: #999;
+    line-height: 1.3;
+  }}
+  .node-meta {{
+    font-size: 10px;
+    color: #666;
+    margin-top: 4px;
+  }}
+  .focused {{
+    border-color: #aa8844 !important;
+    box-shadow: 0 0 12px rgba(170, 136, 68, 0.3);
+  }}
+  @keyframes pulse {{
+    0%, 100% {{ opacity: 1; }}
+    50% {{ opacity: 0.8; }}
+  }}
+  .empty-state {{
+    text-align: center;
+    padding: 80px 20px;
+    color: #555;
+    font-size: 13px;
+  }}
+</style>
+</head>
+<body>
+  <h1>Memory Graph</h1>
+  {content}
+</body>
+</html>

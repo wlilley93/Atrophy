@@ -1,16 +1,16 @@
 """Skill loading from Obsidian vault.
 
-All skill prompts live in Companion/skills/ in Obsidian.
-She can edit them. This module reads them with a hardcoded fallback
+All skill prompts live in <agent>/skills/ in Obsidian.
+The agent can edit them. This module reads them with a hardcoded fallback
 in case the vault is unavailable.
 """
-from config import OBSIDIAN_VAULT
+from config import OBSIDIAN_AGENT_DIR
 
-_SKILLS_DIR = OBSIDIAN_VAULT / "Companion" / "skills"
+_SKILLS_DIR = OBSIDIAN_AGENT_DIR / "skills"
 
 
 def load_prompt(name: str, fallback: str = "") -> str:
-    """Read a skill prompt from Obsidian/Companion/skills/{name}.md.
+    """Read a skill prompt from Obsidian/<agent>/skills/{name}.md.
 
     Returns the file contents, or fallback if not found.
     """

@@ -22,11 +22,12 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
-JOBS_FILE = PROJECT_ROOT / "scripts" / "jobs.json"
+AGENT_NAME = os.environ.get("AGENT", "companion")
+JOBS_FILE = PROJECT_ROOT / "scripts" / "agents" / AGENT_NAME / "jobs.json"
 LAUNCH_AGENTS = Path.home() / "Library" / "LaunchAgents"
-LABEL_PREFIX = "com.atrophiedmind."
+LABEL_PREFIX = f"com.atrophiedmind.{AGENT_NAME}."
 PYTHON = sys.executable
-LOGS_DIR = PROJECT_ROOT / "logs"
+LOGS_DIR = PROJECT_ROOT / "logs" / AGENT_NAME
 
 
 def _load_jobs() -> dict:
@@ -67,7 +68,12 @@ def _plist_path(name: str) -> Path:
 
 
 def _generate_plist(name: str, job: dict) -> dict:
-    """Generate a launchd plist dict for a job."""
+    """Generate a launchd plist dict for a job.
+
+    Supports two types:
+      - "calendar" (default): uses StartCalendarInterval with a cron string
+      - "interval": uses StartInterval with seconds-based scheduling
+    """
     label = f"{LABEL_PREFIX}{name}"
     script_path = str(PROJECT_ROOT / job["script"])
 
@@ -77,13 +83,18 @@ def _generate_plist(name: str, job: dict) -> dict:
         'Label': label,
         'ProgramArguments': [PYTHON, script_path],
         'WorkingDirectory': str(PROJECT_ROOT),
-        'StartCalendarInterval': _parse_cron(job["cron"]),
         'StandardOutPath': log_path,
         'StandardErrorPath': log_path,
         'EnvironmentVariables': {
             'PATH': f"/usr/local/bin:/usr/bin:/bin:{Path(PYTHON).parent}",
         },
     }
+
+    job_type = job.get("type", "calendar")
+    if job_type == "interval":
+        plist['StartInterval'] = int(job["interval_seconds"])
+    else:
+        plist['StartCalendarInterval'] = _parse_cron(job["cron"])
 
     return plist
 
@@ -100,7 +111,11 @@ def cmd_list(args):
 
     for name, job in jobs.items():
         installed = "yes" if _plist_path(name).exists() else "no"
-        print(f"  {name:<20} {job['cron']:<20} {job['script']:<35} {installed}")
+        if job.get("type") == "interval":
+            schedule = f"every {job['interval_seconds']}s"
+        else:
+            schedule = job.get("cron", "?")
+        print(f"  {name:<20} {schedule:<20} {job['script']:<35} {installed}")
     print()
 
 
@@ -237,7 +252,10 @@ def cmd_uninstall(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Companion scheduled tasks")
+    global AGENT_NAME, JOBS_FILE, LABEL_PREFIX, LOGS_DIR
+
+    parser = argparse.ArgumentParser(description="Agent scheduled tasks")
+    parser.add_argument("--agent", default=None, help="Agent name (default: from AGENT env var)")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("list", help="Show all jobs")
@@ -263,6 +281,12 @@ def main():
     sub.add_parser("uninstall", help="Uninstall all jobs from launchd")
 
     args = parser.parse_args()
+
+    if args.agent:
+        AGENT_NAME = args.agent
+        JOBS_FILE = PROJECT_ROOT / "scripts" / "agents" / AGENT_NAME / "jobs.json"
+        LABEL_PREFIX = f"com.atrophiedmind.{AGENT_NAME}."
+        LOGS_DIR = PROJECT_ROOT / "logs" / AGENT_NAME
 
     if not args.command:
         parser.print_help()

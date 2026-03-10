@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS turns (
   content     TEXT NOT NULL,
   timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
   topic_tags  TEXT,
-  weight      INTEGER DEFAULT 1 CHECK(weight BETWEEN 1 AND 5)
+  weight      INTEGER DEFAULT 1 CHECK(weight BETWEEN 1 AND 5),
+  channel     TEXT DEFAULT 'direct',
+  embedding   BLOB
 );
 
 -- ── LAYER 2: SEMANTIC ─────────────────────────────────────────
@@ -66,7 +68,16 @@ CREATE TABLE IF NOT EXISTS observations (
   created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
   content       TEXT NOT NULL,
   source_turn   INTEGER REFERENCES turns(id),
-  incorporated  BOOLEAN DEFAULT 0
+  incorporated  BOOLEAN DEFAULT 0,
+  -- Bi-temporal columns
+  valid_from    DATETIME,
+  valid_to      DATETIME,
+  learned_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  expired_at    DATETIME,
+  confidence    REAL DEFAULT 0.5,
+  activation    REAL DEFAULT 1.0,
+  last_accessed DATETIME,
+  embedding     BLOB
 );
 
 -- ── BOOKMARKS ──────────────────────────────────────────────────
@@ -77,7 +88,8 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   session_id  INTEGER REFERENCES sessions(id),
   created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
   moment      TEXT NOT NULL,
-  quote       TEXT
+  quote       TEXT,
+  embedding   BLOB
 );
 
 -- ── AUDIT ────────────────────────────────────────────────────
@@ -90,6 +102,52 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   tool_name   TEXT NOT NULL,
   input_json  TEXT,
   flagged     BOOLEAN DEFAULT 0
+);
+
+-- ── HEARTBEATS ──────────────────────────────────────────────────
+-- Log of every heartbeat evaluation, whether it reached out or not.
+
+CREATE TABLE IF NOT EXISTS heartbeats (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+  decision  TEXT NOT NULL,
+  reason    TEXT,
+  message   TEXT
+);
+
+-- ── COHERENCE CHECKS ──────────────────────────────────────────
+-- SENTINEL monitor logs — tracks mid-session degradation checks.
+
+CREATE TABLE IF NOT EXISTS coherence_checks (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    score     REAL,
+    degraded  BOOLEAN,
+    signals   TEXT,
+    action    TEXT DEFAULT 'none'
+);
+
+-- ── KNOWLEDGE GRAPH ──────────────────────────────────────────
+-- Entity extraction and relationship tracking.
+
+CREATE TABLE IF NOT EXISTS entities (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL UNIQUE,
+    entity_type   TEXT DEFAULT 'concept',  -- person, concept, place, event, project
+    first_seen    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_seen     DATETIME,
+    mention_count INTEGER DEFAULT 1,
+    embedding     BLOB
+);
+
+CREATE TABLE IF NOT EXISTS entity_relations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_a    INTEGER REFERENCES entities(id),
+    entity_b    INTEGER REFERENCES entities(id),
+    relation    TEXT,           -- "discussed_with", "related_to", "part_of", etc.
+    strength    REAL DEFAULT 0.5,
+    first_seen  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_seen   DATETIME
 );
 
 -- ── INDEXES ───────────────────────────────────────────────────
@@ -108,3 +166,9 @@ CREATE INDEX IF NOT EXISTS idx_tool_calls_session
   ON tool_calls(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_flagged
   ON tool_calls(flagged);
+CREATE INDEX IF NOT EXISTS idx_observations_activation
+  ON observations(activation);
+CREATE INDEX IF NOT EXISTS idx_entities_name
+  ON entities(name);
+CREATE INDEX IF NOT EXISTS idx_entity_relations_pair
+  ON entity_relations(entity_a, entity_b);

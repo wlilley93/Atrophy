@@ -20,15 +20,16 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
-from config import AVATAR_ENABLED, INPUT_MODE
+from config import AVATAR_ENABLED, INPUT_MODE, AGENT_DISPLAY_NAME, USER_NAME, OPENING_LINE
 from core import memory
 from core.session import Session
 from core.context import load_system_prompt
 from core.inference import (
-    stream_inference, run_inference_turn,
+    stream_inference, run_inference_turn, run_memory_flush,
     TextDelta, SentenceReady, ToolUse, StreamDone, StreamError, Compacting,
 )
 from core.agency import detect_mood_shift, should_follow_up, followup_prompt
+from core.sentinel import run_coherence_check  # SENTINEL — periodic coherence monitor (GUI uses timer; CLI: future use)
 from voice.tts import synthesise, play, speak
 from voice.stt import transcribe
 from voice.audio import PushToTalk
@@ -70,7 +71,7 @@ async def _get_text_input() -> str | None:
     """Read a line of text input (non-blocking)."""
     loop = asyncio.get_event_loop()
     try:
-        line = await loop.run_in_executor(None, input, "  Will: ")
+        line = await loop.run_in_executor(None, input, f"  {USER_NAME}: ")
     except EOFError:
         return None
     line = line.strip()
@@ -81,7 +82,7 @@ async def _get_dual_input(ptt: PushToTalk) -> str | None:
     """Wait for either Ctrl+voice or typed text, whichever comes first."""
     loop = asyncio.get_event_loop()
     try:
-        line = await loop.run_in_executor(None, input, "  Will (type or Enter then hold Ctrl): ")
+        line = await loop.run_in_executor(None, input, f"  {USER_NAME} (type or Enter then hold Ctrl): ")
     except EOFError:
         return None
 
@@ -135,6 +136,7 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
     full_text = ""
     session_id = ""
     first_text = True
+    needs_memory_flush = False
 
     while True:
         event = await queue.get()
@@ -143,7 +145,7 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
 
         if isinstance(event, TextDelta):
             if first_text:
-                print("\r               \r  Companion: ", end="", flush=True)
+                print(f"\r               \r  {AGENT_DISPLAY_NAME}: ", end="", flush=True)
                 first_text = False
             print(event.text, end="", flush=True)
 
@@ -156,6 +158,9 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
                 None, memory.log_tool_call,
                 session.session_id, event.name, event.input_json,
             )
+
+        elif isinstance(event, Compacting):
+            needs_memory_flush = True
 
         elif isinstance(event, StreamDone):
             full_text = event.full_text
@@ -176,10 +181,19 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
     if full_text:
         loop.run_in_executor(None, session.add_turn, "companion", full_text)
 
+    # Pre-compaction memory flush
+    if needs_memory_flush:
+        print("  [memory flush: compaction detected]")
+        flush_sid = await loop.run_in_executor(
+            None, run_memory_flush, session.cli_session_id, system_prompt,
+        )
+        if flush_sid:
+            session.set_cli_session_id(flush_sid)
+
     # Follow-up agency — 15% chance of a second unprompted thought
     if full_text and should_follow_up():
         await asyncio.sleep(random.uniform(3.0, 6.0))
-        print("  Companion: ", end="", flush=True)
+        print(f"  {AGENT_DISPLAY_NAME}: ", end="", flush=True)
 
         followup_queue: asyncio.Queue = asyncio.Queue()
 
@@ -239,6 +253,7 @@ async def _process_turn_text_only(user_text: str, session: Session, system_promp
     full_text = ""
     session_id = ""
     first_text = True
+    needs_memory_flush = False
 
     while True:
         event = await queue.get()
@@ -247,7 +262,7 @@ async def _process_turn_text_only(user_text: str, session: Session, system_promp
 
         if isinstance(event, TextDelta):
             if first_text:
-                print("\r               \r  Companion: ", end="", flush=True)
+                print(f"\r               \r  {AGENT_DISPLAY_NAME}: ", end="", flush=True)
                 first_text = False
             print(event.text, end="", flush=True)
 
@@ -256,6 +271,9 @@ async def _process_turn_text_only(user_text: str, session: Session, system_promp
                 None, memory.log_tool_call,
                 session.session_id, event.name, event.input_json,
             )
+
+        elif isinstance(event, Compacting):
+            needs_memory_flush = True
 
         elif isinstance(event, StreamDone):
             full_text = event.full_text
@@ -274,10 +292,19 @@ async def _process_turn_text_only(user_text: str, session: Session, system_promp
     if full_text:
         session.add_turn("companion", full_text)
 
+    # Pre-compaction memory flush
+    if needs_memory_flush:
+        print("  [memory flush: compaction detected]")
+        flush_sid = await loop.run_in_executor(
+            None, run_memory_flush, session.cli_session_id, system_prompt,
+        )
+        if flush_sid:
+            session.set_cli_session_id(flush_sid)
+
     # Follow-up agency — 15% chance of a second unprompted thought
     if full_text and should_follow_up():
         await asyncio.sleep(random.uniform(3.0, 6.0))
-        print("  Companion: ", end="", flush=True)
+        print(f"  {AGENT_DISPLAY_NAME}: ", end="", flush=True)
 
         followup_queue: asyncio.Queue = asyncio.Queue()
 
@@ -319,14 +346,15 @@ async def run_cli():
     mode = INPUT_MODE
     cli_status = "resuming" if session.cli_session_id else "new"
 
+    title = f"THE ATROPHIED MIND -- {AGENT_DISPLAY_NAME}"
     print()
-    print("  +--------------------------------------+")
-    print("  |   THE ATROPHIED MIND -- Companion    |")
-    print("  |   Voice Loop v2                      |")
+    print(f"  +{'-' * 38}+")
+    print(f"  |   {title:<35}|")
+    print(f"  |   Voice Loop v2{' ' * 22}|")
     print(f"  |   Session: {session.session_id:<25}|")
     print(f"  |   CLI: {cli_status:<29}|")
     print(f"  |   Input: {mode:<27}|")
-    print("  +--------------------------------------+")
+    print(f"  +{'-' * 38}+")
     print()
 
     if mode == "dual":
@@ -339,9 +367,9 @@ async def run_cli():
 
     # First-ever session: opening line
     if not session.cli_session_id:
-        opening = "Ready. Where are we?"
+        opening = OPENING_LINE
         session.add_turn("companion", opening)
-        print(f"  Companion: {opening}")
+        print(f"  {AGENT_DISPLAY_NAME}: {opening}")
         print()
         try:
             await speak(opening)
@@ -368,7 +396,7 @@ async def run_cli():
                     "Worth checking in — are you grounded? "
                     "We can keep going, but name where you are first."
                 )
-                print(f"\n  Companion: {limit_msg}\n")
+                print(f"\n  {AGENT_DISPLAY_NAME}: {limit_msg}\n")
                 try:
                     await speak(limit_msg)
                 except Exception:
@@ -387,7 +415,7 @@ async def run_cli():
                 continue
 
             if mode != "text":
-                print(f"  Will: {user_text}")
+                print(f"  {USER_NAME}: {user_text}")
                 print()
 
             await _process_turn(user_text, session, system_prompt)
@@ -406,19 +434,20 @@ async def run_text_only():
 
     cli_status = "resuming" if session.cli_session_id else "new"
 
+    title = f"THE ATROPHIED MIND -- {AGENT_DISPLAY_NAME}"
     print()
-    print("  +--------------------------------------+")
-    print("  |   THE ATROPHIED MIND -- Companion    |")
-    print("  |   Text Only                          |")
+    print(f"  +{'-' * 38}+")
+    print(f"  |   {title:<35}|")
+    print(f"  |   Text Only{' ' * 26}|")
     print(f"  |   Session: {session.session_id:<25}|")
     print(f"  |   CLI: {cli_status:<29}|")
-    print("  +--------------------------------------+")
+    print(f"  +{'-' * 38}+")
     print()
 
     if not session.cli_session_id:
-        opening = "Ready. Where are we?"
+        opening = OPENING_LINE
         session.add_turn("companion", opening)
-        print(f"  Companion: {opening}")
+        print(f"  {AGENT_DISPLAY_NAME}: {opening}")
         print()
     else:
         # Resuming — proactive memory check
@@ -509,6 +538,18 @@ def _load_cached_opening() -> dict | None:
         data = json.loads(OPENING_CACHE.read_text())
         OPENING_CACHE.unlink()  # one-shot — delete after use
         if data.get("text"):
+            # Discard if time-of-day bracket has shifted
+            from datetime import datetime
+            cached_hour = data.get("hour", -1)
+            now_hour = datetime.now().hour
+            def _bracket(h):
+                if h < 6: return "night"
+                if h < 12: return "morning"
+                if h < 18: return "afternoon"
+                return "evening"
+            if _bracket(cached_hour) != _bracket(now_hour):
+                print(f"  [Cached opening stale — was {_bracket(cached_hour)}, now {_bracket(now_hour)}]")
+                return None
             # Verify audio file still exists
             audio = data.get("audio_path", "")
             if audio and not Path(audio).exists():
@@ -536,10 +577,12 @@ def _cache_next_opening(system: str, cli_session_id: str | None, synth_fn):
             except Exception:
                 pass
 
+        from datetime import datetime
         OPENING_CACHE.write_text(json.dumps({
             "text": text,
             "audio_path": audio_path,
             "cli_session_id": cli_id,
+            "hour": datetime.now().hour,
         }))
         print("  [Cached next opening]")
     except Exception as e:
@@ -553,25 +596,11 @@ def run_gui():
     session = _init()
     system = load_system_prompt()
 
-    # Check for cached opening from previous session
-    cached = _load_cached_opening()
-
-    if cached:
-        # Use cached opening — instant startup
-        def on_opening(_ignored: str) -> str:
-            if cached.get("cli_session_id"):
-                session.set_cli_session_id(cached["cli_session_id"])
-            return cached["text"]
-
-        # Pass cached audio path to skip TTS
-        cached_audio = cached.get("audio_path", "")
-    else:
-        # No cache — generate live (slower)
-        def on_opening(_ignored: str) -> str:
-            text, cli_id = _generate_opening(system, session.cli_session_id)
-            session.set_cli_session_id(cli_id)
-            return text
-        cached_audio = ""
+    # Always generate opening live — time-of-day context must be fresh
+    def on_opening(_ignored: str) -> str:
+        text, cli_id = _generate_opening(system, session.cli_session_id)
+        session.set_cli_session_id(cli_id)
+        return text
 
     from display.window import run_app
     run_app(
@@ -580,18 +609,26 @@ def run_gui():
         system_prompt=system,
         cli_session_id=session.cli_session_id,
         session=session,
-        cached_opening_audio=cached_audio,
+        cached_opening_audio="",
     )
 
 
 # ── Entry point ──
 
 def main():
-    parser = argparse.ArgumentParser(description="The Companion")
+    parser = argparse.ArgumentParser(description="The Atrophied Mind")
+    parser.add_argument("--agent", default=None, help="Agent name (default: from AGENT env var)")
     parser.add_argument("--gui", action="store_true", help="Launch with PyQt5 display")
     parser.add_argument("--text", action="store_true", help="Text-only mode (no mic/TTS)")
     parser.add_argument("--cli", action="store_true", help="Voice+text loop (default)")
     args = parser.parse_args()
+
+    if args.agent:
+        os.environ["AGENT"] = args.agent
+        # Re-import config to pick up new agent
+        import importlib
+        import config as _cfg
+        importlib.reload(_cfg)
 
     if args.gui:
         run_gui()

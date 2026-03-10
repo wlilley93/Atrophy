@@ -22,13 +22,23 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLineEdit, QPushButton, QMenu, QSystemTrayIcon,
+    QScrollArea, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QComboBox,
+    QCheckBox, QSpinBox, QFrame, QDoubleSpinBox,
 )
 from PyQt5.QtMultimedia import (
     QMediaPlayer, QMediaContent, QAbstractVideoSurface, QAbstractVideoBuffer,
     QVideoFrame,
 )
 
-from config import WINDOW_WIDTH, WINDOW_HEIGHT, IDLE_LOOP
+from config import WINDOW_WIDTH, WINDOW_HEIGHT, IDLE_LOOP, AGENT_DISPLAY_NAME, USER_NAME
+
+# Canvas — PIP overlay (graceful if QWebEngineView unavailable)
+try:
+    from display.canvas import CanvasOverlay, HAS_WEBENGINE
+    HAS_CANVAS = True
+except ImportError:
+    HAS_CANVAS = False
+    HAS_WEBENGINE = False
 
 _W = WINDOW_WIDTH
 _H = WINDOW_HEIGHT
@@ -173,6 +183,36 @@ class StreamingPipelineWorker(QThread):
         tts_thread.join(timeout=30)
 
         self.done.emit(full_text, session_id)
+
+
+class MemoryFlushWorker(QThread):
+    """Silent background memory flush before compaction."""
+    finished_flush = pyqtSignal(str)  # new session_id or ""
+
+    def __init__(self, cli_session_id, system):
+        super().__init__()
+        self._cli_session_id = cli_session_id
+        self._system = system
+
+    def run(self):
+        from core.inference import run_memory_flush
+        new_sid = run_memory_flush(self._cli_session_id, self._system)
+        self.finished_flush.emit(new_sid or "")
+
+
+class CoherenceWorker(QThread):
+    """Background SENTINEL coherence check."""
+    finished_check = pyqtSignal(str)  # new session_id or ""
+
+    def __init__(self, cli_session_id, system):
+        super().__init__()
+        self._cli_session_id = cli_session_id
+        self._system = system
+
+    def run(self):
+        from core.sentinel import run_coherence_check
+        new_sid = run_coherence_check(self._cli_session_id, self._system)
+        self.finished_check.emit(new_sid or "")
 
 
 class OpeningWorker(QThread):
@@ -604,6 +644,769 @@ class _MinimizeButton(QPushButton):
         p.end()
 
 
+class _WakeButton(QPushButton):
+    """Wake word listener toggle button — microphone with radio waves."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(34, 34)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self._active = False
+
+    def set_active(self, active):
+        self._active = active
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        # Background pill
+        bg = QPainterPath()
+        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
+        if self._active:
+            # Subtle green tint when active
+            p.fillPath(bg, QColor(30, 80, 40, 210))
+        else:
+            p.fillPath(bg, QColor(20, 20, 22, 210))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(bg)
+        # Microphone icon
+        cx, cy = 17, 15
+        alpha = 220 if self._active else 120
+        col = QColor(255, 255, 255, alpha)
+        p.setPen(QPen(col, 1.6))
+        p.setBrush(col)
+        # Mic body (rounded rect)
+        p.drawRoundedRect(QRectF(cx - 3, cy - 6, 6, 10), 3, 3)
+        # Mic cup
+        p.setBrush(Qt.NoBrush)
+        p.drawArc(cx - 6, cy - 4, 12, 14, 0, -180 * 16)
+        # Stand
+        p.drawLine(cx, cy + 10, cx, cy + 13)
+        p.drawLine(cx - 4, cy + 13, cx + 4, cy + 13)
+        # Radio waves when active
+        if self._active:
+            wave_col = QColor(100, 255, 130, 160)
+            p.setPen(QPen(wave_col, 1.2))
+            p.setBrush(Qt.NoBrush)
+            p.drawArc(cx - 10, cy - 10, 20, 20, 30 * 16, 120 * 16)
+            p.drawArc(cx - 13, cy - 13, 26, 26, 30 * 16, 120 * 16)
+        p.end()
+
+
+class _SettingsButton(QPushButton):
+    """Gear icon button for settings panel."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(34, 34)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("QPushButton { background: transparent; border: none; }")
+        self._active = False
+
+    def set_active(self, active):
+        self._active = active
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        bg = QPainterPath()
+        bg.addRoundedRect(QRectF(0, 0, 34, 34), 17, 17)
+        if self._active:
+            p.fillPath(bg, QColor(40, 40, 50, 210))
+        else:
+            p.fillPath(bg, QColor(20, 20, 22, 210))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(bg)
+        # Gear icon
+        cx, cy = 17, 17
+        alpha = 220 if self._active else 120
+        col = QColor(255, 255, 255, alpha)
+        p.setPen(QPen(col, 1.6))
+        p.setBrush(Qt.NoBrush)
+        # Inner circle
+        p.drawEllipse(cx - 4, cy - 4, 8, 8)
+        # Gear teeth (8 lines radiating out)
+        import math
+        for i in range(8):
+            angle = i * math.pi / 4
+            x1 = cx + 6 * math.cos(angle)
+            y1 = cy + 6 * math.sin(angle)
+            x2 = cx + 9 * math.cos(angle)
+            y2 = cy + 9 * math.sin(angle)
+            p.drawLine(int(x1), int(y1), int(x2), int(y2))
+        p.end()
+
+
+# ── Settings panel ──
+
+_SETTINGS_STYLE = """
+    QWidget#settingsPanel {
+        background: transparent;
+    }
+    QScrollArea {
+        background: transparent;
+        border: none;
+    }
+    QScrollArea > QWidget > QWidget {
+        background: transparent;
+    }
+    QScrollBar:vertical {
+        background: rgba(255, 255, 255, 10);
+        width: 6px;
+        margin: 0;
+        border-radius: 3px;
+    }
+    QScrollBar::handle:vertical {
+        background: rgba(255, 255, 255, 40);
+        min-height: 30px;
+        border-radius: 3px;
+    }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+        height: 0;
+    }
+    QLabel {
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 13px;
+        background: transparent;
+    }
+    QLabel#sectionHeader {
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 11px;
+        font-weight: bold;
+        text-transform: uppercase;
+        padding-top: 12px;
+        padding-bottom: 4px;
+        background: transparent;
+    }
+    QLabel#settingLabel {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 12px;
+        background: transparent;
+    }
+    QSlider::groove:horizontal {
+        height: 4px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 2px;
+    }
+    QSlider::handle:horizontal {
+        width: 14px;
+        height: 14px;
+        margin: -5px 0;
+        background: rgba(255, 255, 255, 0.8);
+        border-radius: 7px;
+    }
+    QSlider::sub-page:horizontal {
+        background: rgba(255, 255, 255, 0.35);
+        border-radius: 2px;
+    }
+    QComboBox {
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+        min-width: 120px;
+    }
+    QComboBox::drop-down {
+        border: none;
+        width: 20px;
+    }
+    QComboBox::down-arrow {
+        image: none;
+        border: none;
+    }
+    QComboBox QAbstractItemView {
+        background: rgb(30, 30, 35);
+        color: rgba(255, 255, 255, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        selection-background-color: rgba(255, 255, 255, 0.15);
+    }
+    QCheckBox {
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 12px;
+        spacing: 6px;
+        background: transparent;
+    }
+    QCheckBox::indicator {
+        width: 16px;
+        height: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.05);
+    }
+    QCheckBox::indicator:checked {
+        background: rgba(255, 255, 255, 0.3);
+        border-color: rgba(255, 255, 255, 0.5);
+    }
+    QSpinBox, QDoubleSpinBox {
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+        min-width: 80px;
+    }
+    QSpinBox::up-button, QSpinBox::down-button,
+    QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+        width: 16px;
+        border: none;
+        background: rgba(255, 255, 255, 0.05);
+    }
+    QLineEdit#settingsInput {
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+    QPushButton#saveButton {
+        background: rgba(255, 255, 255, 0.12);
+        color: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        padding: 8px 20px;
+        font-size: 13px;
+        font-weight: bold;
+    }
+    QPushButton#saveButton:hover {
+        background: rgba(255, 255, 255, 0.18);
+    }
+    QPushButton#closeButton {
+        background: transparent;
+        color: rgba(255, 255, 255, 0.5);
+        border: none;
+        font-size: 20px;
+        font-weight: bold;
+    }
+    QPushButton#closeButton:hover {
+        color: rgba(255, 255, 255, 0.9);
+    }
+"""
+
+
+class SettingsPanel(QWidget):
+    """Full-screen settings overlay — dark, scrollable, grouped by category."""
+    closed = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("settingsPanel")
+        self.setStyleSheet(_SETTINGS_STYLE)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self._controls = {}  # key → widget, for reading values back
+        self._build_ui()
+        self.hide()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Header bar
+        header = QHBoxLayout()
+        header.setContentsMargins(24, 16, 24, 8)
+        title = QLabel("Settings")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: rgba(255,255,255,0.9);")
+        header.addWidget(title)
+        header.addStretch()
+
+        close_btn = QPushButton("×")
+        close_btn.setObjectName("closeButton")
+        close_btn.setFixedSize(32, 32)
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.clicked.connect(self._close)
+        header.addWidget(close_btn)
+        layout.addLayout(header)
+
+        # Scrollable content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        content = QWidget()
+        self._content_layout = QVBoxLayout(content)
+        self._content_layout.setContentsMargins(24, 8, 24, 24)
+        self._content_layout.setSpacing(4)
+
+        self._build_sections()
+
+        self._content_layout.addStretch()
+
+        # Save to .env button
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        save_btn = QPushButton("Save to .env")
+        save_btn.setObjectName("saveButton")
+        save_btn.setCursor(Qt.PointingHandCursor)
+        save_btn.clicked.connect(self._save_to_env)
+        save_row.addWidget(save_btn)
+        apply_btn = QPushButton("Apply")
+        apply_btn.setObjectName("saveButton")
+        apply_btn.setCursor(Qt.PointingHandCursor)
+        apply_btn.clicked.connect(self._apply_settings)
+        save_row.addWidget(apply_btn)
+        save_row.addStretch()
+        self._content_layout.addLayout(save_row)
+
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+
+    def _add_section(self, title):
+        label = QLabel(title)
+        label.setObjectName("sectionHeader")
+        self._content_layout.addWidget(label)
+        # Separator line
+        line = QFrame()
+        line.setFixedHeight(1)
+        line.setStyleSheet("background: rgba(255,255,255,0.08);")
+        self._content_layout.addWidget(line)
+
+    def _add_slider(self, key, label, min_val, max_val, current, decimals=2, step=0.01):
+        row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setObjectName("settingLabel")
+        lbl.setFixedWidth(160)
+        row.addWidget(lbl)
+
+        slider = QSlider(Qt.Horizontal)
+        scale = 10 ** decimals
+        slider.setMinimum(int(min_val * scale))
+        slider.setMaximum(int(max_val * scale))
+        slider.setValue(int(current * scale))
+        slider.setSingleStep(int(step * scale))
+
+        val_label = QLabel(f"{current:.{decimals}f}")
+        val_label.setFixedWidth(50)
+        val_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        val_label.setStyleSheet("color: rgba(255,255,255,0.6); font-size: 12px;")
+
+        def on_change(v):
+            real = v / scale
+            val_label.setText(f"{real:.{decimals}f}")
+
+        slider.valueChanged.connect(on_change)
+        row.addWidget(slider, 1)
+        row.addWidget(val_label)
+
+        self._content_layout.addLayout(row)
+        self._controls[key] = ("slider", slider, scale, decimals)
+
+    def _add_combo(self, key, label, options, current):
+        row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setObjectName("settingLabel")
+        lbl.setFixedWidth(160)
+        row.addWidget(lbl)
+
+        combo = QComboBox()
+        combo.addItems(options)
+        if current in options:
+            combo.setCurrentText(current)
+        row.addWidget(combo)
+        row.addStretch()
+
+        self._content_layout.addLayout(row)
+        self._controls[key] = ("combo", combo)
+
+    def _add_checkbox(self, key, label, checked):
+        row = QHBoxLayout()
+        cb = QCheckBox(label)
+        cb.setChecked(checked)
+        row.addWidget(cb)
+        row.addStretch()
+
+        self._content_layout.addLayout(row)
+        self._controls[key] = ("checkbox", cb)
+
+    def _add_spinbox(self, key, label, min_val, max_val, current, suffix=""):
+        row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setObjectName("settingLabel")
+        lbl.setFixedWidth(160)
+        row.addWidget(lbl)
+
+        spin = QSpinBox()
+        spin.setMinimum(min_val)
+        spin.setMaximum(max_val)
+        spin.setValue(current)
+        if suffix:
+            spin.setSuffix(f" {suffix}")
+        row.addWidget(spin)
+        row.addStretch()
+
+        self._content_layout.addLayout(row)
+        self._controls[key] = ("spinbox", spin)
+
+    def _add_text(self, key, label, current, password=False):
+        row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setObjectName("settingLabel")
+        lbl.setFixedWidth(160)
+        row.addWidget(lbl)
+
+        inp = QLineEdit()
+        inp.setObjectName("settingsInput")
+        inp.setText(str(current))
+        if password:
+            inp.setEchoMode(QLineEdit.Password)
+        row.addWidget(inp, 1)
+
+        self._content_layout.addLayout(row)
+        self._controls[key] = ("text", inp)
+
+    def _add_info(self, key, label, value):
+        row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setObjectName("settingLabel")
+        lbl.setFixedWidth(160)
+        row.addWidget(lbl)
+
+        val = QLabel(str(value))
+        val.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 12px;")
+        val.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        row.addWidget(val)
+        row.addStretch()
+
+        self._content_layout.addLayout(row)
+        self._controls[key] = ("info", val)
+
+    def _build_sections(self):
+        import config as cfg
+
+        # ── Agent Identity ──
+        self._add_section("AGENT IDENTITY")
+        self._add_info("agent_name", "Agent Slug", cfg.AGENT_NAME)
+        self._add_text("agent_display_name", "Display Name", cfg.AGENT_DISPLAY_NAME)
+        self._add_text("user_name", "User Name", cfg.USER_NAME)
+        self._add_text("opening_line", "Opening Line", cfg.OPENING_LINE)
+        self._add_text("wake_words", "Wake Words",
+                       ", ".join(cfg.WAKE_WORDS))
+        self._add_text("obsidian_subdir", "Obsidian Subdir",
+                       cfg.AGENT.get("obsidian_subdir", cfg.AGENT_DISPLAY_NAME))
+
+        # ── Display / Window ──
+        self._add_section("WINDOW")
+        self._add_spinbox("window_width", "Window Width",
+                          300, 1920, cfg.WINDOW_WIDTH, suffix="px")
+        self._add_spinbox("window_height", "Window Height",
+                          400, 1080, cfg.WINDOW_HEIGHT, suffix="px")
+        self._add_text("window_title", "Window Title",
+                       cfg.AGENT.get("display", {}).get("title",
+                           f"THE ATROPHIED MIND -- {cfg.AGENT_DISPLAY_NAME}"))
+        self._add_checkbox("avatar_enabled", "Avatar Enabled",
+                           cfg.AVATAR_ENABLED)
+        self._add_spinbox("avatar_resolution", "Avatar Resolution",
+                          128, 1024, cfg.AVATAR_RESOLUTION)
+
+        # ── Voice / TTS ──
+        self._add_section("VOICE & TTS")
+        self._add_combo("tts_backend", "TTS Backend",
+                        ["elevenlabs", "fal", "none"], cfg.TTS_BACKEND)
+        self._add_text("elevenlabs_api_key", "ElevenLabs API Key",
+                       cfg.ELEVENLABS_API_KEY, password=True)
+        self._add_text("elevenlabs_voice_id", "ElevenLabs Voice ID",
+                       cfg.ELEVENLABS_VOICE_ID)
+        self._add_combo("elevenlabs_model", "ElevenLabs Model",
+                        ["eleven_v3", "eleven_v2", "eleven_multilingual_v2",
+                         "eleven_turbo_v2_5", "eleven_flash_v2_5"],
+                        cfg.ELEVENLABS_MODEL)
+        self._add_slider("elevenlabs_stability", "Stability",
+                         0.0, 1.0, cfg.ELEVENLABS_STABILITY)
+        self._add_slider("elevenlabs_similarity", "Similarity",
+                         0.0, 1.0, cfg.ELEVENLABS_SIMILARITY)
+        self._add_slider("elevenlabs_style", "Style",
+                         0.0, 1.0, cfg.ELEVENLABS_STYLE)
+        self._add_slider("tts_playback_rate", "Playback Rate",
+                         0.5, 2.0, cfg.TTS_PLAYBACK_RATE)
+        self._add_text("fal_voice_id", "Fal Voice ID", cfg.FAL_VOICE_ID)
+
+        # ── Input ──
+        self._add_section("INPUT")
+        self._add_combo("input_mode", "Input Mode",
+                        ["dual", "voice", "text"], cfg.INPUT_MODE)
+        self._add_text("ptt_key", "Push-to-Talk Key", cfg.PTT_KEY)
+        self._add_checkbox("wake_word_enabled", "Wake Word Detection",
+                           cfg.WAKE_WORD_ENABLED)
+        self._add_spinbox("wake_chunk_seconds", "Wake Chunk Duration",
+                          1, 10, cfg.WAKE_CHUNK_SECONDS, suffix="sec")
+
+        # ── Audio Capture ──
+        self._add_section("AUDIO CAPTURE")
+        self._add_spinbox("sample_rate", "Sample Rate",
+                          8000, 48000, cfg.SAMPLE_RATE, suffix="Hz")
+        self._add_spinbox("max_record_sec", "Max Record Duration",
+                          10, 300, cfg.MAX_RECORD_SEC, suffix="sec")
+
+        # ── Inference ──
+        self._add_section("INFERENCE")
+        self._add_text("claude_bin", "Claude Binary", cfg.CLAUDE_BIN)
+        self._add_combo("claude_effort", "Claude Effort",
+                        ["low", "medium", "high"], cfg.CLAUDE_EFFORT)
+        self._add_checkbox("adaptive_effort", "Adaptive Effort",
+                           cfg.ADAPTIVE_EFFORT)
+
+        # ── Memory ──
+        self._add_section("MEMORY & CONTEXT")
+        self._add_spinbox("context_summaries", "Context Summaries",
+                          0, 20, cfg.CONTEXT_SUMMARIES)
+        self._add_spinbox("max_context_tokens", "Max Context Tokens",
+                          10000, 500000, cfg.MAX_CONTEXT_TOKENS)
+        self._add_slider("vector_search_weight", "Vector Search Weight",
+                         0.0, 1.0, cfg.VECTOR_SEARCH_WEIGHT)
+        self._add_text("embedding_model", "Embedding Model", cfg.EMBEDDING_MODEL)
+        self._add_spinbox("embedding_dim", "Embedding Dimensions",
+                          64, 2048, cfg.EMBEDDING_DIM)
+
+        # ── Session ──
+        self._add_section("SESSION")
+        self._add_spinbox("session_soft_limit", "Soft Limit",
+                          10, 480, cfg.SESSION_SOFT_LIMIT_MINS, suffix="min")
+
+        # ── Heartbeat ──
+        self._add_section("HEARTBEAT")
+        self._add_spinbox("heartbeat_start", "Active Start Hour",
+                          0, 23, cfg.HEARTBEAT_ACTIVE_START, suffix="h")
+        self._add_spinbox("heartbeat_end", "Active End Hour",
+                          0, 23, cfg.HEARTBEAT_ACTIVE_END, suffix="h")
+        self._add_spinbox("heartbeat_interval", "Interval",
+                          5, 120, cfg.HEARTBEAT_INTERVAL_MINS, suffix="min")
+
+        # ── Paths ──
+        self._add_section("PATHS")
+        self._add_text("obsidian_vault", "Obsidian Vault",
+                       str(cfg.OBSIDIAN_VAULT))
+        self._add_info("db_path", "Database", str(cfg.DB_PATH))
+        self._add_info("whisper_bin", "Whisper Binary", str(cfg.WHISPER_BIN))
+
+        # ── Telegram ──
+        self._add_section("TELEGRAM")
+        self._add_text("telegram_bot_token", "Bot Token",
+                       cfg.TELEGRAM_BOT_TOKEN, password=True)
+        self._add_text("telegram_chat_id", "Chat ID",
+                       cfg.TELEGRAM_CHAT_ID)
+
+    def _get_value(self, key):
+        """Read the current value from a control."""
+        if key not in self._controls:
+            return None
+        kind = self._controls[key][0]
+        if kind == "slider":
+            _, slider, scale, decimals = self._controls[key]
+            return round(slider.value() / scale, decimals)
+        elif kind == "combo":
+            return self._controls[key][1].currentText()
+        elif kind == "checkbox":
+            return self._controls[key][1].isChecked()
+        elif kind == "spinbox":
+            return self._controls[key][1].value()
+        elif kind == "text":
+            return self._controls[key][1].text()
+        elif kind == "info":
+            return self._controls[key][1].text()
+        return None
+
+    def _apply_settings(self):
+        """Apply current settings to the running config module."""
+        import config as cfg
+
+        # ── Agent identity ──
+        cfg.AGENT_DISPLAY_NAME = self._get_value("agent_display_name")
+        cfg.USER_NAME = self._get_value("user_name")
+        cfg.OPENING_LINE = self._get_value("opening_line")
+        wake_str = self._get_value("wake_words") or ""
+        new_wake = [w.strip() for w in wake_str.split(",") if w.strip()]
+        wake_changed = new_wake != cfg.WAKE_WORDS
+        cfg.WAKE_WORDS = new_wake
+
+        # ── Window ──
+        cfg.WINDOW_WIDTH = self._get_value("window_width")
+        cfg.WINDOW_HEIGHT = self._get_value("window_height")
+        cfg.AVATAR_ENABLED = self._get_value("avatar_enabled")
+        cfg.AVATAR_RESOLUTION = self._get_value("avatar_resolution")
+
+        # ── Voice / TTS ──
+        cfg.TTS_BACKEND = self._get_value("tts_backend")
+        cfg.ELEVENLABS_API_KEY = self._get_value("elevenlabs_api_key")
+        cfg.ELEVENLABS_VOICE_ID = self._get_value("elevenlabs_voice_id")
+        cfg.ELEVENLABS_MODEL = self._get_value("elevenlabs_model")
+        cfg.ELEVENLABS_STABILITY = self._get_value("elevenlabs_stability")
+        cfg.ELEVENLABS_SIMILARITY = self._get_value("elevenlabs_similarity")
+        cfg.ELEVENLABS_STYLE = self._get_value("elevenlabs_style")
+        cfg.TTS_PLAYBACK_RATE = self._get_value("tts_playback_rate")
+        cfg.FAL_VOICE_ID = self._get_value("fal_voice_id")
+
+        # ── Input ──
+        cfg.INPUT_MODE = self._get_value("input_mode")
+        cfg.PTT_KEY = self._get_value("ptt_key")
+        cfg.WAKE_WORD_ENABLED = self._get_value("wake_word_enabled")
+        cfg.WAKE_CHUNK_SECONDS = self._get_value("wake_chunk_seconds")
+
+        # ── Audio ──
+        cfg.SAMPLE_RATE = self._get_value("sample_rate")
+        cfg.MAX_RECORD_SEC = self._get_value("max_record_sec")
+
+        # ── Inference ──
+        cfg.CLAUDE_BIN = self._get_value("claude_bin")
+        cfg.CLAUDE_EFFORT = self._get_value("claude_effort")
+        cfg.ADAPTIVE_EFFORT = self._get_value("adaptive_effort")
+
+        # ── Memory ──
+        cfg.CONTEXT_SUMMARIES = self._get_value("context_summaries")
+        cfg.MAX_CONTEXT_TOKENS = self._get_value("max_context_tokens")
+        cfg.VECTOR_SEARCH_WEIGHT = self._get_value("vector_search_weight")
+        cfg.EMBEDDING_MODEL = self._get_value("embedding_model")
+        cfg.EMBEDDING_DIM = self._get_value("embedding_dim")
+
+        # ── Session ──
+        cfg.SESSION_SOFT_LIMIT_MINS = self._get_value("session_soft_limit")
+
+        # ── Heartbeat ──
+        cfg.HEARTBEAT_ACTIVE_START = self._get_value("heartbeat_start")
+        cfg.HEARTBEAT_ACTIVE_END = self._get_value("heartbeat_end")
+        cfg.HEARTBEAT_INTERVAL_MINS = self._get_value("heartbeat_interval")
+
+        # ── Paths ──
+        vault_path = self._get_value("obsidian_vault")
+        if vault_path:
+            cfg.OBSIDIAN_VAULT = Path(vault_path)
+
+        # ── Telegram ──
+        cfg.TELEGRAM_BOT_TOKEN = self._get_value("telegram_bot_token")
+        cfg.TELEGRAM_CHAT_ID = self._get_value("telegram_chat_id")
+
+        # Update env vars so child processes inherit
+        os.environ["TTS_BACKEND"] = cfg.TTS_BACKEND
+        os.environ["ELEVENLABS_API_KEY"] = cfg.ELEVENLABS_API_KEY
+        os.environ["ELEVENLABS_VOICE_ID"] = cfg.ELEVENLABS_VOICE_ID
+        os.environ["ELEVENLABS_MODEL"] = cfg.ELEVENLABS_MODEL
+        os.environ["ELEVENLABS_STABILITY"] = str(cfg.ELEVENLABS_STABILITY)
+        os.environ["ELEVENLABS_SIMILARITY"] = str(cfg.ELEVENLABS_SIMILARITY)
+        os.environ["ELEVENLABS_STYLE"] = str(cfg.ELEVENLABS_STYLE)
+        os.environ["TTS_PLAYBACK_RATE"] = str(cfg.TTS_PLAYBACK_RATE)
+        os.environ["INPUT_MODE"] = cfg.INPUT_MODE
+        os.environ["CLAUDE_BIN"] = cfg.CLAUDE_BIN
+        os.environ["CLAUDE_EFFORT"] = cfg.CLAUDE_EFFORT
+        os.environ["ADAPTIVE_EFFORT"] = str(cfg.ADAPTIVE_EFFORT).lower()
+        os.environ["WAKE_WORD_ENABLED"] = str(cfg.WAKE_WORD_ENABLED).lower()
+        os.environ["AVATAR_ENABLED"] = str(cfg.AVATAR_ENABLED).lower()
+
+        # Update audio player rate
+        if hasattr(self.parent(), '_audio_player'):
+            self.parent()._audio_player._rate = str(cfg.TTS_PLAYBACK_RATE)
+
+        # Restart wake word listener if words changed
+        companion = self.parent()
+        if wake_changed and hasattr(companion, '_wake_listener'):
+            if companion._wake_listener:
+                companion._stop_wake_listener()
+            if companion._wake_enabled:
+                companion._start_wake_listener()
+
+        print("  [Settings applied]")
+
+    def _save_to_env(self):
+        """Write current settings to .env and agent.json."""
+        self._apply_settings()
+        import config as cfg
+
+        # ── Save agent.json ──
+        manifest_path = cfg.AGENT_DIR / "agent.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+        else:
+            manifest = {}
+
+        manifest["name"] = cfg.AGENT_NAME
+        manifest["display_name"] = cfg.AGENT_DISPLAY_NAME
+        manifest["user_name"] = cfg.USER_NAME
+        manifest["opening_line"] = cfg.OPENING_LINE
+        manifest["wake_words"] = cfg.WAKE_WORDS
+        manifest["obsidian_subdir"] = self._get_value("obsidian_subdir") or cfg.AGENT_DISPLAY_NAME
+
+        manifest.setdefault("voice", {})
+        manifest["voice"]["tts_backend"] = cfg.TTS_BACKEND
+        manifest["voice"]["elevenlabs_voice_id"] = cfg.ELEVENLABS_VOICE_ID
+        manifest["voice"]["elevenlabs_model"] = cfg.ELEVENLABS_MODEL
+        manifest["voice"]["elevenlabs_stability"] = cfg.ELEVENLABS_STABILITY
+        manifest["voice"]["elevenlabs_similarity"] = cfg.ELEVENLABS_SIMILARITY
+        manifest["voice"]["elevenlabs_style"] = cfg.ELEVENLABS_STYLE
+        manifest["voice"]["fal_voice_id"] = cfg.FAL_VOICE_ID
+        manifest["voice"]["playback_rate"] = cfg.TTS_PLAYBACK_RATE
+
+        manifest.setdefault("display", {})
+        manifest["display"]["window_width"] = cfg.WINDOW_WIDTH
+        manifest["display"]["window_height"] = cfg.WINDOW_HEIGHT
+        manifest["display"]["title"] = self._get_value("window_title") or f"THE ATROPHIED MIND -- {cfg.AGENT_DISPLAY_NAME}"
+
+        manifest.setdefault("heartbeat", {})
+        manifest["heartbeat"]["active_start"] = cfg.HEARTBEAT_ACTIVE_START
+        manifest["heartbeat"]["active_end"] = cfg.HEARTBEAT_ACTIVE_END
+        manifest["heartbeat"]["interval_mins"] = cfg.HEARTBEAT_INTERVAL_MINS
+
+        manifest.setdefault("telegram", {})
+        tg = manifest["telegram"]
+        token_env = tg.get("bot_token_env", f"TELEGRAM_BOT_TOKEN_{cfg.AGENT_NAME.upper()}")
+        chat_env = tg.get("chat_id_env", f"TELEGRAM_CHAT_ID_{cfg.AGENT_NAME.upper()}")
+        manifest["telegram"]["bot_token_env"] = token_env
+        manifest["telegram"]["chat_id_env"] = chat_env
+
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        print(f"  [Saved agent.json: {manifest_path}]")
+
+        # ── Save .env ──
+        env_path = cfg.PROJECT_ROOT / ".env"
+        existing = {}
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    existing[k.strip()] = v.strip()
+
+        env_map = {
+            "AGENT": cfg.AGENT_NAME,
+            "TTS_BACKEND": cfg.TTS_BACKEND,
+            "ELEVENLABS_API_KEY": cfg.ELEVENLABS_API_KEY,
+            "INPUT_MODE": cfg.INPUT_MODE,
+            "WAKE_WORD_ENABLED": str(cfg.WAKE_WORD_ENABLED).lower(),
+            "CLAUDE_BIN": cfg.CLAUDE_BIN,
+            "CLAUDE_EFFORT": cfg.CLAUDE_EFFORT,
+            "ADAPTIVE_EFFORT": str(cfg.ADAPTIVE_EFFORT).lower(),
+            "AVATAR_ENABLED": str(cfg.AVATAR_ENABLED).lower(),
+            "OBSIDIAN_VAULT": str(cfg.OBSIDIAN_VAULT),
+        }
+        # Telegram tokens go to env (secrets shouldn't live in agent.json)
+        if cfg.TELEGRAM_BOT_TOKEN:
+            env_map[token_env] = cfg.TELEGRAM_BOT_TOKEN
+        if cfg.TELEGRAM_CHAT_ID:
+            env_map[chat_env] = cfg.TELEGRAM_CHAT_ID
+
+        existing.update(env_map)
+
+        lines = [f"{k}={v}" for k, v in sorted(existing.items())]
+        env_path.write_text("\n".join(lines) + "\n")
+        print(f"  [Saved .env: {env_path}]")
+
+    def _close(self):
+        self.hide()
+        self.closed.emit()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.fillRect(self.rect(), QColor(14, 14, 16, 245))
+        p.end()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self._close()
+        else:
+            super().keyPressEvent(event)
+
+
 # ── Input bar ──
 
 class InputBar(QWidget):
@@ -798,6 +1601,8 @@ class CompanionWindow(QWidget):
         self._history = []
         self._approx_tokens = 0  # rough context size tracker
         self._compaction_warned = False
+        self._needs_memory_flush = False
+        self._flush_worker = None
 
         # Ken Burns drift — slow, gentle movement
         self._drift_x = 0.0
@@ -811,6 +1616,8 @@ class CompanionWindow(QWidget):
 
         # Silence detection (disabled)
         self._silence_timer = None
+        self._silence_seconds = 0.0
+        self._silence_prompted = False
 
         # Warm vignette overlay
         self._vignette_opacity = 0.0
@@ -818,7 +1625,7 @@ class CompanionWindow(QWidget):
         self._vignette_img = None  # cached vignette image
         self._vignette_size = (0, 0)  # size it was rendered at
 
-        self.setWindowTitle("Companion")
+        self.setWindowTitle(AGENT_DISPLAY_NAME)
         self.resize(_W, _H)
         self.setMinimumSize(360, 480)
 
@@ -834,6 +1641,10 @@ class CompanionWindow(QWidget):
         # Mode flags
         self._muted = False       # True = text-only (no audio playback)
         self._eye_mode = False    # True = minimal (chat bar only)
+
+        # Wake word detection
+        self._wake_listener = None
+        self._wake_enabled = False
 
         # Idle → away timer (10 min no input)
         from core.status import IDLE_TIMEOUT_SECS, set_active
@@ -852,6 +1663,7 @@ class CompanionWindow(QWidget):
         self._build_input_bar()
         self._build_mode_buttons()
         self._build_status_bar()
+        self._build_canvas()
         self._reflow()
 
         # Hide UI during boot
@@ -860,6 +1672,8 @@ class CompanionWindow(QWidget):
         self._mute_btn.hide()
         self._eye_btn.hide()
         self._min_btn.hide()
+        self._wake_btn.hide()
+        self._settings_btn.hide()
 
         # Centre status bar for boot
         self._status_bar.start("connecting...")
@@ -899,6 +1713,8 @@ class CompanionWindow(QWidget):
         self._mute_btn.show()
         self._eye_btn.show()
         self._min_btn.show()
+        self._wake_btn.show()
+        self._settings_btn.show()
         self._position_status_bar()  # restore normal position
 
         # Animate boot overlay fade-out
@@ -918,6 +1734,14 @@ class CompanionWindow(QWidget):
         self._journal_nudge_timer.setSingleShot(True)
         self._journal_nudge_timer.timeout.connect(self._do_journal_nudge)
         self._journal_nudge_timer.start(delay_ms)
+
+        # SENTINEL coherence monitor — every 5 minutes
+        self._coherence_timer = QTimer(self)
+        self._coherence_timer.setInterval(5 * 60_000)  # 300 seconds
+        self._coherence_timer.timeout.connect(self._do_coherence_check)
+        self._coherence_timer.start()
+        self._coherence_worker = None
+
         self._boot_anim = None
         self.update()
 
@@ -1137,6 +1961,29 @@ class CompanionWindow(QWidget):
         self._min_btn = _MinimizeButton(self)
         self._min_btn.clicked.connect(self._minimize_to_tray)
 
+        self._wake_btn = _WakeButton(self)
+        self._wake_btn.clicked.connect(self._toggle_wake)
+
+        self._settings_btn = _SettingsButton(self)
+        self._settings_btn.clicked.connect(self._toggle_settings)
+
+        # Settings panel
+        self._settings_panel = SettingsPanel(self)
+        self._settings_panel.closed.connect(lambda: self._settings_btn.set_active(False))
+        self._settings_open = False
+
+        # Keyboard shortcut: Cmd+Shift+W to toggle wake word
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+        wake_shortcut = QShortcut(QKeySequence("Ctrl+Shift+W"), self)
+        wake_shortcut.activated.connect(self._toggle_wake)
+        self._wake_shortcut = wake_shortcut  # prevent gc
+
+        # Cmd+, for settings
+        settings_shortcut = QShortcut(QKeySequence("Meta+,"), self)
+        settings_shortcut.activated.connect(self._toggle_settings)
+        self._settings_shortcut = settings_shortcut
+
         self._position_mode_buttons()
 
     def _position_mode_buttons(self):
@@ -1145,6 +1992,18 @@ class CompanionWindow(QWidget):
         self._eye_btn.move(right - 34, btn_y)
         self._mute_btn.move(right - 34 - 38, btn_y)
         self._min_btn.move(right - 34 - 38 - 38, btn_y)
+        self._wake_btn.move(right - 34 - 38 - 38 - 38, btn_y)
+        self._settings_btn.move(right - 34 - 38 - 38 - 38 - 38, btn_y)
+
+    def _toggle_settings(self):
+        self._settings_open = not self._settings_open
+        self._settings_btn.set_active(self._settings_open)
+        if self._settings_open:
+            self._settings_panel.setGeometry(0, 0, self.width(), self.height())
+            self._settings_panel.show()
+            self._settings_panel.raise_()
+        else:
+            self._settings_panel.hide()
 
     def _minimize_to_tray(self):
         self.hide()
@@ -1174,6 +2033,142 @@ class CompanionWindow(QWidget):
         self._muted = not self._muted
         self._mute_btn.set_active(self._muted)
 
+    def _toggle_wake(self):
+        """Toggle wake word listening on/off."""
+        self._wake_enabled = not self._wake_enabled
+        self._wake_btn.set_active(self._wake_enabled)
+
+        if self._wake_enabled:
+            self._start_wake_listener()
+        else:
+            self._stop_wake_listener()
+
+    def _start_wake_listener(self):
+        """Start the wake word listener."""
+        if self._wake_listener is not None:
+            return
+        try:
+            from voice.wake_word import WakeWordListener
+            self._wake_listener = WakeWordListener(
+                callback=self._on_wake_word_detected,
+            )
+            self._wake_listener.start()
+            self._status_bar.start("listening for wake word...")
+            QTimer.singleShot(2000, self._status_bar.stop)
+        except Exception as e:
+            print(f"  [Wake word error: {e}]")
+            self._wake_enabled = False
+            self._wake_btn.set_active(False)
+
+    def _stop_wake_listener(self):
+        """Stop the wake word listener."""
+        if self._wake_listener:
+            self._wake_listener.stop()
+            self._wake_listener = None
+
+    def _on_wake_word_detected(self):
+        """Called from the wake word thread when a wake word is heard."""
+        # Schedule UI work on the main thread via QTimer
+        QTimer.singleShot(0, self._handle_wake_activation)
+
+    def _handle_wake_activation(self):
+        """Main-thread handler for wake word detection."""
+        if not self._wake_enabled:
+            return
+
+        # Don't activate if already processing a turn
+        if self._worker is not None:
+            if self._wake_listener:
+                self._wake_listener.resume()
+            return
+
+        # Flash status bar to indicate activation
+        self._status_bar.start("wake word detected — recording...")
+
+        # Play subtle activation sound
+        import threading
+        threading.Thread(
+            target=lambda: subprocess.run(
+                ["afplay", "-v", "0.15", "/System/Library/Sounds/Pop.aiff"],
+                capture_output=True,
+            ),
+            daemon=True,
+        ).start()
+
+        # Record full voice input using sounddevice, then transcribe
+        import threading as _thr
+        def _record_and_transcribe():
+            try:
+                import numpy as np
+                import sounddevice as sd
+                from config import SAMPLE_RATE, CHANNELS
+                from voice.stt import transcribe
+
+                # Record up to 15 seconds (stop on 1.5s silence)
+                max_seconds = 15
+                chunk_size = int(SAMPLE_RATE * 0.5)  # 500ms chunks
+                silence_threshold = 0.005
+                silence_chunks_needed = 3  # 1.5s of silence to stop
+                max_chunks = int(max_seconds / 0.5)
+
+                frames = []
+                silence_count = 0
+
+                for _ in range(max_chunks):
+                    chunk = sd.rec(
+                        chunk_size,
+                        samplerate=SAMPLE_RATE,
+                        channels=CHANNELS,
+                        dtype="float32",
+                        blocking=True,
+                    )
+                    frames.append(chunk)
+
+                    rms = float(np.sqrt(np.mean(chunk ** 2)))
+                    if rms < silence_threshold:
+                        silence_count += 1
+                        if silence_count >= silence_chunks_needed and len(frames) > 2:
+                            break
+                    else:
+                        silence_count = 0
+
+                if not frames:
+                    QTimer.singleShot(0, self._wake_recording_done)
+                    return
+
+                audio = np.concatenate(frames, axis=0).flatten()
+
+                if len(audio) < SAMPLE_RATE * 0.3:
+                    QTimer.singleShot(0, self._wake_recording_done)
+                    return
+
+                text = transcribe(audio)
+                if text and len(text.strip()) >= 2:
+                    QTimer.singleShot(0, lambda: self._wake_input_ready(text.strip()))
+                else:
+                    QTimer.singleShot(0, self._wake_recording_done)
+
+            except Exception as e:
+                print(f"  [Wake record error: {e}]")
+                QTimer.singleShot(0, self._wake_recording_done)
+
+        _thr.Thread(target=_record_and_transcribe, daemon=True).start()
+
+    def _wake_input_ready(self, text: str):
+        """Voice input from wake word activation is ready."""
+        self._status_bar.stop()
+        # Pause wake listener during the conversation turn
+        if self._wake_listener:
+            self._wake_listener.pause()
+        # Feed the text into the normal input pipeline
+        self._on_user_input(text)
+
+    def _wake_recording_done(self):
+        """Wake recording finished with no usable input."""
+        self._status_bar.stop()
+        if self._wake_listener:
+            self._wake_listener.resume()
+
     def _toggle_eye(self):
         self._eye_mode = not self._eye_mode
         self._eye_btn.set_active(self._eye_mode)
@@ -1184,6 +2179,12 @@ class CompanionWindow(QWidget):
             self._transcript.hide()
             self._mute_btn.hide()
             self._min_btn.hide()
+            self._wake_btn.hide()
+            self._settings_btn.hide()
+            if self._settings_open:
+                self._settings_panel.hide()
+                self._settings_open = False
+                self._settings_btn.set_active(False)
             self._eye_btn.hide()
             # Resize to just the input bar + eye button
             bar_w = min(self.width(), 500)
@@ -1204,6 +2205,8 @@ class CompanionWindow(QWidget):
             self._transcript.show()
             self._mute_btn.show()
             self._min_btn.show()
+            self._wake_btn.show()
+            self._settings_btn.show()
             geo = getattr(self, '_pre_eye_geometry', None)
             self.setMinimumSize(360, 480)
             self.setMaximumSize(16777215, 16777215)  # reset fixed size
@@ -1215,6 +2218,36 @@ class CompanionWindow(QWidget):
             self._reflow()
             self._position_mode_buttons()
             self.update()
+
+    # ── Canvas overlay (PIP) ──
+
+    def _build_canvas(self):
+        """Create the PIP canvas overlay (hidden by default, child of this window)."""
+        self._canvas = None
+        if not HAS_CANVAS:
+            return
+        self._canvas = CanvasOverlay(self)
+        # Position it over the video area
+        self._reflow_canvas()
+        # Cmd+K shortcut to toggle canvas
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+        canvas_shortcut = QShortcut(QKeySequence("Meta+K"), self)
+        canvas_shortcut.activated.connect(self._toggle_canvas)
+        self._canvas_shortcut = canvas_shortcut  # prevent gc
+
+    def _toggle_canvas(self):
+        """Toggle the PIP canvas overlay."""
+        if not self._canvas:
+            return
+        self._canvas.toggle()
+
+    def _reflow_canvas(self):
+        """Position canvas overlay to cover the video surface area."""
+        if not self._canvas:
+            return
+        # Cover the full window (video is full-bleed)
+        self._canvas.reposition(0, 0, self.width(), self.height())
 
     # ── Streaming interaction flow ──
 
@@ -1232,6 +2265,10 @@ class CompanionWindow(QWidget):
         self._start_turn(text)
 
     def _start_turn(self, text):
+        # Pause wake listener during active conversation
+        if self._wake_listener:
+            self._wake_listener.pause()
+
         # Detect away intent — set status before processing
         from core.status import detect_away_intent, set_away
         away_reason = detect_away_intent(text)
@@ -1317,7 +2354,8 @@ class CompanionWindow(QWidget):
         """Claude invoked a tool — show in UI."""
 
     def _on_compacting(self):
-        """Context window is being compacted — show status."""
+        """Context window is being compacted — set flush flag and show status."""
+        self._needs_memory_flush = True
         self._status_bar.start("compacting memory...")
 
     def _on_done(self, full_text, session_id):
@@ -1369,10 +2407,26 @@ class CompanionWindow(QWidget):
             else:
                 self._present(full_text)
 
+        # Pre-compaction memory flush — fire in background, invisible to user
+        if self._needs_memory_flush:
+            self._needs_memory_flush = False
+            self._flush_worker = MemoryFlushWorker(self._cli_session_id, self._system)
+            self._flush_worker.finished_flush.connect(self._on_flush_done)
+            self._flush_worker.start()
+
         # Follow-up agency
         from core.agency import should_follow_up
         if full_text and should_follow_up():
             QTimer.singleShot(random.randint(3000, 8000), self._do_follow_up)
+        else:
+            # No follow-up — safe to resume wake listener
+            self._resume_wake_after_turn()
+
+    def _resume_wake_after_turn(self):
+        """Resume wake word listener after a conversation turn completes."""
+        if self._wake_enabled and self._wake_listener:
+            # Delay slightly so any final TTS audio finishes
+            QTimer.singleShot(500, self._wake_listener.resume)
 
     def _do_follow_up(self):
         """Unprompted follow-up — a second thought that arrived late."""
@@ -1459,6 +2513,34 @@ class CompanionWindow(QWidget):
             else:
                 self._present(full_text)
 
+    def _on_flush_done(self, new_session_id):
+        """Memory flush complete — update session ID if changed."""
+        self._flush_worker = None
+        if new_session_id:
+            self._cli_session_id = new_session_id
+            if self._session:
+                self._session.set_cli_session_id(new_session_id)
+
+    def _do_coherence_check(self):
+        """SENTINEL — periodic coherence check. Skipped if streaming or no session."""
+        if self._worker is not None:
+            return  # mid-stream — skip this cycle
+        if not self._cli_session_id:
+            return  # no active CLI session
+        if self._coherence_worker is not None:
+            return  # previous check still running
+        self._coherence_worker = CoherenceWorker(self._cli_session_id, self._system)
+        self._coherence_worker.finished_check.connect(self._on_coherence_done)
+        self._coherence_worker.start()
+
+    def _on_coherence_done(self, new_session_id):
+        """SENTINEL check complete — update session ID if re-anchoring changed it."""
+        self._coherence_worker = None
+        if new_session_id:
+            self._cli_session_id = new_session_id
+            if self._session:
+                self._session.set_cli_session_id(new_session_id)
+
     def _kill_audio(self):
         """Kill playing audio and clear the queue."""
         try:
@@ -1490,12 +2572,18 @@ class CompanionWindow(QWidget):
     def _on_audio_started(self, index):
         """Audio playback began for a sentence."""
         self._vignette_target = 1.0
+        # Pause wake listener during TTS to avoid self-triggering
+        if self._wake_listener:
+            self._wake_listener.pause()
 
     def _on_audio_done(self, index):
         """Audio playback finished for a sentence."""
         # Fade out vignette if nothing else queued
         if self._audio_player._queue.empty():
             self._vignette_target = 0.0
+            # Resume wake listener when all audio is done
+            if self._wake_enabled and self._wake_listener and self._worker is None:
+                self._wake_listener.resume()
 
     def _present(self, text):
         self._transcript.add_message("companion", _strip_tags(text))
@@ -1509,7 +2597,8 @@ class CompanionWindow(QWidget):
     # ── Public API ──
 
     def set_video(self, path):
-        self._load_video(path)
+        self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(path))))
+        self._player.play()
 
     # ── Layout ──
 
@@ -1543,6 +2632,8 @@ class CompanionWindow(QWidget):
         self._vignette_img = None  # invalidate vignette cache
         self._transcript._invalidate_layout()
         self._reflow()
+        if self._settings_open:
+            self._settings_panel.setGeometry(0, 0, self.width(), self.height())
         super().resizeEvent(event)
 
     def _reflow(self):
@@ -1560,6 +2651,8 @@ class CompanionWindow(QWidget):
         # Buttons and status bar
         self._position_mode_buttons()
         self._position_status_bar()
+        # Canvas overlay
+        self._reflow_canvas()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
@@ -1606,6 +2699,7 @@ class CompanionWindow(QWidget):
         self._drift_timer.stop()
         self._player.stop()
         self._audio_player.stop()
+        self._stop_wake_listener()
         # Hide chat panel and tray icon
         if _chat_panel:
             _chat_panel.hide()
@@ -1629,6 +2723,10 @@ class CompanionWindow(QWidget):
         self._mute_btn.hide()
         self._eye_btn.hide()
         self._min_btn.hide()
+        self._wake_btn.hide()
+        self._settings_btn.hide()
+        if self._settings_open:
+            self._settings_panel.hide()
         self._frame = QImage()  # clear video frame
         self._scaled_frame = None
         self.update()  # repaint black
@@ -1824,8 +2922,9 @@ class MenuBarIcon:
         self._window = companion_window
         self._chat = chat_panel
         self._tray = QSystemTrayIcon()
-        self._tray.setIcon(self._make_icon())
-        self._tray.setToolTip("Companion")
+        from display.icon import get_app_icon
+        self._tray.setIcon(get_app_icon())
+        self._tray.setToolTip(AGENT_DISPLAY_NAME)
         self._tray.activated.connect(self._on_activated)
 
         menu = QMenu()
@@ -1950,6 +3049,11 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
             cached_opening_audio=""):
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+
+    # App icon — orb
+    from display.icon import get_app_icon
+    app_icon = get_app_icon()
+    app.setWindowIcon(app_icon)
 
     # Handle Ctrl+C gracefully
     import signal

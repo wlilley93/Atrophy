@@ -14,18 +14,22 @@ __pycache__/
 # Vendor (whisper.cpp is large, install separately)
 vendor/
 
-# Avatar media (large files)
-avatar/ambient_loop.mp4
-avatar/idle_thinking.mp4
-avatar/idle_listening.mp4
-avatar/loops/
-avatar/source/
-avatar/candidates/
+# Agent runtime state
+agents/*/state/
+agents/*/avatar/
+agents/*/memory*.db
 
-# Runtime state
+# Embedding models (cached locally, ~80MB+)
+.models/
+
+# Runtime state files (anywhere)
 .opening_cache.json
 .message_queue.json
 .user_status.json
+.emotional_state.json
+.canvas_content.html
+.dream_log.txt
+.identity_review_queue.json
 
 # MCP generated config
 mcp/config.json
@@ -42,10 +46,11 @@ logs/
 # Voice samples (large)
 voice/original.m4a
 
-# Avatar clips (large)
-avatar/clip*.mp4
-avatar/clip*.jpg
+# Legacy avatar dir (moved to agents/)
+avatar/
 
 # Local schedule config
 scripts/jobs.json
 scripts/*.plist
+scripts/**/*.plist
+scripts/**/jobs.json

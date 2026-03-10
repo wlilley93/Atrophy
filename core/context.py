@@ -16,8 +16,8 @@ def load_system_prompt() -> str:
 
     Reads from Obsidian first (she can edit it there), falls back to local file.
     """
-    from config import OBSIDIAN_VAULT
-    obsidian_prompt = OBSIDIAN_VAULT / "Companion" / "skills" / "system.md"
+    from config import OBSIDIAN_AGENT_DIR
+    obsidian_prompt = OBSIDIAN_AGENT_DIR / "skills" / "system.md"
     if obsidian_prompt.exists():
         return obsidian_prompt.read_text()
     if SYSTEM_PROMPT_PATH.exists():
