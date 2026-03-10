@@ -147,19 +147,19 @@ async def synthesise(text: str) -> Path:
         tmp.close()
         return Path(tmp.name)
 
-    # Primary: Fal
-    if FAL_VOICE_ID:
-        try:
-            return await _synthesise_fal(text)
-        except Exception as e:
-            print(f"[TTS] Fal failed ({e}), trying ElevenLabs...")
-
-    # Fallback: ElevenLabs streaming
+    # Primary: ElevenLabs streaming (lowest latency)
     if ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
         try:
             return await _synthesise_elevenlabs_stream(text)
         except Exception as e:
-            print(f"[TTS] ElevenLabs failed ({e}), falling back to macOS")
+            print(f"[TTS] ElevenLabs failed ({e}), trying Fal...")
+
+    # Fallback: Fal
+    if FAL_VOICE_ID:
+        try:
+            return await _synthesise_fal(text)
+        except Exception as e:
+            print(f"[TTS] Fal failed ({e}), falling back to macOS")
 
     return await _synthesise_macos(text)
 
@@ -175,14 +175,7 @@ def synthesise_sync(text: str) -> Path:
         tmp.close()
         return Path(tmp.name)
 
-    # Primary: Fal (fully synchronous)
-    if FAL_VOICE_ID:
-        try:
-            return _synthesise_fal_sync(text)
-        except Exception as e:
-            print(f"[TTS] Fal failed ({e}), trying ElevenLabs...")
-
-    # Fallback: ElevenLabs (needs event loop)
+    # Primary: ElevenLabs streaming (lowest latency)
     if ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
         try:
             loop = asyncio.new_event_loop()
@@ -191,7 +184,14 @@ def synthesise_sync(text: str) -> Path:
             finally:
                 loop.close()
         except Exception as e:
-            print(f"[TTS] ElevenLabs failed ({e}), falling back to macOS")
+            print(f"[TTS] ElevenLabs failed ({e}), trying Fal...")
+
+    # Fallback: Fal (synchronous, higher latency)
+    if FAL_VOICE_ID:
+        try:
+            return _synthesise_fal_sync(text)
+        except Exception as e:
+            print(f"[TTS] Fal failed ({e}), falling back to macOS")
 
     # Last resort: macOS say (synchronous)
     tmp = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False)

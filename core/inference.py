@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import uuid
 from dataclasses import dataclass
 
@@ -210,6 +211,7 @@ def stream_inference(
             "--effort", CLAUDE_EFFORT,
             "--verbose",
             "--output-format", "stream-json",
+            "--include-partial-messages",
             "--resume", cli_session_id,
             "--mcp-config", mcp_config,
             "--allowedTools", "mcp__memory__*",
@@ -223,6 +225,7 @@ def stream_inference(
             "--effort", CLAUDE_EFFORT,
             "--verbose",
             "--output-format", "stream-json",
+            "--include-partial-messages",
             "--session-id", cli_session_id,
             "--system-prompt", system + "\n\n---\n\n## Current Context\n\n" + _agency_context(user_message),
             "--mcp-config", mcp_config,
@@ -231,7 +234,14 @@ def stream_inference(
             "-p", user_message,
         ]
 
-    print(f"  [inference] cmd[0:5]={cmd[:5]} session={cli_session_id[:12] if cli_session_id else 'new'}...")
+    mode = "resume" if "--resume" in cmd else "new"
+    print(f"\n  ╭─ Inference [{mode}] ─────────────────────────────")
+    print(f"  │ model:   {cmd[cmd.index('--model') + 1]}")
+    print(f"  │ effort:  {CLAUDE_EFFORT}")
+    print(f"  │ session: {cli_session_id[:16]}...")
+    print(f"  │ prompt:  {user_message[:80]}{'...' if len(user_message) > 80 else ''}")
+    t0 = time.time()
+
     try:
         proc = subprocess.Popen(
             cmd,
@@ -241,7 +251,8 @@ def stream_inference(
             env=_env(),
         )
     except Exception as e:
-        print(f"  [inference] Popen failed: {e}")
+        print(f"  │ ✗ Failed to start claude: {e}")
+        print(f"  ╰──────────────────────────────────────────────\n")
         yield StreamError(message=str(e))
         return
 
@@ -250,6 +261,8 @@ def stream_inference(
     sentence_index = 0
     session_id = cli_session_id
     got_any_output = False
+    first_text_time = None
+    tool_calls = []
 
     try:
         for line in proc.stdout:
@@ -258,13 +271,14 @@ def stream_inference(
                 continue
 
             if not got_any_output:
-                print(f"  [inference] first output line: {line[:120]}")
+                elapsed = time.time() - t0
+                print(f"  │ first output at {elapsed:.1f}s")
             got_any_output = True
 
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
-                print(f"  [inference] bad JSON: {line[:120]}")
+                print(f"  │ ⚠ bad JSON: {line[:100]}")
                 continue
 
             evt_type = event.get("type", "")
@@ -274,7 +288,9 @@ def stream_inference(
                 subtype = event.get("subtype", "")
                 if subtype == "init":
                     session_id = event.get("session_id", session_id)
+                    print(f"  │ init OK — session {session_id[:16]}...")
                 elif "compact" in subtype or "compress" in subtype:
+                    print(f"  │ ⟳ compacting context...")
                     yield Compacting()
                 continue
 
@@ -289,6 +305,10 @@ def stream_inference(
                     if delta.get("type") == "text_delta":
                         chunk = delta.get("text", "")
                         if chunk:
+                            if not first_text_time:
+                                first_text_time = time.time()
+                                elapsed = first_text_time - t0
+                                print(f"  │ first token at {elapsed:.1f}s")
                             full_text += chunk
                             sentence_buffer += chunk
                             yield TextDelta(text=chunk)
@@ -298,6 +318,7 @@ def stream_inference(
                             while len(parts) > 1:
                                 sentence = parts.pop(0).strip()
                                 if sentence:
+                                    print(f"  │ sentence {sentence_index}: \"{sentence[:60]}{'...' if len(sentence) > 60 else ''}\"")
                                     yield SentenceReady(
                                         sentence=sentence,
                                         index=sentence_index,
@@ -309,9 +330,9 @@ def stream_inference(
                             if len(sentence_buffer) >= _CLAUSE_SPLIT_THRESHOLD:
                                 cparts = _CLAUSE_RE.split(sentence_buffer)
                                 if len(cparts) > 1:
-                                    # Emit all complete clauses, keep last as buffer
                                     to_emit = " ".join(cparts[:-1]).strip()
                                     if to_emit:
+                                        print(f"  │ clause {sentence_index}: \"{to_emit[:60]}{'...' if len(to_emit) > 60 else ''}\"")
                                         yield SentenceReady(
                                             sentence=to_emit,
                                             index=sentence_index,
@@ -323,7 +344,10 @@ def stream_inference(
                 elif inner_type == "content_block_start":
                     block = inner.get("content_block", {})
                     if block.get("type") == "tool_use":
-                        print(f"  [inference] tool_use: {block.get('name', '?')}")
+                        name = block.get("name", "?")
+                        tool_calls.append(name)
+                        elapsed = time.time() - t0
+                        print(f"  │ 🔧 tool: {name} (at {elapsed:.1f}s)")
                         yield ToolUse(
                             name=block.get("name", ""),
                             tool_id=block.get("id", ""),
@@ -348,7 +372,6 @@ def stream_inference(
             if evt_type == "result":
                 session_id = event.get("session_id", session_id)
                 result_text = event.get("result", "")
-                print(f"  [inference] result: {len(result_text)} chars, streamed: {len(full_text)} chars")
                 if result_text and not full_text:
                     full_text = result_text
                 continue
@@ -362,24 +385,38 @@ def stream_inference(
         except Exception:
             pass
 
+        elapsed = time.time() - t0
+
         # Check for subprocess failure
         if proc.returncode and proc.returncode != 0:
             err_msg = stderr_text.strip()[:300] if stderr_text else f"claude exited with code {proc.returncode}"
-            print(f"  [claude stderr: {err_msg}]")
+            print(f"  │ ✗ error (exit {proc.returncode}): {err_msg}")
+            print(f"  ╰── failed after {elapsed:.1f}s ──\n")
             yield StreamError(message=err_msg)
             return
 
-        # No output at all — something went wrong silently
+        # No output at all
         if not got_any_output and not full_text:
             err_msg = stderr_text.strip()[:300] if stderr_text else "No response from claude"
-            print(f"  [claude no output, stderr: {stderr_text.strip()[:300] if stderr_text else 'none'}]")
+            print(f"  │ ✗ no output — stderr: {stderr_text.strip()[:200] if stderr_text else 'none'}")
+            print(f"  ╰── failed after {elapsed:.1f}s ──\n")
             yield StreamError(message=err_msg)
             return
 
         # Flush remaining sentence buffer
         remainder = sentence_buffer.strip()
         if remainder:
+            print(f"  │ flush: \"{remainder[:60]}{'...' if len(remainder) > 60 else ''}\"")
             yield SentenceReady(sentence=remainder, index=sentence_index)
+
+        # Summary
+        print(f"  │")
+        print(f"  │ streamed: {len(full_text)} chars, {sentence_index + (1 if remainder else 0)} sentences")
+        if tool_calls:
+            print(f"  │ tools:    {', '.join(tool_calls)}")
+        if not full_text:
+            print(f"  │ ⚠ no text streamed — response only in result event")
+        print(f"  ╰── done in {elapsed:.1f}s ──\n")
 
         yield StreamDone(full_text=full_text, session_id=session_id)
 
@@ -388,6 +425,9 @@ def stream_inference(
             proc.kill()
         except Exception:
             pass
+        elapsed = time.time() - t0
+        print(f"  │ ✗ exception: {e}")
+        print(f"  ╰── crashed after {elapsed:.1f}s ──\n")
         yield StreamError(message=str(e))
 
 

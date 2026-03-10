@@ -488,10 +488,14 @@ def _generate_opening(system: str, cli_session_id: str | None) -> tuple[str, str
         f"Do NOT give status updates. Be surprising.)"
     )
 
+    print(f"  [Opening: generating with style '{style}'...]")
     response = run_inference_oneshot(
         [{"role": "user", "content": prompt}],
         system,
     )
+    if not response or not response.strip():
+        raise RuntimeError("Empty opening response")
+    print(f"  [Opening: '{response[:80]}...']")
     return response, cli_session_id or ""
 
 
