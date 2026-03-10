@@ -5,11 +5,13 @@ Streaming inference → sentence-level TTS pipelining for low latency.
 """
 
 import json
+import math
 import os
 import random
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from queue import Queue, Empty
 
@@ -147,6 +149,10 @@ def _orb_colors_for_frame(frame_idx: int) -> list:
             ((100 - int(t * 25), 110 - int(t * 15), 50 - int(t * 15)), (65 - int(t * 15), 70 - int(t * 10), 35), (40, 38, 20)),
             ((80 - int(t * 20), 90 - int(t * 10), 40 - int(t * 10)), (55 - int(t * 10), 55, 30), (35, 30, 18)),
         ]
+
+
+# Precomputed lookup table — avoids recomputing 30x/sec
+_ORB_COLORS_TABLE = [_orb_colors_for_frame(i) for i in range(10)]
 
 
 # ── Video surface ──
@@ -2023,7 +2029,10 @@ class CompanionWindow(QWidget):
         self._booting = True
         self._brain_overlay = None  # Lazy-loaded in paintEvent
         self._brain_frames = None   # 10-frame cycle: organic → cybernetic → rot
+        self._brain_scaled_frames = {}  # {size: [10 scaled QImages]}
         self._brain_frame_dur = 0.8  # seconds per frame
+        self._artefact_loading = False
+        self._artefact_loading_bar = None
 
         self._build_video()
         self._build_overlays()
@@ -2421,46 +2430,12 @@ class CompanionWindow(QWidget):
             # Shutdown overlay — pulsing orb + brain + ATROPHY (mirrors boot screen)
             if self._shutdown_mode:
                 win_w, win_h = self.width(), self.height()
-                import math, time
-                pulse = 0.5 + 0.5 * math.sin(time.time() * 3.0)  # faster pulse for urgency
                 cx, cy = win_w / 2.0, win_h / 2.0 - 20
-
-                # Brain frames (reversed: rot → cybernetic → organic)
-                if self._brain_overlay is None:
-                    brain_path = os.path.join(os.path.dirname(__file__), "icons", "brain_overlay.png")
-                    self._brain_overlay = QImage(brain_path)
-                if self._brain_frames is None and not self._brain_overlay.isNull():
-                    self._brain_frames = _build_brain_frames(self._brain_overlay)
+                self._ensure_brain_frames()
                 frame_idx = 9 - (int(time.time() / self._brain_frame_dur) % 10) if self._brain_frames else 0
-                orb_colors = _orb_colors_for_frame(frame_idx)
-
-                for (layer_r, layer_a), (c_inner, c_mid, c_outer) in zip(
-                    [(80, 18), (55, 35), (30, 60)], orb_colors
-                ):
-                    r = layer_r + int(pulse * 14)
-                    grad = QRadialGradient(QPointF(cx, cy), r)
-                    grad.setColorAt(0.0, QColor(*c_inner, layer_a))
-                    grad.setColorAt(0.5, QColor(*c_mid, layer_a // 3))
-                    grad.setColorAt(1.0, QColor(*c_outer, 0))
-                    p.setPen(Qt.NoPen)
-                    p.setBrush(grad)
-                    p.drawEllipse(QPointF(cx, cy), r, r)
-
-                brain_img = self._brain_frames[frame_idx] if self._brain_frames else self._brain_overlay
-                if brain_img and not brain_img.isNull():
-                    brain_size = 90
-                    scaled = brain_img.scaled(
-                        brain_size, brain_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    p.setOpacity(0.9)
-                    p.drawImage(int(cx - scaled.width() / 2), int(cy - scaled.height() / 2), scaled)
-                    p.setOpacity(1.0)
-                p.setPen(QColor(255, 255, 255, 140))
-                from PyQt5.QtGui import QFont
-                font = QFont("Bricolage Grotesque", 12)
-                font.setLetterSpacing(QFont.AbsoluteSpacing, 4)
-                p.setFont(font)
-                p.drawText(QRectF(0, cy + 40, win_w, 30),
-                           Qt.AlignHCenter | Qt.AlignTop, "ATROPHY")
+                pulse = 0.5 + 0.5 * math.sin(time.time() * 3.0)
+                self._paint_orb_brain(p, cx, cy, frame_idx, pulse,
+                                      [(80, 18), (55, 35), (30, 60)], 90, 0.9, 40)
                 QTimer.singleShot(33, self.update)
             p.end()
             return
@@ -2552,59 +2527,83 @@ class CompanionWindow(QWidget):
             alpha = int(255 * self._boot_opacity)
             p.fillRect(self.rect(), QColor(12, 12, 14, alpha))
 
-            import math, time
-            pulse = 0.5 + 0.5 * math.sin(time.time() * 2.0)
             cx, cy = win_w / 2.0, win_h / 2.0 - 20
-
-            # Determine brain frame index for orb color sync
-            if self._brain_overlay is None:
-                brain_path = os.path.join(os.path.dirname(__file__), "icons", "brain_overlay.png")
-                self._brain_overlay = QImage(brain_path)
-            if self._brain_frames is None and not self._brain_overlay.isNull():
-                self._brain_frames = _build_brain_frames(self._brain_overlay)
+            self._ensure_brain_frames()
             frame_idx = int(time.time() / self._brain_frame_dur) % 10 if self._brain_frames else 0
-
-            # Orb color shifts with brain state
-            orb_colors = _orb_colors_for_frame(frame_idx)
-
-            # Pulsing glow — large soft orb behind the brain, pulses beyond brain bounds
-            for (layer_r, layer_a), (c_inner, c_mid, c_outer) in zip(
-                [(100, 20), (70, 40), (45, 70)], orb_colors
-            ):
-                r = layer_r + int(pulse * 18)
-                a = int(layer_a * self._boot_opacity)
-                grad = QRadialGradient(QPointF(cx, cy), r)
-                grad.setColorAt(0.0, QColor(*c_inner, a))
-                grad.setColorAt(0.5, QColor(*c_mid, a // 3))
-                grad.setColorAt(1.0, QColor(*c_outer, 0))
-                p.setPen(Qt.NoPen)
-                p.setBrush(grad)
-                p.drawEllipse(QPointF(cx, cy), r, r)
-
-            # Brain overlay — 10-frame cycle: organic → cybernetic → rot
-            if self._brain_frames:
-                brain_img = self._brain_frames[frame_idx]
-                brain_size = 110
-                scaled = brain_img.scaled(
-                    brain_size, brain_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                p.setOpacity(self._boot_opacity * 0.95)
-                p.drawImage(int(cx - scaled.width() / 2), int(cy - scaled.height() / 2), scaled)
-                p.setOpacity(1.0)
-
-            # "ATROPHY" below orb
-            name_alpha = int(160 * self._boot_opacity)
-            p.setPen(QColor(255, 255, 255, name_alpha))
-            from PyQt5.QtGui import QFont
-            font = QFont("Bricolage Grotesque", 12)
-            font.setLetterSpacing(QFont.AbsoluteSpacing, 4)
-            p.setFont(font)
-            p.drawText(QRectF(0, cy + 50, win_w, 30),
-                       Qt.AlignHCenter | Qt.AlignTop, "ATROPHY")
+            pulse = 0.5 + 0.5 * math.sin(time.time() * 2.0)
+            self._paint_orb_brain(p, cx, cy, frame_idx, pulse,
+                                  [(100, 20), (70, 40), (45, 70)], 110,
+                                  self._boot_opacity * 0.95, 50,
+                                  alpha_scale=self._boot_opacity)
 
             # Animate during boot
             if self._booting:
                 QTimer.singleShot(33, self.update)
         p.end()
+
+    # ── Brain/orb helpers ──
+
+    _ATROPHY_FONT = None  # class-level, created once
+
+    def _ensure_brain_frames(self):
+        """Lazy-load brain overlay and build frames if needed."""
+        if self._brain_overlay is None:
+            brain_path = os.path.join(os.path.dirname(__file__), "icons", "brain_overlay.png")
+            self._brain_overlay = QImage(brain_path)
+        if self._brain_frames is None and not self._brain_overlay.isNull():
+            self._brain_frames = _build_brain_frames(self._brain_overlay)
+
+    def _get_scaled_brain(self, frame_idx: int, size: int) -> 'QImage':
+        """Get a pre-scaled brain frame, caching by size."""
+        if size not in self._brain_scaled_frames:
+            if not self._brain_frames:
+                return self._brain_overlay
+            self._brain_scaled_frames[size] = [
+                f.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                for f in self._brain_frames
+            ]
+        return self._brain_scaled_frames[size][frame_idx]
+
+    def _paint_orb_brain(self, p, cx, cy, frame_idx, pulse, layers, brain_size,
+                         brain_opacity, text_y_offset, alpha_scale=1.0):
+        """Paint pulsing orb + brain frame + ATROPHY text.
+
+        Args:
+            layers: [(base_radius, base_alpha), ...] for each orb layer
+            brain_size: pixel size for the brain icon
+            brain_opacity: opacity for the brain image
+            text_y_offset: vertical offset below cy for the "ATROPHY" label
+            alpha_scale: multiplier for orb layer alphas (e.g. boot_opacity)
+        """
+        orb_colors = _ORB_COLORS_TABLE[frame_idx]
+
+        for (layer_r, layer_a), (c_inner, c_mid, c_outer) in zip(layers, orb_colors):
+            r = layer_r + int(pulse * 18)
+            a = int(layer_a * alpha_scale)
+            grad = QRadialGradient(QPointF(cx, cy), r)
+            grad.setColorAt(0.0, QColor(*c_inner, a))
+            grad.setColorAt(0.5, QColor(*c_mid, a // 3))
+            grad.setColorAt(1.0, QColor(*c_outer, 0))
+            p.setPen(Qt.NoPen)
+            p.setBrush(grad)
+            p.drawEllipse(QPointF(cx, cy), r, r)
+
+        if self._brain_frames:
+            scaled = self._get_scaled_brain(frame_idx, brain_size)
+            p.setOpacity(brain_opacity)
+            p.drawImage(int(cx - scaled.width() / 2), int(cy - scaled.height() / 2), scaled)
+            p.setOpacity(1.0)
+
+        if CompanionWindow._ATROPHY_FONT is None:
+            f = QFont("Bricolage Grotesque", 12)
+            f.setLetterSpacing(QFont.AbsoluteSpacing, 4)
+            CompanionWindow._ATROPHY_FONT = f
+
+        name_alpha = int(160 * alpha_scale)
+        p.setPen(QColor(255, 255, 255, name_alpha))
+        p.setFont(CompanionWindow._ATROPHY_FONT)
+        p.drawText(QRectF(0, cy + text_y_offset, self.width(), 30),
+                   Qt.AlignHCenter | Qt.AlignTop, "ATROPHY")
 
     # ── Overlays ──
 
@@ -2642,13 +2641,12 @@ class CompanionWindow(QWidget):
 
     def _update_metrics_label(self, response_tokens=0):
         """Update the small metrics display above the input bar."""
-        import time as _time
         import config as cfg
         parts = []
 
         # Response time
         if self._response_start_time:
-            elapsed = _time.time() - self._response_start_time
+            elapsed = time.time() - self._response_start_time
             parts.append(f"{elapsed:.1f}s")
             self._response_start_time = None
 
@@ -3118,8 +3116,7 @@ class CompanionWindow(QWidget):
             return
 
         # Anti-loop: max 3 deferrals in 60 seconds
-        import time as _time
-        now = _time.time()
+        now = time.time()
         if now - self._deferral_window_start > 60:
             self._deferral_count = 0
             self._deferral_window_start = now
@@ -3391,7 +3388,7 @@ class CompanionWindow(QWidget):
         display_file = cfg.ARTEFACT_DISPLAY_FILE
         if not display_file.exists():
             # Loading bar was showing but file disappeared (error or cleanup)
-            if hasattr(self, '_artefact_loading') and self._artefact_loading:
+            if self._artefact_loading:
                 self._dismiss_artefact_loading()
             return
         try:
@@ -3401,7 +3398,7 @@ class CompanionWindow(QWidget):
 
         # Loading state — show progress bar
         if data.get("status") == "generating":
-            if not hasattr(self, '_artefact_loading') or not self._artefact_loading:
+            if not self._artefact_loading:
                 self._show_artefact_loading(data.get("name", "artefact"))
             return
 
@@ -3421,7 +3418,7 @@ class CompanionWindow(QWidget):
 
     def _show_artefact_loading(self, name="artefact"):
         """Show a loading bar at the bottom of the window."""
-        if hasattr(self, '_artefact_loading_bar') and self._artefact_loading_bar:
+        if self._artefact_loading_bar:
             return  # Already showing
         self._artefact_loading = True
         bar = QWidget(self)
@@ -3460,7 +3457,7 @@ class CompanionWindow(QWidget):
     def _dismiss_artefact_loading(self):
         """Remove the loading bar."""
         self._artefact_loading = False
-        if hasattr(self, '_artefact_loading_bar') and self._artefact_loading_bar:
+        if self._artefact_loading_bar:
             self._artefact_loading_bar.deleteLater()
             self._artefact_loading_bar = None
 
@@ -3529,8 +3526,7 @@ class CompanionWindow(QWidget):
 
     def _launch_worker(self, text, session_id):
         """Launch the streaming pipeline worker."""
-        import time as _time
-        self._response_start_time = _time.time()
+        self._response_start_time = time.time()
         self._worker = StreamingPipelineWorker(
             user_text=text,
             system=self._system,

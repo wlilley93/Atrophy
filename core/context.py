@@ -14,23 +14,40 @@ from core import memory
 def load_system_prompt() -> str:
     """Load the companion's system prompt plus all skill files.
 
-    Reads system.md from Obsidian first (she can edit it there), falls back
-    to local file. Then appends all other .md skill files from the Obsidian
-    skills directory (tools, soul, etc.).
+    Resolution order for system prompt:
+      1. Obsidian skills/system.md (if vault exists)
+      2. Local skills/system.md (~/.atrophy/agents/<name>/skills/)
+      3. Bundle prompts/system_prompt.md (agents/<name>/prompts/)
+      4. Hardcoded fallback
+
+    Then appends all other .md skill files from whichever skills dir exists.
     """
-    from config import OBSIDIAN_AGENT_DIR
-    skills_dir = OBSIDIAN_AGENT_DIR / "skills"
-    obsidian_prompt = skills_dir / "system.md"
+    from config import OBSIDIAN_AGENT_DIR, OBSIDIAN_AVAILABLE, DATA_DIR
 
-    if obsidian_prompt.exists():
-        base = obsidian_prompt.read_text()
-    elif SYSTEM_PROMPT_PATH.exists():
-        base = SYSTEM_PROMPT_PATH.read_text()
-    else:
-        base = "You are a companion. Be genuine, direct, and honest."
+    # Possible skills directories (priority order)
+    skills_dirs = []
+    if OBSIDIAN_AVAILABLE:
+        skills_dirs.append(OBSIDIAN_AGENT_DIR / "skills")
+    local_skills = DATA_DIR.parent / "skills"  # ~/.atrophy/agents/<name>/skills/
+    skills_dirs.append(local_skills)
 
-    # Append other skill files from Obsidian (not system.md itself)
-    if skills_dir.exists():
+    # Load base system prompt
+    base = None
+    for skills_dir in skills_dirs:
+        sys_path = skills_dir / "system.md"
+        if sys_path.exists():
+            base = sys_path.read_text()
+            break
+    if base is None:
+        if SYSTEM_PROMPT_PATH.exists():
+            base = SYSTEM_PROMPT_PATH.read_text()
+        else:
+            base = "You are a companion. Be genuine, direct, and honest."
+
+    # Append other skill files (not system.md itself)
+    for skills_dir in skills_dirs:
+        if not skills_dir.exists():
+            continue
         for skill_file in sorted(skills_dir.glob("*.md")):
             if skill_file.name == "system.md":
                 continue

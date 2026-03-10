@@ -215,17 +215,28 @@ def _agency_context(user_message: str) -> str:
         parts.append(gap_note)
 
     parts.append("You may surface a relevant memory unprompted if context makes it natural. Use your recall tools.")
-    parts.append(
-        "Obsidian vault is available. Write notes when something matters — insights, reflections, "
-        "things worth keeping beyond the session transcript. Read his notes when context would help "
-        "you speak to what he's working through. The database records what happened. Obsidian holds "
-        "what mattered.\n"
-        "Notes you create automatically get YAML frontmatter (type, created, updated, agent, tags). "
-        "Use tags freely — they're searchable and feed Dataview dashboards. Use inline fields "
-        "like [mood:: reflective] or [topic:: identity] when you want structured metadata within "
-        "a note. For time-sensitive things, use reminder syntax: (@2026-03-15) to leave a "
-        "reminder. Your notes live under your agent directory in the vault."
-    )
+
+    from config import OBSIDIAN_AVAILABLE
+    if OBSIDIAN_AVAILABLE:
+        parts.append(
+            "Obsidian vault is available. Write notes when something matters — insights, reflections, "
+            "things worth keeping beyond the session transcript. Read his notes when context would help "
+            "you speak to what he's working through. The database records what happened. Obsidian holds "
+            "what mattered.\n"
+            "Notes you create automatically get YAML frontmatter (type, created, updated, agent, tags). "
+            "Use tags freely — they're searchable and feed Dataview dashboards. Use inline fields "
+            "like [mood:: reflective] or [topic:: identity] when you want structured metadata within "
+            "a note. For time-sensitive things, use reminder syntax: (@2026-03-15) to leave a "
+            "reminder. Your notes live under your agent directory in the vault."
+        )
+    else:
+        parts.append(
+            "You can write notes when something matters — insights, reflections, things worth "
+            "keeping beyond the session transcript. Use write_note, read_note, and search_notes "
+            "to manage your local notes. The database records what happened. Notes hold what mattered.\n"
+            "Notes you create automatically get YAML frontmatter (type, created, updated, agent, tags). "
+            "Your notes live in your agent directory."
+        )
 
     # Proactive memory — surface recent threads on resume
     threads = get_active_threads()

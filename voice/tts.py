@@ -15,7 +15,6 @@ Interface:
 import asyncio
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
 import httpx
@@ -26,6 +25,8 @@ from config import (
     ELEVENLABS_STYLE, FAL_TTS_ENDPOINT, FAL_VOICE_ID,
     TTS_PLAYBACK_RATE,
 )
+
+from voice.tempfiles import secure_tmp as _secure_tmp
 
 _TAG_RE = re.compile(r"\[[\w\s]+\]")
 _CODE_BLOCK_RE = re.compile(r'```[\s\S]*?```')
@@ -143,9 +144,7 @@ async def synthesise(text: str) -> Path:
     cleaned, _ = _process_prosody(text)
     # Skip if empty or too short — ElevenLabs hallucinates on tiny fragments
     if not cleaned or len(cleaned.strip()) < 8:
-        tmp = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False)
-        tmp.close()
-        return Path(tmp.name)
+        return _secure_tmp(".aiff")
 
     # Primary: ElevenLabs streaming (lowest latency)
     if ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
@@ -171,9 +170,7 @@ def synthesise_sync(text: str) -> Path:
     text = _INLINE_CODE_RE.sub('', text)
     cleaned, _ = _process_prosody(text)
     if not cleaned or len(cleaned.strip()) < 8:
-        tmp = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False)
-        tmp.close()
-        return Path(tmp.name)
+        return _secure_tmp(".aiff")
 
     # Primary: ElevenLabs streaming (lowest latency)
     if ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
@@ -194,9 +191,7 @@ def synthesise_sync(text: str) -> Path:
             print(f"[TTS] Fal failed ({e}), falling back to macOS")
 
     # Last resort: macOS say (synchronous)
-    tmp = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False)
-    tmp.close()
-    audio_path = Path(tmp.name)
+    audio_path = _secure_tmp(".aiff")
     clean = _TAG_RE.sub("", text).strip()
     import subprocess
     subprocess.run(
@@ -268,7 +263,7 @@ async def _synthesise_elevenlabs_stream(text: str) -> Path:
         },
     }
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    tmp_path = _secure_tmp(".mp3")
 
     async with httpx.AsyncClient() as client:
         async with client.stream(
@@ -279,11 +274,11 @@ async def _synthesise_elevenlabs_stream(text: str) -> Path:
                 raise RuntimeError(
                     f"ElevenLabs {response.status_code}: {body.decode(errors='replace')[:300]}"
                 )
-            async for chunk in response.aiter_bytes(chunk_size=4096):
-                tmp.write(chunk)
+            with open(tmp_path, "wb") as f:
+                async for chunk in response.aiter_bytes(chunk_size=4096):
+                    f.write(chunk)
 
-    tmp.close()
-    return Path(tmp.name)
+    return tmp_path
 
 
 # ── Fal ElevenLabs v3 (fallback) ──
@@ -311,10 +306,9 @@ async def _synthesise_fal(text: str) -> Path:
         response = await client.get(audio_url, timeout=30.0)
         response.raise_for_status()
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-    tmp.write(response.content)
-    tmp.close()
-    return Path(tmp.name)
+    tmp_path = _secure_tmp(".mp3")
+    tmp_path.write_bytes(response.content)
+    return tmp_path
 
 
 def _synthesise_fal_sync(text: str) -> Path:
@@ -334,18 +328,15 @@ def _synthesise_fal_sync(text: str) -> Path:
     response = httpx.get(audio_url, timeout=30.0)
     response.raise_for_status()
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-    tmp.write(response.content)
-    tmp.close()
-    return Path(tmp.name)
+    tmp_path = _secure_tmp(".mp3")
+    tmp_path.write_bytes(response.content)
+    return tmp_path
 
 
 # ── macOS say (last resort) ──
 
 async def _synthesise_macos(text: str) -> Path:
-    tmp = tempfile.NamedTemporaryFile(suffix=".aiff", delete=False)
-    tmp.close()
-    audio_path = Path(tmp.name)
+    audio_path = _secure_tmp(".aiff")
 
     clean = _TAG_RE.sub("", text).strip()
 

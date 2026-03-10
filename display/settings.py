@@ -1339,17 +1339,23 @@ class SettingsModal(QWidget):
                 for p in prompts_dir.glob("*.md"):
                     zf.write(p, f"{agent_name}/prompts/{p.name}")
 
-            # Also check Obsidian skills directory for canonical prompts
-            obsidian_skills = None
-            try:
-                obsidian_base = Path(cfg.OBSIDIAN_VAULT) / "Projects" / "The Atrophied Mind" / "Agent Workspace" / agent_name / "skills"
-                if obsidian_base.is_dir():
-                    obsidian_skills = obsidian_base
-            except Exception:
-                pass
-            if obsidian_skills:
-                for p in obsidian_skills.glob("*.md"):
-                    zf.write(p, f"{agent_name}/skills/{p.name}")
+            # Include skills from local agent dir or Obsidian (whichever exists)
+            skills_dirs = [agent_dir / "skills"]
+            if cfg.OBSIDIAN_AVAILABLE:
+                try:
+                    obsidian_base = Path(cfg.OBSIDIAN_VAULT) / "Projects" / "The Atrophied Mind" / "Agent Workspace" / agent_name / "skills"
+                    if obsidian_base.is_dir():
+                        skills_dirs.append(obsidian_base)
+                except Exception:
+                    pass
+            seen_skills = set()
+            for skills_dir in skills_dirs:
+                if not skills_dir.is_dir():
+                    continue
+                for p in skills_dir.glob("*.md"):
+                    if p.name not in seen_skills:
+                        zf.write(p, f"{agent_name}/skills/{p.name}")
+                        seen_skills.add(p.name)
 
             # Avatar source files (face image, voice sample — small, needed to regenerate)
             source_dir = agent_dir / "avatar" / "source"

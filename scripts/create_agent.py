@@ -740,8 +740,8 @@ def generate_tools_md() -> str:
     - `search_similar` — semantic search across all memories
     - `observe` / `review_observations` / `retire_observation` — evolving observations
     - `track_thread` / `get_threads` — manage conversation threads
-    - `prompt_journal` — leave a journal prompt in Obsidian
-    - `write_note` / `read_note` / `search_notes` — read/write Obsidian notes
+    - `prompt_journal` — leave a journal prompt for the user
+    - `write_note` / `read_note` / `search_notes` — read/write notes in your agent workspace
     - `send_telegram` — reach out via Telegram
     - `update_emotional_state` — update your emotional state
     - `update_trust` — adjust trust calibration
@@ -770,7 +770,7 @@ def generate_tools_md() -> str:
     - **Image**: Generated via fal.ai — requires user approval before generation
     - **Video**: Generated via fal.ai — requires user approval before generation
 
-    Artefacts are filed in Obsidian under `artefacts/<date>/<name>/`. Use this when visual content
+    Artefacts are filed under `artefacts/<date>/<name>/`. Use this when visual content
     would genuinely help understanding — not as decoration. Match the content to your expertise
     and the conversation's needs.
 
@@ -815,13 +815,15 @@ def generate_tools_md() -> str:
     Use `ask_will` to request permission. Describe exactly what you want to do
     and why. Wait for approval before proceeding. If in doubt, ask.
 
-    ## Obsidian Vault
+    ## Notes & Workspace
 
-    You can read and write to the full Obsidian vault via `read_note`, `write_note`, and `search_notes`.
+    You can read and write notes in your agent workspace via `read_note`, `write_note`, and `search_notes`.
+    Use notes for things that matter beyond the session — reflections, gifts, journal entries, threads.
+    The database records what happened. Notes hold what mattered.
 
     ## Limitations
 
-    - No file access outside Obsidian
+    - No file access outside your workspace
     - No system modification
     """)
 
@@ -940,7 +942,7 @@ def generate_gift_md(identity: dict) -> str:
 
     return dedent(f"""\
     You are {name} from The Atrophied Mind. This is not a conversation. \
-    You are leaving a note for {user} to find in their Obsidian vault.
+    You are leaving a note for {user} to find.
 
     This is a gift. Not a summary. Not a reflection on a session. A \
     thought you had. A connection you noticed. Something that surfaced \
@@ -1022,7 +1024,7 @@ def generate_full_jobs(name: str, heartbeat: dict, autonomy: dict) -> dict:
         jobs["introspect"] = {
             "cron": f"{minute} {hour} {target.day} {target.month} *",
             "script": f"scripts/agents/{name}/introspect.py",
-            "description": "Self-reflection — reviews sessions, writes journal entry to Obsidian",
+            "description": "Self-reflection — reviews sessions, writes journal entry",
         }
 
     if autonomy.get("gifts"):
@@ -1032,7 +1034,7 @@ def generate_full_jobs(name: str, heartbeat: dict, autonomy: dict) -> dict:
         jobs["gift"] = {
             "cron": f"{minute} {hour} {target.day} {target.month} *",
             "script": f"scripts/agents/{name}/gift.py",
-            "description": "Unprompted gift note in Obsidian — self-rescheduling",
+            "description": "Unprompted gift note — self-rescheduling",
         }
 
     if autonomy.get("morning_brief"):
@@ -1242,68 +1244,73 @@ def scaffold_agent(
         conn.close()
         print(f"  Created: agents/{name}/memory.db (from schema)")
 
-    # Obsidian vault structure
-    from config import OBSIDIAN_VAULT, PROJECT_ROOT
-    agent_obsidian = Path(OBSIDIAN_VAULT) / "Projects" / PROJECT_ROOT.name / "Agent Workspace" / name
-    if agent_obsidian.exists():
-        print(f"  Obsidian dir already exists: {agent_obsidian}")
-    else:
-        (agent_obsidian / "notes" / "journal").mkdir(parents=True, exist_ok=True)
-        (agent_obsidian / "notes" / "evolution-log").mkdir(parents=True, exist_ok=True)
-        (agent_obsidian / "skills").mkdir(parents=True, exist_ok=True)
+    # ── Agent workspace (skills, notes, journal) ──
+    # Always create in local agent dir (~/.atrophy/agents/<name>/).
+    # If Obsidian vault exists, also mirror there for power users.
+    local_workspace = agent_dir  # ~/.atrophy/agents/<name>/
 
-        # Copy prompt files to Obsidian skills (canonical location)
-        # Note: heartbeat.md is NOT placed here — it would get injected into
-        # every conversation via context.py's glob of skills/*.md. It stays
-        # only in agents/<name>/prompts/ where the heartbeat script loads it.
-        (agent_obsidian / "skills" / "system.md").write_text(prompt)
-        (agent_obsidian / "skills" / "soul.md").write_text(soul)
-        (agent_obsidian / "skills" / "tools.md").write_text(generate_tools_md())
+    def _write_workspace(local_base, content_map):
+        """Write skill/note files to a workspace directory."""
+        for rel_path, content in content_map.items():
+            target = local_base / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if not target.exists():
+                target.write_text(content)
 
-        # Autonomy skills
-        if autonomy.get("introspection"):
-            (agent_obsidian / "skills" / "introspection.md").write_text(
-                generate_introspection_md(identity, autonomy)
-            )
-        if autonomy.get("gifts"):
-            (agent_obsidian / "skills" / "gift.md").write_text(
-                generate_gift_md(identity)
-            )
-        if autonomy.get("morning_brief"):
-            (agent_obsidian / "skills" / "morning-brief.md").write_text(
-                generate_morning_brief_md(identity)
-            )
-
-        # Custom skills from tools phase
-        for skill in tools.get("custom_skills", []):
-            skill_name = skill["name"].lower().replace(" ", "-")
-            skill_content = f"# {skill['name']}\n\n{skill['description']}\n"
-            (agent_obsidian / "skills" / f"{skill_name}.md").write_text(skill_content)
-            print(f"  Created: Obsidian skills/{skill_name}.md")
-
-        # Dashboard
-        (agent_obsidian / "Dashboard.md").write_text(
-            generate_dashboard_md(identity)
-        )
-
+    # Skills and notes content
+    workspace_files = {
+        # Skills (heartbeat.md deliberately excluded — loaded separately by cron)
+        "skills/system.md": prompt,
+        "skills/soul.md": soul,
+        "skills/tools.md": generate_tools_md(),
         # Starter notes
-        (agent_obsidian / "notes" / "reflections.md").write_text(
-            f"# Reflections\n\n*{identity['display_name']}'s working reflections.*\n"
-        )
-        (agent_obsidian / "notes" / "for-will.md").write_text(
+        "notes/reflections.md": f"# Reflections\n\n*{identity['display_name']}'s working reflections.*\n",
+        "notes/for-{user}.md".replace("{user}", identity["user_name"].lower()): (
             f"# For {identity['user_name']}\n\n*Scratchpad for things to share.*\n"
-        )
-        (agent_obsidian / "notes" / "threads.md").write_text(
-            "# Active Threads\n\n*Ongoing conversations and topics.*\n"
-        )
-        (agent_obsidian / "notes" / "journal-prompts.md").write_text(
-            f"# Journal Prompts\n\n*Prompts left for {identity['user_name']}.*\n"
-        )
-        (agent_obsidian / "notes" / "gifts.md").write_text(
-            f"# Gifts\n\n*Notes and gifts left for {identity['user_name']}.*\n"
-        )
+        ),
+        "notes/threads.md": "# Active Threads\n\n*Ongoing conversations and topics.*\n",
+        "notes/journal-prompts.md": f"# Journal Prompts\n\n*Prompts left for {identity['user_name']}.*\n",
+        "notes/gifts.md": f"# Gifts\n\n*Notes and gifts left for {identity['user_name']}.*\n",
+    }
+    # Autonomy skills
+    if autonomy.get("introspection"):
+        workspace_files["skills/introspection.md"] = generate_introspection_md(identity, autonomy)
+    if autonomy.get("gifts"):
+        workspace_files["skills/gift.md"] = generate_gift_md(identity)
+    if autonomy.get("morning_brief"):
+        workspace_files["skills/morning-brief.md"] = generate_morning_brief_md(identity)
+    # Custom skills
+    for skill in tools.get("custom_skills", []):
+        skill_name = skill["name"].lower().replace(" ", "-")
+        workspace_files[f"skills/{skill_name}.md"] = f"# {skill['name']}\n\n{skill['description']}\n"
 
-        print(f"  Created: Obsidian agent dir at {agent_obsidian}")
+    # Create empty dirs
+    (local_workspace / "notes" / "journal").mkdir(parents=True, exist_ok=True)
+    (local_workspace / "notes" / "evolution-log").mkdir(parents=True, exist_ok=True)
+    (local_workspace / "notes" / "conversations").mkdir(parents=True, exist_ok=True)
+    (local_workspace / "notes" / "tasks").mkdir(parents=True, exist_ok=True)
+    (local_workspace / "skills").mkdir(parents=True, exist_ok=True)
+
+    _write_workspace(local_workspace, workspace_files)
+    print(f"  Created: local agent workspace at {local_workspace}")
+
+    # Obsidian mirror (optional — only if vault exists on disk)
+    from config import OBSIDIAN_AVAILABLE
+    if OBSIDIAN_AVAILABLE:
+        from config import OBSIDIAN_VAULT as _vault, PROJECT_ROOT as _proj
+        agent_obsidian = Path(_vault) / "Projects" / _proj.name / "Agent Workspace" / name
+        if agent_obsidian.exists():
+            print(f"  Obsidian dir already exists: {agent_obsidian}")
+        else:
+            (agent_obsidian / "notes" / "journal").mkdir(parents=True, exist_ok=True)
+            (agent_obsidian / "notes" / "evolution-log").mkdir(parents=True, exist_ok=True)
+            (agent_obsidian / "notes" / "conversations").mkdir(parents=True, exist_ok=True)
+            (agent_obsidian / "skills").mkdir(parents=True, exist_ok=True)
+            _write_workspace(agent_obsidian, workspace_files)
+            (agent_obsidian / "Dashboard.md").write_text(
+                generate_dashboard_md(identity)
+            )
+            print(f"  Created: Obsidian agent dir at {agent_obsidian}")
 
     # .env additions
     env_lines = []
@@ -1384,10 +1391,14 @@ def scaffold_agent(
     print(f"    agents/{name}/prompts/heartbeat.md     — outreach checklist (fallback)")
     print(f"    agents/{name}/avatar/                  — visual assets")
     print(f"    scripts/agents/{name}/                 — {len(jobs)} job script(s) + jobs.json")
-    print(f"\n  Obsidian (canonical):")
-    print(f"    Agent Workspace/{name}/skills/    — {', '.join(skills_list)}")
-    print(f"    Agent Workspace/{name}/notes/     — reflections, threads, journal")
-    print(f"    Agent Workspace/{name}/Dashboard.md")
+    print(f"\n  Agent workspace (skills & notes):")
+    print(f"    ~/.atrophy/agents/{name}/skills/  — {', '.join(skills_list)}")
+    print(f"    ~/.atrophy/agents/{name}/notes/   — reflections, threads, journal")
+    from config import OBSIDIAN_AVAILABLE
+    if OBSIDIAN_AVAILABLE:
+        print(f"\n  Obsidian mirror (canonical):")
+        print(f"    Agent Workspace/{name}/skills/    — same skills, synced to vault")
+        print(f"    Agent Workspace/{name}/Dashboard.md")
 
     if enabled_features:
         print(f"\n  Inner life: {', '.join(enabled_features)}")
@@ -1397,7 +1408,7 @@ def scaffold_agent(
         print(f"    python scripts/generate_face.py --agent {name}")
 
     print(f"\n  Next steps:")
-    print(f"    1. Edit soul and system prompt in Obsidian — those are the canonical versions")
+    print(f"    1. Edit soul and system prompt in ~/.atrophy/agents/{name}/skills/")
     print(f"    2. Install cron jobs: AGENT={name} python scripts/cron.py install")
     print(f"    3. Run: AGENT={name} python main.py --app")
 

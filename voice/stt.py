@@ -1,9 +1,11 @@
 """Speech-to-text via whisper.cpp with Metal acceleration."""
 import subprocess
-import tempfile
 import wave
 import numpy as np
 from pathlib import Path
+
+
+from voice.tempfiles import secure_tmp as _secure_tmp
 
 from config import WHISPER_BIN, WHISPER_MODEL, WHISPER_PATH, SAMPLE_RATE, CHANNELS
 
@@ -20,13 +22,12 @@ def transcribe(audio_data: np.ndarray) -> str:
     Returns:
         Transcribed text string, empty if nothing detected.
     """
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        tmp_path = Path(f.name)
-        with wave.open(f.name, "wb") as wf:
-            wf.setnchannels(CHANNELS)
-            wf.setsampwidth(2)  # 16-bit PCM
-            wf.setframerate(SAMPLE_RATE)
-            wf.writeframes((audio_data * 32767).astype(np.int16).tobytes())
+    tmp_path = _secure_tmp(".wav")
+    with wave.open(str(tmp_path), "wb") as wf:
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(2)  # 16-bit PCM
+        wf.setframerate(SAMPLE_RATE)
+        wf.writeframes((audio_data * 32767).astype(np.int16).tobytes())
 
     try:
         result = subprocess.run(
@@ -74,13 +75,12 @@ def transcribe_fast(audio_data: np.ndarray) -> str:
     """
     model = _WHISPER_MODEL_TINY if _WHISPER_MODEL_TINY.exists() else WHISPER_MODEL
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        tmp_path = Path(f.name)
-        with wave.open(f.name, "wb") as wf:
-            wf.setnchannels(CHANNELS)
-            wf.setsampwidth(2)  # 16-bit PCM
-            wf.setframerate(SAMPLE_RATE)
-            wf.writeframes((audio_data * 32767).astype(np.int16).tobytes())
+    tmp_path = _secure_tmp(".wav")
+    with wave.open(str(tmp_path), "wb") as wf:
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(2)  # 16-bit PCM
+        wf.setframerate(SAMPLE_RATE)
+        wf.writeframes((audio_data * 32767).astype(np.int16).tobytes())
 
     try:
         result = subprocess.run(

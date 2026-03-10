@@ -239,13 +239,23 @@ ADAPTIVE_EFFORT = _cfg("ADAPTIVE_EFFORT", "true").lower() == "true"
 MCP_DIR = BUNDLE_ROOT / "mcp"
 MCP_SERVER_SCRIPT = MCP_DIR / "memory_server.py"
 
-# ── Obsidian vault (optional — graceful when absent) ──
+# ── Obsidian vault (optional — technical users can set OBSIDIAN_VAULT env var) ──
 _obsidian_default = str(Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "The Atrophied Mind")
 _obsidian_base = Path(_cfg("OBSIDIAN_VAULT", _obsidian_default))
+OBSIDIAN_AVAILABLE = _obsidian_base.is_dir()
 OBSIDIAN_VAULT = _obsidian_base
-OBSIDIAN_PROJECT_DIR = _obsidian_base / "Projects" / BUNDLE_ROOT.name
-OBSIDIAN_AGENT_DIR = OBSIDIAN_PROJECT_DIR / "Agent Workspace" / AGENT_NAME
-OBSIDIAN_AGENT_NOTES = OBSIDIAN_AGENT_DIR
+
+if OBSIDIAN_AVAILABLE:
+    OBSIDIAN_PROJECT_DIR = _obsidian_base / "Projects" / BUNDLE_ROOT.name
+    OBSIDIAN_AGENT_DIR = OBSIDIAN_PROJECT_DIR / "Agent Workspace" / AGENT_NAME
+    OBSIDIAN_AGENT_NOTES = OBSIDIAN_AGENT_DIR
+else:
+    # No vault — agent notes, skills, and workspace live inside ~/.atrophy/agents/<name>/
+    OBSIDIAN_PROJECT_DIR = USER_DATA / "agents"
+    OBSIDIAN_AGENT_DIR = USER_DATA / "agents" / AGENT_NAME
+    OBSIDIAN_AGENT_NOTES = OBSIDIAN_AGENT_DIR
+    # Point OBSIDIAN_VAULT at user data so search_notes can still walk local files
+    OBSIDIAN_VAULT = USER_DATA / "agents" / AGENT_NAME
 
 # ── Memory ──
 CONTEXT_SUMMARIES = 3

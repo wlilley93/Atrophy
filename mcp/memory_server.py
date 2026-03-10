@@ -1343,15 +1343,20 @@ def _safe_vault_path(path: str) -> str | None:
     """Resolve a path within the vault, blocking traversal attacks.
 
     Returns the resolved absolute path if it falls inside VAULT_PATH,
-    or None if the path escapes the vault boundary or lands in ~/.atrophy/.
+    or None if the path escapes the vault boundary.
+
+    When VAULT_PATH points to the local agent dir (~/.atrophy/agents/<name>/),
+    the ~/.atrophy block is skipped since that IS the vault.
     """
     full = os.path.realpath(os.path.join(VAULT_PATH, path))
     vault_real = os.path.realpath(VAULT_PATH)
     if not full.startswith(vault_real + os.sep) and full != vault_real:
         return None
-    # Block access to ~/.atrophy/ even if it's inside the vault (e.g. via symlink)
-    if full.startswith(_ATROPHY_DIR + os.sep) or full == _ATROPHY_DIR:
-        return None
+    # Block access to ~/.atrophy/ if vault is an external Obsidian directory
+    # (prevents symlink escapes). Skip this check when vault IS inside ~/.atrophy/.
+    if not vault_real.startswith(_ATROPHY_DIR):
+        if full.startswith(_ATROPHY_DIR + os.sep) or full == _ATROPHY_DIR:
+            return None
     return full
 
 
