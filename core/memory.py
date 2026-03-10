@@ -53,7 +53,7 @@ def _migrate(conn: sqlite3.Connection):
     for col, defn in [
         ("valid_from", "DATETIME"),
         ("valid_to", "DATETIME"),
-        ("learned_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"),
+        ("learned_at", "DATETIME"),
         ("expired_at", "DATETIME"),
         ("confidence", "REAL DEFAULT 0.5"),
         ("activation", "REAL DEFAULT 1.0"),
