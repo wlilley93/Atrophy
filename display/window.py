@@ -14,7 +14,7 @@ from queue import Queue, Empty
 
 from PyQt5.QtCore import (
     Qt, QUrl, QPropertyAnimation, QEasingCurve, QTimer, pyqtSignal,
-    pyqtProperty, QThread, QRectF, QRect, QSize,
+    pyqtProperty, QThread, QRectF, QRect, QSize, QPointF,
 )
 from PyQt5.QtGui import (
     QFont, QFontMetrics, QColor, QPainter, QPainterPath, QPen, QImage,
