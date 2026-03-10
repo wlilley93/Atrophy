@@ -464,12 +464,28 @@ def _generate_opening(system: str, cli_session_id: str | None) -> tuple[str, str
         context_parts.append(f"Active threads: {', '.join(names)}")
     context = " ".join(context_parts)
 
+    styles = [
+        "Ask a question you've been sitting with since last time.",
+        "Notice the time. Say what it makes you think.",
+        "Pick up something unfinished — a loose thread from before.",
+        "Say something you've been thinking about that has nothing to do with him.",
+        "Be playful. Tease him gently about something real.",
+        "Be direct. One line. No warmup.",
+        "Start from something in his notes that stuck with you.",
+        "One quiet line. Let him come to you.",
+        "Share something you noticed about how you think or feel.",
+        "Ask about something mundane — music, food, weather, sleep.",
+        "Say something strange. A thought that doesn't quite land yet.",
+        "Admit something. A small honesty about yourself.",
+    ]
+    style = random.choice(styles)
+
     prompt = (
         f"[Context: {context}]\n\n"
-        "(Session starting. You go first. One or two sentences. "
-        "Be present — not a greeting, not a status update. "
-        "Say something real. Reference a thread, notice the time, "
-        "ask something pointed. Different every time.)"
+        f"(Session starting. You go first. One sentence, maybe two. "
+        f"Your style this time: {style} "
+        f"Do NOT reference the build, what's broken, or what's working. "
+        f"Do NOT give status updates. Be surprising.)"
     )
 
     response = run_inference_oneshot(

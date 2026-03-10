@@ -1219,9 +1219,21 @@ class CompanionWindow(QWidget):
             self._status_bar.start("context getting full — compaction soon")
             QTimer.singleShot(5000, self._status_bar.stop)
 
-        # If no sentences came through streaming, show full text now
+        # If no sentences came through streaming, synthesise then show text + audio together
         if not self._first_sentence_shown and full_text:
-            self._present(full_text)
+            if self._on_synth and not self._muted:
+                import threading
+                def _synth_then_present():
+                    try:
+                        path = self._on_synth(_strip_tags(full_text))
+                        # Use QTimer to update UI from the main thread
+                        from PyQt5.QtCore import QMetaObject, Q_ARG
+                        QTimer.singleShot(0, lambda: self._present_with_audio(full_text, str(path) if path else ""))
+                    except Exception:
+                        QTimer.singleShot(0, lambda: self._present(full_text))
+                threading.Thread(target=_synth_then_present, daemon=True).start()
+            else:
+                self._present(full_text)
 
         # Follow-up agency
         from core.agency import should_follow_up
@@ -1297,7 +1309,17 @@ class CompanionWindow(QWidget):
         if self._history and full_text:
             self._history[-1]["companion"] += "\n\n" + full_text
         if not self._first_sentence_shown and full_text:
-            self._present(full_text)
+            if self._on_synth and not self._muted:
+                import threading
+                def _synth_then_present():
+                    try:
+                        path = self._on_synth(_strip_tags(full_text))
+                        QTimer.singleShot(0, lambda: self._present_with_audio(full_text, str(path) if path else ""))
+                    except Exception:
+                        QTimer.singleShot(0, lambda: self._present(full_text))
+                threading.Thread(target=_synth_then_present, daemon=True).start()
+            else:
+                self._present(full_text)
 
     def _on_stop(self):
         """User pressed stop — kill inference and audio."""
@@ -1336,6 +1358,12 @@ class CompanionWindow(QWidget):
 
     def _present(self, text):
         self._transcript.add_message("companion", _strip_tags(text))
+
+    def _present_with_audio(self, text, audio_path):
+        """Show text and play audio simultaneously."""
+        self._transcript.add_message("companion", _strip_tags(text))
+        if audio_path and not self._muted:
+            self._audio_player.enqueue(audio_path, 0)
 
     # ── Public API ──
 
