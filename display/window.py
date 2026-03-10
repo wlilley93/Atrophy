@@ -803,11 +803,8 @@ class CompanionWindow(QWidget):
         self.resize(_W, _H)
         self.setMinimumSize(360, 480)
 
-        # Always on top — picture-in-picture style
-        self.setWindowFlags(
-            self.windowFlags()
-            | Qt.WindowStaysOnTopHint
-        )
+        # Normal window — allows macOS tiling (ctrl+left/right)
+        # Pin on top can be toggled later if needed
 
         # Audio player thread
         self._audio_player = AudioPlayer()
@@ -1064,10 +1061,10 @@ class CompanionWindow(QWidget):
         self._position_mode_buttons()
 
     def _position_mode_buttons(self):
-        right_edge = self.width() - _PAD
+        _, right, _, _ = self._content_rect()
         btn_y = _PAD
-        self._eye_btn.move(right_edge - 34, btn_y)
-        self._mute_btn.move(right_edge - 34 - 38, btn_y)
+        self._eye_btn.move(right - 34, btn_y)
+        self._mute_btn.move(right - 34 - 38, btn_y)
 
     def _build_status_bar(self):
         self._status_bar = StatusBar(self)
@@ -1116,6 +1113,7 @@ class CompanionWindow(QWidget):
 
         # Start streaming pipeline
         self._bar.set_stop_mode(True)
+        self._status_bar.start("thinking...")
         self._first_sentence_shown = False
         self._retry_text = text  # stash for auto-retry
         self._retried = False
@@ -1297,27 +1295,43 @@ class CompanionWindow(QWidget):
 
     # ── Layout ──
 
+    def _content_rect(self):
+        """Return the content area clamped to the video's visible bounds."""
+        win_w, win_h = self.width(), self.height()
+        if self._frame.isNull():
+            return _PAD, win_w - _PAD, 0, win_h
+        img_w, img_h = self._frame.width(), self._frame.height()
+        scale = max(win_w / img_w, win_h / img_h) * 1.01
+        sw = int(img_w * scale)
+        # Horizontal clamp — video may be narrower than window
+        vid_left = max(0, (win_w - sw) // 2)
+        vid_right = min(win_w, vid_left + sw)
+        left = vid_left + _PAD
+        right = vid_right - _PAD
+        return left, right, 0, win_h
+
     def resizeEvent(self, event):
         self._scaled_frame = None  # invalidate cache
         self._vignette_img = None  # invalidate vignette cache
         self._transcript._invalidate_layout()
-        w, h = self.width(), self.height()
-        bar_w = w - _PAD * 2
-        self._bar.setFixedSize(bar_w, _BAR_H)
-        self._bar.move(_PAD, h - _PAD - _BAR_H)
-        self._position_mode_buttons()
-        self._position_status_bar()
         self._reflow()
         super().resizeEvent(event)
 
     def _reflow(self):
-        w, h = self.width(), self.height()
+        left, right, _, h = self._content_rect()
+        content_w = right - left
+        # Input bar
+        self._bar.setFixedSize(content_w, _BAR_H)
+        self._bar.move(left, h - _PAD - _BAR_H)
+        # Transcript — bottom half, above input bar
         bar_y = h - _PAD - _BAR_H
         gap = 10
-        # Transcript fills area above input bar (bottom half of window)
         transcript_h = h // 2
         transcript_y = bar_y - gap - transcript_h
-        self._transcript.setGeometry(_PAD, transcript_y, w - _PAD * 2, transcript_h)
+        self._transcript.setGeometry(left, transcript_y, content_w, transcript_h)
+        # Buttons and status bar
+        self._position_mode_buttons()
+        self._position_status_bar()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:

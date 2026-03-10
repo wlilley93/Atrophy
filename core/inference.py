@@ -357,12 +357,14 @@ def stream_inference(
         # Check for subprocess failure
         if proc.returncode and proc.returncode != 0:
             err_msg = stderr_text.strip()[:300] if stderr_text else f"claude exited with code {proc.returncode}"
+            print(f"  [claude stderr: {err_msg}]")
             yield StreamError(message=err_msg)
             return
 
         # No output at all — something went wrong silently
         if not got_any_output and not full_text:
             err_msg = stderr_text.strip()[:300] if stderr_text else "No response from claude"
+            print(f"  [claude no output, stderr: {stderr_text.strip()[:300] if stderr_text else 'none'}]")
             yield StreamError(message=err_msg)
             return
 
