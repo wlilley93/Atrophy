@@ -164,123 +164,112 @@ def build_app():
     (contents / "Info.plist").write_text(plist)
 
     # ── Launcher script ──
-    launcher = f"""#!/bin/bash
-# ─────────────────────────────────────────────────────
-#  Atrophy — App Launcher
-# ─────────────────────────────────────────────────────
-#
-#  Code lives in ~/.atrophy/src/ (git-managed).
-#  Updates pull from git automatically on launch.
-#  User data lives in ~/.atrophy/ (never overwritten).
-#
-
-set -euo pipefail
-
-DATA_DIR="$HOME/.atrophy"
-SRC_DIR="$DATA_DIR/src"
-VENV_DIR="$DATA_DIR/venv"
-LOG_DIR="$DATA_DIR/logs"
-BOOTSTRAP="$(dirname "$(dirname "$0")")/Resources/bootstrap"
-GIT_REMOTE="{GIT_REMOTE}"
-
-mkdir -p "$DATA_DIR" "$LOG_DIR"
-
-log() {{ echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_DIR/launcher.log"; }}
-
-# ── PATH — ensure claude and common tools are discoverable ──
-export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.local/share/claude:$PATH"
-
-# ── First run: set up source ──
-if [ ! -d "$SRC_DIR/.git" ]; then
-    log "First run — setting up source"
-
-    # Try git clone first (gets full history + enables auto-update)
-    if command -v git &>/dev/null; then
-        log "Cloning from $GIT_REMOTE"
-        git clone --depth 1 "$GIT_REMOTE" "$SRC_DIR" 2>>"$LOG_DIR/launcher.log" || true
-    fi
-
-    # Fallback: copy bootstrap snapshot if clone failed
-    if [ ! -d "$SRC_DIR/.git" ] && [ -d "$BOOTSTRAP" ]; then
-        log "Clone failed — using bootstrap snapshot"
-        mkdir -p "$SRC_DIR"
-        cp -R "$BOOTSTRAP/" "$SRC_DIR/"
-        # Init a git repo so future launches can add the remote
-        cd "$SRC_DIR" && git init -q && git add -A && git commit -q -m "Bootstrap" 2>/dev/null || true
-        git remote add origin "$GIT_REMOTE" 2>/dev/null || true
-    fi
-
-    if [ ! -f "$SRC_DIR/main.py" ]; then
-        osascript -e 'display alert "Setup Failed" message "Could not set up Atrophy. Check ~/.atrophy/logs/launcher.log" as critical'
-        exit 1
-    fi
-fi
-
-# ── Auto-update: pull from git in background ──
-if [ -d "$SRC_DIR/.git" ]; then
-    (
-        cd "$SRC_DIR"
-        git fetch --depth 1 origin main 2>/dev/null \\
-            && git reset --hard origin/main 2>/dev/null \\
-            && log "Updated to $(git rev-parse --short HEAD)"
-    ) &>>"$LOG_DIR/launcher.log" &
-fi
-
-# ── Secrets: source .env from user data ──
-[ -f "$DATA_DIR/.env" ] && set -a && source "$DATA_DIR/.env" && set +a
-[ -f "$SRC_DIR/.env" ] && set -a && source "$SRC_DIR/.env" && set +a
-
-# ── Virtual environment ──
-if [ ! -f "$VENV_DIR/bin/python" ]; then
-    log "Creating virtual environment"
-
-    # Find Python 3
-    PYTHON=""
-    for p in python3.12 python3.11 python3 python; do
-        if command -v "$p" &>/dev/null; then
-            PYTHON="$p"
-            break
-        fi
-    done
-
-    if [ -z "$PYTHON" ]; then
-        osascript -e 'display alert "Python Not Found" message "Python 3.11+ is required. Install from python.org or: brew install python" as critical'
-        exit 1
-    fi
-
-    "$PYTHON" -m venv "$VENV_DIR" 2>>"$LOG_DIR/launcher.log"
-    "$VENV_DIR/bin/pip" install -q --upgrade pip 2>>"$LOG_DIR/launcher.log"
-    log "Venv created with $PYTHON"
-fi
-
-# ── Install/update dependencies ──
-# Compare requirements hash to skip unnecessary pip runs
-REQ_FILE="$SRC_DIR/requirements.txt"
-HASH_FILE="$VENV_DIR/.requirements_hash"
-if [ -f "$REQ_FILE" ]; then
-    CURRENT_HASH=$(md5 -q "$REQ_FILE" 2>/dev/null || md5sum "$REQ_FILE" | cut -d' ' -f1)
-    STORED_HASH=""
-    [ -f "$HASH_FILE" ] && STORED_HASH=$(cat "$HASH_FILE")
-
-    if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
-        log "Installing dependencies"
-        "$VENV_DIR/bin/pip" install -q -r "$REQ_FILE" 2>>"$LOG_DIR/launcher.log"
-        echo "$CURRENT_HASH" > "$HASH_FILE"
-        log "Dependencies installed"
-    fi
-fi
-
-# ── Check for Claude Code ──
-if ! command -v claude &>/dev/null; then
-    osascript -e 'display alert "Claude Code Required" message "Install Claude Code to use Atrophy.\\n\\nnpm install -g @anthropic-ai/claude-code\\n\\nOr download from claude.ai/download" as warning' &
-fi
-
-# ── Launch ──
-export ATROPHY_BUNDLE="$SRC_DIR"
-source "$VENV_DIR/bin/activate"
-cd "$SRC_DIR"
-exec python main.py --app 2>>"$LOG_DIR/app.stderr.log"
-"""
+    launcher_lines = [
+        '#!/bin/bash',
+        '# ─────────────────────────────────────────────────────',
+        '#  Atrophy — App Launcher',
+        '# ─────────────────────────────────────────────────────',
+        '#',
+        '#  Code lives in ~/.atrophy/src/ (git-managed).',
+        '#  Updates pull from git automatically on launch.',
+        '#  User data lives in ~/.atrophy/ (never overwritten).',
+        '#',
+        '',
+        'set -euo pipefail',
+        '',
+        'DATA_DIR="$HOME/.atrophy"',
+        'SRC_DIR="$DATA_DIR/src"',
+        'VENV_DIR="$DATA_DIR/venv"',
+        'LOG_DIR="$DATA_DIR/logs"',
+        'BOOTSTRAP="$(dirname "$(dirname "$0")")/Resources/bootstrap"',
+        f'GIT_REMOTE="{GIT_REMOTE}"',
+        '',
+        'mkdir -p "$DATA_DIR" "$LOG_DIR"',
+        '',
+        'log() { echo "$(date \'+%Y-%m-%d %H:%M:%S\') $1" >> "$LOG_DIR/launcher.log"; }',
+        '',
+        '# ── PATH — ensure claude and common tools are discoverable ──',
+        'export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.local/share/claude:$PATH"',
+        '',
+        '# ── First run: set up source ──',
+        'if [ ! -d "$SRC_DIR/.git" ]; then',
+        '    log "First run — setting up source"',
+        '    if command -v git &>/dev/null; then',
+        f'        git clone --depth 1 "{GIT_REMOTE}" "$SRC_DIR" 2>>"$LOG_DIR/launcher.log" || true',
+        '    fi',
+        '    if [ ! -d "$SRC_DIR/.git" ] && [ -d "$BOOTSTRAP" ]; then',
+        '        log "Clone failed — using bootstrap snapshot"',
+        '        mkdir -p "$SRC_DIR"',
+        '        cp -R "$BOOTSTRAP/" "$SRC_DIR/"',
+        '        cd "$SRC_DIR" && git init -q && git add -A && git commit -q -m "Bootstrap" 2>/dev/null || true',
+        f'        git remote add origin "{GIT_REMOTE}" 2>/dev/null || true',
+        '    fi',
+        '    if [ ! -f "$SRC_DIR/main.py" ]; then',
+        '        osascript -e \'display alert "Setup Failed" message "Could not set up Atrophy. Check ~/.atrophy/logs/launcher.log" as critical\'',
+        '        exit 1',
+        '    fi',
+        'fi',
+        '',
+        '# ── Auto-update: pull from git in background ──',
+        'if [ -d "$SRC_DIR/.git" ]; then',
+        '    (',
+        '        cd "$SRC_DIR"',
+        '        git fetch --depth 1 origin main 2>/dev/null || true',
+        '        git reset --hard origin/main 2>/dev/null || true',
+        '        log "Updated to $(git rev-parse --short HEAD)"',
+        '    ) >>"$LOG_DIR/launcher.log" 2>&1 &',
+        'fi',
+        '',
+        '# ── Secrets: source .env from user data ──',
+        '[ -f "$DATA_DIR/.env" ] && set -a && source "$DATA_DIR/.env" && set +a',
+        '[ -f "$SRC_DIR/.env" ] && set -a && source "$SRC_DIR/.env" && set +a',
+        '',
+        '# ── Virtual environment ──',
+        'if [ ! -f "$VENV_DIR/bin/python" ]; then',
+        '    log "Creating virtual environment"',
+        '    PYTHON=""',
+        '    for p in python3.12 python3.11 python3 python; do',
+        '        if command -v "$p" &>/dev/null; then',
+        '            PYTHON="$p"',
+        '            break',
+        '        fi',
+        '    done',
+        '    if [ -z "$PYTHON" ]; then',
+        '        osascript -e \'display alert "Python Not Found" message "Python 3.11+ is required. Install from python.org or: brew install python" as critical\'',
+        '        exit 1',
+        '    fi',
+        '    "$PYTHON" -m venv "$VENV_DIR" 2>>"$LOG_DIR/launcher.log"',
+        '    "$VENV_DIR/bin/pip" install -q --upgrade pip 2>>"$LOG_DIR/launcher.log"',
+        '    log "Venv created with $PYTHON"',
+        'fi',
+        '',
+        '# ── Install/update dependencies ──',
+        'REQ_FILE="$SRC_DIR/requirements.txt"',
+        'HASH_FILE="$VENV_DIR/.requirements_hash"',
+        'if [ -f "$REQ_FILE" ]; then',
+        '    CURRENT_HASH=$(md5 -q "$REQ_FILE" 2>/dev/null || md5sum "$REQ_FILE" | cut -d\' \' -f1)',
+        '    STORED_HASH=""',
+        '    [ -f "$HASH_FILE" ] && STORED_HASH=$(cat "$HASH_FILE")',
+        '    if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then',
+        '        log "Installing dependencies"',
+        '        "$VENV_DIR/bin/pip" install -q -r "$REQ_FILE" 2>>"$LOG_DIR/launcher.log"',
+        '        echo "$CURRENT_HASH" > "$HASH_FILE"',
+        '        log "Dependencies installed"',
+        '    fi',
+        'fi',
+        '',
+        '# ── Check for Claude Code ──',
+        'if ! command -v claude &>/dev/null; then',
+        '    osascript -e \'display alert "Claude Code Required" message "Install Claude Code to use Atrophy.\\n\\nnpm install -g @anthropic-ai/claude-code\\n\\nOr download from claude.ai/download" as warning\' &',
+        'fi',
+        '',
+        '# ── Launch ──',
+        'export ATROPHY_BUNDLE="$SRC_DIR"',
+        'source "$VENV_DIR/bin/activate"',
+        'cd "$SRC_DIR"',
+        'exec python main.py --app 2>>"$LOG_DIR/app.stderr.log"',
+    ]
+    launcher = '\n'.join(launcher_lines) + '\n'
     launcher_path = macos / "TheAtrophiedMind"
     launcher_path.write_text(launcher)
     launcher_path.chmod(launcher_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
