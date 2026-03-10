@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 from config import DB_PATH, MESSAGE_QUEUE, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES
+from core.queue import queue_message
 from core.memory import (
     _connect, get_active_threads, get_recent_summaries,
     get_recent_observations,
@@ -105,24 +106,6 @@ def _gather_context() -> str:
 _BRIEF_FALLBACK = "You are the companion. Write a short natural morning message for Will. 3-6 sentences. Warm but not performative."
 
 
-def _queue_message(text: str, audio_path: str = ""):
-    """Append a message to the queue file."""
-    queue = []
-    if MESSAGE_QUEUE.exists():
-        try:
-            queue = json.loads(MESSAGE_QUEUE.read_text())
-        except (json.JSONDecodeError, Exception):
-            queue = []
-
-    queue.append({
-        "text": text,
-        "audio_path": audio_path,
-        "source": "morning_brief",
-        "created_at": datetime.now().isoformat(),
-    })
-    MESSAGE_QUEUE.write_text(json.dumps(queue, indent=2))
-
-
 def _synthesise_audio(text: str) -> str:
     """Pre-generate TTS audio. Returns path or empty string."""
     try:
@@ -171,7 +154,7 @@ def morning_brief():
         print(f"[brief] Telegram send failed: {e}")
 
     # Queue for next app launch
-    _queue_message(brief, audio)
+    queue_message(MESSAGE_QUEUE, brief, source="morning_brief", audio_path=audio)
     print("[brief] Queued for next launch.")
 
 

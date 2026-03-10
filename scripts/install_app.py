@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Install / uninstall The Atrophied Mind as a menu bar app.
+"""Install / uninstall The Atrophied Mind as a login item.
 
 Usage:
   python scripts/install_app.py install   — Register launchd agent (starts at login)
   python scripts/install_app.py uninstall — Remove launchd agent
   python scripts/install_app.py status    — Check if installed and running
+
+The launchd agent opens the .app at login. The .app itself handles
+source updates (git pull), venv management, and launching Python.
 """
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,24 +18,13 @@ LABEL = "com.atrophiedmind.companion"
 PLIST_DIR = Path.home() / "Library" / "LaunchAgents"
 PLIST_PATH = PLIST_DIR / f"{LABEL}.plist"
 
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-MAIN_PY = PROJECT_DIR / "main.py"
+APP_NAME = "The Atrophied Mind"
 USER_DATA = Path.home() / ".atrophy"
 LOG_DIR = USER_DATA / "logs"
-
-
-def _python_path() -> str:
-    """Find the python that has the project's dependencies."""
-    # Prefer the venv in the project, then pyenv, then system
-    venv = PROJECT_DIR / ".venv" / "bin" / "python"
-    if venv.exists():
-        return str(venv)
-    return sys.executable
+APP_PATH = Path.home() / "Applications" / f"{APP_NAME}.app"
 
 
 def _plist_content() -> str:
-    python = _python_path()
-    log_dir = str(LOG_DIR)
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -44,13 +35,12 @@ def _plist_content() -> str:
 
     <key>ProgramArguments</key>
     <array>
-        <string>{python}</string>
-        <string>{MAIN_PY}</string>
-        <string>--app</string>
+        <string>/usr/bin/open</string>
+        <string>-a</string>
+        <string>{APP_PATH}</string>
+        <string>--args</string>
+        <string>--launched-by-launchd</string>
     </array>
-
-    <key>WorkingDirectory</key>
-    <string>{PROJECT_DIR}</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -62,22 +52,24 @@ def _plist_content() -> str:
     </dict>
 
     <key>StandardOutPath</key>
-    <string>{log_dir}/app.stdout.log</string>
+    <string>{LOG_DIR}/launchd.stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>{log_dir}/app.stderr.log</string>
+    <string>{LOG_DIR}/launchd.stderr.log</string>
 
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:{Path(python).parent}</string>
-    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
 </dict>
 </plist>
 """
 
 
 def install():
+    if not APP_PATH.exists():
+        print(f"  Error: {APP_PATH} not found.")
+        print(f"  Run 'python scripts/build_app.py --install' first.")
+        return
+
     PLIST_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -92,9 +84,9 @@ def install():
     subprocess.run(["launchctl", "load", str(PLIST_PATH)], check=True)
     print(f"  Loaded {LABEL}")
     print()
-    print("  The Atrophied Mind is now a menu bar app.")
-    print("  It will start at login and restart if it crashes.")
-    print(f"  Logs: {LOG_DIR}/app.*.log")
+    print("  The Atrophied Mind will now start at login.")
+    print("  It restarts automatically if it crashes.")
+    print(f"  Logs: {LOG_DIR}/")
 
 
 def uninstall():
@@ -119,6 +111,18 @@ def status():
     else:
         installed = "installed" if PLIST_PATH.exists() else "not installed"
         print(f"  {LABEL}: not running ({installed})")
+
+    # Also check the .app
+    if APP_PATH.exists():
+        print(f"  App: {APP_PATH}")
+    else:
+        print(f"  App: not found at {APP_PATH}")
+
+    src = USER_DATA / "src"
+    if src.exists():
+        print(f"  Source: {src}")
+    else:
+        print(f"  Source: not yet cloned (will clone on first launch)")
 
 
 def main():

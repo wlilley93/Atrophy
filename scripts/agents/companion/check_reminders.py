@@ -30,6 +30,7 @@ from dotenv import load_dotenv
 load_dotenv(PROJECT_ROOT / ".env")
 
 from config import DATA_DIR, MESSAGE_QUEUE, AGENT_DISPLAY_NAME
+from core.queue import queue_message
 
 REMINDERS_FILE = DATA_DIR / ".reminders.json"
 
@@ -45,22 +46,6 @@ def _load_reminders() -> list[dict]:
 
 def _save_reminders(reminders: list[dict]):
     REMINDERS_FILE.write_text(json.dumps(reminders, indent=2) + "\n")
-
-
-def _queue_message(text: str):
-    queue = []
-    if MESSAGE_QUEUE.exists():
-        try:
-            queue = json.loads(MESSAGE_QUEUE.read_text())
-        except Exception:
-            queue = []
-    queue.append({
-        "text": text,
-        "audio_path": "",
-        "source": "reminder",
-        "created_at": datetime.now().isoformat(),
-    })
-    MESSAGE_QUEUE.write_text(json.dumps(queue, indent=2))
 
 
 def _notify(title: str, body: str):
@@ -110,7 +95,7 @@ def check_reminders():
         _notify(f"Reminder — {AGENT_DISPLAY_NAME}", msg)
 
         # Queue for next app interaction
-        _queue_message(f"Reminder: {msg}")
+        queue_message(MESSAGE_QUEUE, f"Reminder: {msg}", source="reminder")
 
         # Send via Telegram if configured
         try:

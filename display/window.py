@@ -2225,14 +2225,19 @@ class CompanionWindow(QWidget):
 
     def _drain_agent_queue(self, agent_name: str, is_active: bool):
         """Drain one agent's message queue. Active agent = present + audio. Others = notify only."""
+        import fcntl
         from config import USER_DATA
         queue_file = USER_DATA / "agents" / agent_name / "data" / ".message_queue.json"
         if not queue_file.exists():
             return
 
+        lock_path = queue_file.with_suffix(".lock")
         try:
-            queue = json.loads(queue_file.read_text())
-            queue_file.unlink()
+            with open(lock_path, "w") as lock_fd:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                queue = json.loads(queue_file.read_text())
+                queue_file.unlink()
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
         except Exception:
             return
         if not queue:

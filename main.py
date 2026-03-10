@@ -20,6 +20,8 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+# User data .env takes precedence, bundle .env is fallback
+load_dotenv(Path.home() / ".atrophy" / ".env")
 load_dotenv(Path(__file__).parent / ".env")
 
 from config import AVATAR_ENABLED, INPUT_MODE, AGENT_DISPLAY_NAME, USER_NAME, OPENING_LINE

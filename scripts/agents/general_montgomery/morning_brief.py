@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 load_dotenv(PROJECT_ROOT / ".env")
 
 from config import DB_PATH, MESSAGE_QUEUE, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES
+from core.queue import queue_message
 from core.memory import (
     _connect, get_active_threads, get_recent_summaries,
     get_recent_observations,
@@ -90,23 +91,6 @@ _BRIEF_FALLBACK = (
 )
 
 
-def _queue_message(text: str, audio_path: str = ""):
-    queue = []
-    if MESSAGE_QUEUE.exists():
-        try:
-            queue = json.loads(MESSAGE_QUEUE.read_text())
-        except (json.JSONDecodeError, Exception):
-            queue = []
-
-    queue.append({
-        "text": text,
-        "audio_path": audio_path,
-        "source": "morning_brief",
-        "created_at": datetime.now().isoformat(),
-    })
-    MESSAGE_QUEUE.write_text(json.dumps(queue, indent=2))
-
-
 def _synthesise_audio(text: str) -> str:
     try:
         from voice.tts import synthesise_sync
@@ -151,7 +135,7 @@ def morning_brief():
     except Exception as e:
         print(f"[brief] Telegram send failed: {e}")
 
-    _queue_message(brief, audio)
+    queue_message(MESSAGE_QUEUE, brief, source="morning_brief", audio_path=audio)
     print("[brief] Queued for next launch.")
 
 

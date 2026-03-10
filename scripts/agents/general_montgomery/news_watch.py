@@ -30,6 +30,7 @@ from config import DB_PATH, MESSAGE_QUEUE, AGENT_DISPLAY_NAME
 from core.memory import init_db, write_observation
 from core.inference import run_inference_oneshot
 from core.embeddings import embed_text
+from core.queue import queue_message
 
 # ── RSS Sources ──
 
@@ -55,6 +56,18 @@ FEEDS = {
     "aljazeera": "https://www.aljazeera.com/xml/rss/all.xml",
     "diplomat": "https://thediplomat.com/feed/",
     "bellingcat": "https://www.bellingcat.com/feed/",
+
+    # Think tanks — UK
+    "rusi": "https://www.rusi.org/rss.xml",
+    "iiss": "https://www.iiss.org/rss",
+    "chatham_house": "https://www.chathamhouse.org/rss.xml",
+
+    # Think tanks — US
+    "csis": "https://www.csis.org/rss.xml",
+    "isw": "https://www.understandingwar.org/rss.xml",
+    "rand": "https://www.rand.org/content/rand/blog.rss.xml",
+    "brookings": "https://www.brookings.edu/feed/",
+    "carnegie": "https://carnegieendowment.org/rss/solr/?f-content-type=article",
 
     # Google aggregated military/conflict
     "google_military": "https://news.google.com/rss/search?q=military+OR+defence+OR+conflict+OR+invasion+when:1h&hl=en-US&gl=US&ceid=US:en",
@@ -281,23 +294,9 @@ def _queue_urgent(items: list[dict], assessments: dict):
     if not urgent_items:
         return
 
-    # Queue for immediate display
-    queue = []
-    if MESSAGE_QUEUE.exists():
-        try:
-            queue = json.loads(MESSAGE_QUEUE.read_text())
-        except Exception:
-            queue = []
-
+    # Queue for immediate display (file-locked)
     for text in urgent_items:
-        queue.append({
-            "text": text,
-            "audio_path": "",
-            "source": "intelligence",
-            "created_at": datetime.now().isoformat(),
-        })
-
-    MESSAGE_QUEUE.write_text(json.dumps(queue, indent=2))
+        queue_message(MESSAGE_QUEUE, text, source="intelligence")
     print(f"  [intel] Queued {len(urgent_items)} urgent items for immediate delivery")
 
     # Also try Telegram

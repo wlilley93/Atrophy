@@ -47,6 +47,7 @@ from config import (
     DB_PATH, MESSAGE_QUEUE, OBSIDIAN_AGENT_DIR,
     AGENT_DISPLAY_NAME,
 )
+from core.queue import queue_message
 from core.memory import get_active_threads, get_recent_summaries, get_recent_observations
 from core.inference import run_inference_oneshot
 
@@ -163,24 +164,6 @@ def _gather_sources(sources: list[str]) -> str:
     return "\n\n".join(parts)
 
 
-def _queue_message(text: str, audio_path: str = "", source: str = "task"):
-    """Append to message queue for next app interaction."""
-    queue = []
-    if MESSAGE_QUEUE.exists():
-        try:
-            queue = json.loads(MESSAGE_QUEUE.read_text())
-        except Exception:
-            queue = []
-
-    queue.append({
-        "text": text,
-        "audio_path": audio_path,
-        "source": source,
-        "created_at": datetime.now().isoformat(),
-    })
-    MESSAGE_QUEUE.write_text(json.dumps(queue, indent=2))
-
-
 def _deliver(text: str, meta: dict, task_name: str):
     """Deliver the result via the specified channel."""
     deliver = meta.get("deliver", "message_queue")
@@ -197,7 +180,7 @@ def _deliver(text: str, meta: dict, task_name: str):
             print(f"[task] TTS failed: {e}")
 
     if deliver == "message_queue":
-        _queue_message(text, audio_path, source=task_name)
+        queue_message(MESSAGE_QUEUE, text, source=task_name, audio_path=audio_path)
         print(f"[task] Queued for next interaction.")
 
     elif deliver == "telegram":
@@ -208,7 +191,7 @@ def _deliver(text: str, meta: dict, task_name: str):
         except Exception as e:
             print(f"[task] Telegram failed: {e}")
         # Also queue for app
-        _queue_message(text, audio_path, source=task_name)
+        queue_message(MESSAGE_QUEUE, text, source=task_name, audio_path=audio_path)
 
     elif deliver == "notification":
         from core.notify import send_notification
@@ -216,7 +199,7 @@ def _deliver(text: str, meta: dict, task_name: str):
         body = text[:200] + "..." if len(text) > 200 else text
         send_notification(AGENT_DISPLAY_NAME, body, subtitle=task_name)
         # Also queue full text
-        _queue_message(text, audio_path, source=task_name)
+        queue_message(MESSAGE_QUEUE, text, source=task_name, audio_path=audio_path)
 
     elif deliver == "obsidian":
         note_path = OBSIDIAN_AGENT_DIR / "notes" / "tasks" / f"{task_name}.md"
@@ -229,7 +212,7 @@ def _deliver(text: str, meta: dict, task_name: str):
 
     else:
         print(f"[task] Unknown delivery method: {deliver}")
-        _queue_message(text, audio_path, source=task_name)
+        queue_message(MESSAGE_QUEUE, text, source=task_name, audio_path=audio_path)
 
 
 def run_task(task_name: str):

@@ -19,6 +19,7 @@ from config import (
     DB_PATH, MESSAGE_QUEUE, HEARTBEAT_PATH,
     HEARTBEAT_ACTIVE_START, HEARTBEAT_ACTIVE_END,
 )
+from core.queue import queue_message
 from core.memory import (
     _connect, get_active_threads, get_recent_summaries,
     get_recent_observations, get_last_interaction_time,
@@ -78,23 +79,6 @@ def _gather_context() -> str:
         parts.append(f"## Recent observations\n" + "\n".join(lines))
 
     return "\n\n".join(parts)
-
-
-def _queue_message(text: str):
-    queue = []
-    if MESSAGE_QUEUE.exists():
-        try:
-            queue = json.loads(MESSAGE_QUEUE.read_text())
-        except (json.JSONDecodeError, Exception):
-            queue = []
-
-    queue.append({
-        "text": text,
-        "audio_path": "",
-        "source": "heartbeat",
-        "created_at": datetime.now().isoformat(),
-    })
-    MESSAGE_QUEUE.write_text(json.dumps(queue, indent=2))
 
 
 _HEARTBEAT_PROMPT = (
@@ -192,7 +176,7 @@ def heartbeat():
             title=AGENT_DISPLAY_NAME,
             body=message[:200],
         )
-        _queue_message(message)
+        queue_message(MESSAGE_QUEUE, message, source="heartbeat")
         print(f"[heartbeat] Reaching out: {message[:80]}...")
 
     elif response_stripped.startswith("[HEARTBEAT_OK]"):

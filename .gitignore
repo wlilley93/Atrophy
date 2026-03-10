@@ -36,6 +36,10 @@ agents/*/avatar/
 # MCP generated config
 mcp/config.json
 
+# Build artifacts
+build/
+*.icns
+
 # OS
 .DS_Store
 
