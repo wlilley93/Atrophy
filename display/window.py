@@ -134,31 +134,45 @@ def _orb_colors_for_frame(frame_idx: int) -> list:
 
     Each entry is ((r,g,b), (r,g,b), (r,g,b)) for inner/mid/outer stops.
     Returns a list of 3 tuples (one per orb layer).
+
+    Frames progress from clean lavender/purple (pristine brain) through to
+    a dual-tone of sickly green decay + glowing cyan cybernetics.
     """
-    if frame_idx < 3:
-        # Organic — warm pink/amber glow
-        t = frame_idx / 2.0
-        return [
-            ((200 + int(t * 30), 150 + int(t * 20), 180), (150, 90 + int(t * 20), 120), (80, 40, 60)),
-            ((180 + int(t * 30), 130, 160), (120, 70 + int(t * 15), 100), (60, 35, 50)),
-            ((160 + int(t * 30), 110, 140), (100, 60, 80), (50, 30, 40)),
-        ]
-    elif frame_idx < 7:
-        # Cybernetic — cold blue/cyan
-        t = (frame_idx - 3) / 3.0
-        return [
-            ((100 + int(t * 50), 150 + int(t * 30), 255), (60 + int(t * 30), 100 + int(t * 20), 220), (30, 40, 140)),
-            ((80 + int(t * 40), 130 + int(t * 30), 240), (50, 80 + int(t * 20), 200), (25, 35, 120)),
-            ((60 + int(t * 30), 110 + int(t * 40), 220), (40, 70, 180), (20, 30, 100)),
-        ]
-    else:
-        # Rot — sickly green-brown
-        t = (frame_idx - 7) / 2.0
-        return [
-            ((120 - int(t * 30), 130 - int(t * 20), 60 - int(t * 20)), (80 - int(t * 20), 85 - int(t * 15), 40), (50, 45, 25)),
-            ((100 - int(t * 25), 110 - int(t * 15), 50 - int(t * 15)), (65 - int(t * 15), 70 - int(t * 10), 35), (40, 38, 20)),
-            ((80 - int(t * 20), 90 - int(t * 10), 40 - int(t * 10)), (55 - int(t * 10), 55, 30), (35, 30, 18)),
-        ]
+    t = frame_idx / 9.0  # 0.0 (pristine) → 1.0 (full decay + cyber)
+
+    # Blend two palettes: purple-lavender (clean) and green-cyan (decayed+cyber)
+    # Inner glow: purple → split between decay-green and cyber-cyan
+    inner = (
+        int(190 - t * 100),           # 190→90  (purple R fades)
+        int(150 - t * 20 + t * 60),   # 150→190 (green component rises)
+        int(200 - t * 60 + t * 80),   # 200→220 (cyan/blue stays high)
+    )
+    mid = (
+        int(130 - t * 70),            # 130→60
+        int(90 + t * 40),             # 90→130
+        int(150 - t * 10 + t * 50),   # 150→190
+    )
+    outer = (
+        int(60 - t * 30),             # 60→30
+        int(40 + t * 20),             # 40→60
+        int(70 + t * 30),             # 70→100
+    )
+
+    # Layer 2 — slightly dimmer
+    inner2 = (max(0, inner[0] - 20), max(0, inner[1] - 20), max(0, inner[2] - 15))
+    mid2 = (max(0, mid[0] - 15), max(0, mid[1] - 10), max(0, mid[2] - 10))
+    outer2 = (max(0, outer[0] - 10), max(0, outer[1] - 5), max(0, outer[2] - 5))
+
+    # Layer 3 — dimmest
+    inner3 = (max(0, inner[0] - 40), max(0, inner[1] - 40), max(0, inner[2] - 30))
+    mid3 = (max(0, mid[0] - 30), max(0, mid[1] - 20), max(0, mid[2] - 20))
+    outer3 = (max(0, outer[0] - 20), max(0, outer[1] - 10), max(0, outer[2] - 10))
+
+    return [
+        (inner, mid, outer),
+        (inner2, mid2, outer2),
+        (inner3, mid3, outer3),
+    ]
 
 
 # Precomputed lookup table — avoids recomputing 30x/sec
@@ -2658,12 +2672,35 @@ class CompanionWindow(QWidget):
     _ATROPHY_FONT = None  # class-level, created once
 
     def _ensure_brain_frames(self):
-        """Lazy-load brain overlay and build frames if needed."""
+        """Lazy-load brain overlay and build frames if needed.
+
+        Prefers AI-generated frames from display/icons/brain_frames/ (brain_00.png
+        through brain_09.png). Falls back to QPainter-composited frames from the
+        base brain_overlay.png if generated frames aren't available.
+        """
         if self._brain_overlay is None:
             brain_path = os.path.join(os.path.dirname(__file__), "icons", "brain_overlay.png")
             self._brain_overlay = QImage(brain_path)
         if self._brain_frames is None and not self._brain_overlay.isNull():
-            self._brain_frames = _build_brain_frames(self._brain_overlay)
+            # Try loading AI-generated frames first
+            frames_dir = os.path.join(os.path.dirname(__file__), "icons", "brain_frames")
+            generated = []
+            if os.path.isdir(frames_dir):
+                for i in range(10):
+                    fp = os.path.join(frames_dir, f"brain_{i:02d}.png")
+                    if os.path.exists(fp):
+                        img = QImage(fp)
+                        if not img.isNull():
+                            generated.append(img)
+                        else:
+                            break
+                    else:
+                        break
+            if len(generated) == 10:
+                self._brain_frames = generated
+            else:
+                # Fall back to QPainter-composited frames
+                self._brain_frames = _build_brain_frames(self._brain_overlay)
 
     def _get_scaled_brain(self, frame_idx: int, size: int) -> 'QImage':
         """Get a pre-scaled brain frame, caching by size."""
@@ -3568,7 +3605,7 @@ class CompanionWindow(QWidget):
         )
         layout.addWidget(progress)
 
-        bar.setGeometry(0, self.height() - 36, self.width(), 36)
+        bar.setGeometry(0, self._bar.y() - 36, self.width(), 36)
         bar.show()
         bar.raise_()
         self._artefact_loading_bar = bar

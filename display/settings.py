@@ -739,7 +739,7 @@ class SettingsModal(QWidget):
         self._settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         settings_content = QWidget()
         self._content_layout = QVBoxLayout(settings_content)
-        self._content_layout.setContentsMargins(24, 12, 24, 24)
+        self._content_layout.setContentsMargins(24, 16, 24, 24)
         self._content_layout.setSpacing(10)
         self._build_settings_sections()
         self._content_layout.addStretch()
@@ -916,7 +916,7 @@ class SettingsModal(QWidget):
             row = QHBoxLayout()
             label_text = f"  {display}"
             name_lbl = QLabel(label_text)
-            name_lbl.setFixedWidth(140)
+            name_lbl.setFixedWidth(160)
             if is_current:
                 name_lbl.setStyleSheet(
                     "color: rgba(255,255,255,0.95); font-weight: bold; font-size: 13px;"

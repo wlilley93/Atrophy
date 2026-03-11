@@ -626,6 +626,7 @@ class SetupWizard(QWidget):
 
     def _start_intro(self):
         """Begin the intro sequence."""
+        self._intro_timer.stop()
         self._intro_step = 0
         self._intro_timer.start(80)  # tick every 80ms for smooth fades
 
@@ -647,13 +648,15 @@ class SetupWizard(QWidget):
             """Set opacity on a label (0.0 to 1.0)."""
             lbl = self._intro_lines[idx]
             opacity = min(1.0, max(0.0, progress))
-            # "intelligence." gets brighter
-            if idx == 2:
-                lbl.setStyleSheet(lbl.styleSheet().split("color:")[0] +
-                    f"color: rgba(255,255,255,{opacity * 0.95});")
-            else:
-                lbl.setStyleSheet(lbl.styleSheet().split("color:")[0] +
-                    f"color: rgba(255,255,255,{opacity * 0.8});")
+            brightness = 0.95 if idx == 2 else 0.8
+            # Replace color via regex to avoid breaking other stylesheet properties
+            new_style = re.sub(
+                r'color:\s*rgba\([^)]+\)',
+                f'color: rgba(255,255,255,{opacity * brightness})',
+                lbl.styleSheet(),
+                count=1,
+            )
+            lbl.setStyleSheet(new_style)
 
         if t <= 15:
             fade_label(0, t / 15.0)
@@ -727,7 +730,7 @@ class SetupWizard(QWidget):
         self._pages.setCurrentIndex(2)
         self._start_chat()
 
-    # ── Page 1: Conversational Agent Creation ──
+    # ── Page 2: Conversational Agent Creation ──
 
     def _build_page_chat(self):
         page = QWidget()
@@ -1539,7 +1542,7 @@ class SetupWizard(QWidget):
             "content": f"(VIDEOS: complete — {total} clips generated)",
         })
 
-    # ── Page 2: Creating ──
+    # ── Page 3: Creating ──
 
     def _build_page_creating(self):
         page = QWidget()
@@ -1556,7 +1559,7 @@ class SetupWizard(QWidget):
         lay.addStretch(4)
         self._pages.addWidget(page)
 
-    # ── Page 3: Done ──
+    # ── Page 4: Done ──
 
     def _build_page_done(self):
         page = QWidget()
