@@ -635,6 +635,19 @@ def run_gui(menu_bar_mode=False):
 
     session = _init()
 
+    # Background install sentence-transformers for embeddings (non-blocking)
+    def _bg_install_embeddings():
+        try:
+            import sentence_transformers  # noqa: F401
+        except ImportError:
+            import subprocess
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-q", "sentence-transformers"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+    import threading
+    threading.Thread(target=_bg_install_embeddings, daemon=True).start()
+
     from core.context import load_system_prompt
     from voice.tts import synthesise_sync
     system = load_system_prompt()
