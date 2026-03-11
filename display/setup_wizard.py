@@ -1677,7 +1677,17 @@ def run_setup(app: QApplication = None) -> dict | None:
     wizard.closeEvent = _on_close
 
     wizard.show()
+    wizard.raise_()
+    wizard.activateWindow()
     wizard._name_input.setFocus()
+
+    # Bring to front — essential for LSUIElement apps
+    try:
+        from AppKit import NSApplication
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+    except ImportError:
+        pass
+
     loop.exec_()
 
     if wizard.user_name:
