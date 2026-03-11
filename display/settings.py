@@ -57,8 +57,8 @@ _STYLE = """
         font-size: 11px;
         font-weight: bold;
         text-transform: uppercase;
-        padding-top: 12px;
-        padding-bottom: 4px;
+        padding-top: 16px;
+        padding-bottom: 6px;
         background: transparent;
     }
     QLabel#settingLabel {
@@ -739,8 +739,8 @@ class SettingsModal(QWidget):
         self._settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         settings_content = QWidget()
         self._content_layout = QVBoxLayout(settings_content)
-        self._content_layout.setContentsMargins(24, 8, 24, 24)
-        self._content_layout.setSpacing(4)
+        self._content_layout.setContentsMargins(24, 12, 24, 24)
+        self._content_layout.setSpacing(10)
         self._build_settings_sections()
         self._content_layout.addStretch()
 
@@ -1140,6 +1140,20 @@ class SettingsModal(QWidget):
                        cfg.TELEGRAM_BOT_TOKEN, password=True)
         self._add_text("telegram_chat_id", "Chat ID", cfg.TELEGRAM_CHAT_ID)
 
+        # ── Background Downloads ──
+        self._add_section("DOWNLOADS")
+        dl_row = QHBoxLayout()
+        self._dl_status = QLabel("Checking...")
+        self._dl_status.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 12px;")
+        dl_row.addWidget(self._dl_status)
+        dl_row.addStretch()
+        self._content_layout.addLayout(dl_row)
+        # Check status on a timer
+        self._dl_timer = QTimer()
+        self._dl_timer.timeout.connect(self._check_download_status)
+        self._dl_timer.start(3000)
+        QTimer.singleShot(500, self._check_download_status)
+
         # ── About ──
         self._add_section("ABOUT")
         self._add_info("app_version", "Version", cfg.VERSION)
@@ -1177,6 +1191,29 @@ class SettingsModal(QWidget):
         update_btn.clicked.connect(self._check_for_updates)
         update_row.addWidget(update_btn)
         self._content_layout.addLayout(update_row)
+
+    # ── Background download status ─────────────────────────────
+
+    def _check_download_status(self):
+        """Check if sentence-transformers (embeddings) is installed."""
+        try:
+            import sentence_transformers  # noqa: F401
+            self._dl_status.setText("Embeddings model — installed")
+            self._dl_status.setStyleSheet("color: rgba(100,220,100,0.6); font-size: 12px;")
+            self._dl_timer.stop()
+        except ImportError:
+            # Check if pip is currently installing it
+            import subprocess
+            result = subprocess.run(
+                ["pgrep", "-f", "pip.*sentence.transformers"],
+                capture_output=True,
+            )
+            if result.returncode == 0:
+                self._dl_status.setText("Embeddings model — downloading in background...")
+                self._dl_status.setStyleSheet("color: rgba(100,140,255,0.7); font-size: 12px;")
+            else:
+                self._dl_status.setText("Embeddings model — pending (installs on first use)")
+                self._dl_status.setStyleSheet("color: rgba(255,255,255,0.4); font-size: 12px;")
 
     # ── Setup reset ─────────────────────────────────────────────
 
