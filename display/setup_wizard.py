@@ -537,6 +537,15 @@ class SetupWizard(QWidget):
         self._video_loop_paths = []   # completed loop temp files
         self._video_progress_widget = None
 
+        # TTS — speak AI responses (best-effort, non-blocking)
+        self._tts_available = False
+        try:
+            from voice.tts import speak
+            self._tts_speak = speak
+            self._tts_available = True
+        except Exception:
+            pass
+
         self._ai_response_ready.connect(self._on_ai_response)
         self._avatar_result_ready.connect(self._on_avatar_result)
         self._avatar_error_ready.connect(self._on_avatar_error)
@@ -877,6 +886,28 @@ class SetupWizard(QWidget):
         self._chat_input.setFocus()
         self._send_ai_message(first=True)
 
+    def _speak(self, text: str):
+        """Speak text via TTS in a background thread (best-effort)."""
+        if not self._tts_available:
+            return
+        # Strip markdown, tags, code blocks for cleaner speech
+        clean = re.sub(r'```[\s\S]*?```', '', text)
+        clean = re.sub(r'`[^`]+`', '', clean)
+        clean = re.sub(r'\[.*?\]', '', clean)
+        clean = re.sub(r'\*+', '', clean)
+        clean = re.sub(r'#+\s*', '', clean)
+        clean = clean.strip()
+        if not clean:
+            return
+
+        def _tts_worker():
+            try:
+                self._tts_speak(clean)
+            except Exception:
+                pass
+        thread = threading.Thread(target=_tts_worker, daemon=True)
+        thread.start()
+
     def _send_message(self):
         text = self._chat_input.text().strip()
         if not text or self._waiting_for_ai:
@@ -936,6 +967,8 @@ class SetupWizard(QWidget):
         if display_text:
             self._chat_messages.append({"role": "assistant", "content": display_text})
             self._add_message("assistant", display_text)
+            # Speak the response via TTS (non-blocking)
+            self._speak(display_text)
 
         # Check for tool calls in priority order
 
