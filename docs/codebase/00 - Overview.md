@@ -41,11 +41,17 @@ agents/<name>/                     # In BUNDLE_ROOT (repo)
 
 | Mode | Flag | Input | Output | Voice | Avatar |
 |------|------|-------|--------|-------|--------|
-| CLI | `--cli` (default) | Push-to-talk + typing | Terminal streaming | STT + TTS | No |
+| App | `--app` (primary) | Floating input bar / chat overlay | PyQt5 window (menu bar) | TTS | Video loops |
+| GUI | `--gui` | Floating input bar | PyQt5 window (Dock) | TTS | Video loops |
+| CLI | `--cli` | Push-to-talk + typing | Terminal streaming | STT + TTS | No |
 | Text | `--text` | Typing only | Terminal streaming | No | No |
-| GUI | `--gui` | Floating input bar | PyQt5 window | TTS | Video loops |
+| Server | `--server` | HTTP POST | JSON/SSE | No | No |
 
-All modes share the same inference pipeline, memory system, and MCP tools.
+`--app` is the primary mode — hides from the Dock, lives in the menu bar, starts silent. All modes share the same inference pipeline, memory system, and MCP tools. Server mode exposes REST endpoints secured by auto-generated bearer token.
+
+## First Launch
+
+On first GUI/app launch, `display/setup_wizard.py` runs a conversational setup flow (API keys, agent creation, avatar generation) before the main window appears. Controlled by the `setup_complete` flag in `~/.atrophy/config.json`.
 
 ## Data Flow
 
@@ -108,7 +114,9 @@ See [07 - Scripts and Automation](07%20-%20Scripts%20and%20Automation.md).
 
 ## Obsidian Integration
 
-The companion optionally reads from and writes to an Obsidian vault. The system prompt is loaded from Obsidian first (the agent can edit it there), falling back to the local `prompts/system_prompt.md`. Skill prompts live in `<agent>/skills/`. MCP tools provide `read_note`, `write_note`, `search_notes`, and `prompt_journal` for vault interaction.
+The companion optionally reads from and writes to an Obsidian vault. The `OBSIDIAN_AVAILABLE` flag in `config.py` is `True` if the vault directory exists on disk. When unavailable, all agent notes, skills, and workspace operations fall back to `~/.atrophy/agents/<name>/` — the system works fully without Obsidian.
+
+Prompt resolution uses four tiers (see `core/prompts.py`): Obsidian vault → local skills (`~/.atrophy/agents/<name>/skills/`) → user prompts → bundle defaults. MCP tools provide `read_note`, `write_note`, `search_notes`, and `prompt_journal` for vault interaction.
 
 Notes created by the companion get YAML frontmatter (type, created, updated, agent, tags). Obsidian features like `[[wiki links]]`, `#tags`, inline Dataview fields, and reminder syntax are supported.
 
@@ -116,13 +124,21 @@ Notes created by the companion get YAML frontmatter (type, created, updated, age
 
 | Path | Purpose |
 |------|---------|
-| `main.py` | Entry point. CLI/text/GUI mode selection |
-| `config.py` | Central configuration. Three-tier path resolution (env → config.json → manifest → defaults) |
-| `core/` | Session, inference, memory, agency, context, sentinel |
-| `voice/` | Audio capture, STT, TTS, wake word |
-| `display/` | PyQt5 window, canvas overlay |
-| `mcp/memory_server.py` | MCP tool server (JSON-RPC over stdio) |
+| `main.py` | Entry point. App/GUI/CLI/text/server mode selection |
+| `config.py` | Central configuration. Four-tier path resolution (env → config.json → manifest → defaults) |
+| `core/` | Session, inference, memory, agency, context, sentinel, agent manager |
+| `core/agent_manager.py` | Multi-agent discovery, switching, state persistence, session deferral |
+| `core/prompts.py` | Four-tier skill/prompt resolution (Obsidian → local skills → user prompts → bundle) |
+| `voice/` | Audio capture, STT, TTS, wake word, secure temp files |
+| `display/` | PyQt5 window, canvas overlay, setup wizard, artefact system, timer overlay |
+| `display/timer.py` | Countdown timer overlay — pure local, no inference |
+| `display/setup_wizard.py` | First-launch conversational setup with secure input for API keys |
+| `mcp/memory_server.py` | MCP tool server (35 tools, JSON-RPC over stdio) |
+| `server.py` | HTTP API server (Flask, bearer auth, SSE streaming) |
 | `channels/telegram.py` | Telegram Bot API integration |
 | `scripts/cron.py` | launchd control plane |
+| `scripts/agents/<name>/run_task.py` | Generic prompt-based task runner |
+| `scripts/agents/<name>/check_reminders.py` | Reminder checker (fires notifications every minute) |
 | `scripts/agents/<name>/` | Per-agent daemon scripts and job definitions |
+| `scripts/install_app.py` | Install/uninstall as login menu bar app via launchd |
 | `db/schema.sql` | Database schema (three-layer memory) |

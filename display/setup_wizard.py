@@ -133,7 +133,7 @@ def _save_env_var(key: str, value: str):
 # ── Agent creation metaprompt ──
 
 _AGENT_CREATION_SYSTEM = dedent("""\
-    You are the agent creation guide for Atrhopy, a companion app.
+    You are the agent creation guide for Atrophy, a companion app.
     The human has just told you their name: {user_name}.
 
     Your job is to help them create their first AI companion through conversation.
@@ -361,7 +361,7 @@ class SetupWizard(QWidget):
         self.setStyleSheet(_STYLE)
 
         self.setFixedSize(622, 830)
-        self.setWindowTitle("Atrhopy — Setup")
+        self.setWindowTitle("Atrophy — Setup")
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, False)
 
@@ -431,7 +431,7 @@ class SetupWizard(QWidget):
             lay.addWidget(icon_label)
             lay.addSpacing(16)
 
-        lay.addWidget(_label("Atrhopy", 22, 0.9, align=Qt.AlignCenter))
+        lay.addWidget(_label("Atrophy", 22, 0.9, align=Qt.AlignCenter))
         lay.addSpacing(8)
         lay.addWidget(_label("Offload your mind.", 13, 0.4, align=Qt.AlignCenter))
         lay.addSpacing(40)
@@ -1329,7 +1329,9 @@ class SetupWizard(QWidget):
             self._done_title.setText(f"{display_name} is ready.")
             self._done_subtitle.setText(
                 "Your companion has been created with memory, prompts, and personality.\n"
-                "You can customise everything later in Settings."
+                "You can customise everything later in Settings.\n\n"
+                "Your agent can browse the web and take actions on your behalf.\n"
+                "Review its permissions in Settings \u2192 Tools."
             )
             self._pages.setCurrentIndex(3)
 

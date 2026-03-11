@@ -140,13 +140,20 @@ Pattern matching for away intent: `detect_away_intent()` uses a compiled regex c
 
 ## prompts.py
 
-Skill prompt loader.
+Skill prompt loader with four-tier resolution.
 
 ```python
 def load_prompt(name: str, fallback: str = "") -> str
 ```
 
-Reads from `<OBSIDIAN_AGENT_DIR>/skills/{name}.md`. Returns fallback if not found.
+Checks four directories in order, returning the first non-empty match:
+
+1. **Obsidian vault** — `Agent Workspace/<agent>/skills/{name}.md` (if `OBSIDIAN_AVAILABLE`)
+2. **Local skills** — `~/.atrophy/agents/<agent>/skills/{name}.md` (canonical for non-Obsidian users)
+3. **User prompts** — `~/.atrophy/agents/<agent>/prompts/{name}.md` (legacy overrides)
+4. **Bundle** — `agents/<agent>/prompts/{name}.md` (repo defaults)
+
+Without Obsidian, tier 2 is the canonical location. The agent reads and writes there via MCP note tools. Returns `fallback` if no file is found in any tier.
 
 ## embeddings.py
 
@@ -261,3 +268,29 @@ def send_notification(title: str, body: str, subtitle: str = "")
 ```
 
 Uses `osascript` with AppleScript `display notification`. Escapes special characters for AppleScript string literals. Newlines are replaced with spaces.
+
+## agent_manager.py
+
+Multi-agent discovery, switching, state persistence, and session deferral.
+
+**Agent discovery**: `discover_agents()` scans `~/.atrophy/agents/` and `agents/` (bundle), looking for directories containing `data/agent.json`. User-installed agents override bundled ones by name.
+
+**Agent state**: Per-agent `muted` and `enabled` flags are stored in `~/.atrophy/agent_states.json`. Toggling `enabled` automatically installs or uninstalls the agent's launchd cron jobs via `scripts/cron.py`.
+
+```python
+def get_agent_state(agent_name: str) -> dict   # {"muted": bool, "enabled": bool}
+def set_agent_state(agent_name: str, muted=None, enabled=None)
+```
+
+**Agent switching**: `reload_agent_config(agent_name)` sets the `AGENT` env var and reloads the config module. `cycle_agent(direction, current)` returns the next/prev enabled agent name, wrapping around and skipping disabled agents. Used by Cmd+Up/Cmd+Down in the GUI.
+
+**Session deferral**: When one agent defers to another mid-conversation (via the `defer_to_agent` MCP tool), the current agent's session is suspended in memory:
+
+```python
+def suspend_agent_session(agent_name, cli_session_id, session)
+def resume_agent_session(agent_name) -> dict | None  # pops suspended state
+```
+
+This allows the deferred-to agent to handle the question, then the original agent can be resumed.
+
+**Agent roster**: `get_agent_roster(exclude=None)` returns a list of enabled agents with display names and descriptions. Used for injecting agent awareness into the system prompt so agents know who else is available for deferral.

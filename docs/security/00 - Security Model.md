@@ -66,18 +66,24 @@ Blocked command patterns and rationale:
 
 ### MCP Server Constraint
 
-The MCP memory server exposes a fixed set of 24 tools. Each tool has a declared JSON Schema for its inputs, and the server dispatches only to registered handlers in the `HANDLERS` dictionary. Unknown tool names return an error. The server does not evaluate arbitrary expressions or execute dynamic code.
+The MCP memory server exposes a fixed set of 34 tools. Each tool has a declared JSON Schema for its inputs, and the server dispatches only to registered handlers in the `HANDLERS` dictionary. Unknown tool names return an error. The server does not evaluate arbitrary expressions or execute dynamic code.
 
 Tool categories:
-- **Memory**: `remember`, `recall_session`, `search_similar`, `observe`, `bookmark`, `review_observations`, `retire_observation`
+- **Memory**: `remember`, `recall_session`, `recall_other_agent`, `search_similar`, `observe`, `bookmark`, `review_observations`, `retire_observation`
 - **Threads**: `get_threads`, `track_thread`
 - **Obsidian**: `read_note`, `write_note`, `search_notes`, `daily_digest`, `prompt_journal`
 - **Analysis**: `check_contradictions`, `detect_avoidance`, `compare_growth`
 - **Communication**: `ask_will`, `send_telegram`
-- **State**: `update_emotional_state`, `update_trust`
+- **State**: `update_emotional_state`, `update_trust`, `self_status`
 - **Display**: `render_canvas`, `render_memory_graph`
 - **Avatar**: `add_avatar_loop`
+- **Artefacts**: `create_artefact`
+- **Agent Management**: `create_agent`, `defer_to_agent`
+- **Reminders & Timers**: `set_reminder`, `set_timer`
+- **Tasks**: `create_task`
 - **Admin**: `review_audit`, `manage_schedule`
+
+Per-agent tool disabling is supported via the `disabled_tools` field in `agent.json`. Disabled tools are removed from the tool list before being sent to Claude.
 
 ### No Arbitrary Code Execution
 
@@ -106,7 +112,13 @@ The system sends no analytics, telemetry, or usage data to any party. The only o
 
 ### Obsidian Vault Access
 
-The companion reads and writes to its agent subdirectory within the Obsidian vault (`OBSIDIAN_AGENT_NOTES`). The `read_note` and `write_note` tools accept paths relative to the vault root. All paths are validated against traversal attacks — the MCP server resolves the real path via `os.path.realpath()` and verifies it stays within `VAULT_PATH`. Paths containing `../` sequences that escape the vault boundary are rejected with an error. New notes receive automatic YAML frontmatter with agent attribution.
+The companion reads and writes to its agent subdirectory within the Obsidian vault (`OBSIDIAN_AGENT_NOTES`). The `read_note` and `write_note` tools accept paths relative to the vault root. All paths are validated against traversal attacks by `_safe_vault_path()`:
+
+1. Resolves the real path via `os.path.realpath()` and verifies it stays within `VAULT_PATH`
+2. When the vault is an external Obsidian directory, additionally blocks any path resolving to `~/.atrophy/` (prevents symlink escapes to runtime data)
+3. When running in local mode (no Obsidian, vault points to `~/.atrophy/agents/<name>/`), the `~/.atrophy` block is skipped since that IS the vault
+
+Paths containing `../` sequences that escape the vault boundary are rejected with an error. New notes receive automatic YAML frontmatter with agent attribution.
 
 ### Embedding Storage
 
@@ -193,6 +205,34 @@ Agent manifests (`agents/<name>/data/agent.json`) reference secrets by environme
 The inference module (`core/inference.py`) strips all `CLAUDE`-prefixed environment variables before spawning Claude CLI subprocesses. This prevents nested Claude processes from inheriting session state that could cause hangs or cross-contamination.
 
 ---
+
+## Secure Input (Setup Wizard)
+
+The setup wizard (`display/setup_wizard.py`) collects API keys via a `SECURE_INPUT` tool mechanism. When the AI requests a key, the chat input bar switches to a secure mode:
+
+- Orange border indicates secure input is active
+- The value goes directly to `~/.atrophy/.env` (via `save_user_config()`)
+- The AI never sees the actual key value — only "saved" or "skipped"
+- The user can skip any key by clicking the skip button
+
+This ensures API keys never appear in inference context, conversation history, or memory. In the interactive CLI script (`scripts/create_agent.py`), `getpass`-style hidden input is used for the same purpose.
+
+---
+
+## Secure Temp Files
+
+Voice modules (STT and TTS) create temporary audio files during processing. These use `voice/tempfiles.py`, which creates files via `os.mkstemp()` in a user-only directory (mode `0o700`). This prevents the TOCTOU race condition present in `tempfile.NamedTemporaryFile(delete=False)`, where the file could be replaced via a symlink between creation and use.
+
+## File Permissions
+
+- **User config** (`~/.atrophy/config.json`): Created with `0o600` permissions (owner read/write only)
+- **Server token** (`~/.atrophy/server_token`): Created with `0o600` permissions
+- **Temp audio directories**: Created with `0o700` permissions (owner only)
+
+## Server Security
+
+- **Token masking**: The bearer token is partially masked in startup logs (`{token[:8]}...{token[-4:]}`) to prevent exposure in terminal scrollback or log files
+- **Content-Type enforcement**: The HTTP API requires proper `Content-Type: application/json` headers on POST requests, rejecting requests that attempt to force JSON parsing on arbitrary content types
 
 ## Audit Trail
 

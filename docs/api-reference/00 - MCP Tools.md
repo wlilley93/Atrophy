@@ -2,7 +2,9 @@
 
 The companion exposes its memory and capabilities through an MCP (Model Context Protocol) server at `mcp/memory_server.py`. The server communicates over JSON-RPC 2.0 via stdio, and all tools are namespaced under `mcp__memory__*` when invoked by Claude.
 
-Server info: `companion-memory` v1.0.0, protocol version `2024-11-05`.
+Server info: `companion-memory` (version from `VERSION` file), protocol version `2024-11-05`.
+
+The server exposes **34 tools** across the following categories: Memory & Recall (4), Threads (2), Observations & Bookmarks (3), Analytical Tools (3), Obsidian Integration (5), Telegram (2), Inner State (3), Display (2), Avatar (1), Scheduling & Audit (2), Agent Management (2), Reminders & Timers (2), Tasks (1), and Artefacts (1).
 
 ---
 
@@ -53,6 +55,20 @@ Retrieve the full conversation from a specific past session by ID. Use after `re
   }
 }
 ```
+
+---
+
+### recall_other_agent
+
+Search another agent's conversation history — their turns and session summaries with Will. Only accesses what was said, not their observations or identity model.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent` | string | Yes | Name of the agent to search (e.g. `companion`, `general_montgomery`) |
+| `query` | string | Yes | Search term or phrase to look for in their conversation history |
+| `limit` | integer | No | Maximum results per category (default: 10) |
+
+**Returns:** Formatted matching turns and summaries from the target agent's database.
 
 ---
 
@@ -526,3 +542,169 @@ Review the audit log of all tool calls the companion has made. Reads from the `t
 | `flagged_only` | boolean | No | Only show flagged/suspicious calls (default: false) |
 
 **Returns:** Timestamped list of tool calls with session IDs, tool names, flag status, and input JSON (truncated to 200 characters).
+
+---
+
+## Agent Management
+
+### create_agent
+
+Create a new agent for The Atrophied Mind. Accepts a complete configuration as JSON and scaffolds everything: repo directories, agent.json manifest, prompts (soul, system, heartbeat), Obsidian workspace (skills, notes, dashboard), memory database, scheduled job scripts, and cron jobs.json. Optionally downloads a source face image and video clips for the avatar.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `config` | object | Yes | Full agent configuration with sections: `identity`, `boundaries`, `voice`, `appearance`, `channels`, `heartbeat`, `autonomy`. Plus optional `source_image_url` and `video_clip_urls`. |
+
+**Minimum required:** `config.identity.display_name` and `config.identity.user_name`.
+
+**Returns:** Summary string listing what was created.
+
+---
+
+### defer_to_agent
+
+Hand off the current conversation to another agent who is better suited to respond. The current agent's session is suspended, the target agent receives the user's question along with context notes, and the GUI transitions to the new agent.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `target` | string | Yes | Agent slug to defer to (e.g. `general_montgomery`) |
+| `context` | string | Yes | Brief context for the target agent — what was discussed, why you're handing off |
+| `user_question` | string | Yes | The user's original question or message that triggered the deferral |
+
+**Returns:** "Deferring to {target}..." or an error if the target agent is not found or not enabled.
+
+---
+
+### self_status
+
+Get a full snapshot of the companion's current state — identity, available tools, scheduled jobs, emotional state, active threads, session history, and configuration. Takes no parameters.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| (none) | | | |
+
+**Returns:** Multi-section status report including agent identity, tool list, cron job schedule, emotional state, trust levels, active threads, recent sessions, and configuration values.
+
+---
+
+## Reminders & Timers
+
+### set_reminder
+
+Set a reminder for Will at a specific time. When the time arrives, a macOS notification fires with sound, the message is queued for the next conversation, and a Telegram message is sent (if configured).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `time` | string | Yes | ISO datetime when the reminder should fire, e.g. `2026-03-10T14:30:00` |
+| `message` | string | Yes | What to remind Will about |
+
+**Returns:** Confirmation with the scheduled time and message.
+
+**Storage:** Reminders are written to `~/.atrophy/agents/<name>/data/.reminders.json` and checked every minute by `scripts/agents/<name>/check_reminders.py`.
+
+**Example:**
+```json
+{
+  "name": "set_reminder",
+  "arguments": {
+    "time": "2026-03-10T15:00:00",
+    "message": "Call the dentist"
+  }
+}
+```
+
+---
+
+### set_timer
+
+Start a visual countdown timer in the app. The timer runs locally with zero inference latency — just a clock and a sound. The timer appears as a floating overlay in the top-right corner.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `seconds` | integer | Yes | Duration in seconds (e.g. 300 for 5 minutes) |
+| `label` | string | Yes | What the timer is for (e.g. `Tea`, `Break`, `Focus`) |
+
+**Returns:** Confirmation that the timer has started.
+
+**Example:**
+```json
+{
+  "name": "set_timer",
+  "arguments": {
+    "seconds": 300,
+    "label": "Tea"
+  }
+}
+```
+
+---
+
+## Tasks
+
+### create_task
+
+Create a recurring task that runs on a schedule. Writes a prompt definition to Obsidian and schedules a cron job pointing to the generic task runner. No code writing needed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Short task name (lowercase, hyphens ok), e.g. `news-digest` |
+| `prompt` | string | Yes | The prompt to execute each time the task runs |
+| `cron` | string | Yes | Cron schedule, e.g. `0 */2 * * *` for every 2 hours |
+| `deliver` | string | No | Delivery method: `message_queue` (default), `telegram`, `notification`, or `obsidian` |
+| `voice` | boolean | No | Pre-synthesise TTS audio for the result (default: true) |
+| `sources` | string[] | No | Data sources to fetch before running: `weather`, `headlines`, `threads`, `summaries`, `observations` |
+
+**Returns:** Confirmation with the task name, schedule, and delivery method.
+
+**Example:**
+```json
+{
+  "name": "create_task",
+  "arguments": {
+    "name": "morning-news",
+    "prompt": "Summarise the top UK news stories. 3-5 bullet points, conversational.",
+    "cron": "0 7 * * *",
+    "deliver": "telegram",
+    "sources": ["headlines", "weather"]
+  }
+}
+```
+
+---
+
+## Artefacts
+
+### create_artefact
+
+Create a visual artefact — an interactive visualisation, chart, map, image, or video that appears on-screen overlaying the ambient video.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `type` | string | Yes | Artefact type: `html`, `image`, or `video` |
+| `name` | string | Yes | Short descriptive name (used as filename, e.g. `iran-positions-map`) |
+| `description` | string | Yes | One-line description of what this artefact shows |
+| `content` | string | Conditional | Complete HTML document (for type `html` only). Include all CSS/JS inline. |
+| `prompt` | string | Conditional | Generation prompt (for type `image` or `video` only) |
+| `model` | string | No | Fal model ID (for image/video). Default: `fal-ai/flux-general` for images, `fal-ai/kling-video/v3/pro/text-to-video` for video. |
+| `width` | integer | No | Image/video width in pixels (default: 1024) |
+| `height` | integer | No | Image/video height in pixels (default: 768) |
+
+**Behaviour by type:**
+- `html` — rendered directly in the canvas overlay. No cost, no approval needed.
+- `image` — generated via Fal. User is asked to approve before generation (costs money).
+- `video` — generated via Fal/Kling. User is asked to approve before generation.
+
+**Returns:** Artefact created confirmation with path and display status.
+
+**Example:**
+```json
+{
+  "name": "create_artefact",
+  "arguments": {
+    "type": "html",
+    "name": "solar-system",
+    "description": "Interactive 3D solar system model",
+    "content": "<!DOCTYPE html>..."
+  }
+}
+```

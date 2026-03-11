@@ -31,6 +31,7 @@ from core.inner_life import format_for_context, update_emotions, update_trust
 
 # Tools the companion must never use
 _TOOL_BLACKLIST = [
+    # Destructive system commands
     "Bash(rm -rf:*)",
     "Bash(sudo:*)",
     "Bash(shutdown:*)",
@@ -46,8 +47,23 @@ _TOOL_BLACKLIST = [
     "Bash(git push --force:*)",
     "Bash(kill -9:*)",
     "Bash(chflags:*)",
+    # Database direct access
     "Bash(sqlite3*memory.db:*)",
     "Bash(sqlite3*companion.db:*)",
+    # Credential file access — prevent leaking API keys via prompt injection
+    "Bash(cat*.env:*)",
+    "Bash(head*.env:*)",
+    "Bash(tail*.env:*)",
+    "Bash(less*.env:*)",
+    "Bash(more*.env:*)",
+    "Bash(grep*.env:*)",
+    "Bash(cat*config.json:*)",
+    "Bash(cat*server_token:*)",
+    # Puppeteer write actions — require user approval (not auto-allowed).
+    # Read-only browsing (navigate, screenshot, evaluate) stays allowed.
+    "mcp__puppeteer__puppeteer_click",
+    "mcp__puppeteer__puppeteer_fill",
+    "mcp__puppeteer__puppeteer_select",
 ]
 
 # Sentence boundary: period/question/exclamation followed by space or end

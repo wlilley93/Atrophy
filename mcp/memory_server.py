@@ -855,6 +855,19 @@ TOOLS = [
             "required": ["text"],
         },
     },
+    {
+        "name": "self_status",
+        "description": (
+            "Get a full snapshot of your current state — who you are, what tools "
+            "you have, your scheduled jobs, emotional state, active threads, "
+            "session history, and configuration. Use this to orient yourself or "
+            "when you need to understand what you're capable of."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 ]
 
 # Rate limit tracking for Telegram sends
@@ -1339,6 +1352,12 @@ def handle_track_thread(args):
 
 _ATROPHY_DIR = os.path.realpath(os.path.join(os.path.expanduser("~"), ".atrophy"))
 
+# Filenames that must never be readable through note tools — prevents credential leakage
+_BLOCKED_FILENAMES = {
+    ".env", "config.json", ".server_token", "server_token",
+    ".credentials", "credentials.json", ".secrets",
+}
+
 def _safe_vault_path(path: str) -> str | None:
     """Resolve a path within the vault, blocking traversal attacks.
 
@@ -1357,6 +1376,10 @@ def _safe_vault_path(path: str) -> str | None:
     if not vault_real.startswith(_ATROPHY_DIR):
         if full.startswith(_ATROPHY_DIR + os.sep) or full == _ATROPHY_DIR:
             return None
+    # Block sensitive filenames — prevents credential leakage via prompt injection
+    basename = os.path.basename(full)
+    if basename in _BLOCKED_FILENAMES:
+        return None
     return full
 
 
@@ -2536,6 +2559,153 @@ def _escape_html(text):
     )
 
 
+def handle_self_status(args):
+    """Comprehensive self-awareness snapshot for the agent."""
+    import subprocess
+    from datetime import datetime
+
+    sections = []
+
+    # ── Identity ──
+    agent_name = os.environ.get("AGENT", "companion")
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Load manifest
+    manifest = {}
+    for base in [os.path.expanduser(f"~/.atrophy/agents/{agent_name}"),
+                 os.path.join(project_root, "agents", agent_name)]:
+        mpath = os.path.join(base, "data", "agent.json")
+        if os.path.exists(mpath):
+            try:
+                manifest = json.loads(open(mpath).read())
+            except Exception:
+                pass
+            break
+
+    sections.append("## Identity")
+    sections.append(f"- Agent: {manifest.get('display_name', agent_name)}")
+    sections.append(f"- Slug: {agent_name}")
+    sections.append(f"- User: {manifest.get('user_name', 'unknown')}")
+    sections.append(f"- Wake words: {', '.join(manifest.get('wake_words', []))}")
+    if manifest.get("description"):
+        sections.append(f"- Description: {manifest['description']}")
+
+    # ── Emotional State ──
+    state_file = os.path.expanduser(
+        f"~/.atrophy/agents/{agent_name}/data/.emotional_state.json"
+    )
+    if os.path.exists(state_file):
+        try:
+            state = json.loads(open(state_file).read())
+            emotions = state.get("emotions", {})
+            trust = state.get("trust", {})
+            sections.append("\n## Emotional State")
+            for k, v in emotions.items():
+                sections.append(f"- {k}: {v:.2f}")
+            if trust:
+                sections.append("\n## Trust Domains")
+                for k, v in trust.items():
+                    sections.append(f"- {k}: {v:.2f}")
+        except Exception:
+            pass
+
+    # ── Active Threads ──
+    try:
+        conn = _connect()
+        threads = conn.execute(
+            "SELECT name, summary, status FROM threads WHERE status = 'active' ORDER BY updated_at DESC LIMIT 10"
+        ).fetchall()
+        conn.close()
+        if threads:
+            sections.append("\n## Active Threads")
+            for t in threads:
+                summary = f" — {t['summary'][:80]}" if t["summary"] else ""
+                sections.append(f"- {t['name']}{summary}")
+    except Exception:
+        pass
+
+    # ── Session Stats ──
+    try:
+        conn = _connect()
+        row = conn.execute(
+            "SELECT COUNT(*) as total, MAX(started_at) as last_session FROM sessions"
+        ).fetchone()
+        turn_count = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+        obs_count = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+        conn.close()
+        sections.append("\n## Memory Stats")
+        sections.append(f"- Total sessions: {row['total']}")
+        sections.append(f"- Last session: {row['last_session'] or 'never'}")
+        sections.append(f"- Total turns: {turn_count}")
+        sections.append(f"- Observations: {obs_count}")
+    except Exception:
+        pass
+
+    # ── Scheduled Jobs ──
+    cron_script = os.path.join(project_root, "scripts", "cron.py")
+    if os.path.exists(cron_script):
+        try:
+            result = subprocess.run(
+                [sys.executable, cron_script, "list"],
+                capture_output=True, text=True, cwd=project_root, timeout=10,
+            )
+            if result.stdout.strip():
+                sections.append("\n## Scheduled Jobs")
+                sections.append(result.stdout.strip())
+        except Exception:
+            pass
+
+    # ── Available Tools ──
+    disabled = manifest.get("disabled_tools", [])
+    tool_names = [t["name"] for t in TOOLS]
+    sections.append("\n## Available Tools")
+    sections.append(f"- Total: {len(tool_names)}")
+    if disabled:
+        sections.append(f"- Disabled: {', '.join(disabled)}")
+    sections.append(f"- Tools: {', '.join(tool_names)}")
+
+    # ── Voice Config ──
+    voice = manifest.get("voice", {})
+    if voice:
+        sections.append("\n## Voice")
+        sections.append(f"- Backend: {voice.get('tts_backend', 'unknown')}")
+        sections.append(f"- Playback rate: {voice.get('playback_rate', 1.0)}")
+
+    # ── Heartbeat Config ──
+    hb = manifest.get("heartbeat", {})
+    if hb:
+        sections.append("\n## Heartbeat")
+        sections.append(f"- Active hours: {hb.get('active_start', '?')}:00 – {hb.get('active_end', '?')}:00")
+        sections.append(f"- Interval: {hb.get('interval_mins', '?')} min")
+
+    # ── Paths ──
+    sections.append("\n## Paths")
+    sections.append(f"- Bundle: {project_root}")
+    data_dir = os.path.expanduser(f"~/.atrophy/agents/{agent_name}/data")
+    sections.append(f"- Data: {data_dir}")
+    vault = os.environ.get("OBSIDIAN_VAULT", "")
+    if vault and os.path.isdir(vault):
+        sections.append(f"- Obsidian vault: {vault}")
+        agent_workspace = os.environ.get("OBSIDIAN_AGENT_NOTES", "")
+        if agent_workspace:
+            sections.append(f"- Notes: {agent_workspace}")
+
+    # ── Prompts ──
+    sections.append("\n## Prompts")
+    for base_label, base_path in [
+        ("Obsidian skills", os.environ.get("OBSIDIAN_AGENT_NOTES", "") + "/skills" if os.environ.get("OBSIDIAN_AGENT_NOTES") else ""),
+        ("Local prompts", os.path.join(project_root, "agents", agent_name, "prompts")),
+        ("User prompts", os.path.expanduser(f"~/.atrophy/agents/{agent_name}/prompts")),
+    ]:
+        if base_path and os.path.isdir(base_path):
+            files = [f for f in os.listdir(base_path) if f.endswith(".md")]
+            if files:
+                sections.append(f"- {base_label}: {', '.join(sorted(files))}")
+
+    sections.append(f"\n*Status generated at {datetime.now().strftime('%Y-%m-%d %H:%M')}*")
+    return "\n".join(sections)
+
+
 HANDLERS = {
     "remember": handle_remember,
     "recall_session": handle_recall_session,
@@ -2570,6 +2740,7 @@ HANDLERS = {
     "defer_to_agent": handle_defer_to_agent,
     "render_canvas": handle_render_canvas,
     "render_memory_graph": handle_render_memory_graph,
+    "self_status": handle_self_status,
 }
 
 

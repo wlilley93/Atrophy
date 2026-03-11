@@ -204,6 +204,106 @@ Unprompted gift note:
 3. Deliver via Telegram or write to Obsidian
 4. Self-rescheduling: may adjust its own next execution time
 
+## scripts/agents/<name>/run_task.py -- Generic Task Runner
+
+Executes a prompt-based task and delivers the result. This is the generic runner that powers the `create_task` MCP tool, letting the companion schedule arbitrary recurring tasks without writing Python code.
+
+### Usage
+
+```bash
+python scripts/agents/companion/run_task.py <task_name>
+```
+
+### Task Definition Format
+
+Task definitions live in Obsidian at `Agent Workspace/<agent>/tasks/<task_name>.md`. Each file has YAML frontmatter for configuration and a prompt body:
+
+```markdown
+---
+deliver: message_queue
+voice: true
+sources:
+  - weather
+  - headlines
+  - threads
+---
+
+You are the companion. Fetch and summarise the latest UK news headlines.
+Keep it to 3-5 bullet points. Be conversational.
+```
+
+### Data Sources
+
+| Source | What it fetches |
+|--------|----------------|
+| `weather` | Current weather from wttr.in (temperature, wind, humidity) |
+| `headlines` | Top 8 BBC News RSS headlines |
+| `threads` | Active conversation threads from the agent's memory DB |
+| `summaries` | Last 3 session summaries from memory |
+| `observations` | Last 5 observations about the user from memory |
+
+Sources are gathered before inference and injected into the prompt context.
+
+### Delivery Methods
+
+| Method | Behaviour |
+|--------|-----------|
+| `message_queue` | Queued in `.message_queue.json` for delivery at next app launch (default) |
+| `telegram` | Sent immediately via Telegram, also queued for app |
+| `notification` | macOS notification (truncated to 200 chars), also queued |
+| `obsidian` | Appended to `Agent Workspace/<agent>/notes/tasks/<name>.md` with timestamp |
+
+If `voice: true`, TTS audio is pre-synthesised and bundled with the message queue entry.
+
+---
+
+## scripts/agents/<name>/check_reminders.py -- Reminder Checker
+
+Runs every minute via launchd. Checks the agent's `.reminders.json` for due items and fires them.
+
+### Reminder Storage
+
+Reminders are stored in `~/.atrophy/agents/<name>/data/.reminders.json`:
+
+```json
+[
+  {
+    "id": "uuid",
+    "time": "2026-03-10T14:30:00",
+    "message": "Take out the bins",
+    "source": "will",
+    "created_at": "2026-03-10T12:00:00"
+  }
+]
+```
+
+### When a Reminder Fires
+
+1. macOS notification with Glass sound via `osascript`
+2. Message queued to `.message_queue.json` for next conversation
+3. Telegram message sent (if configured)
+4. Reminder removed from the JSON file
+
+### How Reminders Are Created
+
+The `set_reminder` MCP tool (invoked by the companion in conversation) writes entries to `.reminders.json`. The companion parses natural time references ("in 20 minutes", "at 3pm", "tomorrow morning") into ISO datetimes.
+
+---
+
+## scripts/install_app.py -- Login Item Installer
+
+Registers or removes The Atrophied Mind as a macOS login item via launchd.
+
+```bash
+python scripts/install_app.py install    # Register launchd agent (starts at login)
+python scripts/install_app.py uninstall  # Remove launchd agent
+python scripts/install_app.py status     # Check if installed and running
+```
+
+The launchd agent (`com.atrophiedmind.companion`) opens the `.app` at login via `/usr/bin/open`. The `.app` itself handles source updates, venv management, and launching Python. Logs go to `~/.atrophy/logs/`. The agent is configured with `KeepAlive(SuccessfulExit=false)` so it restarts after crashes.
+
+---
+
 ## jobs.json Format
 
 ```json

@@ -79,22 +79,27 @@ See [02 - Configuration Reference](02%20-%20Configuration%20Reference.md) for th
 
 ## Run
 
-Three modes, from simplest to full-featured:
+Five modes, from simplest to full-featured:
 
 ```bash
 python main.py --text         # Text-only (no mic, no TTS — just type)
 python main.py --cli          # Voice + text (needs whisper.cpp + mic)
 python main.py --gui          # Full GUI with avatar window
+python main.py --app          # Menu bar app — no Dock icon, silent until activated
+python main.py --server       # HTTP API (headless, for web/remote access)
+python main.py --server --port 8080  # Custom port
 ```
 
-The GUI mode is the primary way to run the companion as an app. It provides a full window with video avatar, streaming text overlay, floating input bar, and a settings panel for live configuration.
+**`--app` is the primary mode.** It hides from the Dock and lives in the menu bar. Starts silent — no window, no voice, no opening line. Click the tray icon or press Cmd+Shift+Space when you're ready. Use `python scripts/install_app.py install` to start at login.
+
+`--gui` shows the window immediately with an opening line. `--server` runs headless with REST endpoints (`/chat`, `/chat/stream`, `/memory/search`, `/memory/threads`, `/session`) secured by auto-generated bearer token.
 
 You can also specify an agent explicitly:
 
 ```bash
 python main.py --agent companion --text
 # or
-AGENT=companion python main.py --gui
+AGENT=companion python main.py --app
 ```
 
 The default agent is `companion`.
@@ -103,7 +108,7 @@ The default agent is `companion`.
 
 ## The GUI
 
-When running with `--gui`, the window has a row of icon buttons in the top-right corner:
+When running with `--gui` or `--app`, the window has a row of icon buttons in the top-right corner:
 
 | Button | Icon | Action | Shortcut |
 |--------|------|--------|----------|
@@ -120,6 +125,7 @@ Additional keyboard shortcuts:
 | Cmd+Shift+Space | Toggle the chat overlay panel (works globally, even when the app is not focused) |
 | Cmd+K | Toggle the canvas overlay (HTML content panel) |
 | Cmd+C | Copy selected text, or last companion message if nothing is selected |
+| Cmd+Up / Cmd+Down | Cycle through enabled agents (fade-out/fade-in transition) |
 | Escape | Close the chat overlay |
 
 The **Settings panel** (gear icon or Cmd+,) lets you adjust all configuration live -- voice settings, input mode, inference effort, memory parameters, heartbeat schedule, wake words, and more. Changes can be applied immediately to the running session, or saved to `~/.atrophy/config.json` and `agent.json` for persistence across restarts.
@@ -128,13 +134,23 @@ The **Settings panel** (gear icon or Cmd+,) lets you adjust all configuration li
 
 ## First Session
 
-On first run, the companion:
+On first run (GUI/app modes), the companion checks for Claude Code CLI availability, then launches the **setup wizard** if `setup_complete` is not set in `~/.atrophy/config.json`. The wizard is a conversational AI-guided flow:
 
-1. Creates `~/.atrophy/` directory structure and initializes its SQLite database from `db/schema.sql` (stored at `~/.atrophy/agents/companion/data/memory.db`)
+1. **Welcome** — the AI greets you, asks your name, sets `user_name` in config
+2. **API keys** — collects ElevenLabs, Fal, and Telegram credentials via a secure input mode (orange-bordered input bar). Keys go straight to `~/.atrophy/.env` — the AI never sees the actual values, only "saved" or "skipped"
+3. **Agent creation** — walks through identity, voice, appearance, and autonomy preferences conversationally, then scaffolds the agent via `create_agent.scaffold_from_config()`
+4. **Avatar generation** — if appearance is enabled, generates face candidates via Flux and optionally video clips via Kling
+
+After the wizard completes, `setup_complete: true` is written to `~/.atrophy/config.json`. The wizard can be re-run from Settings > About > Reset Setup Wizard.
+
+**Obsidian is optional.** If no Obsidian vault is found at the default path, the system falls back to `~/.atrophy/agents/<name>/` for all note, skill, and workspace operations. The `OBSIDIAN_AVAILABLE` flag in `config.py` controls this behaviour.
+
+Once setup is done:
+1. Creates `~/.atrophy/` directory structure and initializes the SQLite database (stored at `~/.atrophy/agents/<name>/data/memory.db`)
 2. Starts a new session
-3. Delivers its opening line (configured in `agents/companion/data/agent.json`)
+3. In `--gui` mode, generates an opening line with time-of-day context and randomised style. In `--app` mode, starts silent — no window until you activate it.
 
-Just start talking. The companion uses Claude Code as its inference backend, with an MCP memory server that gives it access to its own memory database. It can remember, search, create threads, write observations, and bookmark moments.
+Just start talking. The companion uses Claude Code as its inference backend, with an MCP memory server that gives it access to 34 tools: memory search, threads, observations, Obsidian notes, Telegram, reminders, timers, task scheduling, artefact creation, agent management, and more.
 
 On subsequent runs, it resumes its Claude CLI session and checks recent memory for anything worth surfacing.
 

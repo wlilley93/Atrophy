@@ -37,6 +37,7 @@ Environment variables win outright. For agent-specific settings (voice, heartbea
 | `HEARTBEAT_INTERVAL_MINS` | `30` | Minutes between heartbeat evaluations. Overridden by agent manifest. |
 | `TELEGRAM_BOT_TOKEN` | *(empty)* | Default Telegram bot token. Per-agent tokens use agent-specific env var names (e.g. `TELEGRAM_BOT_TOKEN_COMPANION`). |
 | `TELEGRAM_CHAT_ID` | *(empty)* | Default Telegram chat ID. Per-agent chat IDs use agent-specific env var names. |
+| `NOTIFICATIONS_ENABLED` | `true` | Enable macOS native notifications (reminders, timer completion, etc.). |
 
 ---
 
@@ -54,6 +55,13 @@ Persistent settings saved via the GUI settings panel. Same keys as environment v
 
 Settings here are overridden by environment variables but take precedence over defaults.
 
+Special keys:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `setup_complete` | boolean | Set to `true` after the first-launch setup wizard completes. Reset to `false` (or remove) to re-run the wizard. |
+| `user_name` | string | The user's name, set during setup. Takes precedence over agent manifest `user_name` when present. |
+
 ---
 
 ## Agent Manifest (agent.json)
@@ -68,6 +76,33 @@ Settings in the manifest take priority over environment variables for these grou
 - `heartbeat.*` -- active hours and interval
 - `telegram.*` -- environment variable names for bot token and chat ID
 - `display.*` -- window dimensions and title
+
+---
+
+## Derived Config Values
+
+These are computed at import time in `config.py` and available as module-level constants:
+
+| Constant | Description |
+|----------|-------------|
+| `OBSIDIAN_AVAILABLE` | `True` if the Obsidian vault directory exists on disk. Controls whether agent notes, skills, and workspace operations target Obsidian or fall back to `~/.atrophy/agents/<name>/`. |
+| `AGENT_STATES_FILE` | Path to `~/.atrophy/agent_states.json`. Stores per-agent muted/enabled state, persisted by `core/agent_manager.py`. |
+| `ARTEFACT_DISPLAY_FILE` | Path to `.artefact_display.json` in the agent's data directory. Used for GUI artefact signalling. |
+| `ARTEFACT_INDEX_FILE` | Path to `.artefact_index.json` in the agent's data directory. Sorted, deduplicated index of created artefacts. |
+| `VERSION` | App version string, read from the `VERSION` file at the bundle root. |
+
+---
+
+## Prompt Resolution (Four-Tier)
+
+`core/prompts.py` resolves skill/prompt files through four directories in order:
+
+1. **Obsidian vault** — `Agent Workspace/<agent>/skills/{name}.md` (if vault exists)
+2. **Local skills** — `~/.atrophy/agents/<agent>/skills/{name}.md` (canonical for non-Obsidian users)
+3. **User prompts** — `~/.atrophy/agents/<agent>/prompts/{name}.md` (legacy overrides)
+4. **Bundle** — `agents/<agent>/prompts/{name}.md` (repo defaults)
+
+Without Obsidian, tier 2 (local skills) is the canonical location. The agent reads and writes there via MCP note tools. First match wins.
 
 ---
 
@@ -136,10 +171,13 @@ The panel is organised into sections:
 
 | Section | Settings |
 |---------|----------|
+| **Agents** | List of all discovered agents with Switch/Muted/Enabled controls per agent, plus a **+ New Agent** button |
 | **Agent Identity** | Display name, user name, opening line, wake words, Obsidian subdirectory |
+| **Tools** | Per-agent checkboxes to enable/disable specific MCP tools (deferral, Telegram, reminders, timers, etc.) |
 | **Window** | Width, height, window title, avatar enabled, avatar resolution |
 | **Voice & TTS** | TTS backend, ElevenLabs API key, voice ID, model, stability, similarity, style, playback rate, Fal voice ID |
 | **Input** | Input mode, push-to-talk key, wake word detection, wake chunk duration |
+| **Notifications** | Notifications enabled toggle |
 | **Audio Capture** | Sample rate, max record duration |
 | **Inference** | Claude binary path, effort level, adaptive effort toggle |
 | **Memory & Context** | Context summaries count, max context tokens, vector search weight, embedding model, embedding dimensions |
@@ -147,6 +185,7 @@ The panel is organised into sections:
 | **Heartbeat** | Active start/end hours, check interval |
 | **Paths** | Obsidian vault path, database path (read-only), whisper binary path (read-only) |
 | **Telegram** | Bot token, chat ID |
+| **About** | Version, install path, Check for Updates / Update Now, Reset Setup Wizard |
 
 Two actions at the bottom:
 

@@ -12,18 +12,26 @@ File path: `agents/{name}/data/agent.json` (bundle) or `~/.atrophy/agents/{name}
 |-------|------|----------|-------------|
 | `name` | string | Yes | Internal agent identifier, used in file paths, database references, and environment variable names. Lowercase, no spaces. |
 | `display_name` | string | Yes | Human-readable name shown in the UI window title and display. |
+| `description` | string | No | Short one-line description of the agent's purpose. Used in agent roster injection and settings panel. |
 | `user_name` | string | Yes | The name the agent uses when referring to its user. |
-| `opening_line` | string | Yes | The first thing the agent says when a new session begins. |
-| `wake_words` | string[] | Yes | Phrases that trigger the agent via voice activation. Matched case-insensitively by the wake word detector. |
+| `opening_line` | string | Yes | The first thing the agent says when a new session begins (CLI mode) or the fallback if dynamic generation fails. |
+| `wake_words` | string[] | Yes | Phrases that trigger the agent via voice activation. Matched case-insensitively by the wake word detector. **Must be unique per agent** to avoid cross-activation. |
+| `avatar_description` | string | No | Appearance description for image/video generation (Flux/Kling prompt). |
+| `disabled_tools` | string[] | No | MCP tool names to disable for this agent (e.g. `["send_telegram"]`). Default: `[]`. |
+| `telegram_emoji` | string | No | Emoji prefix for this agent's Telegram messages. |
 
 **Example:**
 ```json
 {
   "name": "companion",
   "display_name": "Companion",
+  "description": "Personal companion — emotionally aware, memory-bearing, self-evolving",
   "user_name": "Will",
   "opening_line": "Ready. Where are we?",
-  "wake_words": ["hey companion", "companion"]
+  "wake_words": ["hey companion", "companion"],
+  "avatar_description": "A woman in her mid-thirties...",
+  "disabled_tools": [],
+  "telegram_emoji": ""
 }
 ```
 
@@ -35,7 +43,7 @@ Configuration for text-to-speech synthesis. Supports multiple TTS backends.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `tts_backend` | string | Yes | TTS engine to use. Currently supported: `elevenlabs`. |
+| `tts_backend` | string | Yes | TTS engine to use. Options: `elevenlabs`, `fal`, `macos`. |
 | `elevenlabs_voice_id` | string | Yes | ElevenLabs voice ID for the primary TTS voice. |
 | `elevenlabs_model` | string | Yes | ElevenLabs model identifier (e.g. `eleven_v3`). |
 | `elevenlabs_stability` | number | Yes | Voice stability, 0.0--1.0. Lower values produce more expressive speech. |
@@ -180,6 +188,28 @@ No manifest field is needed — `config.py` derives the path from `BUNDLE_ROOT.n
     "interval_mins": 30
   },
   "avatar_description": "A woman in her mid-thirties...",
-  "disabled_tools": []
+  "disabled_tools": [],
+  "telegram_emoji": ""
 }
 ```
+
+## Fields Created by scaffold_from_config
+
+When agents are created programmatically via `scaffold_from_config()`, the config dict has additional sections that are consumed during creation but do not appear directly in the final `agent.json`:
+
+| Config Section | Used For |
+|---------------|----------|
+| `identity.origin_story` | Injected into generated `soul.md` |
+| `identity.core_nature` | Injected into generated `soul.md` |
+| `identity.character_traits` | Injected into `soul.md` and used to derive journal posture |
+| `identity.values` | Injected into generated `soul.md` |
+| `identity.relationship` | Injected into generated `soul.md` and `system_prompt.md` |
+| `boundaries.wont_do` | Injected into generated `system_prompt.md` |
+| `boundaries.friction_modes` | Injected into generated `system_prompt.md` |
+| `boundaries.session_limit_behaviour` | Injected into generated `system_prompt.md` |
+| `voice.writing_style` | Injected into generated `system_prompt.md` |
+| `heartbeat.outreach_style` | Injected into generated `heartbeat.md` |
+| `autonomy.*` | Controls which cron jobs are created in `jobs.json` |
+| `tools.disabled_tools` | Stored in `agent.json` as `disabled_tools` |
+| `source_image_url` | Downloaded as `avatar/source/face.png` |
+| `video_clip_urls` | Downloaded as initial avatar loop segments |

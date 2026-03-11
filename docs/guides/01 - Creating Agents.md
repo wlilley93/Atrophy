@@ -18,22 +18,52 @@ Or skip the first question by passing a name:
 python scripts/create_agent.py --name oracle
 ```
 
-The questionnaire walks through six sections:
+Non-interactive mode is also supported for programmatic agent creation (used by the setup wizard, GUI settings panel, and the `create_agent` MCP tool):
 
-1. **Identity** -- name, origin story, core nature, character traits, values, relationship with the user, opening line
-2. **Boundaries & Friction** -- what the agent will never do, how it pushes back, session time-limit behaviour
-3. **Voice** -- TTS backend, ElevenLabs configuration, writing style description
-4. **Appearance** -- whether it has a visual avatar, appearance description for image generation
-5. **Channels** -- Telegram bot setup, wake words for voice activation
-6. **Heartbeat & Autonomy** -- active hours, check interval, outreach decision criteria
+```bash
+python scripts/create_agent.py --non-interactive --config agent_config.json
+```
+
+### Interactive Questionnaire
+
+The interactive questionnaire walks through nine sections:
+
+1. **Services & API keys** -- checks for existing Fal.ai, ElevenLabs, and Obsidian; prompts for missing keys (uses `getpass` for secure input in terminal)
+2. **Identity** -- name, display name, user name, origin story, core nature, character traits, values, relationship with the user, opening line
+3. **Boundaries & Friction** -- what the agent will never do, friction modes, session time-limit behaviour
+4. **Voice** -- TTS backend, voice ID, stability/similarity/style settings, writing style description
+5. **Appearance** -- whether it has a visual avatar, appearance description for Flux face generation
+6. **Channels** -- wake words for voice activation, Telegram bot token and chat ID
+7. **Heartbeat** -- active hours, interval, outreach style
+8. **Autonomy** -- journal, gifts, morning brief, evolution, sleep cycle, observer, reminders, inter-agent conversations, journal posture (derived from character traits or inferred via inference)
+9. **Tools** -- disable specific MCP tools, describe custom skills
 
 At the end, it shows a review summary and asks for confirmation before creating anything.
+
+### scaffold_from_config()
+
+The `scaffold_from_config(config: dict)` function creates an agent programmatically from a config dict. This is the entry point used by:
+
+- The **setup wizard** (`display/setup_wizard.py`) — collects config via conversational AI, then calls `scaffold_from_config()`
+- The **`create_agent` MCP tool** — allows the agent to create new agents at runtime via conversation
+- The **Settings panel** — "+ New Agent" button
+
+The config dict has sections: `identity`, `boundaries`, `voice`, `appearance`, `channels`, `heartbeat`, `autonomy`, plus optional `source_image_url` and `video_clip_urls` for avatar generation. Minimum required fields: `identity.display_name` and `identity.user_name`. The slug is auto-generated from `display_name` if not provided.
+
+### Avatar Generation During Creation
+
+When `appearance.has_avatar` is true and an `appearance_description` is provided:
+
+- The interactive script prints a command to generate the face: `python scripts/generate_face.py --agent <name>`
+- The setup wizard uses the `generate_avatar` tool to create face candidates via Flux during the conversation, letting the user pick from multiple options
+- If `source_image_url` is provided in the config, it is downloaded as the source face image
+- If `video_clip_urls` are provided, they are downloaded as initial avatar loop segments
 
 ---
 
 ## What Gets Created
 
-After confirmation, the script scaffolds the full agent directory:
+After confirmation, the script scaffolds the full agent directory. New agents are created in `~/.atrophy/agents/<name>/` (user data), not in the repo bundle:
 
 ```
 agents/<name>/                          # In repo (bundle)
@@ -122,7 +152,8 @@ This is the technical configuration file. All fields:
 
   "avatar_description": "Description for image generation...",
   "description": "Short one-line description of the agent's role",
-  "disabled_tools": []
+  "disabled_tools": [],
+  "telegram_emoji": ""
 }
 ```
 
@@ -152,6 +183,7 @@ This is the technical configuration file. All fields:
 | `avatar_description` | string | Appearance description for image/video generation (Flux/Kling prompt). |
 | `description` | string | Short one-line description of the agent's purpose. |
 | `disabled_tools` | string[] | MCP tool names to disable for this agent (e.g. `["send_telegram"]`). |
+| `telegram_emoji` | string | Emoji prefix for this agent's Telegram messages. |
 
 ---
 
