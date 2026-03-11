@@ -181,13 +181,16 @@ on run argv
         end makeBar
     end script
 
-    -- Brain logo (from app bundle Resources)
+    -- Brain logo (from app bundle Resources) — constrain to 48x48
+    set logoSize to 48
     set iconPath to bundlePath & "/Contents/Resources/splash_logo.png"
     set iconFile to theApp's NSImage's alloc()'s initWithContentsOfFile:iconPath
     if iconFile is not missing value then
-        set imgView to theApp's NSImageView's alloc()'s initWithFrame:{{(W - 64) / 2, H - 100}, {64, 64}}
+        iconFile's setSize:{logoSize, logoSize}
+        set imgView to theApp's NSImageView's alloc()'s initWithFrame:{{(W - logoSize) / 2, H - 80}, {logoSize, logoSize}}
         imgView's setImage:iconFile
         imgView's setImageScaling:2
+        imgView's setImageAlignment:0
         cv's addSubview:imgView
     end if
 
@@ -199,11 +202,14 @@ on run argv
     set statusFontName to ""
     if hasBricolage then set statusFontName to "BricolageGrotesque-Regular"
 
-    cv's addSubview:(UI's makeLabel("Atrophy", 24, titleFontName, 0.5, 0.85, 0.85, 0.91, {{0, H - 135}, {W, 32}}))
-    cv's addSubview:(UI's makeLabel("Offload your mind.", 13, tagFontName, 0.0, 0.4, 0.4, 0.5, {{0, H - 160}, {W, 20}}))
+    cv's addSubview:(UI's makeLabel("Atrophy", 24, titleFontName, 0.5, 0.85, 0.85, 0.91, {{0, H - 115}, {W, 32}}))
+    cv's addSubview:(UI's makeLabel("Offload your mind.", 13, tagFontName, 0.0, 0.4, 0.4, 0.5, {{0, H - 140}, {W, 20}}))
 
-    set statusLabel to UI's makeLabel("Preparing...", 12, statusFontName, 0.0, 0.5, 0.5, 0.6, {{0, 35}, {W, 18}})
+    set statusLabel to UI's makeLabel("Preparing...", 12, statusFontName, 0.0, 0.5, 0.5, 0.6, {{0, 38}, {W, 18}})
     cv's addSubview:statusLabel
+
+    set timeLabel to UI's makeLabel("", 11, statusFontName, 0.0, 0.35, 0.35, 0.45, {{0, 55}, {W, 16}})
+    cv's addSubview:timeLabel
 
     cv's addSubview:(UI's makeBar({{60, 20}, {320, 3}}, 0.1, 0.1, 0.16))
     set barFill to UI's makeBar({{60, 20}, {0, 3}}, 0.39, 0.49, 1.0)
@@ -212,6 +218,7 @@ on run argv
     win's makeKeyAndOrderFront:(missing value)
 
     set currentProgress to 0.0
+    set startTime to (current date)
     repeat
         delay 0.3
         try
@@ -236,6 +243,26 @@ on run argv
                         set fillW to (round (320 * currentProgress / 100) rounding as taught in school)
                         if fillW < 0 then set fillW to 0
                         barFill's setFrame:{{60, 20}, {fillW, 3}}
+
+                        -- Estimate time remaining
+                        set elapsed to ((current date) - startTime) as integer
+                        if currentProgress > 5 and elapsed > 2 then
+                            set totalEst to (elapsed * 100 / currentProgress)
+                            set remaining to (round (totalEst - elapsed) rounding as taught in school)
+                            if remaining < 0 then set remaining to 0
+                            if remaining > 60 then
+                                set mins to (round (remaining / 60) rounding as taught in school)
+                                if mins = 1 then
+                                    timeLabel's setStringValue:"About 1 minute remaining"
+                                else
+                                    timeLabel's setStringValue:("About " & mins & " minutes remaining")
+                                end if
+                            else if remaining > 5 then
+                                timeLabel's setStringValue:"Less than a minute remaining"
+                            else
+                                timeLabel's setStringValue:"Almost done..."
+                            end if
+                        end if
                     end if
                 end if
             end if
