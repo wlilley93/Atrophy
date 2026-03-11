@@ -20,9 +20,10 @@ agents/*/
 !agents/xan/
 agents/xan/data/*.db
 agents/xan/data/.*
-# Avatar videos are large (~500MB) — bundled in build, not in git
+# Avatar assets — large, bundled in build, not in git
 agents/xan/avatar/loops/
 agents/xan/avatar/candidates/
+agents/xan/avatar/xan_ambient.mp4
 
 # Embedding models (cached locally, ~80MB+)
 .models/

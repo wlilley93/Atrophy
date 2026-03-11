@@ -473,6 +473,31 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 """)
 
 
+class _FadeOverlay(QWidget):
+    """Top fade gradient — opaque at top, transparent at ~50% height."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        if parent:
+            parent.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        from PyQt5.QtCore import QEvent
+        if event.type() == QEvent.Resize:
+            self.setGeometry(0, 0, obj.width(), obj.height())
+        return super().eventFilter(obj, event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        grad = QLinearGradient(0, 0, 0, self.height() * 0.5)
+        grad.setColorAt(0.0, QColor(10, 10, 14, 220))
+        grad.setColorAt(1.0, QColor(10, 10, 14, 0))
+        p.fillRect(self.rect(), grad)
+        p.end()
+
+
 class _ScrimOverlay(QWidget):
     """Semi-transparent dark overlay with optional video frame background."""
 
@@ -784,6 +809,16 @@ class SetupWizard(QWidget):
             14,
         )
 
+        lay.addSpacing(40)
+
+        # Continue button — hidden until all text has faded in
+        self._intro_continue_btn = QPushButton("Continue")
+        self._intro_continue_btn.setObjectName("continueBtn")
+        self._intro_continue_btn.setCursor(Qt.PointingHandCursor)
+        self._intro_continue_btn.setVisible(False)
+        self._intro_continue_btn.clicked.connect(self._finish_intro)
+        lay.addLayout(_centred(self._intro_continue_btn, 200))
+
         lay.addStretch(4)
         self._pages.addWidget(page)
 
@@ -836,10 +871,15 @@ class SetupWizard(QWidget):
             fade_label(2, (t - 65) / 20.0)
         elif t >= 100 and t <= 120:
             fade_label(3, (t - 100) / 20.0)
-        elif t >= 150:
+        elif t == 130:
+            # Show continue button after all text is visible
+            self._intro_continue_btn.setVisible(True)
             self._intro_timer.stop()
-            self._pages.setCurrentIndex(1)
-            self._name_input.setFocus()
+
+    def _finish_intro(self):
+        """Transition from intro to welcome page."""
+        self._pages.setCurrentIndex(1)
+        self._name_input.setFocus()
 
     # ── Page 1: Welcome + User Name ──
 
@@ -850,7 +890,9 @@ class SetupWizard(QWidget):
         lay.addStretch(3)
 
         if self._brain_pixmaps:
-            icon_label = self._make_brain_label()
+            icon_label = QLabel()
+            icon_label.setAlignment(Qt.AlignCenter)
+            icon_label.setPixmap(self._brain_pixmaps[0])  # frame 0 — pristine brain
             lay.addWidget(icon_label)
             lay.addSpacing(16)
 
@@ -942,7 +984,20 @@ class SetupWizard(QWidget):
         self._msg_layout.setSpacing(6)
         self._msg_layout.addStretch()
         self._scroll.setWidget(self._msg_container)
-        lay.addWidget(self._scroll, 1)
+
+        # Wrap scroll in a container so we can paint a fade gradient on top
+        scroll_wrapper = QWidget()
+        scroll_wrapper.setStyleSheet("background: transparent;")
+        wrapper_lay = QVBoxLayout(scroll_wrapper)
+        wrapper_lay.setContentsMargins(0, 0, 0, 0)
+        wrapper_lay.setSpacing(0)
+        wrapper_lay.addWidget(self._scroll)
+
+        # Fade overlay — gradient from opaque at top to transparent halfway down
+        self._fade_overlay = _FadeOverlay(scroll_wrapper)
+        self._fade_overlay.raise_()
+
+        lay.addWidget(scroll_wrapper, 1)
 
         # ── Input bar — matches main window InputBar style ──
         self._input_frame = QWidget()
