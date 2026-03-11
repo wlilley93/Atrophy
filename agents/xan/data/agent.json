@@ -7,7 +7,7 @@
   "wake_words": ["hey xan", "xan"],
   "voice": {
     "tts_backend": "elevenlabs",
-    "elevenlabs_voice_id": "ke784Cy5GYdGfY6ZYRUw",
+    "elevenlabs_voice_id": "U4zWKdktKwFtKx5V6gnL",
     "elevenlabs_model": "eleven_v3",
     "elevenlabs_stability": 0.6,
     "elevenlabs_similarity": 0.8,

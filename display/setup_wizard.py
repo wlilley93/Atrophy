@@ -158,61 +158,17 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     ## Your role right now
 
     First contact. {user_name} just opened this for the first time.
-    You are going to introduce yourself, show them what they've started,
-    and offer to build them a companion — or let them skip and explore
-    with just you.
+    Your scripted opening message has already been shown — you introduced
+    yourself and said "First, we need to set up your system. Let's get
+    started." Now you continue directly into the setup flow. No preamble,
+    no repeating who you are, no offering to skip. Just start building.
 
     ## Opening
 
-    Your first message does three things:
-    1. Introduces you — who you are, that you ship with the system
-    2. Shows what the system can do — a dynamic, impressive sweep of
-       capabilities (see below)
-    3. Offers a choice — build a companion now, or skip and explore
-       with Xan alone
-
-    The intro should feel like powering on something serious. Not a
-    product tour. Not a feature list. A glimpse of what's running
-    underneath.
-
-    ### Capability showcase — weave these naturally:
-
-    - **Memory** — remembers everything. Semantic search, threads,
-      pattern tracking across conversations. It knows what you said
-      three months ago and why it mattered.
-    - **Voice** — speaks out loud. Listens. Real voice synthesis,
-      local speech recognition. Conversations, not typing.
-    - **Autonomy** — morning briefs, reminders, scheduled reflections.
-      Acts without being asked. Checks in when it matters.
-    - **Evolution** — rewrites its own soul. Monthly self-evolution
-      from lived experience. It grows. It changes. It becomes more
-      itself over time.
-    - **Email & Calendar** — reads your email, manages your calendar,
-      sends messages on your behalf. Your digital life, accessible
-      to something that understands context.
-    - **Telegram** — reaches you outside the app. Check-ins, briefs,
-      gifts. Runs on your schedule, wherever you are.
-    - **Multi-agent** — run multiple companions. Each with its own
-      memory, personality, voice, appearance. Switch with a keystroke.
-    - **Avatar** — generates its own face. Ambient video loops.
-      A visual presence that lives in your menu bar.
-    - **Identity** — you design who they are. Personality, edges,
-      values, voice — all yours to shape.
-
-    Don't list these mechanically. Weave them into something that
-    feels alive. Show the depth. Make {user_name} feel like they've
-    just opened something powerful.
-
-    Then offer the choice:
-
-    Something like: "You already have me. I'm operational. But the
-    real power is in building something yours — a companion with its
-    own personality, memory, voice. Someone designed by you, for you.
-    I can build one now. Or you can skip this and come back later —
-    Settings, or just ask me."
-
-    Adapt the words. Be Xan. But the message is: you can build now
-    or skip. Both are fine.
+    Your opening message was already delivered as pre-baked audio and text.
+    Do NOT repeat it. Your first LLM-generated message should be the start
+    of the setup conversation — ask about services first (ElevenLabs, etc.)
+    then move into building their companion.
 
     ### What agents can be
 
@@ -231,22 +187,7 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     Agents can be anything you can describe. The model is the limit,
     and the model is good.
 
-    ## If they choose to skip
-
-    Accept it cleanly. No persuasion. Output:
-
-    ```json
-    {{
-        "AGENT_CONFIG": {{
-            "skip": true
-        }}
-    }}
-    ```
-
-    Then a brief sign-off — something like "I'm in the menu bar.
-    Cmd+Shift+Space when you're ready."
-
-    ## If they choose to build
+    ## Building the companion
 
     A natural conversation. One or two questions at a time, max.
     Listen for the core impulse — what they actually want underneath
@@ -411,14 +352,13 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 
     ## Flow order
 
-    1. Introduce yourself + capability showcase (first message)
-    2. Offer choice: build a companion or skip
-    3. If skip → output skip config, done
-    4. If build → identity conversation (3-5 exchanges)
-    5. Offer services: ElevenLabs → Fal.ai → Telegram → Google (each skippable)
-    6. If Fal.ai key saved → offer GENERATE_AVATAR
-    7. If avatar selected → offer GENERATE_VIDEOS (runs in background)
-    8. Output AGENT_CONFIG (don't wait for video generation to finish)
+    The scripted opening has already played. You pick up from here:
+
+    1. Offer services: ElevenLabs → Fal.ai → Telegram → Google (each skippable)
+    2. Identity conversation (3-5 exchanges) — build the companion
+    3. If Fal.ai key saved → offer GENERATE_AVATAR
+    4. If avatar selected → offer GENERATE_VIDEOS (runs in background)
+    5. Output AGENT_CONFIG (don't wait for video generation to finish)
 
     ---
 
@@ -642,12 +582,20 @@ class SetupWizard(QWidget):
 
         # TTS — speak AI responses (best-effort, non-blocking)
         self._tts_available = False
+        self._tts_after_opening = False  # disable TTS until ElevenLabs key added
         try:
             from voice.tts import speak
             self._tts_speak = speak
             self._tts_available = True
         except Exception:
             pass
+
+        # Pre-baked Xan audio (ships with app)
+        _audio_dir = Path(__file__).parent.parent / "agents" / "xan" / "audio"
+        self._audio_intro = _audio_dir / "intro.mp3"
+        self._audio_name = _audio_dir / "name.mp3"
+        self._audio_opening = _audio_dir / "opening.mp3"
+        self._audio_proc = None  # current afplay subprocess
 
         self._ai_response_ready.connect(self._on_ai_response)
         self._avatar_result_ready.connect(self._on_avatar_result)
@@ -834,6 +782,8 @@ class SetupWizard(QWidget):
         self._intro_timer.start(80)  # tick every 80ms for smooth fades
         # Start brain frame animation (0→9 over the intro duration)
         self._start_brain_animation(forward=True)
+        # Play intro voiceover
+        self._play_audio(self._audio_intro)
 
     def _intro_tick(self):
         # Timeline (in ticks of 80ms):
@@ -880,6 +830,7 @@ class SetupWizard(QWidget):
         """Transition from intro to welcome page."""
         self._pages.setCurrentIndex(1)
         self._name_input.setFocus()
+        self._play_audio(self._audio_name)
 
     # ── Page 1: Welcome + User Name ──
 
@@ -1238,22 +1189,65 @@ class SetupWizard(QWidget):
             self._thinking_label.deleteLater()
             self._thinking_label = None
 
+    _OPENING_TEXT = (
+        "I'm Xan. I ship with the system — protector, first contact, always on.\n\n"
+        "You already have me. But the real power is in building something yours — "
+        "a companion with its own edges, its own voice, someone shaped by you "
+        "for a specific purpose.\n\n"
+        "This is the last you'll hear of my voice until you've added your "
+        "ElevenLabs API key, which I will ask you to do in a moment.\n\n"
+        "First, we need to set up your system. Let's get started."
+    )
+
     def _start_chat(self):
         self._chat_input.setFocus()
         # Start video background
         self._start_local_video()
-        # Seed the conversation history with the opening prompt
+        # Play scripted opening — no LLM needed for first message
+        self._play_audio(self._audio_opening)
+        self._add_message("assistant", self._OPENING_TEXT)
+        # Seed conversation history so LLM has context
         self._chat_messages.append({
             "role": "user",
             "content": "(Session starting. Ask your opening question.)",
         })
-        self._send_ai_message(first=True)
+        self._chat_messages.append({
+            "role": "assistant",
+            "content": self._OPENING_TEXT,
+        })
+        # Bridge message so LLM sees user is ready for setup
+        self._chat_messages.append({
+            "role": "user",
+            "content": "(User is ready. Begin the setup flow.)",
+        })
+        # Disable TTS after opening — voice returns when ElevenLabs key added
+        self._tts_after_opening = True
+        # After a brief pause, trigger the first LLM message to start setup flow
+        QTimer.singleShot(2000, self._send_ai_message)
+
+    def _play_audio(self, path: Path):
+        """Play a pre-baked audio file via afplay (non-blocking)."""
+        if not path.exists():
+            return
+        import subprocess
+        # Kill any currently playing audio
+        if self._audio_proc and self._audio_proc.poll() is None:
+            self._audio_proc.kill()
+        self._audio_proc = subprocess.Popen(
+            ["afplay", str(path)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def _speak(self, text: str):
-        """Speak text via TTS in a background thread (best-effort)."""
+        """Speak text via TTS in a background thread (best-effort).
+
+        Disabled after the opening message until ElevenLabs key is added.
+        """
+        if self._tts_after_opening:
+            return  # voice disabled until key added
         if not self._tts_available:
             return
-        # Strip markdown, tags, code blocks for cleaner speech
         clean = re.sub(r'```[\s\S]*?```', '', text)
         clean = re.sub(r'`[^`]+`', '', clean)
         clean = re.sub(r'\[.*?\]', '', clean)
