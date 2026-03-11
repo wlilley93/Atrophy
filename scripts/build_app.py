@@ -209,6 +209,10 @@ on run argv
     end if
     imgView's setImageScaling:2
     imgView's setImageAlignment:0
+    imgView's setWantsLayer:true
+    imgView's layer()'s setBackgroundColor:(missing value)
+    imgView's setEditable:false
+    imgView's setImageFrameStyle:0
     cv's addSubview:imgView
 
     set brainFrameCount to (count of brainFrames)
