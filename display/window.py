@@ -4663,7 +4663,19 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
     _global_hotkey = GlobalHotkey(_chat_panel.toggle)
 
     _companion_window.show()
+    _companion_window.raise_()
+    _companion_window.activateWindow()
     _companion_window._bar.focus_input()
+
+    # Bring app to front — essential for menu-bar apps (LSUIElement)
+    try:
+        from AppKit import NSApplication, NSApplicationActivationPolicyRegular
+        ns_app = NSApplication.sharedApplication()
+        # Temporarily become a regular app to steal focus, then revert
+        if menu_bar_mode:
+            ns_app.activateIgnoringOtherApps_(True)
+    except ImportError:
+        pass
 
     app.exec_()
 

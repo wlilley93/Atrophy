@@ -117,13 +117,29 @@ def _copy_snapshot(dest: Path):
 SPLASH_APPLESCRIPT = '''\
 use framework "Foundation"
 use framework "AppKit"
+use framework "CoreText"
 use scripting additions
 
 on run argv
     set statusFile to item 1 of argv
     set theApp to current application
     set W to 440
-    set H to 180
+    set H to 260
+
+    -- Try to load Bricolage Grotesque font from bundle Resources
+    set bundlePath to (system attribute "APP_BUNDLE_PATH")
+    set fontPath to bundlePath & "/Contents/Resources/BricolageGrotesque.ttf"
+    set hasBricolage to false
+    try
+        set fontURL to theApp's |NSURL|'s fileURLWithPath:fontPath
+        set fontLoaded to (theApp's CTFontManagerRegisterFontsForURL(fontURL, 1, missing value)) as boolean
+        if fontLoaded then set hasBricolage to true
+    end try
+    -- Also check if already installed on system
+    if not hasBricolage then
+        set testFont to theApp's NSFont's fontWithName:"BricolageGrotesque-Medium" |size|:14
+        if testFont is not missing value then set hasBricolage to true
+    end if
 
     set win to theApp's NSWindow's alloc()'s initWithContentRect:{{0, 0}, {W, H}} styleMask:0 backing:2 defer:false
     win's setBackgroundColor:(theApp's NSColor's colorWithSRGBRed:0.04 green:0.04 blue:0.07 alpha:1.0)
@@ -133,16 +149,26 @@ on run argv
     set cv to win's contentView()
 
     script UI
-        on makeLabel(theText, fontSize, fontWeight, r, g, b, theFrame)
+        on makeLabel(theText, fontSize, fontName, fontWeight, r, g, b, theFrame)
             set tf to theApp's NSTextField's alloc()'s initWithFrame:theFrame
             tf's setStringValue:theText
             tf's setBezeled:false
             tf's setDrawsBackground:false
             tf's setEditable:false
             tf's setSelectable:false
-            tf's setFont:(theApp's NSFont's systemFontOfSize:fontSize weight:fontWeight)
+            -- Try custom font first, fall back to system font
+            if fontName is not "" then
+                set customFont to (theApp's NSFont's fontWithName:fontName |size|:fontSize)
+                if customFont is not missing value then
+                    tf's setFont:customFont
+                else
+                    tf's setFont:(theApp's NSFont's systemFontOfSize:fontSize weight:fontWeight)
+                end if
+            else
+                tf's setFont:(theApp's NSFont's systemFontOfSize:fontSize weight:fontWeight)
+            end if
             tf's setTextColor:(theApp's NSColor's colorWithSRGBRed:r green:g blue:b alpha:1.0)
-            tf's setAlignment:1
+            tf's setAlignment:2
             return tf
         end makeLabel
 
@@ -155,10 +181,28 @@ on run argv
         end makeBar
     end script
 
-    cv's addSubview:(UI's makeLabel("Atrophy", 22, 0.5, 0.85, 0.85, 0.91, {{0, H - 70}, {W, 30}}))
-    cv's addSubview:(UI's makeLabel("Offload your mind.", 12, 0.0, 0.4, 0.4, 0.5, {{0, H - 95}, {W, 18}}))
+    -- Brain logo (from app bundle Resources)
+    set iconPath to bundlePath & "/Contents/Resources/splash_logo.png"
+    set iconFile to theApp's NSImage's alloc()'s initWithContentsOfFile:iconPath
+    if iconFile is not missing value then
+        set imgView to theApp's NSImageView's alloc()'s initWithFrame:{{(W - 64) / 2, H - 100}, {64, 64}}
+        imgView's setImage:iconFile
+        imgView's setImageScaling:2
+        cv's addSubview:imgView
+    end if
 
-    set statusLabel to UI's makeLabel("Preparing...", 12, 0.0, 0.5, 0.5, 0.6, {{0, 35}, {W, 18}})
+    -- Title and tagline
+    set titleFontName to ""
+    if hasBricolage then set titleFontName to "BricolageGrotesque-SemiBold"
+    set tagFontName to ""
+    if hasBricolage then set tagFontName to "BricolageGrotesque-Light"
+    set statusFontName to ""
+    if hasBricolage then set statusFontName to "BricolageGrotesque-Regular"
+
+    cv's addSubview:(UI's makeLabel("Atrophy", 24, titleFontName, 0.5, 0.85, 0.85, 0.91, {{0, H - 135}, {W, 32}}))
+    cv's addSubview:(UI's makeLabel("Offload your mind.", 13, tagFontName, 0.0, 0.4, 0.4, 0.5, {{0, H - 160}, {W, 20}}))
+
+    set statusLabel to UI's makeLabel("Preparing...", 12, statusFontName, 0.0, 0.5, 0.5, 0.6, {{0, 35}, {W, 18}})
     cv's addSubview:statusLabel
 
     cv's addSubview:(UI's makeBar({{60, 20}, {320, 3}}, 0.1, 0.1, 0.16))
@@ -305,7 +349,7 @@ fi
 # ── Show splash if setup needed ──
 if [ "$NEEDS_SETUP" = true ]; then
     if [ -f "$SPLASH_SCRIPT" ]; then
-        osascript "$SPLASH_SCRIPT" "$STATUS_FILE" &
+        APP_BUNDLE_PATH=$(cd "$(dirname "$(dirname "$0")")/.." && pwd) osascript "$SPLASH_SCRIPT" "$STATUS_FILE" &
         SPLASH_PID=$!
         sleep 0.3  # Let the window appear
     fi
@@ -398,13 +442,21 @@ if [ -f "$REQ_FILE" ]; then
         # Install with progress tracking — pip outputs one line per package
         "$VENV_DIR/bin/pip" install --progress-bar off -r "$REQ_FILE" 2>>"$LOG_DIR/launcher.log" | while IFS= read -r line; do
             case "$line" in
-                *"Successfully installed"*|*"Requirement already"*|*"Installing collected"*)
+                *"Successfully installed"*)
+                    splash_update "Finishing up..." 95
+                    ;;
+                *"Requirement already satisfied"*)
                     INSTALLED=$((INSTALLED + 1))
-                    # Map 40-95% range
                     PCT=$(( 40 + (INSTALLED * 55 / TOTAL_PKGS) ))
                     [ "$PCT" -gt 95 ] && PCT=95
-                    # Extract package name
-                    PKG=$(echo "$line" | grep -oE '[a-zA-Z][a-zA-Z0-9_-]+' | head -1)
+                    PKG=$(echo "$line" | sed 's/.*satisfied: \([a-zA-Z0-9_-]*\).*/\1/')
+                    splash_update "Checking ${PKG:-packages}..." "$PCT"
+                    ;;
+                *"Collecting"*)
+                    INSTALLED=$((INSTALLED + 1))
+                    PCT=$(( 40 + (INSTALLED * 55 / TOTAL_PKGS) ))
+                    [ "$PCT" -gt 95 ] && PCT=95
+                    PKG=$(echo "$line" | sed 's/.*Collecting \([a-zA-Z0-9_-]*\).*/\1/')
                     splash_update "Installing ${PKG:-packages}..." "$PCT"
                     ;;
             esac
@@ -490,6 +542,16 @@ def build_app():
     # ── Splash screen (native AppleScript — no dependencies) ──
     splash_path = resources / "splash.applescript"
     splash_path.write_text(SPLASH_APPLESCRIPT)
+
+    # ── Splash assets: logo + font ──
+    splash_logo = ICONS_DIR / "icon_128x128.png"
+    if splash_logo.exists():
+        shutil.copy2(splash_logo, resources / "splash_logo.png")
+
+    # Bundle Bricolage Grotesque font if available
+    font_src = Path.home() / "Library" / "Fonts" / "BricolageGrotesque[opsz,wdth,wght].ttf"
+    if font_src.exists():
+        shutil.copy2(font_src, resources / "BricolageGrotesque.ttf")
 
     # ── Clear quarantine ──
     subprocess.run(["xattr", "-cr", str(APP_PATH)], capture_output=True)
