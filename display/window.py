@@ -4635,7 +4635,7 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
     # Set the macOS Dock icon natively (overrides Python rocket)
     try:
         from AppKit import NSApplication, NSImage
-        icon_path = os.path.join(os.path.dirname(__file__), "icons", "icon_512x512.png")
+        icon_path = os.path.join(os.path.dirname(__file__), "icons", "icon_dock_512.png")
         if os.path.exists(icon_path):
             ns_image = NSImage.alloc().initWithContentsOfFile_(icon_path)
             NSApplication.sharedApplication().setApplicationIconImage_(ns_image)

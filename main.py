@@ -605,7 +605,7 @@ def run_gui(menu_bar_mode=False):
     try:
         from AppKit import NSApplication, NSImage
         import os as _os
-        _icon = _os.path.join(_os.path.dirname(__file__), "display", "icons", "icon_512x512.png")
+        _icon = _os.path.join(_os.path.dirname(__file__), "display", "icons", "icon_dock_512.png")
         if _os.path.exists(_icon):
             NSApplication.sharedApplication().setApplicationIconImage_(
                 NSImage.alloc().initWithContentsOfFile_(_icon)

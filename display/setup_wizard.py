@@ -489,8 +489,32 @@ class SetupWizard(QWidget):
 
         self.setFixedSize(622, 830)
         self.setWindowTitle("Atrophy — Setup")
-        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, False)
+
+        # Native traffic lights (close/minimize/zoom) without title bar
+        try:
+            from AppKit import NSWindowStyleMaskFullSizeContentView
+            from PyQt5.QtCore import QTimer
+            # Use standard window flags so macOS draws the traffic lights
+            self.setWindowFlags(Qt.Window)
+            # Defer native customisation until the NSWindow exists
+            def _setup_native():
+                try:
+                    wid = int(self.winId())
+                    from AppKit import NSApplication
+                    for w in NSApplication.sharedApplication().windows():
+                        if w.windowNumber() == wid:
+                            w.setStyleMask_(w.styleMask() | NSWindowStyleMaskFullSizeContentView)
+                            w.setTitlebarAppearsTransparent_(True)
+                            w.setTitleVisibility_(1)  # NSWindowTitleHidden
+                            w.setMovableByWindowBackground_(True)
+                            break
+                except Exception:
+                    pass
+            QTimer.singleShot(0, _setup_native)
+        except ImportError:
+            # Non-macOS fallback — frameless
+            self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
 
         # Results
         self._user_name = None
