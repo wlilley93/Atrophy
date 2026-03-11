@@ -562,7 +562,7 @@ class SetupWizard(QWidget):
         lay.addSpacing(8)
         lay.addWidget(_label("Offload your mind.", 13, 0.4, align=Qt.AlignCenter))
         lay.addSpacing(40)
-        lay.addWidget(_label("Your name.", 15, 0.7, align=Qt.AlignCenter))
+        lay.addWidget(_label("What is your name, human?", 15, 0.7, align=Qt.AlignCenter))
         lay.addSpacing(12)
 
         self._name_input = QLineEdit()

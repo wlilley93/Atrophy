@@ -114,144 +114,90 @@ def _copy_snapshot(dest: Path):
     print(f"  Snapshot: {sum(1 for _ in dest.rglob('*') if _.is_file())} files")
 
 
-SPLASH_SCRIPT = r'''
-"""Splash screen for first-launch setup — tkinter (ships with Python, no pip needed).
+SPLASH_APPLESCRIPT = '''\
+use framework "Foundation"
+use framework "AppKit"
+use scripting additions
 
-Matches the app's visual style: dark background (#0a0a12), Bricolage Grotesque font
-with system fallbacks, brain icon from the source tree, smooth animated progress bar.
-"""
-import sys, os, json
+on run argv
+    set statusFile to item 1 of argv
+    set theApp to current application
+    set W to 440
+    set H to 180
 
-STATUS_FILE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/.atrophy_splash_status"
-DATA_DIR = os.path.dirname(STATUS_FILE) if STATUS_FILE != "/tmp/.atrophy_splash_status" else os.path.expanduser("~/.atrophy")
+    set win to theApp's NSWindow's alloc()'s initWithContentRect:{{0, 0}, {W, H}} styleMask:0 backing:2 defer:false
+    win's setBackgroundColor:(theApp's NSColor's colorWithSRGBRed:0.04 green:0.04 blue:0.07 alpha:1.0)
+    win's setLevel:3
+    win's setHasShadow:true
+    win's |center|()
+    set cv to win's contentView()
 
-try:
-    import tkinter as tk
-except ImportError:
-    sys.exit(0)
+    script UI
+        on makeLabel(theText, fontSize, fontWeight, r, g, b, theFrame)
+            set tf to theApp's NSTextField's alloc()'s initWithFrame:theFrame
+            tf's setStringValue:theText
+            tf's setBezeled:false
+            tf's setDrawsBackground:false
+            tf's setEditable:false
+            tf's setSelectable:false
+            tf's setFont:(theApp's NSFont's systemFontOfSize:fontSize weight:fontWeight)
+            tf's setTextColor:(theApp's NSColor's colorWithSRGBRed:r green:g blue:b alpha:1.0)
+            tf's setAlignment:1
+            return tf
+        end makeLabel
 
-# Colours matching the app
-BG       = "#0a0a12"
-BG_MID   = "#0f0f1a"
-TEXT     = "#d8d8e8"
-TEXT_DIM = "#666680"
-ACCENT   = "#647cff"
-BAR_BG   = "#1a1a2a"
+        on makeBar(theFrame, r, g, b)
+            set bx to theApp's NSBox's alloc()'s initWithFrame:theFrame
+            bx's setBoxType:4
+            bx's setBorderType:0
+            bx's setFillColor:(theApp's NSColor's colorWithSRGBRed:r green:g blue:b alpha:1.0)
+            return bx
+        end makeBar
+    end script
 
-# Font with fallback chain (Bricolage may not be installed for all users)
-FONT_TITLE  = ("Bricolage Grotesque", "SF Pro Display", "Helvetica Neue", "Helvetica")
-FONT_BODY   = ("Bricolage Grotesque", "SF Pro Text", "Helvetica Neue", "Helvetica")
+    cv's addSubview:(UI's makeLabel("Atrophy", 22, 0.5, 0.85, 0.85, 0.91, {{0, H - 70}, {W, 30}}))
+    cv's addSubview:(UI's makeLabel("Offload your mind.", 12, 0.0, 0.4, 0.4, 0.5, {{0, H - 95}, {W, 18}}))
 
+    set statusLabel to UI's makeLabel("Preparing...", 12, 0.0, 0.5, 0.5, 0.6, {{0, 35}, {W, 18}})
+    cv's addSubview:statusLabel
 
-class Splash:
-    def __init__(self):
-        self.root = tk.Tk()
-        self.root.title("Atrophy")
-        self.root.overrideredirect(True)
-        self.root.configure(bg=BG)
-        self.root.attributes("-topmost", True)
+    cv's addSubview:(UI's makeBar({{60, 20}, {320, 3}}, 0.1, 0.1, 0.16))
+    set barFill to UI's makeBar({{60, 20}, {0, 3}}, 0.39, 0.49, 1.0)
+    cv's addSubview:barFill
 
-        # Window size and position
-        w, h = 440, 280
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        self.root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+    win's makeKeyAndOrderFront:(missing value)
 
-        # Rounded corner effect — transparent background with inner frame
-        self.root.attributes("-alpha", 0.0)
-
-        # Main container
-        frame = tk.Frame(self.root, bg=BG)
-        frame.pack(fill="both", expand=True)
-
-        # Brain icon
-        icon_path = os.path.join(DATA_DIR, "src", "display", "icons", "icon_128x128.png")
-        # Also try bootstrap path
-        if not os.path.exists(icon_path):
-            bootstrap = os.environ.get("BOOTSTRAP_DIR", "")
-            if bootstrap:
-                icon_path = os.path.join(bootstrap, "display", "icons", "icon_128x128.png")
-        self._icon_image = None
-        try:
-            self._icon_image = tk.PhotoImage(file=icon_path)
-            # Scale down to 64x64 (subsample by 2 from 128x128)
-            self._icon_image = self._icon_image.subsample(2, 2)
-            icon_label = tk.Label(frame, image=self._icon_image, bg=BG)
-            icon_label.pack(pady=(36, 10))
-        except Exception:
-            # No icon available — use text fallback
-            tk.Label(frame, text="", bg=BG).pack(pady=(36, 0))
-
-        # Title
-        tk.Label(frame, text="Atrophy", font=(FONT_TITLE[0], 22),
-                 fg=TEXT, bg=BG).pack(pady=(0, 6))
-
-        # Status text
-        self.status = tk.Label(frame, text="Preparing...",
-                               font=(FONT_BODY[0], 12), fg=TEXT_DIM, bg=BG)
-        self.status.pack(pady=(0, 20))
-
-        # Progress bar — thin, accent-coloured
-        bar_frame = tk.Frame(frame, bg=BG)
-        bar_frame.pack(padx=60, fill="x")
-        self.canvas = tk.Canvas(bar_frame, height=3, bg=BAR_BG,
-                                highlightthickness=0, bd=0)
-        self.canvas.pack(fill="x")
-        self.bar_id = self.canvas.create_rectangle(0, 0, 0, 3, fill=ACCENT, outline="")
-        self._progress = 0.0
-        self._target = 0.0
-
-        # Fade in
-        self._alpha = 0.0
-        self.root.after(20, self._fade_in)
-        self.root.after(100, self._poll_status)
-        self.root.after(30, self._animate_bar)
-
-    def _fade_in(self):
-        self._alpha = min(self._alpha + 0.08, 1.0)
-        self.root.attributes("-alpha", self._alpha)
-        if self._alpha < 1.0:
-            self.root.after(20, self._fade_in)
-
-    def _poll_status(self):
-        try:
-            if os.path.exists(STATUS_FILE):
-                with open(STATUS_FILE) as f:
-                    data = json.loads(f.read())
-                if data.get("done"):
-                    self._fade_out()
-                    return
-                msg = data.get("message", "")
-                pct = data.get("progress", 0)
-                if msg:
-                    self.status.config(text=msg)
-                if pct:
-                    self._target = float(pct)
-        except Exception:
-            pass
-        self.root.after(200, self._poll_status)
-
-    def _animate_bar(self):
-        if self._target > self._progress:
-            self._progress += max(0.3, (self._target - self._progress) * 0.06)
-        bar_w = self.canvas.winfo_width()
-        if bar_w > 1:
-            fill_w = int(bar_w * self._progress / 100)
-            self.canvas.coords(self.bar_id, 0, 0, fill_w, 3)
-        self.root.after(30, self._animate_bar)
-
-    def _fade_out(self):
-        self._alpha -= 0.1
-        if self._alpha <= 0:
-            self.root.destroy()
-            return
-        self.root.attributes("-alpha", self._alpha)
-        self.root.after(20, self._fade_out)
-
-    def run(self):
-        self.root.mainloop()
-
-Splash().run()
+    set currentProgress to 0.0
+    repeat
+        delay 0.3
+        try
+            set jsonData to (theApp's NSData's dataWithContentsOfFile:statusFile)
+            if jsonData is not missing value then
+                set parsed to (theApp's NSJSONSerialization's JSONObjectWithData:jsonData options:0 |error|:(missing value))
+                if parsed is not missing value then
+                    if (parsed's objectForKey:"done") is not missing value then
+                        if ((parsed's objectForKey:"done") as boolean) then
+                            win's orderOut:(missing value)
+                            exit repeat
+                        end if
+                    end if
+                    set msg to (parsed's objectForKey:"message")
+                    if msg is not missing value then
+                        statusLabel's setStringValue:(msg as text)
+                    end if
+                    set pct to (parsed's objectForKey:"progress")
+                    if pct is not missing value then
+                        set target to pct as real
+                        set currentProgress to currentProgress + (target - currentProgress) * 0.15
+                        set fillW to (round (320 * currentProgress / 100) rounding as taught in school)
+                        if fillW < 0 then set fillW to 0
+                        barFill's setFrame:{{60, 20}, {fillW, 3}}
+                    end if
+                end if
+            end if
+        end try
+    end repeat
+end run
 '''
 
 LAUNCHER_SCRIPT = r'''#!/bin/bash
@@ -271,7 +217,7 @@ SRC_DIR="$DATA_DIR/src"
 VENV_DIR="$DATA_DIR/venv"
 LOG_DIR="$DATA_DIR/logs"
 BOOTSTRAP="$(dirname "$(dirname "$0")")/Resources/bootstrap"
-SPLASH_SCRIPT="$(dirname "$(dirname "$0")")/Resources/splash.py"
+SPLASH_SCRIPT="$(dirname "$(dirname "$0")")/Resources/splash.applescript"
 ARCHIVE_URL="''' + ARCHIVE_URL + r'''"
 UPDATE_MARKER="$DATA_DIR/.last_update"
 STATUS_FILE="$DATA_DIR/.splash_status"
@@ -358,16 +304,8 @@ fi
 
 # ── Show splash if setup needed ──
 if [ "$NEEDS_SETUP" = true ]; then
-    # Find a system Python for tkinter (venv may not exist yet)
-    SPLASH_PYTHON=""
-    for p in python3.12 python3.11 python3 python; do
-        if command -v "$p" &>/dev/null; then
-            SPLASH_PYTHON="$p"
-            break
-        fi
-    done
-    if [ -n "$SPLASH_PYTHON" ] && [ -f "$SPLASH_SCRIPT" ]; then
-        "$SPLASH_PYTHON" "$SPLASH_SCRIPT" "$STATUS_FILE" &
+    if [ -f "$SPLASH_SCRIPT" ]; then
+        osascript "$SPLASH_SCRIPT" "$STATUS_FILE" &
         SPLASH_PID=$!
         sleep 0.3  # Let the window appear
     fi
@@ -549,9 +487,9 @@ def build_app():
     if ICNS_PATH.exists():
         shutil.copy2(ICNS_PATH, resources / "TheAtrophiedMind.icns")
 
-    # ── Splash screen script ──
-    splash_path = resources / "splash.py"
-    splash_path.write_text(SPLASH_SCRIPT)
+    # ── Splash screen (native AppleScript — no dependencies) ──
+    splash_path = resources / "splash.applescript"
+    splash_path.write_text(SPLASH_APPLESCRIPT)
 
     # ── Clear quarantine ──
     subprocess.run(["xattr", "-cr", str(APP_PATH)], capture_output=True)
