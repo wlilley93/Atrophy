@@ -601,6 +601,18 @@ def _check_claude_installed():
 
 
 def run_gui(menu_bar_mode=False):
+    # Set Dock icon before anything else — prevents Python rocket flash
+    try:
+        from AppKit import NSApplication, NSImage
+        import os as _os
+        _icon = _os.path.join(_os.path.dirname(__file__), "display", "icons", "icon_512x512.png")
+        if _os.path.exists(_icon):
+            NSApplication.sharedApplication().setApplicationIconImage_(
+                NSImage.alloc().initWithContentsOfFile_(_icon)
+            )
+    except ImportError:
+        pass
+
     from display.setup_wizard import needs_setup, run_setup
 
     # First-launch setup — wizard handles name + agent creation

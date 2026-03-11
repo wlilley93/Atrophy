@@ -114,6 +114,146 @@ def _copy_snapshot(dest: Path):
     print(f"  Snapshot: {sum(1 for _ in dest.rglob('*') if _.is_file())} files")
 
 
+SPLASH_SCRIPT = r'''
+"""Splash screen for first-launch setup — tkinter (ships with Python, no pip needed).
+
+Matches the app's visual style: dark background (#0a0a12), Bricolage Grotesque font
+with system fallbacks, brain icon from the source tree, smooth animated progress bar.
+"""
+import sys, os, json
+
+STATUS_FILE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/.atrophy_splash_status"
+DATA_DIR = os.path.dirname(STATUS_FILE) if STATUS_FILE != "/tmp/.atrophy_splash_status" else os.path.expanduser("~/.atrophy")
+
+try:
+    import tkinter as tk
+except ImportError:
+    sys.exit(0)
+
+# Colours matching the app
+BG       = "#0a0a12"
+BG_MID   = "#0f0f1a"
+TEXT     = "#d8d8e8"
+TEXT_DIM = "#666680"
+ACCENT   = "#647cff"
+BAR_BG   = "#1a1a2a"
+
+# Font with fallback chain (Bricolage may not be installed for all users)
+FONT_TITLE  = ("Bricolage Grotesque", "SF Pro Display", "Helvetica Neue", "Helvetica")
+FONT_BODY   = ("Bricolage Grotesque", "SF Pro Text", "Helvetica Neue", "Helvetica")
+
+
+class Splash:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Atrophy")
+        self.root.overrideredirect(True)
+        self.root.configure(bg=BG)
+        self.root.attributes("-topmost", True)
+
+        # Window size and position
+        w, h = 440, 280
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        self.root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        # Rounded corner effect — transparent background with inner frame
+        self.root.attributes("-alpha", 0.0)
+
+        # Main container
+        frame = tk.Frame(self.root, bg=BG)
+        frame.pack(fill="both", expand=True)
+
+        # Brain icon
+        icon_path = os.path.join(DATA_DIR, "src", "display", "icons", "icon_128x128.png")
+        # Also try bootstrap path
+        if not os.path.exists(icon_path):
+            bootstrap = os.environ.get("BOOTSTRAP_DIR", "")
+            if bootstrap:
+                icon_path = os.path.join(bootstrap, "display", "icons", "icon_128x128.png")
+        self._icon_image = None
+        try:
+            self._icon_image = tk.PhotoImage(file=icon_path)
+            # Scale down to 64x64 (subsample by 2 from 128x128)
+            self._icon_image = self._icon_image.subsample(2, 2)
+            icon_label = tk.Label(frame, image=self._icon_image, bg=BG)
+            icon_label.pack(pady=(36, 10))
+        except Exception:
+            # No icon available — use text fallback
+            tk.Label(frame, text="", bg=BG).pack(pady=(36, 0))
+
+        # Title
+        tk.Label(frame, text="Atrophy", font=(FONT_TITLE[0], 22),
+                 fg=TEXT, bg=BG).pack(pady=(0, 6))
+
+        # Status text
+        self.status = tk.Label(frame, text="Preparing...",
+                               font=(FONT_BODY[0], 12), fg=TEXT_DIM, bg=BG)
+        self.status.pack(pady=(0, 20))
+
+        # Progress bar — thin, accent-coloured
+        bar_frame = tk.Frame(frame, bg=BG)
+        bar_frame.pack(padx=60, fill="x")
+        self.canvas = tk.Canvas(bar_frame, height=3, bg=BAR_BG,
+                                highlightthickness=0, bd=0)
+        self.canvas.pack(fill="x")
+        self.bar_id = self.canvas.create_rectangle(0, 0, 0, 3, fill=ACCENT, outline="")
+        self._progress = 0.0
+        self._target = 0.0
+
+        # Fade in
+        self._alpha = 0.0
+        self.root.after(20, self._fade_in)
+        self.root.after(100, self._poll_status)
+        self.root.after(30, self._animate_bar)
+
+    def _fade_in(self):
+        self._alpha = min(self._alpha + 0.08, 1.0)
+        self.root.attributes("-alpha", self._alpha)
+        if self._alpha < 1.0:
+            self.root.after(20, self._fade_in)
+
+    def _poll_status(self):
+        try:
+            if os.path.exists(STATUS_FILE):
+                with open(STATUS_FILE) as f:
+                    data = json.loads(f.read())
+                if data.get("done"):
+                    self._fade_out()
+                    return
+                msg = data.get("message", "")
+                pct = data.get("progress", 0)
+                if msg:
+                    self.status.config(text=msg)
+                if pct:
+                    self._target = float(pct)
+        except Exception:
+            pass
+        self.root.after(200, self._poll_status)
+
+    def _animate_bar(self):
+        if self._target > self._progress:
+            self._progress += max(0.3, (self._target - self._progress) * 0.06)
+        bar_w = self.canvas.winfo_width()
+        if bar_w > 1:
+            fill_w = int(bar_w * self._progress / 100)
+            self.canvas.coords(self.bar_id, 0, 0, fill_w, 3)
+        self.root.after(30, self._animate_bar)
+
+    def _fade_out(self):
+        self._alpha -= 0.1
+        if self._alpha <= 0:
+            self.root.destroy()
+            return
+        self.root.attributes("-alpha", self._alpha)
+        self.root.after(20, self._fade_out)
+
+    def run(self):
+        self.root.mainloop()
+
+Splash().run()
+'''
+
 LAUNCHER_SCRIPT = r'''#!/bin/bash
 # ─────────────────────────────────────────────────────
 #  Atrophy — App Launcher
@@ -131,15 +271,27 @@ SRC_DIR="$DATA_DIR/src"
 VENV_DIR="$DATA_DIR/venv"
 LOG_DIR="$DATA_DIR/logs"
 BOOTSTRAP="$(dirname "$(dirname "$0")")/Resources/bootstrap"
+SPLASH_SCRIPT="$(dirname "$(dirname "$0")")/Resources/splash.py"
 ARCHIVE_URL="''' + ARCHIVE_URL + r'''"
 UPDATE_MARKER="$DATA_DIR/.last_update"
+STATUS_FILE="$DATA_DIR/.splash_status"
 
 mkdir -p "$DATA_DIR" "$LOG_DIR"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_DIR/launcher.log"; }
 
-# ── Setup state ──
-FIRST_RUN=false
+# ── Splash screen helpers ──
+SPLASH_PID=""
+splash_update() {
+    # $1 = message, $2 = progress (0-100)
+    echo "{\"message\":\"$1\",\"progress\":$2}" > "$STATUS_FILE"
+}
+splash_done() {
+    echo '{"done":true}' > "$STATUS_FILE"
+    [ -n "$SPLASH_PID" ] && wait "$SPLASH_PID" 2>/dev/null
+    SPLASH_PID=""
+    rm -f "$STATUS_FILE"
+}
 
 # ── PATH — ensure claude and common tools are discoverable ──
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.local/share/claude:$PATH"
@@ -169,51 +321,87 @@ download_source() {
         return 1
     fi
 
-    # Swap in the new source, preserving user state files
-    # Save any local .env so it isn't clobbered
+    # Atomic swap — preserve .env, rename in one step so a running app
+    # never sees a half-written source tree
     local saved_env=""
     [ -f "$SRC_DIR/.env" ] && saved_env=$(cat "$SRC_DIR/.env")
 
-    rm -rf "$SRC_DIR"
-    mv "$extracted" "$SRC_DIR"
-
-    # Restore .env if it existed
+    # Restore .env into the new source before swapping
     if [ -n "$saved_env" ]; then
-        echo "$saved_env" > "$SRC_DIR/.env"
+        echo "$saved_env" > "$extracted/.env"
     fi
 
-    rm -rf "$tmp_zip" "$tmp_dir"
+    # Atomic rename: old src → .old, new → src, then clean up
+    rm -rf "$SRC_DIR.old"
+    mv "$SRC_DIR" "$SRC_DIR.old" 2>/dev/null
+    mv "$extracted" "$SRC_DIR"
+    rm -rf "$SRC_DIR.old" "$tmp_zip" "$tmp_dir"
     date -u +%Y-%m-%dT%H:%M:%SZ > "$UPDATE_MARKER"
     log "Updated source from GitHub archive"
     return 0
 }
 
+# ── Detect if setup work is needed ──
+NEEDS_SETUP=false
+if [ ! -f "$SRC_DIR/main.py" ] || [ ! -f "$VENV_DIR/bin/python" ]; then
+    NEEDS_SETUP=true
+else
+    REQ_FILE="$SRC_DIR/requirements.txt"
+    HASH_FILE="$VENV_DIR/.requirements_hash"
+    if [ -f "$REQ_FILE" ]; then
+        CURRENT_HASH=$(md5 -q "$REQ_FILE" 2>/dev/null || md5sum "$REQ_FILE" | cut -d' ' -f1)
+        STORED_HASH=""
+        [ -f "$HASH_FILE" ] && STORED_HASH=$(cat "$HASH_FILE")
+        [ "$CURRENT_HASH" != "$STORED_HASH" ] && NEEDS_SETUP=true
+    fi
+fi
+
+# ── Show splash if setup needed ──
+if [ "$NEEDS_SETUP" = true ]; then
+    # Find a system Python for tkinter (venv may not exist yet)
+    SPLASH_PYTHON=""
+    for p in python3.12 python3.11 python3 python; do
+        if command -v "$p" &>/dev/null; then
+            SPLASH_PYTHON="$p"
+            break
+        fi
+    done
+    if [ -n "$SPLASH_PYTHON" ] && [ -f "$SPLASH_SCRIPT" ]; then
+        "$SPLASH_PYTHON" "$SPLASH_SCRIPT" "$STATUS_FILE" &
+        SPLASH_PID=$!
+        sleep 0.3  # Let the window appear
+    fi
+fi
+
 # ── First run: set up source ──
 if [ ! -f "$SRC_DIR/main.py" ]; then
-    FIRST_RUN=true
     log "First run — setting up source"
+    splash_update "Downloading source..." 5
 
     # Try downloading from GitHub
     if ! download_source; then
         # Fallback: use bundled bootstrap
         if [ -d "$BOOTSTRAP" ] && [ -f "$BOOTSTRAP/main.py" ]; then
+            splash_update "Unpacking bootstrap..." 10
             log "Using bootstrap snapshot"
             mkdir -p "$SRC_DIR"
             cp -R "$BOOTSTRAP/" "$SRC_DIR/"
         else
+            splash_done
             osascript -e 'display alert "Setup Failed" message "Could not download Atrophy source and no bootstrap available.\nCheck your internet connection and try again.\n\nLogs: ~/.atrophy/logs/launcher.log" as critical'
             exit 1
         fi
     fi
 
     if [ ! -f "$SRC_DIR/main.py" ]; then
+        splash_done
         osascript -e 'display alert "Setup Failed" message "Could not set up Atrophy. Check ~/.atrophy/logs/launcher.log" as critical'
         exit 1
     fi
+    splash_update "Source ready" 20
 fi
 
 # ── Auto-update in background ──
-# Only update if last update was more than 5 minutes ago (avoid hammering GitHub)
 should_update=true
 if [ -f "$UPDATE_MARKER" ]; then
     last_update=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$(cat "$UPDATE_MARKER")" +%s 2>/dev/null || echo 0)
@@ -234,6 +422,7 @@ fi
 
 # ── Virtual environment ──
 if [ ! -f "$VENV_DIR/bin/python" ]; then
+    splash_update "Creating environment..." 25
     log "Creating virtual environment"
     PYTHON=""
     for p in python3.12 python3.11 python3 python; do
@@ -243,12 +432,14 @@ if [ ! -f "$VENV_DIR/bin/python" ]; then
         fi
     done
     if [ -z "$PYTHON" ]; then
+        splash_done
         osascript -e 'display alert "Python Not Found" message "Python 3.11+ is required.\n\nInstall from python.org or:\n  brew install python" as critical'
         exit 1
     fi
     "$PYTHON" -m venv "$VENV_DIR" 2>>"$LOG_DIR/launcher.log"
     "$VENV_DIR/bin/pip" install -q --upgrade pip 2>>"$LOG_DIR/launcher.log"
     log "Venv created with $PYTHON"
+    splash_update "Environment ready" 35
 fi
 
 # ── Install/update dependencies ──
@@ -259,14 +450,37 @@ if [ -f "$REQ_FILE" ]; then
     STORED_HASH=""
     [ -f "$HASH_FILE" ] && STORED_HASH=$(cat "$HASH_FILE")
     if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
+        splash_update "Installing packages..." 40
         log "Installing dependencies"
-        "$VENV_DIR/bin/pip" install -q -r "$REQ_FILE" 2>>"$LOG_DIR/launcher.log"
+
+        # Count total packages for progress
+        TOTAL_PKGS=$(grep -cve '^\s*$' -e '^\s*#' "$REQ_FILE" 2>/dev/null || echo 20)
+        INSTALLED=0
+
+        # Install with progress tracking — pip outputs one line per package
+        "$VENV_DIR/bin/pip" install --progress-bar off -r "$REQ_FILE" 2>>"$LOG_DIR/launcher.log" | while IFS= read -r line; do
+            case "$line" in
+                *"Successfully installed"*|*"Requirement already"*|*"Installing collected"*)
+                    INSTALLED=$((INSTALLED + 1))
+                    # Map 40-95% range
+                    PCT=$(( 40 + (INSTALLED * 55 / TOTAL_PKGS) ))
+                    [ "$PCT" -gt 95 ] && PCT=95
+                    # Extract package name
+                    PKG=$(echo "$line" | grep -oE '[a-zA-Z][a-zA-Z0-9_-]+' | head -1)
+                    splash_update "Installing ${PKG:-packages}..." "$PCT"
+                    ;;
+            esac
+        done
+
         echo "$CURRENT_HASH" > "$HASH_FILE"
         log "Dependencies installed"
+        splash_update "Ready" 100
     fi
 fi
 
-# ── Launch ──
+# ── Dismiss splash and launch ──
+splash_done
+
 export ATROPHY_BUNDLE="$SRC_DIR"
 source "$VENV_DIR/bin/activate"
 cd "$SRC_DIR"
@@ -334,6 +548,10 @@ def build_app():
     # ── Icon ──
     if ICNS_PATH.exists():
         shutil.copy2(ICNS_PATH, resources / "TheAtrophiedMind.icns")
+
+    # ── Splash screen script ──
+    splash_path = resources / "splash.py"
+    splash_path.write_text(SPLASH_SCRIPT)
 
     # ── Clear quarantine ──
     subprocess.run(["xattr", "-cr", str(APP_PATH)], capture_output=True)
