@@ -181,18 +181,39 @@ on run argv
         end makeBar
     end script
 
-    -- Brain logo (from app bundle Resources) — constrain to 48x48
+    -- Brain decay cycle animation (10 pre-rendered frames)
     set logoSize to 48
-    set iconPath to bundlePath & "/Contents/Resources/splash_logo.png"
-    set iconFile to theApp's NSImage's alloc()'s initWithContentsOfFile:iconPath
-    if iconFile is not missing value then
-        iconFile's setSize:{logoSize, logoSize}
-        set imgView to theApp's NSImageView's alloc()'s initWithFrame:{{(W - logoSize) / 2, H - 80}, {logoSize, logoSize}}
-        imgView's setImage:iconFile
-        imgView's setImageScaling:2
-        imgView's setImageAlignment:0
-        cv's addSubview:imgView
+    set brainFrames to {}
+    repeat with i from 0 to 9
+        set framePath to bundlePath & "/Contents/Resources/brain_0" & i & ".png"
+        set frameImg to theApp's NSImage's alloc()'s initWithContentsOfFile:framePath
+        if frameImg is not missing value then
+            frameImg's setSize:{logoSize, logoSize}
+            set end of brainFrames to frameImg
+        end if
+    end repeat
+
+    -- Fall back to static logo if frames not found
+    if (count of brainFrames) = 0 then
+        set iconPath to bundlePath & "/Contents/Resources/splash_logo.png"
+        set iconFile to theApp's NSImage's alloc()'s initWithContentsOfFile:iconPath
+        if iconFile is not missing value then
+            iconFile's setSize:{logoSize, logoSize}
+            set end of brainFrames to iconFile
+        end if
     end if
+
+    set imgView to theApp's NSImageView's alloc()'s initWithFrame:{{(W - logoSize) / 2, H - 80}, {logoSize, logoSize}}
+    if (count of brainFrames) > 0 then
+        imgView's setImage:(item 1 of brainFrames)
+    end if
+    imgView's setImageScaling:2
+    imgView's setImageAlignment:0
+    cv's addSubview:imgView
+
+    set brainFrameCount to (count of brainFrames)
+    set brainFrameIdx to 0
+    set brainTickCount to 0
 
     -- Title and tagline
     set titleFontName to ""
@@ -221,6 +242,16 @@ on run argv
     set startTime to (current date)
     repeat
         delay 0.3
+
+        -- Animate brain: advance frame every 3 ticks (~0.9s per frame)
+        if brainFrameCount > 1 then
+            set brainTickCount to brainTickCount + 1
+            if brainTickCount ≥ 3 then
+                set brainTickCount to 0
+                set brainFrameIdx to (brainFrameIdx + 1) mod brainFrameCount
+                imgView's setImage:(item (brainFrameIdx + 1) of brainFrames)
+            end if
+        end if
         try
             set jsonData to (theApp's NSData's dataWithContentsOfFile:statusFile)
             if jsonData is not missing value then
@@ -579,6 +610,12 @@ def build_app():
     font_src = Path.home() / "Library" / "Fonts" / "BricolageGrotesque[opsz,wdth,wght].ttf"
     if font_src.exists():
         shutil.copy2(font_src, resources / "BricolageGrotesque.ttf")
+
+    # Bundle brain decay cycle frames for animated splash
+    brain_frames_dir = ICONS_DIR / "brain_frames"
+    if brain_frames_dir.exists():
+        for f in sorted(brain_frames_dir.glob("brain_*.png")):
+            shutil.copy2(f, resources / f.name)
 
     # ── Clear quarantine ──
     subprocess.run(["xattr", "-cr", str(APP_PATH)], capture_output=True)
