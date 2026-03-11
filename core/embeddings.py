@@ -14,12 +14,26 @@ MODEL_NAME = EMBEDDING_MODEL
 _model = None
 
 
+def _ensure_installed():
+    """Install sentence-transformers on first use if not present."""
+    try:
+        import sentence_transformers  # noqa: F401
+    except ImportError:
+        import subprocess, sys
+        print("  [embeddings] Installing sentence-transformers (one-time)...")
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "-q", "sentence-transformers"],
+            stdout=subprocess.DEVNULL,
+        )
+
+
 def _load_model():
     """Load sentence-transformer model, caching to MODELS_DIR."""
     global _model
     if _model is not None:
         return _model
 
+    _ensure_installed()
     from sentence_transformers import SentenceTransformer
     import torch
 

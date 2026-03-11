@@ -7,8 +7,8 @@ pynput
 httpx
 elevenlabs
 
-# Embeddings (semantic memory)
-sentence-transformers
+# Embeddings (semantic memory) — installed lazily on first use
+# sentence-transformers
 
 # Avatar / Video
 opencv-python
