@@ -544,7 +544,7 @@ def build_app():
     splash_path.write_text(SPLASH_APPLESCRIPT)
 
     # ── Splash assets: logo + font ──
-    splash_logo = ICONS_DIR / "icon_128x128.png"
+    splash_logo = ICONS_DIR / "brain_overlay.png"
     if splash_logo.exists():
         shutil.copy2(splash_logo, resources / "splash_logo.png")
 
