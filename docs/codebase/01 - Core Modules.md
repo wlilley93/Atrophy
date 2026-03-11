@@ -293,4 +293,4 @@ def resume_agent_session(agent_name) -> dict | None  # pops suspended state
 
 This allows the deferred-to agent to handle the question, then the original agent can be resumed.
 
-**Agent roster**: `get_agent_roster(exclude=None)` returns a list of enabled agents with display names and descriptions. Used for injecting agent awareness into the system prompt so agents know who else is available for deferral.
+**Agent roster**: `get_agent_roster(exclude=None)` returns a list of enabled agents with display names and descriptions. Used for injecting agent awareness into the system prompt so agents know who else is available for deferral. Also used by `channels/router.py` to build the routing agent's context.

@@ -40,6 +40,10 @@ build/
 *.icns
 !display/icons/TheAtrophiedMind.icns
 
+# Test / CI artifacts
+.coverage
+.viberapid.yml
+
 # OS
 .DS_Store
 

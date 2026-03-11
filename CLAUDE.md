@@ -70,6 +70,23 @@ The agent can do these things at runtime without Claude Code:
 
 **Timer** (`display/timer.py`): Pure local PyQt overlay — no inference latency. Draggable, pausable, +1m/+5m buttons. Alarm sound plays at 0:00.
 
+### Telegram Messaging
+
+All agents share a single Telegram bot. A central daemon (`channels/telegram_daemon.py`) polls for messages, routes them, and dispatches to agents sequentially — no two agents ever run concurrently, preventing race conditions on shared resources.
+
+**Routing** (`channels/router.py`): Two tiers:
+1. **Explicit** (free) — `/agent_name`, `@agent_name`, wake words, `name:` prefix
+2. **Routing agent** (Haiku) — lightweight LLM classifies ambiguous messages
+
+**Utility commands**: `/status` (list agents), `/mute` (toggle mute). Agent commands (`/companion`, `/monty`) are registered with BotFather via `scripts/register_telegram_commands.py` — users get autocomplete in the Telegram command menu. New agents are auto-registered on creation.
+
+**Daemon management**:
+```bash
+python channels/telegram_daemon.py --install    # launchd (continuous, KeepAlive)
+python channels/telegram_daemon.py --uninstall  # stop and remove
+python channels/telegram_daemon.py --loop       # foreground
+```
+
 ## Architecture
 
 Agent-aware: set `AGENT=<name>` to switch agents. Each agent has its own identity, memory, voice, and avatar under `agents/<name>/`.
@@ -135,12 +152,15 @@ Each agent has unique wake words defined in `agent.json`. These are used by the 
 | `voice/stt.py` | Speech-to-text (whisper.cpp) |
 | `voice/tts.py` | Text-to-speech (ElevenLabs/Fal) |
 | `voice/wake_word.py` | Wake word detection |
-| `channels/` | I/O channels (terminal, Telegram) |
+| `channels/telegram.py` | Telegram Bot API client (send/receive) |
+| `channels/router.py` | Message router (explicit match → routing agent) |
+| `channels/telegram_daemon.py` | Single-process Telegram poller, sequential agent dispatch |
 | `scripts/create_agent.py` | Interactive agent creation |
 | `scripts/agents/companion/run_task.py` | Generic prompt-based task runner |
 | `scripts/agents/companion/check_reminders.py` | Reminder checker (fires notifications) |
 | `scripts/agents/companion/converse.py` | Inter-agent conversation (private exchanges, max twice/month) |
 | `scripts/cron.py` | Scheduled jobs (heartbeat, introspection, etc.) |
+| `scripts/register_telegram_commands.py` | Register `/agent` commands with Telegram BotFather API |
 | `server.py` | HTTP API server (Flask, headless, bearer token auth) |
 | `scripts/install_app.py` | Install/uninstall as login menu bar app |
 | `VERSION` | App version (read by config.py, settings panel, MCP server) |

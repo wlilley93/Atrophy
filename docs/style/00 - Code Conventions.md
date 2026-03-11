@@ -22,6 +22,8 @@ Style guide for The Atrophied Mind codebase.
 - **Background threads for I/O** — Embedding writes, TTS playback, and other non-blocking I/O use daemon threads. CPU-bound work stays on the main thread.
 - **SQLite with WAL mode** — All database connections enable WAL journal mode and foreign keys. One database per agent.
 - **Per-agent isolation** — Separate DBs, data dirs, identity files. No shared mutable state between agents.
+- **Secure temp files** — Use `voice/tempfiles.py` (or similar `mkstemp` pattern) for temporary files. Never use `NamedTemporaryFile(delete=False)` — it has a TOCTOU race condition.
+- **Precompute hot-path data** — Lookup tables and scaled images used in paint events at 30fps should be precomputed at init or first use, not recomputed every frame. Examples: `_ORB_COLORS_TABLE`, cached `_brain_scaled_frames`, class-level `_ATROPHY_FONT`.
 
 ## File Organization
 

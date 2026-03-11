@@ -1407,6 +1407,16 @@ def scaffold_agent(
         print(f"\n  Avatar prompt saved. Generate with:")
         print(f"    python scripts/generate_face.py --agent {name}")
 
+    # Re-register Telegram bot commands so the new agent shows up
+    try:
+        from config import TELEGRAM_BOT_TOKEN
+        if TELEGRAM_BOT_TOKEN:
+            from scripts.register_telegram_commands import register as _register_cmds
+            _register_cmds()
+            print(f"\n  Telegram bot commands updated (/{name} now available).")
+    except Exception:
+        pass
+
     print(f"\n  Next steps:")
     print(f"    1. Edit soul and system prompt in ~/.atrophy/agents/{name}/skills/")
     print(f"    2. Install cron jobs: AGENT={name} python scripts/cron.py install")

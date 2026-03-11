@@ -34,7 +34,7 @@ APP_PATH = BUILD_DIR / f"{APP_NAME}.app"
 ICONS_DIR = PROJECT_DIR / "display" / "icons"
 ICNS_PATH = ICONS_DIR / "TheAtrophiedMind.icns"
 VERSION_FILE = PROJECT_DIR / "VERSION"
-ARCHIVE_URL = "https://github.com/wlilley93/companion/archive/refs/heads/main.zip"
+ARCHIVE_URL = "https://github.com/wlilley93/Atrophy/archive/refs/heads/main.zip"
 
 # Files/dirs to include in the bootstrap snapshot
 INCLUDE = [
@@ -138,6 +138,25 @@ mkdir -p "$DATA_DIR" "$LOG_DIR"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_DIR/launcher.log"; }
 
+# ── Native progress window (shown during first-run setup) ──
+SETUP_PID=""
+show_setup_progress() {
+    osascript -e '
+    tell application "System Events"
+        set theWindow to display dialog "Setting up Atrophy…\n\nInstalling dependencies — this only happens once." buttons {} giving up after 600 with title "Atrophy" with icon note
+    end tell' &>/dev/null &
+    SETUP_PID=$!
+}
+dismiss_setup_progress() {
+    if [ -n "$SETUP_PID" ]; then
+        kill "$SETUP_PID" 2>/dev/null
+        # Dismiss the dialog
+        osascript -e 'tell application "System Events" to keystroke return' 2>/dev/null
+        SETUP_PID=""
+    fi
+}
+FIRST_RUN=false
+
 # ── PATH — ensure claude and common tools are discoverable ──
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.local/share/claude:$PATH"
 
@@ -187,6 +206,7 @@ download_source() {
 
 # ── First run: set up source ──
 if [ ! -f "$SRC_DIR/main.py" ]; then
+    FIRST_RUN=true
     log "First run — setting up source"
 
     # Try downloading from GitHub
@@ -228,6 +248,11 @@ fi
 [ -f "$DATA_DIR/.env" ] && set -a && source "$DATA_DIR/.env" && set +a
 [ -f "$SRC_DIR/.env" ] && set -a && source "$SRC_DIR/.env" && set +a
 
+# ── Visual feedback for first-run setup ──
+if [ "$FIRST_RUN" = true ] || [ ! -f "$VENV_DIR/bin/python" ]; then
+    show_setup_progress
+fi
+
 # ── Virtual environment ──
 if [ ! -f "$VENV_DIR/bin/python" ]; then
     log "Creating virtual environment"
@@ -256,11 +281,16 @@ if [ -f "$REQ_FILE" ]; then
     [ -f "$HASH_FILE" ] && STORED_HASH=$(cat "$HASH_FILE")
     if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
         log "Installing dependencies"
+        # Show progress if not already showing
+        if [ -z "$SETUP_PID" ]; then show_setup_progress; fi
         "$VENV_DIR/bin/pip" install -q -r "$REQ_FILE" 2>>"$LOG_DIR/launcher.log"
         echo "$CURRENT_HASH" > "$HASH_FILE"
         log "Dependencies installed"
     fi
 fi
+
+# ── Dismiss setup progress ──
+dismiss_setup_progress
 
 # ── Check for Claude Code ──
 if ! command -v claude &>/dev/null; then

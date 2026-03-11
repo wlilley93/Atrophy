@@ -290,6 +290,19 @@ The `set_reminder` MCP tool (invoked by the companion in conversation) writes en
 
 ---
 
+## scripts/register_telegram_commands.py -- Bot Command Registration
+
+Registers `/agent_name` commands with the Telegram Bot API so users get autocomplete in the Telegram command menu.
+
+```bash
+python scripts/register_telegram_commands.py           # Register all
+python scripts/register_telegram_commands.py --clear   # Remove all
+```
+
+Scans all enabled agents via `discover_agents()` and registers one `/agent_name` command per agent (description pulled from manifest), plus `/status` and `/mute` utility commands. Commands are automatically re-registered when a new agent is created via `scripts/create_agent.py`.
+
+---
+
 ## scripts/install_app.py -- Login Item Installer
 
 Registers or removes The Atrophied Mind as a macOS login item via launchd.

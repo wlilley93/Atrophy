@@ -4235,6 +4235,23 @@ class MenuBarIcon:
             chat_item.setTarget_(self)
             menu.addItem_(chat_item)
 
+            settings_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Settings", "openSettings:", "")
+            settings_item.setTarget_(self)
+            menu.addItem_(settings_item)
+
+            self._mute_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Mute Voice", "toggleMute:", "")
+            self._mute_menu_item.setTarget_(self)
+            menu.addItem_(self._mute_menu_item)
+
+            menu.addItem_(NSMenuItem.separatorItem())
+
+            logs_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Open Logs", "openLogs:", "")
+            logs_item.setTarget_(self)
+            menu.addItem_(logs_item)
+
             menu.addItem_(NSMenuItem.separatorItem())
 
             # Agent submenu
@@ -4306,6 +4323,15 @@ class MenuBarIcon:
         name = sender.representedObject()
         self._switch_to(name)
 
+    def openSettings_(self, sender):
+        self._open_settings()
+
+    def toggleMute_(self, sender):
+        self._toggle_mute()
+
+    def openLogs_(self, sender):
+        self._open_logs()
+
     def toggleStatus_(self, sender):
         self._toggle_status()
 
@@ -4331,6 +4357,27 @@ class MenuBarIcon:
     def _switch_to(self, agent_name):
         self._window.wake_up()
         self._window.switch_agent(agent_name)
+
+    def _open_settings(self):
+        w = self._window
+        if not w.isVisible():
+            w.show()
+            w.raise_()
+            w.activateWindow()
+        w._toggle_settings()
+
+    def _toggle_mute(self):
+        w = self._window
+        w._mute_btn.click()
+        if hasattr(self, '_mute_menu_item') and self._mute_menu_item:
+            muted = w._mute_btn._active if hasattr(w._mute_btn, '_active') else False
+            self._mute_menu_item.setTitle_("Unmute Voice" if muted else "Mute Voice")
+
+    def _open_logs(self):
+        import subprocess
+        log_dir = Path.home() / ".atrophy" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        subprocess.Popen(["open", str(log_dir)])
 
     def _toggle_status(self):
         from core.status import is_away, set_active, set_away
@@ -4433,10 +4480,20 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
         except ImportError:
             print("  [AppKit unavailable — app will still appear in Dock]")
 
-    # App icon — orb
+    # App icon — orb (Qt windows + macOS Dock)
     from display.icon import get_app_icon
     app_icon = get_app_icon()
     app.setWindowIcon(app_icon)
+
+    # Set the macOS Dock icon natively (overrides Python rocket)
+    try:
+        from AppKit import NSApplication, NSImage
+        icon_path = os.path.join(os.path.dirname(__file__), "icons", "icon_512x512.png")
+        if os.path.exists(icon_path):
+            ns_image = NSImage.alloc().initWithContentsOfFile_(icon_path)
+            NSApplication.sharedApplication().setApplicationIconImage_(ns_image)
+    except ImportError:
+        pass
 
     # Handle Ctrl+C gracefully
     import signal

@@ -110,8 +110,8 @@ def _mcp_config_path() -> str:
             },
         },
         "puppeteer": {
-            "command": "npx",
-            "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+            "command": sys.executable,
+            "args": [str(MCP_SERVER_SCRIPT.parent / "puppeteer_proxy.py")],
             "env": {
                 "PUPPETEER_LAUNCH_OPTIONS": json.dumps({"headless": True}),
             },

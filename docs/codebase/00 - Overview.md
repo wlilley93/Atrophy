@@ -109,8 +109,9 @@ Background daemons run via macOS launchd, managed by `scripts/cron.py`:
 | `introspect` | Periodic (agent-configured) | Deep self-reflection, journal entry |
 | `evolve` | Monthly (1st, 3:00 AM) | Revise prompts/soul.md and prompts/system_prompt.md |
 | `gift` | Monthly (28th, 12:11 AM) | Unprompted gift note, self-rescheduling |
+| `telegram_daemon` | Continuous (launchd) | Poll Telegram, route messages, dispatch to agents sequentially |
 
-See [07 - Scripts and Automation](07%20-%20Scripts%20and%20Automation.md).
+See [07 - Scripts and Automation](07%20-%20Scripts%20and%20Automation.md) and [06 - Channels](06%20-%20Channels.md).
 
 ## Obsidian Integration
 
@@ -135,10 +136,13 @@ Notes created by the companion get YAML frontmatter (type, created, updated, age
 | `display/setup_wizard.py` | First-launch conversational setup with secure input for API keys |
 | `mcp/memory_server.py` | MCP tool server (35 tools, JSON-RPC over stdio) |
 | `server.py` | HTTP API server (Flask, bearer auth, SSE streaming) |
-| `channels/telegram.py` | Telegram Bot API integration |
+| `channels/telegram.py` | Telegram Bot API client (send/receive) |
+| `channels/router.py` | Message router (explicit match → routing agent) |
+| `channels/telegram_daemon.py` | Single-process Telegram poller with sequential dispatch |
 | `scripts/cron.py` | launchd control plane |
 | `scripts/agents/<name>/run_task.py` | Generic prompt-based task runner |
 | `scripts/agents/<name>/check_reminders.py` | Reminder checker (fires notifications every minute) |
 | `scripts/agents/<name>/` | Per-agent daemon scripts and job definitions |
 | `scripts/install_app.py` | Install/uninstall as login menu bar app via launchd |
+| `scripts/register_telegram_commands.py` | Register `/agent` commands with Telegram BotFather API |
 | `db/schema.sql` | Database schema (three-layer memory) |

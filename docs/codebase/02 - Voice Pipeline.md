@@ -2,6 +2,18 @@
 
 The voice system spans four modules: audio capture, speech-to-text, text-to-speech, and wake word detection.
 
+## voice/tempfiles.py -- Secure Temp Files
+
+Shared utility for creating temp files securely across voice modules.
+
+```python
+def secure_tmp(suffix: str, namespace: str = "atrophy") -> Path
+```
+
+Creates temp files via `mkstemp` in a user-only directory (mode `0o700`) under the system temp directory. Both `stt.py` and `tts.py` import from this module rather than duplicating the pattern.
+
+This prevents the TOCTOU race condition in `tempfile.NamedTemporaryFile(delete=False)`, where the file is created, closed, and reopened — leaving a window for symlink attacks.
+
 ## voice/audio.py -- Push-to-Talk
 
 `PushToTalk` class handles microphone capture via push-to-talk.
@@ -31,7 +43,7 @@ Whisper.cpp with Metal acceleration (Apple Silicon GPU).
 
 **Process**:
 
-1. Convert float32 numpy array to 16-bit PCM WAV in a temp file
+1. Convert float32 numpy array to 16-bit PCM WAV via `secure_tmp()` (user-only temp directory)
 2. Call `whisper-cli` subprocess with `--no-timestamps --language en`
 3. Parse stdout, skipping metadata lines (those starting with `[`)
 4. Delete temp file
@@ -40,7 +52,7 @@ The whisper binary path is configured via `WHISPER_BIN` (default: `vendor/whispe
 
 ## voice/tts.py -- Text-to-Speech
 
-Three-tier fallback chain with prosody tag support.
+Three-tier fallback chain with prosody tag support. All temporary audio files use `secure_tmp()` from `voice/tempfiles.py`.
 
 ### Tier Priority
 

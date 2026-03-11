@@ -302,3 +302,15 @@ Generate a new ambient avatar loop segment via Kling.
 | `name` | string | yes | Short name for the loop (used as filename) |
 | `prompt` | string | yes | Cinematic description of expression/movement |
 | `agent` | string | no | Target agent (defaults to current) |
+
+## Artefact System
+
+The MCP server handles artefact creation (HTML documents and generated images). The flow is:
+
+1. **Loading signal**: Writes `{"status": "generating", "name": "<artefact_name>"}` to the artefact display file. The GUI picks this up and shows a loading bar.
+2. **Generation**: Creates the artefact (HTML from Claude Code, or images via fal.ai).
+3. **Completion**: Writes final artefact metadata to the display file. The GUI dismisses the loading bar and displays the result.
+4. **Error handling**: Validates fal response URLs, checks downloaded file sizes, catches missing `fal_client` dependency. Cleans up empty directories on failure.
+5. **Index management**: The artefact index at `~/.atrophy/agents/<name>/artefacts/index.json` is deduplicated by path and sorted by `created_at` descending.
+
+Artefact storage lives at `~/.atrophy/agents/<name>/artefacts/`. There is no approval flow — artefacts are created directly when the agent decides to make one.

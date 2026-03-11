@@ -55,9 +55,15 @@ scripts/agents/general_montgomery/
 └── introspect.py              ← After-action review, self-rescheduling
 ```
 
+## Starter Agent
+
+A minimal "hello world" agent ships with the repo as a reference for creating your own. It demonstrates the minimum viable agent: a manifest, system prompt, and soul document with no scheduled jobs or Telegram integration.
+
+Personal agents (like Companion's full personality) are not included in the public repo — they live in the user's `~/.atrophy/agents/` directory and Obsidian vault. The creation wizard (`python scripts/create_agent.py`) generates everything needed.
+
 ## Agent Anatomy
 
-Each agent has two homes:
+Each agent has three homes:
 
 ### Repo (`agents/<name>/`)
 

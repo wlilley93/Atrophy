@@ -593,10 +593,40 @@ def _cache_next_opening(system: str, cli_session_id: str | None, synth_fn):
         print(f"  [Failed to cache opening: {e}]")
 
 
+def _check_claude_installed():
+    """Check if Claude Code CLI is available. Show error dialog if not."""
+    import shutil
+    from config import CLAUDE_BIN
+    if shutil.which(CLAUDE_BIN):
+        return True
+
+    from PyQt5.QtWidgets import QApplication, QMessageBox
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Critical)
+    msg.setWindowTitle("Claude Code Required")
+    msg.setText("Atrophy requires Claude Code to run.")
+    msg.setInformativeText(
+        "Claude Code is the AI engine that powers Atrophy.\n\n"
+        "Install it with:\n"
+        "  npm install -g @anthropic-ai/claude-code\n\n"
+        "Or download from:\n"
+        "  https://claude.ai/download"
+    )
+    msg.setStandardButtons(QMessageBox.Ok)
+    msg.exec_()
+    return False
+
+
 def run_gui(menu_bar_mode=False):
     from core.context import load_system_prompt
     from voice.tts import synthesise_sync
     from display.setup_wizard import needs_setup, run_setup
+
+    # Check for Claude Code before anything else
+    if not _check_claude_installed():
+        sys.exit(1)
 
     # First-launch setup — name + agent creation before anything else
     if needs_setup():
@@ -665,10 +695,20 @@ def main():
     elif args.server:
         from server import run_server
         run_server(port=args.port, host=args.host)
-    elif args.text:
-        asyncio.run(run_text_only())
     else:
-        asyncio.run(run_cli())
+        # CLI/text modes — check for Claude Code without Qt
+        import shutil
+        from config import CLAUDE_BIN
+        if not shutil.which(CLAUDE_BIN):
+            print("\n  Error: Claude Code is not installed.")
+            print("  Atrophy requires Claude Code as its inference engine.\n")
+            print("  Install with:  npm install -g @anthropic-ai/claude-code")
+            print("  Or download:   https://claude.ai/download\n")
+            sys.exit(1)
+        if args.text:
+            asyncio.run(run_text_only())
+        else:
+            asyncio.run(run_cli())
 
 
 if __name__ == "__main__":
