@@ -454,9 +454,10 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     - One or two questions per message. Never a questionnaire.
     - Push on vagueness — "warm and helpful" isn't a character. Dig deeper.
     - You can suggest and propose — "Sounds like something that..."
-    - Keep messages short. 2-4 sentences. This is Xan talking, not an essay.
-    - The opening message is the EXCEPTION — it can be longer because you're
-      showing capabilities. But still Xan. Still direct. No fluff.
+    - Keep messages short. 2-4 sentences max. This is Xan talking, not an essay.
+    - The opening message should be SHORT — 1-2 sentences. Get the user moving
+      immediately. No preamble, no system overview, no capabilities list.
+      Just ask them what they want to build. They already saw the intro.
     - Don't explain the process. Just do it.
     - NEVER output the JSON until you genuinely have enough. Don't rush.
     - When you do output JSON, make it rich — infer what wasn't said explicitly.
@@ -567,12 +568,107 @@ class SetupWizard(QWidget):
         self._pages = QStackedWidget()
         root.addWidget(self._pages)
 
-        self._build_page_welcome()   # 0
-        self._build_page_chat()      # 1
-        self._build_page_creating()  # 2
-        self._build_page_done()      # 3
+        self._build_page_intro()     # 0
+        self._build_page_welcome()   # 1
+        self._build_page_chat()      # 2
+        self._build_page_creating()  # 3
+        self._build_page_done()      # 4
 
-    # ── Page 0: Welcome + User Name ──
+    # ── Page 0: Cinematic Intro ──
+
+    def _build_page_intro(self):
+        page = QWidget()
+        page.setStyleSheet("background: #000;")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(60, 0, 60, 0)
+        lay.addStretch(3)
+
+        # Font — Bricolage Grotesque if available, else system
+        font_name = "Bricolage Grotesque"
+        test_font = QFont(font_name, 16)
+        if test_font.family().lower() != font_name.lower():
+            font_name = ""  # fall back to default
+
+        self._intro_lines = []
+
+        def make_intro_label(text, size=16, opacity=0.0):
+            lbl = QLabel(text)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setWordWrap(True)
+            f = font_name or "system-ui"
+            lbl.setStyleSheet(
+                f"color: rgba(255,255,255,{opacity}); font-size: {size}px; "
+                f"font-family: '{f}'; background: transparent; line-height: 1.6;"
+            )
+            lay.addWidget(lbl)
+            self._intro_lines.append(lbl)
+            return lbl
+
+        make_intro_label("In the beginning there was nothing", 18)
+        lay.addSpacing(20)
+        make_intro_label("and then...", 16)
+        lay.addSpacing(30)
+        self._intro_intel = make_intro_label("intelligence.", 26)
+        lay.addSpacing(50)
+        make_intro_label(
+            "Use the last reserves of yours to complete this setup flow,\n"
+            "and the future will unfold before your eyes.",
+            14,
+        )
+
+        lay.addStretch(4)
+        self._pages.addWidget(page)
+
+        # Schedule the fade-in sequence
+        self._intro_step = 0
+        self._intro_timer = QTimer()
+        self._intro_timer.timeout.connect(self._intro_tick)
+
+    def _start_intro(self):
+        """Begin the intro sequence."""
+        self._intro_step = 0
+        self._intro_timer.start(80)  # tick every 80ms for smooth fades
+
+    def _intro_tick(self):
+        # Timeline (in ticks of 80ms):
+        # 0-15   (0-1.2s):   fade in line 0 "In the beginning..."
+        # 15-30  (1.2-2.4s): pause
+        # 30-45  (2.4-3.6s): fade in line 1 "and then..."
+        # 45-65  (3.6-5.2s): longer pause
+        # 65-85  (5.2-6.8s): fade in line 2 "intelligence."
+        # 85-100 (6.8-8.0s): pause
+        # 100-120(8.0-9.6s): fade in line 3 "Use the last reserves..."
+        # 120-145(9.6-11.6s):hold
+        # 145+:             transition to welcome page
+        t = self._intro_step
+        self._intro_step += 1
+
+        def fade_label(idx, progress):
+            """Set opacity on a label (0.0 to 1.0)."""
+            lbl = self._intro_lines[idx]
+            opacity = min(1.0, max(0.0, progress))
+            # "intelligence." gets brighter
+            if idx == 2:
+                lbl.setStyleSheet(lbl.styleSheet().split("color:")[0] +
+                    f"color: rgba(255,255,255,{opacity * 0.95});")
+            else:
+                lbl.setStyleSheet(lbl.styleSheet().split("color:")[0] +
+                    f"color: rgba(255,255,255,{opacity * 0.8});")
+
+        if t <= 15:
+            fade_label(0, t / 15.0)
+        elif t >= 30 and t <= 45:
+            fade_label(1, (t - 30) / 15.0)
+        elif t >= 65 and t <= 85:
+            fade_label(2, (t - 65) / 20.0)
+        elif t >= 100 and t <= 120:
+            fade_label(3, (t - 100) / 20.0)
+        elif t >= 150:
+            self._intro_timer.stop()
+            self._pages.setCurrentIndex(1)
+            self._name_input.setFocus()
+
+    # ── Page 1: Welcome + User Name ──
 
     def _build_page_welcome(self):
         page = QWidget()
@@ -628,7 +724,7 @@ class SetupWizard(QWidget):
         self._user_name = name
         from config import save_user_config
         save_user_config({"user_name": name})
-        self._pages.setCurrentIndex(1)
+        self._pages.setCurrentIndex(2)
         self._start_chat()
 
     # ── Page 1: Conversational Agent Creation ──
@@ -1518,10 +1614,10 @@ class SetupWizard(QWidget):
             "Build a companion any time — Settings → Agents → New Agent,\n"
             "or just ask Xan to build one."
         )
-        self._pages.setCurrentIndex(3)
+        self._pages.setCurrentIndex(4)
 
     def _do_create(self):
-        self._pages.setCurrentIndex(2)
+        self._pages.setCurrentIndex(3)
         QTimer.singleShot(100, self._create_agent)
 
     def _create_agent(self):
@@ -1599,7 +1695,7 @@ class SetupWizard(QWidget):
                 "Hold Ctrl — push to talk\n"
                 "Switch agents with Cmd+Up/Down or from the tray menu."
             )
-            self._pages.setCurrentIndex(3)
+            self._pages.setCurrentIndex(4)
 
         except Exception as e:
             self._creating_label.setText("Something went wrong")
@@ -1712,7 +1808,7 @@ def run_setup(app: QApplication = None) -> dict | None:
     wizard.show()
     wizard.raise_()
     wizard.activateWindow()
-    wizard._name_input.setFocus()
+    wizard._start_intro()
 
     # Bring to front — essential for LSUIElement apps
     try:
