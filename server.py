@@ -1,4 +1,4 @@
-"""server.py — Minimal HTTP API for The Atrophied Mind.
+"""server.py — Minimal HTTP API for Atrophy.
 
 Exposes chat, memory, and status endpoints.
 Runs headless — no GUI, no TTS, no voice input.
@@ -217,7 +217,7 @@ def run_server(port=5000, host="127.0.0.1"):
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    print(f"\n  The Atrophied Mind — HTTP API")
+    print(f"\n  Atrophy — HTTP API")
     print(f"  Agent: {AGENT_DISPLAY_NAME}")
     print(f"  http://{host}:{port}")
     print(f"  Token: {_SERVER_TOKEN[:8]}...{_SERVER_TOKEN[-4:]}")

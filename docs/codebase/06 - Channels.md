@@ -41,6 +41,12 @@ Button format:
 [[{"text": "Yes", "callback_data": "yes"}, {"text": "No", "callback_data": "no"}]]
 ```
 
+```python
+def send_voice_note(ogg_path: str, chat_id: str = "", caption: str = "") -> bool
+```
+
+Send an OGG Opus audio file as a Telegram voice note via multipart file upload (`sendVoice` API). Optional caption is displayed below the voice note. Returns `True` on success. Used by the `voice_note.py` daemon and the `telegram_voice` delivery method in `run_task.py`.
+
 ### Receiving
 
 ```python
@@ -94,6 +100,8 @@ The Telegram channel is used by:
 - **`send_telegram` MCP tool**: Proactive outreach (rate limited to 5/day)
 - **`heartbeat` daemon**: Evaluates whether to reach out and sends messages
 - **`gift` daemon**: Delivers unprompted notes
+- **`voice_note` daemon**: Sends spontaneous voice notes (OGG Opus via `send_voice_note()`)
+- **`run_task.py`**: `telegram_voice` delivery method sends task output as voice notes
 
 ### Implementation Notes
 

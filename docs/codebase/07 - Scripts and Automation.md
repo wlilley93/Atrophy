@@ -46,22 +46,36 @@ Interactive questionnaire that creates a complete agent:
 5. Appearance: avatar toggle, appearance description for Flux generation
 6. Channels: wake words, Telegram bot token/chat ID
 7. Heartbeat: active hours, interval, outreach style
-8. Autonomy: journal, gifts, morning brief, evolution, sleep cycle, observer, reminders, inter-agent conversations, journal posture
+8. Autonomy: journal, gifts, morning brief, evolution, sleep cycle, observer, reminders, inter-agent conversations, voice notes, journal posture
 9. Tools: disable specific MCP tools, describe custom skills
 
 Journal posture is derived from the agent's character traits — either explicitly provided or inferred via inference (military log, sprawling diary, terse field notes, etc.).
 
+### LLM-Expanded Generation
+
+All core prompt documents are generated via `run_inference_oneshot()`, expanding the ~10 sparse questionnaire fields into richly detailed, character-specific documents:
+
+| Function | Output | Scale |
+|----------|--------|-------|
+| `generate_system_prompt()` | Operating manual with inferred Voice (acceptable/not acceptable examples), Friction Mechanisms (4-6 patterns), Capabilities (labeled entries), What You Are (aesthetic sense, contradictions, divergences), Agency, Session Protocol, Voice Format | 1000-2500 words |
+| `generate_soul()` | First-person working notes with inferred interests, aesthetic preferences, uncertainties, tedium | 800-1500 words |
+| `generate_heartbeat()` | Outreach checklist with agent-specific items inferred from character traits | Character-scaled |
+| `generate_gift_md()` | Gift-leaving skill prompt with character-specific tone and format | Character-scaled |
+| `generate_morning_brief_md()` | Morning brief prompt with character-specific delivery style | Character-scaled |
+
+All five fall back to template-based output if inference is unavailable.
+
 **Generated files**:
 
 - `agents/<name>/data/agent.json` -- Full manifest
-- `agents/<name>/prompts/system_prompt.md` -- Generated personality prompt
-- `agents/<name>/prompts/soul.md` -- Core identity document
-- `agents/<name>/prompts/heartbeat.md` -- Outreach evaluation checklist
+- `agents/<name>/prompts/system_prompt.md` -- LLM-generated personality prompt (includes a `## Capabilities` section listing labeled strengths like PRESENCE, MEMORY, RESEARCH — used for self-awareness, routing, and deferral)
+- `agents/<name>/prompts/soul.md` -- LLM-generated first-person identity document
+- `agents/<name>/prompts/heartbeat.md` -- LLM-generated outreach evaluation checklist
 - `agents/<name>/data/` -- Data directory (runtime state, database)
 - `agents/<name>/avatar/source/` -- Avatar directory
 - `scripts/agents/<name>/` -- Parameterised daemon scripts (copied from companion template)
 - `scripts/agents/<name>/jobs.json` -- Cron job definitions
-- Obsidian vault structure (skills/, notes/, dashboard)
+- Obsidian vault structure (skills/, notes/, dashboard) -- includes LLM-generated `gift.md` and `morning-brief.md`
 - Database (via `init_db()`)
 
 ```
@@ -204,6 +218,20 @@ Unprompted gift note:
 3. Deliver via Telegram or write to Obsidian
 4. Self-rescheduling: may adjust its own next execution time
 
+### voice_note.py
+
+**Schedule**: Random, 2-8 hours apart (self-rescheduling, within active hours)
+
+Spontaneous voice note via Telegram:
+
+1. Generate a short thought via inference (draws on recent threads, observations, conversations)
+2. Synthesise speech via TTS
+3. Convert to OGG Opus format
+4. Send as a Telegram voice note using `send_voice_note()` in `channels/telegram.py`
+5. Self-reschedule to a random time 2-8 hours later (clamped to active hours)
+
+Falls back to a text message if TTS synthesis or voice note sending fails.
+
 ## scripts/agents/<name>/run_task.py -- Generic Task Runner
 
 Executes a prompt-based task and delivers the result. This is the generic runner that powers the `create_task` MCP tool, letting the companion schedule arbitrary recurring tasks without writing Python code.
@@ -251,6 +279,7 @@ Sources are gathered before inference and injected into the prompt context.
 | `message_queue` | Queued in `.message_queue.json` for delivery at next app launch (default) |
 | `telegram` | Sent immediately via Telegram, also queued for app |
 | `notification` | macOS notification (truncated to 200 chars), also queued |
+| `telegram_voice` | Synthesised as speech, converted to OGG Opus, sent as a Telegram voice note (falls back to text on failure) |
 | `obsidian` | Appended to `Agent Workspace/<agent>/notes/tasks/<name>.md` with timestamp |
 
 If `voice: true`, TTS audio is pre-synthesised and bundled with the message queue entry.

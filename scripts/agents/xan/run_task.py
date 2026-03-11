@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Generic task runner — executes a prompt-based task and delivers the result.
 
-The companion agent can schedule this via manage_schedule to create
-arbitrary recurring tasks without writing Python code.
+Xan can schedule this via manage_schedule to create arbitrary recurring
+tasks without writing Python code.
 
 Usage:
-  python scripts/agents/companion/run_task.py <task_name>
+  AGENT=xan python scripts/agents/xan/run_task.py <task_name>
 
 Task definitions live in Obsidian at:
-  Agent Workspace/<agent>/tasks/<task_name>.md
+  Agent Workspace/xan/tasks/<task_name>.md
 
 Each task file is YAML frontmatter + prompt body:
 
@@ -23,8 +23,7 @@ Each task file is YAML frontmatter + prompt body:
     - observations
   ---
 
-  You are the companion. Fetch and summarise the latest UK news headlines.
-  Keep it to 3-5 bullet points. Be conversational.
+  You are Xan. Check system status and summarise any issues.
 
 The prompt is sent to oneshot inference with gathered source data.
 The response is delivered via the specified channel.
@@ -70,7 +69,6 @@ def _load_task(name: str) -> tuple[dict, str]:
     if content.startswith("---"):
         parts = content.split("---", 2)
         if len(parts) >= 3:
-            import re
             frontmatter = parts[1].strip()
             prompt = parts[2].strip()
             # Simple YAML parsing (no dependency)
@@ -183,15 +181,10 @@ def _deliver(text: str, meta: dict, task_name: str):
         queue_message(MESSAGE_QUEUE, text, source=task_name, audio_path=audio_path)
         print(f"[task] Queued for next interaction.")
 
-    elif deliver in ("telegram", "telegram_voice"):
+    elif deliver == "telegram":
         try:
-            if deliver == "telegram_voice" and audio_path:
-                from channels.telegram import send_voice_note, send_message
-                if not send_voice_note(audio_path):
-                    send_message(text)
-            else:
-                from channels.telegram import send_message
-                send_message(text)
+            from channels.telegram import send_message
+            send_message(text)
             print(f"[task] Sent via Telegram.")
         except Exception as e:
             print(f"[task] Telegram failed: {e}")

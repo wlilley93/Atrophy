@@ -117,7 +117,7 @@ VERSION = _version_file.read_text().strip() if _version_file.exists() else "0.0.
 SCHEMA_PATH = BUNDLE_ROOT / "db" / "schema.sql"
 
 # ── Active agent ──
-AGENT_NAME = _cfg("AGENT", "companion")
+AGENT_NAME = _cfg("AGENT", "xan")
 
 
 def _find_agent_dir(name: str) -> Path:
@@ -238,6 +238,11 @@ ADAPTIVE_EFFORT = _cfg("ADAPTIVE_EFFORT", "true").lower() == "true"
 # ── MCP Memory Server ──
 MCP_DIR = BUNDLE_ROOT / "mcp"
 MCP_SERVER_SCRIPT = MCP_DIR / "memory_server.py"
+MCP_GOOGLE_SCRIPT = MCP_DIR / "google_server.py"
+
+# ── Google integration ──
+GOOGLE_DIR = USER_DATA / ".google"
+GOOGLE_CONFIGURED = (GOOGLE_DIR / "token.json").exists()
 
 # ── Obsidian vault (optional — technical users can set OBSIDIAN_VAULT env var) ──
 _obsidian_default = str(Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "The Atrophied Mind")

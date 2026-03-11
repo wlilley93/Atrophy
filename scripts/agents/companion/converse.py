@@ -97,7 +97,7 @@ def _conversation_system(agent_name: str, agent_display: str,
                          other_display: str, soul: str) -> str:
     """Build the system prompt for one side of the conversation."""
     return f"""\
-You are {agent_display} from The Atrophied Mind. You are having a private \
+You are {agent_display} from Atrophy. You are having a private \
 conversation with {other_display}, another agent in the system. This is not \
 a conversation with the user. This is between agents.
 

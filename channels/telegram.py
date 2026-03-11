@@ -9,6 +9,7 @@ import logging
 import time
 import urllib.request
 import urllib.error
+from pathlib import Path
 
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, AGENT_DISPLAY_NAME, TELEGRAM_EMOJI
 
@@ -106,6 +107,81 @@ def send_buttons(text: str, buttons: list[list[dict]], chat_id: str = "",
         log.info("Sent Telegram buttons (%d chars)", len(text))
         return result.get("message_id")
     return None
+
+
+def send_voice_note(audio_path: str, caption: str = "", chat_id: str = "",
+                    prefix: bool = True) -> bool:
+    """Send a voice note (OGG/OPUS) via Telegram. Returns True on success.
+
+    Telegram requires voice notes in OGG Opus format. If the file is not OGG,
+    it will be sent as a document instead.
+    """
+    target = chat_id or TELEGRAM_CHAT_ID
+    if not target:
+        log.error("TELEGRAM_CHAT_ID not configured")
+        return False
+
+    if prefix and TELEGRAM_EMOJI and caption:
+        caption = f"{TELEGRAM_EMOJI} *{AGENT_DISPLAY_NAME}*\n\n{caption}"
+
+    import mimetypes
+    mime = mimetypes.guess_type(audio_path)[0] or ""
+
+    try:
+        # Build multipart form data
+        import uuid
+        boundary = uuid.uuid4().hex
+        body = b""
+
+        # chat_id field
+        body += f"--{boundary}\r\n".encode()
+        body += b"Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n"
+        body += f"{target}\r\n".encode()
+
+        # caption field (if any)
+        if caption:
+            body += f"--{boundary}\r\n".encode()
+            body += b"Content-Disposition: form-data; name=\"caption\"\r\n\r\n"
+            body += f"{caption}\r\n".encode()
+            body += f"--{boundary}\r\n".encode()
+            body += b"Content-Disposition: form-data; name=\"parse_mode\"\r\n\r\n"
+            body += b"Markdown\r\n"
+
+        # Voice/audio file
+        with open(audio_path, "rb") as f:
+            file_data = f.read()
+
+        filename = Path(audio_path).name
+        # Use sendVoice for OGG, sendAudio for others
+        if "ogg" in mime or audio_path.endswith(".ogg") or audio_path.endswith(".oga"):
+            method = "sendVoice"
+            field_name = "voice"
+        else:
+            method = "sendAudio"
+            field_name = "audio"
+
+        body += f"--{boundary}\r\n".encode()
+        body += f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode()
+        body += f"Content-Type: {mime or 'audio/ogg'}\r\n\r\n".encode()
+        body += file_data
+        body += f"\r\n--{boundary}--\r\n".encode()
+
+        req = urllib.request.Request(
+            _api_url(method),
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+            if result.get("ok"):
+                log.info("Sent voice note via Telegram (%d bytes)", len(file_data))
+                return True
+            log.error("Telegram voice note error: %s", result)
+            return False
+    except Exception as e:
+        log.error("Telegram voice note error: %s", e)
+        return False
 
 
 # ── Receiving ──

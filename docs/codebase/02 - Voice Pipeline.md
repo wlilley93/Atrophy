@@ -115,7 +115,7 @@ Playback uses macOS `afplay` with a configurable rate multiplier (default 1.12x)
 
 ## voice/wake_word.py -- Wake Word Detection
 
-Background ambient listener using whisper.cpp keyword spotting.
+Background ambient listener using whisper.cpp keyword spotting. This system is **independent of the mic/PTT button** -- it runs in its own background thread and does not require the user to press any button. When the listener detects a wake word, it plays a pop sound and automatically starts a one-shot recording, which is then transcribed and sent as a message. The PTT button (hold Ctrl to record) is a separate, parallel input method.
 
 ```python
 class WakeWordListener:
@@ -131,11 +131,14 @@ class WakeWordListener:
 2. Check RMS amplitude -- skip near-silent chunks (< 0.005)
 3. Transcribe with `transcribe_fast()` (whisper tiny, <200ms)
 4. Check transcription against wake words (substring match)
-5. On match: auto-pause, fire callback
+5. On match: auto-pause, play a pop sound, start a one-shot recording, fire callback with the recorded audio
 
 Wake words are configurable per-agent (default: `["hey <name>", "<name>"]`). All processing is local -- audio never leaves the machine.
 
-Enabled via `WAKE_WORD_ENABLED=true` environment variable.
+**Enabling wake words:**
+- In the GUI, click the microphone-with-waves button in the top-right (shortcut: **Cmd+Shift+W**). The button turns green when active.
+- Via environment variable: `WAKE_WORD_ENABLED=true`
+- Via the settings panel: Input section > Wake Word Detection toggle
 
 ## Streaming TTS Pipeline
 

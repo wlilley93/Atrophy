@@ -81,7 +81,7 @@ AGENT=oracle python main.py --gui
 AGENT=general_montgomery python main.py --text
 ```
 
-If neither is set, defaults to `companion`.
+If neither is set, defaults to `xan`.
 
 ---
 
@@ -93,7 +93,7 @@ Configuration is driven by env vars, `~/.atrophy/config.json`, and per-agent `ag
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AGENT` | `companion` | Which agent to run |
+| `AGENT` | `xan` | Which agent to run |
 | `INPUT_MODE` | `dual` | `voice`, `text`, or `dual` |
 | `CLAUDE_BIN` | `claude` | Path to Claude Code binary |
 | `CLAUDE_EFFORT` | `medium` | Inference effort: `low`, `medium`, `high` |
@@ -113,7 +113,7 @@ Configuration is driven by env vars, `~/.atrophy/config.json`, and per-agent `ag
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `AVATAR_ENABLED` | `false` | Enable animated avatar in GUI |
-| `WAKE_WORD_ENABLED` | `false` | Enable ambient wake word detection |
+| `WAKE_WORD_ENABLED` | `false` | Enable ambient wake word detection (background whisper.cpp listener, independent of mic/PTT) |
 
 ### Paths
 
@@ -176,7 +176,7 @@ Agent state (muted, enabled) persists in `.agent_states.json`.
 
 ## Cron Jobs
 
-Scheduled tasks use macOS launchd. Each agent has its own job definitions in `scripts/agents/<agent>/jobs.json`. All commands accept `--agent <name>` to target a specific agent (defaults to `AGENT` env var or `companion`).
+Scheduled tasks use macOS launchd. Each agent has its own job definitions in `scripts/agents/<agent>/jobs.json`. All commands accept `--agent <name>` to target a specific agent (defaults to `AGENT` env var or `xan`).
 
 ### List Jobs
 
@@ -275,7 +275,7 @@ python scripts/install_app.py uninstall  # Remove login item
 python scripts/install_app.py status     # Check if installed and running
 ```
 
-Requires the `.app` to be built and installed first. Creates a launchd plist at `~/Library/LaunchAgents/com.atrophiedmind.companion.plist`. The app starts at login and restarts automatically if it crashes.
+Requires the `.app` to be built and installed first. Creates a launchd plist at `~/Library/LaunchAgents/com.atrophiedmind.xan.plist`. The app starts at login and restarts automatically if it crashes.
 
 Logs: `~/.atrophy/logs/launchd.stdout.log` and `launchd.stderr.log`.
 

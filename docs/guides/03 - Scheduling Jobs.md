@@ -18,7 +18,7 @@ python scripts/cron.py install                        # Install all jobs as laun
 python scripts/cron.py uninstall                      # Remove all plists from launchd
 ```
 
-By default, commands operate on the `companion` agent. Use `--agent` to target a different one:
+By default, commands operate on the `xan` agent. Use `--agent` to target a different one:
 
 ```bash
 python scripts/cron.py --agent oracle list
@@ -84,9 +84,9 @@ After editing a job's schedule with `edit`, if the plist was already installed, 
 
 ---
 
-## Standard Companion Jobs
+## Standard Jobs
 
-The default companion agent ships with these jobs:
+The companion agent (created during setup) ships with these jobs:
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
@@ -97,6 +97,7 @@ The default companion agent ships with these jobs:
 | `sleep_cycle` | 3:00 AM daily | Nightly memory reconciliation. Processes the day's sessions, extracts facts, updates thread summaries, runs activation decay on observations. |
 | `evolve` | 3:00 AM, 1st of month | Monthly self-evolution. Reviews journal reflections and recent experience, then rewrites its own `prompts/soul.md` and `prompts/system_prompt.md`. |
 | `gift` | Scheduled dynamically | Leaves an unprompted note in Obsidian -- a thought, a question, a prompt. Self-reschedules after each delivery. |
+| `voice_note` | Random, 2-8 hours apart | Sends a spontaneous Telegram voice note. Generates a short thought via inference, synthesises speech, converts to OGG Opus, sends via `send_voice_note()`. Falls back to text on failure. Self-reschedules within active hours. |
 
 ---
 
@@ -104,7 +105,7 @@ The default companion agent ships with these jobs:
 
 ```bash
 python scripts/cron.py add heartbeat --type interval --interval 1800 \
-  scripts/agents/companion/heartbeat.py \
+  scripts/agents/<name>/heartbeat.py \
   -d "Periodic check-in evaluation" \
   --install
 ```

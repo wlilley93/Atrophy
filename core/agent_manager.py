@@ -25,29 +25,40 @@ def _agent_search_dirs() -> list[Path]:
     return dirs
 
 
+def _find_manifest(name: str) -> dict | None:
+    """Find agent.json for an agent, checking all search dirs."""
+    for agents_dir in _agent_search_dirs():
+        manifest = agents_dir / name / "data" / "agent.json"
+        if manifest.exists():
+            try:
+                return json.loads(manifest.read_text())
+            except (json.JSONDecodeError, OSError):
+                pass
+    return None
+
+
 def discover_agents() -> list[dict]:
-    """Scan all agent directories. User agents override bundled ones by name."""
+    """Scan all agent directories. User agents override bundled ones by name.
+
+    System-role agents sort first, then alphabetical within each group.
+    """
     seen = set()
     agents = []
     for agents_dir in _agent_search_dirs():
         for d in sorted(agents_dir.iterdir()):
             if d.name in seen or not d.is_dir():
                 continue
-            manifest = d / "data" / "agent.json"
-            if manifest.exists():
-                try:
-                    data = json.loads(manifest.read_text())
-                    agents.append({
-                        "name": d.name,
-                        "display_name": data.get("display_name", d.name.title()),
-                    })
-                    seen.add(d.name)
-                except (json.JSONDecodeError, OSError):
-                    agents.append({"name": d.name, "display_name": d.name.title()})
-                    seen.add(d.name)
-            elif (d / "data").is_dir():
-                agents.append({"name": d.name, "display_name": d.name.title()})
-                seen.add(d.name)
+            if not (d / "data").is_dir():
+                continue
+            seen.add(d.name)
+            data = _find_manifest(d.name) or {}
+            agents.append({
+                "name": d.name,
+                "display_name": data.get("display_name", d.name.title()),
+                "_role": data.get("role", ""),
+            })
+    # System-role agents first, then alphabetical within each group
+    agents.sort(key=lambda a: (0 if a.get("_role") == "system" else 1, a["name"]))
     return agents
 
 
@@ -132,17 +143,17 @@ def resume_agent_session(agent_name: str) -> dict | None:
 
 def get_agent_roster(exclude: str | None = None) -> list[dict]:
     """Return enabled agents with display names and descriptions for roster injection."""
+    seen = set()
     agents = []
     for agent_dir in _agent_search_dirs():
         for d in sorted(agent_dir.iterdir()):
-            if not d.is_dir():
+            if not d.is_dir() or d.name in seen:
                 continue
-            manifest = d / "data" / "agent.json"
-            if not manifest.exists():
+            if not (d / "data").is_dir():
                 continue
-            try:
-                data = json.loads(manifest.read_text())
-            except (json.JSONDecodeError, OSError):
+            seen.add(d.name)
+            data = _find_manifest(d.name) or {}
+            if not data:
                 continue
             name = d.name
             if name == exclude:
@@ -154,7 +165,10 @@ def get_agent_roster(exclude: str | None = None) -> list[dict]:
                 "name": name,
                 "display_name": data.get("display_name", name.title()),
                 "description": data.get("description", ""),
+                "_role": data.get("role", ""),
             })
+    # System-role agents first, then alphabetical within each group
+    agents.sort(key=lambda a: (0 if a.get("_role") == "system" else 1, a["name"]))
     return agents
 
 

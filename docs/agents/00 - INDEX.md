@@ -2,9 +2,36 @@
 
 Per-agent documentation. Each agent has a handbook (the textbook about that agent) and prompt documentation (how each runtime prompt works).
 
+## Xan
+
+The default agent. Ships with the product. Protector, lobby agent, general secretary — operational precision, threat awareness, quiet authority. On first launch, Xan delivers a dynamic capability showcase (memory, voice, autonomy, evolution, email/calendar, Telegram, multi-agent, avatar, identity) and offers the choice to build a companion or skip agent creation. Xan then remains available as the system layer: scheduling, monitoring, reminders, agent routing.
+
+- **Role**: `system` — always sorts first in the agent list
+- **Wake words**: "xan", "hey xan"
+- **Voice**: ElevenLabs v3, economical and precise
+- **Telegram emoji**: ⚡
+- **Heartbeat**: Every 30 minutes during active hours (7–23)
+- **Cron jobs**: `check_reminders` (every 60s), `heartbeat` (every 30 min)
+
+```
+agents/xan/
+├── data/agent.json            ← Manifest (role: system, setup_agent: true)
+├── prompts/
+│   ├── system_prompt.md       ← Full identity, bearing, capabilities, format
+│   ├── soul.md                ← Core identity — infrastructure, not companion
+│   └── heartbeat.md           ← Operational checklist (system health, not emotional)
+└── avatar/                    ← (no visual avatar — Xan manifests as blue light)
+
+scripts/agents/xan/
+├── jobs.json                  ← 2 jobs (check_reminders, heartbeat)
+├── check_reminders.py         ← Fire due reminders
+├── heartbeat.py               ← System health, approaching reminders, message backlog
+└── run_task.py                ← Generic prompt-based task runner
+```
+
 ## Companion
 
-The default agent. A personal companion — emotionally aware, memory-bearing, self-evolving.
+A personal companion — emotionally aware, memory-bearing, self-evolving. Users create their companion through the setup wizard (guided by Xan after the capability showcase) or later via Settings > Agents > New Agent. Agents can be anything the user can describe. The companion's system prompt includes a `## Capabilities` section listing labeled strengths (e.g. PRESENCE, MEMORY, RESEARCH) used for self-awareness, Telegram routing, and deferral decisions.
 
 ```
 companion/
@@ -30,7 +57,7 @@ companion/
 
 ## General Montgomery
 
-Military historian and strategist — tactical analysis, leadership, historical perspective. Analyses situations through five doctrinal lenses: Terrain, Interest, Capability, History, and Momentum.
+Military historian and strategist — tactical analysis, leadership, historical perspective. Analyses situations through five doctrinal lenses: Terrain, Interest, Capability, History, and Momentum. System prompt includes a `## Capabilities` section with labeled strengths for routing and deferral awareness.
 
 - **Wake words**: "general", "montgomery", "general montgomery", "monty", "hey general", "hey monty"
 - **Voice**: ElevenLabs v3, clipped British military register
@@ -69,7 +96,7 @@ Each agent has three homes:
 
 | Directory | Purpose |
 |-----------|---------|
-| `data/agent.json` | Manifest — voice, wake words, heartbeat, display |
+| `data/agent.json` | Manifest — voice, wake words, heartbeat, display, role |
 | `prompts/` | Local fallback prompts |
 | `avatar/source/` | Source face image for video generation |
 

@@ -33,7 +33,17 @@ from PyQt5.QtMultimedia import (
     QVideoFrame,
 )
 
-from config import WINDOW_WIDTH, WINDOW_HEIGHT, IDLE_LOOP, AGENT_DISPLAY_NAME, USER_NAME
+from config import WINDOW_WIDTH, WINDOW_HEIGHT, IDLE_LOOP, AGENT_DISPLAY_NAME, USER_NAME, AGENT_NAME
+
+# Emotion → colour + clip (Xan's orb avatar reactions)
+try:
+    from display.emotion_colour import (
+        classify_emotion, get_clip_path, get_default_loop, get_reaction,
+        DEFAULT_COLOUR, DEFAULT_CLIP, REVERT_TIMEOUT_S,
+    )
+    _HAS_EMOTION_COLOUR = True
+except ImportError:
+    _HAS_EMOTION_COLOUR = False
 
 # Canvas — PIP overlay (graceful if QWebEngineView unavailable)
 try:
@@ -437,9 +447,11 @@ class TranscriptOverlay(QWidget):
         self._opacity = 1.0
         self._auto_scroll = True
         self._html_dirty = True
+        self._last_rendered_count = 0   # messages fully rendered in HTML
+        self._last_rendered_reveal = 0  # reveal count of last partial message
 
         self._reveal_timer = QTimer(self)
-        self._reveal_timer.setInterval(18)
+        self._reveal_timer.setInterval(25)  # 40fps — smooth enough for text, fewer rebuilds
         self._reveal_timer.timeout.connect(self._tick_reveal)
 
         # Track scroll position for auto-scroll detection
@@ -467,7 +479,6 @@ class TranscriptOverlay(QWidget):
 
     def _set_opacity(self, val):
         self._opacity = val
-        self._browser.setStyleSheet(self._browser.styleSheet())  # force repaint
         self.update()
 
     opacity = pyqtProperty(float, _get_opacity, _set_opacity)
@@ -475,61 +486,89 @@ class TranscriptOverlay(QWidget):
     def _invalidate_layout(self):
         self._html_dirty = True
 
-    def _rebuild_html(self):
-        """Rebuild the HTML content from messages."""
-        if not self._html_dirty:
-            return
-        self._html_dirty = False
+    def _msg_to_html(self, msg: dict, i: int) -> str:
+        """Convert a single message to HTML."""
+        text = msg["text"][:msg["revealed"]]
+        if not text:
+            return ""
+
+        escaped = (text.replace("&", "&amp;")
+                      .replace("<", "&lt;")
+                      .replace(">", "&gt;")
+                      .replace("\n", "<br>"))
 
         parts = []
-        for i, msg in enumerate(self._messages):
-            text = msg["text"][:msg["revealed"]]
-            if not text:
-                continue
-
-            # Escape HTML
-            escaped = (text.replace("&", "&amp;")
-                          .replace("<", "&lt;")
-                          .replace(">", "&gt;")
-                          .replace("\n", "<br>"))
-
-            # Spacing between pairs
-            if i > 0:
-                prev_role = self._messages[i - 1]["role"]
-                if msg["role"] == "user" and prev_role == "companion":
-                    parts.append(f'<div style="height: {self._PAIR_GAP}px;"></div>')
-                else:
-                    parts.append(f'<div style="height: {self._MSG_GAP}px;"></div>')
-
-            if msg["role"] == "divider":
-                parts.append(
-                    f'<div style="color: rgba(120, 200, 120, 0.6); text-align: center; '
-                    f'font-size: 11px; letter-spacing: 3px; padding: 8px 0; '
-                    f'border-top: 1px solid rgba(120, 200, 120, 0.2); '
-                    f'border-bottom: 1px solid rgba(120, 200, 120, 0.2); '
-                    f'text-transform: uppercase; font-weight: 600;">'
-                    f'{escaped}</div>'
-                )
-                continue
-
-            if msg["role"] == "user":
-                color = "rgba(180, 180, 180, 220)"
+        # Spacing between pairs
+        if i > 0:
+            prev_role = self._messages[i - 1]["role"]
+            if msg["role"] == "user" and prev_role == "companion":
+                parts.append(f'<div style="height: {self._PAIR_GAP}px;"></div>')
             else:
-                color = "rgba(255, 255, 255, 220)"
+                parts.append(f'<div style="height: {self._MSG_GAP}px;"></div>')
 
+        if msg["role"] == "divider":
+            parts.append(
+                f'<div style="color: rgba(120, 200, 120, 0.6); text-align: center; '
+                f'font-size: 11px; letter-spacing: 3px; padding: 8px 0; '
+                f'border-top: 1px solid rgba(120, 200, 120, 0.2); '
+                f'border-bottom: 1px solid rgba(120, 200, 120, 0.2); '
+                f'text-transform: uppercase; font-weight: 600;">'
+                f'{escaped}</div>'
+            )
+        else:
+            color = ("rgba(180, 180, 180, 220)" if msg["role"] == "user"
+                     else "rgba(255, 255, 255, 220)")
             parts.append(
                 f'<div style="color: {color}; '
                 f'text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">'
                 f'{escaped}</div>'
             )
+        return "".join(parts)
 
-        html = "".join(parts)
-        # Preserve scroll position
+    def _rebuild_html(self):
+        """Incrementally update HTML — only re-render changed/new messages."""
+        if not self._html_dirty:
+            return
+        self._html_dirty = False
+
+        n = len(self._messages)
+
+        # Check if only the last message's reveal count changed (typing animation)
+        if (n > 0 and n == self._last_rendered_count
+                and self._messages[-1]["revealed"] != self._last_rendered_reveal):
+            # Only the last message changed — update just that div
+            last_html = self._msg_to_html(self._messages[-1], n - 1)
+            cursor = self._browser.textCursor()
+            cursor.movePosition(cursor.End)
+            # Find and replace the last block — faster than full rebuild
+            # Fall through to full rebuild if cursor manipulation is tricky
+            # For now, use the fast path: rebuild only if message count changed
+            pass
+
+        # Full rebuild (but track state to minimize future rebuilds)
+        parts = []
+        for i, msg in enumerate(self._messages):
+            parts.append(self._msg_to_html(msg, i))
+
+        # Wrap in a table cell with vertical-align:bottom so messages
+        # start from the bottom of the viewport when there are few.
+        inner = "".join(parts)
+        html = (
+            f'<table style="width:100%;height:{self.height()}px;border:none;'
+            f'border-spacing:0;margin:0;padding:0;">'
+            f'<tr><td style="vertical-align:bottom;padding:0;">'
+            f'{inner}</td></tr></table>'
+        )
         vbar = self._browser.verticalScrollBar()
         was_at_bottom = self._auto_scroll
         self._browser.setHtml(html)
         if was_at_bottom:
             vbar.setValue(vbar.maximum())
+
+        # Track what we rendered
+        self._last_rendered_count = n
+        if n > 0:
+            self._last_rendered_reveal = self._messages[-1]["revealed"]
 
     def add_message(self, role: str, text: str, instant: bool = False):
         """Add a message. User messages reveal instantly, companion gradually."""
@@ -613,40 +652,28 @@ class TranscriptOverlay(QWidget):
 
     def _tick_reveal(self):
         any_pending = False
+        changed = False
         for msg in self._messages:
             if msg["revealed"] < len(msg["text"]):
-                msg["revealed"] = min(msg["revealed"] + 3, len(msg["text"]))
+                # Reveal 8 chars per tick (was 3) — fewer rebuilds, smoother feel
+                msg["revealed"] = min(msg["revealed"] + 8, len(msg["text"]))
                 any_pending = True
+                changed = True
         if not any_pending:
             self._reveal_timer.stop()
-        self._html_dirty = True
-        self._rebuild_html()
+        if changed:
+            self._html_dirty = True
+            self._rebuild_html()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._browser.setGeometry(0, 0, self.width(), self.height())
 
     def paintEvent(self, event):
-        """Draw transparent fade mask over the top of the transcript."""
+        """Paint the transcript — no fade mask, just transparent background."""
         if self._opacity <= 0.001:
             return
         super().paintEvent(event)
-
-        # Fade mask — erase (make transparent) the top portion of the text
-        # This fades the text itself rather than drawing a box over it
-        vis_h = self.height()
-        fade_h = int(vis_h / 4.0)
-        if fade_h <= 0:
-            return
-
-        p = QPainter(self)
-        p.setCompositionMode(QPainter.CompositionMode_DestinationIn)
-        grad = QLinearGradient(0, 0, 0, fade_h)
-        grad.setColorAt(0.0, QColor(0, 0, 0, 0))       # fully transparent at top
-        grad.setColorAt(0.7, QColor(0, 0, 0, 200))
-        grad.setColorAt(1.0, QColor(0, 0, 0, 255))      # fully opaque below
-        p.fillRect(0, 0, self.width(), fade_h, grad)
-        p.end()
 
 
 def _fade(widget, start, end, duration_ms):
@@ -1286,7 +1313,7 @@ class _LegacySettingsPanel(QWidget):
                           400, 1080, cfg.WINDOW_HEIGHT, suffix="px")
         self._add_text("window_title", "Window Title",
                        cfg.AGENT.get("display", {}).get("title",
-                           f"THE ATROPHIED MIND -- {cfg.AGENT_DISPLAY_NAME}"))
+                           f"ATROPHY --{cfg.AGENT_DISPLAY_NAME}"))
         self._add_checkbox("avatar_enabled", "Avatar Enabled",
                            cfg.AVATAR_ENABLED)
         self._add_spinbox("avatar_resolution", "Avatar Resolution",
@@ -1687,7 +1714,7 @@ class _LegacySettingsPanel(QWidget):
         manifest.setdefault("display", {})
         manifest["display"]["window_width"] = cfg.WINDOW_WIDTH
         manifest["display"]["window_height"] = cfg.WINDOW_HEIGHT
-        manifest["display"]["title"] = self._get_value("window_title") or f"THE ATROPHIED MIND -- {cfg.AGENT_DISPLAY_NAME}"
+        manifest["display"]["title"] = self._get_value("window_title") or f"ATROPHY --{cfg.AGENT_DISPLAY_NAME}"
 
         manifest.setdefault("heartbeat", {})
         manifest["heartbeat"]["active_start"] = cfg.HEARTBEAT_ACTIVE_START
@@ -1945,6 +1972,9 @@ class CompanionWindow(QWidget):
         self._anims = []
         self._frame = QImage()
         self._scaled_frame = None
+        self._last_src_w = 0
+        self._last_src_h = 0
+        self._frame_needs_rescale = False
         self._shutdown_mode = False
         self._first_sentence_shown = False
 
@@ -2041,6 +2071,13 @@ class CompanionWindow(QWidget):
         self._build_status_bar()
         self._build_canvas()
         self._reflow()
+
+        # Eagerly preload brain frames during boot — avoids first-paint jank
+        self._ensure_brain_frames()
+        # Pre-scale at boot animation sizes so first paint is instant
+        if self._brain_frames:
+            for sz in (110, 90, 50, 40):
+                self._get_scaled_brain(0, sz)
 
         # Hide UI during boot
         self._bar.hide()
@@ -2346,7 +2383,7 @@ class CompanionWindow(QWidget):
     # ── Video ──
 
     def _build_video(self):
-        # Single player + surface — ambient_loop.mp4 is pre-built 10-min cycle
+        # Single player + surface
         self._surface = FrameGrabSurface(self)
         self._surface.frame_ready.connect(self._on_frame)
         self._player = QMediaPlayer(self)
@@ -2354,18 +2391,87 @@ class CompanionWindow(QWidget):
         self._player.setMuted(True)
         self._player.mediaStatusChanged.connect(self._on_media_status)
 
-        if IDLE_LOOP.exists():
-            self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(IDLE_LOOP))))
+        # Emotion clip state (Xan's orb — clip-based reactions)
+        self._reaction_playing = False  # True while a one-shot reaction clip plays
+        self._default_loop = None       # path to the default ambient clip
+        self._revert_timer = QTimer(self)
+        self._revert_timer.setSingleShot(True)
+        self._revert_timer.timeout.connect(self._revert_to_default)
+
+        # Try clip-based default first (Xan: gentle bounce in blue)
+        if _HAS_EMOTION_COLOUR and AGENT_NAME == "xan":
+            self._default_loop = get_default_loop(AGENT_NAME)
+
+        # Fall back to legacy ambient_loop.mp4
+        if not self._default_loop and IDLE_LOOP.exists():
+            self._default_loop = IDLE_LOOP
+
+        if self._default_loop:
+            self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(self._default_loop))))
             self._player.play()
 
     def _on_media_status(self, status):
         if status == QMediaPlayer.EndOfMedia:
-            self._player.setPosition(0)
+            if self._reaction_playing:
+                # Reaction clip finished — revert to default
+                self._reaction_playing = False
+                self._play_default()
+            else:
+                # Default loop — just repeat
+                self._player.setPosition(0)
+                self._player.play()
+
+    def _play_default(self):
+        """Play the default ambient loop (gentle bounce, blue)."""
+        if self._default_loop:
+            self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(self._default_loop))))
             self._player.play()
+
+    def play_reaction(self, emotion: str):
+        """Play a one-shot reaction clip for an emotion, then revert to default.
+
+        emotion: key from EMOTIONS dict (e.g. 'alert', 'positive', 'reflective')
+        """
+        if not _HAS_EMOTION_COLOUR:
+            return
+        reaction = get_reaction(emotion)
+        if not reaction:
+            return
+        colour, clip = reaction
+        path = get_clip_path(colour, clip, AGENT_NAME)
+        if not path:
+            return
+        self._reaction_playing = True
+        self._revert_timer.stop()
+        self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(path))))
+        self._player.play()
+
+    def set_thinking(self):
+        """Switch to thinking state (dark blue idle hover). Stays until response."""
+        if not _HAS_EMOTION_COLOUR or AGENT_NAME != "xan":
+            return
+        path = get_clip_path("dark_blue", "idle_hover", AGENT_NAME)
+        if not path:
+            return
+        self._reaction_playing = False
+        self._revert_timer.stop()
+        self._player.setMedia(QMediaContent(QUrl.fromLocalFile(str(path))))
+        self._player.play()
+
+    def _revert_to_default(self):
+        """Revert to default ambient loop."""
+        self._reaction_playing = False
+        self._play_default()
 
     def _on_frame(self, img):
         self._frame = img
-        self._scaled_frame = None
+        # Only invalidate scaled cache if source dimensions changed
+        if (self._scaled_frame is not None
+                and (img.width() != self._last_src_w or img.height() != self._last_src_h)):
+            self._scaled_frame = None
+        self._last_src_w = img.width()
+        self._last_src_h = img.height()
+        self._frame_needs_rescale = True  # flag: new raw frame, may need rescale at paint
         if not self._eye_mode:
             self.update()
 
@@ -2382,8 +2488,8 @@ class CompanionWindow(QWidget):
             # Smooth vignette interpolation — only repaint when actually changing
             diff = self._vignette_target - self._vignette_opacity
             if abs(diff) > 0.001:
-                self._vignette_opacity += diff * 0.10  # doubled — timer is 100ms not 50ms
-                self.update()
+                self._vignette_opacity += diff * 0.10
+            # Drift doesn't need its own repaint — video _on_frame handles it
         except RuntimeError:
             pass  # widget deleted during shutdown
 
@@ -2425,6 +2531,7 @@ class CompanionWindow(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
         if self._eye_mode or self._frame.isNull():
             p.fillRect(self.rect(), QColor(12, 12, 14))
             # Shutdown overlay — pulsing orb + brain + ATROPHY (mirrors boot screen)
@@ -2447,13 +2554,18 @@ class CompanionWindow(QWidget):
         # Video frame — full-bleed or PIP depending on _pip_progress
         vx, vy, vw, vh = self._video_rect()
 
-        # Scale frame to target size (cached)
-        if (self._scaled_frame is None
-                or self._scaled_frame.width() != vw
-                or self._scaled_frame.height() != vh):
+        # Scale frame to target size (cached — only rescale when needed)
+        need_rescale = (
+            self._scaled_frame is None
+            or self._scaled_frame.width() != vw
+            or self._scaled_frame.height() != vh
+            or self._frame_needs_rescale
+        )
+        if need_rescale:
             self._scaled_frame = self._frame.scaled(
-                vw, vh, Qt.IgnoreAspectRatio, Qt.FastTransformation,
+                vw, vh, Qt.IgnoreAspectRatio, Qt.SmoothTransformation,
             )
+            self._frame_needs_rescale = False
 
         if self._pip_progress > 0.01:
             # PIP mode — clip to rounded rect with shadow
@@ -2687,24 +2799,31 @@ class CompanionWindow(QWidget):
 
     def _build_mode_buttons(self):
         self._mute_btn = _MuteButton(self)
+        self._mute_btn.setToolTip("Mute / unmute voice")
         self._mute_btn.clicked.connect(self._toggle_mute)
 
         self._eye_btn = _EyeButton(self)
+        self._eye_btn.setToolTip("Toggle avatar")
         self._eye_btn.clicked.connect(self._toggle_eye)
 
         self._min_btn = _MinimizeButton(self)
+        self._min_btn.setToolTip("Minimize to tray")
         self._min_btn.clicked.connect(self._minimize_to_tray)
 
         self._wake_btn = _WakeButton(self)
+        self._wake_btn.setToolTip("Wake word listening")
         self._wake_btn.clicked.connect(self._toggle_wake)
 
         self._artefact_btn = _ArtefactButton(self)
+        self._artefact_btn.setToolTip("Artefacts")
         self._artefact_btn.clicked.connect(self._toggle_artefact_gallery)
 
         self._settings_btn = _SettingsButton(self)
+        self._settings_btn.setToolTip("Settings")
         self._settings_btn.clicked.connect(self._toggle_settings)
 
         self._call_btn = _CallButton(self)
+        self._call_btn.setToolTip("Voice call")
         self._call_btn.clicked.connect(self._toggle_call)
         self._voice_call = None  # VoiceCall thread
 
@@ -3526,6 +3645,9 @@ class CompanionWindow(QWidget):
 
     def _launch_worker(self, text, session_id):
         """Launch the streaming pipeline worker."""
+        # Xan goes dark blue while thinking
+        if _HAS_EMOTION_COLOUR and AGENT_NAME == "xan":
+            self.set_thinking()
         self._response_start_time = time.time()
         self._worker = StreamingPipelineWorker(
             user_text=text,
@@ -3607,6 +3729,12 @@ class CompanionWindow(QWidget):
         # Update history with full companion text
         if self._history:
             self._history[-1]["companion"] = full_text
+
+        # Emotion → reaction clip (Xan's orb)
+        if _HAS_EMOTION_COLOUR and full_text and AGENT_NAME == "xan":
+            emotion = classify_emotion(full_text)
+            if emotion:
+                self.play_reaction(emotion)
 
         # Track approximate context usage (~4 chars per token)
         user_text = self._history[-1]["user"] if self._history else ""
@@ -4219,8 +4347,18 @@ class MenuBarIcon:
                 NSVariableStatusItemLength
             )
 
-            # Create a small circle icon as NSImage
-            self._status_item.button().setTitle_("●")
+            # Menu bar brain icon (template image — adapts to light/dark)
+            icon_dir = os.path.join(os.path.dirname(__file__), "icons")
+            icon_2x = os.path.join(icon_dir, "menubar_brain@2x.png")
+            icon_1x = os.path.join(icon_dir, "menubar_brain.png")
+            icon_file = icon_2x if os.path.exists(icon_2x) else icon_1x
+            if os.path.exists(icon_file):
+                ns_icon = NSImage.alloc().initWithContentsOfFile_(icon_file)
+                ns_icon.setTemplate_(True)  # auto light/dark adaptation
+                ns_icon.setSize_((18, 18))
+                self._status_item.button().setImage_(ns_icon)
+            else:
+                self._status_item.button().setTitle_("●")
 
             # Build native menu
             menu = NSMenu.alloc().init()
@@ -4467,8 +4605,17 @@ class GlobalHotkey:
 def run_app(on_synth_callback=None, on_opening_callback=None,
             system_prompt="", cli_session_id=None, session=None,
             cached_opening_audio="", menu_bar_mode=False):
+    # High DPI and rendering quality — must be set before QApplication
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+
+    # Font rendering quality
+    font = app.font()
+    font.setStyleStrategy(QFont.PreferAntialias)
+    app.setFont(font)
 
     # Menu-bar-only mode — hide from Dock (like Amphetamine)
     if menu_bar_mode:

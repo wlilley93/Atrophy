@@ -350,7 +350,7 @@ async def run_cli():
     mode = INPUT_MODE
     cli_status = "resuming" if session.cli_session_id else "new"
 
-    title = f"THE ATROPHIED MIND -- {AGENT_DISPLAY_NAME}"
+    title = f"ATROPHY --{AGENT_DISPLAY_NAME}"
     print()
     print(f"  +{'-' * 38}+")
     print(f"  |   {title:<35}|")
@@ -438,7 +438,7 @@ async def run_text_only():
 
     cli_status = "resuming" if session.cli_session_id else "new"
 
-    title = f"THE ATROPHIED MIND -- {AGENT_DISPLAY_NAME}"
+    title = f"ATROPHY --{AGENT_DISPLAY_NAME}"
     print()
     print(f"  +{'-' * 38}+")
     print(f"  |   {title:<35}|")
@@ -594,50 +594,25 @@ def _cache_next_opening(system: str, cli_session_id: str | None, synth_fn):
 
 
 def _check_claude_installed():
-    """Check if Claude Code CLI is available. Show error dialog if not."""
+    """Check if Claude Code CLI is available."""
     import shutil
     from config import CLAUDE_BIN
-    if shutil.which(CLAUDE_BIN):
-        return True
-
-    from PyQt5.QtWidgets import QApplication, QMessageBox
-    app = QApplication.instance() or QApplication(sys.argv)
-
-    msg = QMessageBox()
-    msg.setIcon(QMessageBox.Critical)
-    msg.setWindowTitle("Claude Code Required")
-    msg.setText("Atrophy requires Claude Code to run.")
-    msg.setInformativeText(
-        "Claude Code is the AI engine that powers Atrophy.\n\n"
-        "Install it with:\n"
-        "  npm install -g @anthropic-ai/claude-code\n\n"
-        "Or download from:\n"
-        "  https://claude.ai/download"
-    )
-    msg.setStandardButtons(QMessageBox.Ok)
-    msg.exec_()
-    return False
+    return bool(shutil.which(CLAUDE_BIN))
 
 
 def run_gui(menu_bar_mode=False):
-    from core.context import load_system_prompt
-    from voice.tts import synthesise_sync
     from display.setup_wizard import needs_setup, run_setup
 
-    # Check for Claude Code before anything else
-    if not _check_claude_installed():
-        sys.exit(1)
-
-    # First-launch setup — name + agent creation before anything else
+    # First-launch setup — wizard handles name + agent creation
     if needs_setup():
         from PyQt5.QtWidgets import QApplication
         app = QApplication.instance() or QApplication(sys.argv)
+        from display.icon import get_app_icon
+        app.setWindowIcon(get_app_icon())
         result = run_setup(app)
         if result:
-            # Switch to the newly created agent if one was made
             if result.get("agent_created") and result.get("agent_name"):
                 os.environ["AGENT"] = result["agent_name"]
-            # Reload config so USER_NAME and AGENT pick up new values
             import importlib
             import config as _cfg
             importlib.reload(_cfg)
@@ -647,10 +622,20 @@ def run_gui(menu_bar_mode=False):
             OPENING_LINE = _cfg.OPENING_LINE
 
     session = _init()
+
+    from core.context import load_system_prompt
+    from voice.tts import synthesise_sync
     system = load_system_prompt()
 
-    # Always generate opening live — time-of-day context must be fresh
+    # Opening generation + Claude check happen inside the window
+    has_claude = _check_claude_installed()
+
     def on_opening(_ignored: str) -> str:
+        if not has_claude:
+            return (
+                "I need Claude Code to think. "
+                "Install it with: npm install -g @anthropic-ai/claude-code"
+            )
         text, cli_id = _generate_opening(system, session.cli_session_id)
         session.set_cli_session_id(cli_id)
         return text
@@ -670,7 +655,7 @@ def run_gui(menu_bar_mode=False):
 # ── Entry point ──
 
 def main():
-    parser = argparse.ArgumentParser(description="The Atrophied Mind")
+    parser = argparse.ArgumentParser(description="Atrophy")
     parser.add_argument("--agent", default=None, help="Agent name (default: from AGENT env var)")
     parser.add_argument("--app", action="store_true", help="Menu bar app — no Dock icon, lives in system tray")
     parser.add_argument("--gui", action="store_true", help="Launch with PyQt5 display")

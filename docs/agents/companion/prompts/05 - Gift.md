@@ -14,6 +14,10 @@ Obsidian: `Projects/The Atrophied Mind/Agent Workspace/companion/skills/gift.md`
 - Must be specific to Will — generic wisdom is rejected
 - If nothing real surfaces: return empty, do not force
 
+## Generation
+
+For new agents, `generate_gift_md()` in `scripts/create_agent.py` produces the gift skill prompt via LLM inference, inferring a character-specific gift-leaving style (tone, format, what counts as a gift for this particular agent). Falls back to a generic template if inference is unavailable.
+
 ## When Used
 
 Triggered by `scripts/agents/companion/gift.py` during autonomous cycles, or spontaneously during conversation when the agent has something worth leaving.

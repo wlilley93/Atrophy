@@ -10,7 +10,7 @@ Entry point: `main.py`. Three modes: `--cli` (voice+text), `--text` (text-only),
 
 ### Sequence
 
-1. **Load environment**: `.env` file loaded via `python-dotenv`. Agent name resolved from `--agent` flag or `AGENT` environment variable (default: `companion`).
+1. **Load environment**: `.env` file loaded via `python-dotenv`. Agent name resolved from `--agent` flag or `AGENT` environment variable (default: `xan`).
 
 2. **Load configuration**: `config.py` creates `~/.atrophy/` on first run, reads `~/.atrophy/config.json` for user settings, then loads the agent manifest from `agents/<name>/data/agent.json` (checking user-installed agents in `~/.atrophy/agents/` first, then bundled agents). Runtime state paths resolve to `~/.atrophy/agents/<name>/data/`.
 

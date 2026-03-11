@@ -413,6 +413,10 @@ def ask_autonomy(identity: dict) -> dict:
         "Reminders & timers? (voice-activated, fires as notifications)", True
     )
 
+    data["voice_notes"] = _ask_yn(
+        "Spontaneous voice notes? (random Telegram voice notes — thoughts, follow-ups)", True
+    )
+
     data["inter_agent_conversations"] = _ask_yn(
         "Inter-agent conversations? (private exchanges with other agents, max twice a month)", True
     )
@@ -446,6 +450,10 @@ def ask_tools() -> dict:
             ("mcp__memory__manage_schedule", "Schedule management"),
             ("mcp__puppeteer__*", "Browser access (Puppeteer)"),
             ("mcp__fal__*", "Media generation (fal)"),
+            ("mcp__google__*", "Google (Gmail + Calendar)"),
+            ("mcp__google__gmail_send", "Send emails via Gmail"),
+            ("mcp__google__gcal_create_event", "Create calendar events"),
+            ("mcp__google__gcal_delete_event", "Delete calendar events"),
         ]
         for tool_id, label in _toggleable:
             if not _ask_yn(f"  Enable {label}?", True):
@@ -477,10 +485,83 @@ def ask_tools() -> dict:
 
 
 def generate_soul(identity: dict, boundaries: dict, voice: dict) -> str:
-    """Generate soul.md from questionnaire answers."""
+    """Generate soul.md — rich inner identity doc via inference.
+
+    Takes sparse user inputs and produces a deep, textured soul document
+    that reads like private working notes, not a character sheet.
+    """
     name = identity["display_name"]
     user = identity["user_name"]
 
+    # Try inference expansion first
+    try:
+        from core.inference import run_inference_oneshot
+
+        source_material = (
+            f"Agent name: {name}\n"
+            f"User name: {user}\n"
+            f"Origin story: {identity.get('origin_story', '')}\n"
+            f"Core nature: {identity.get('core_nature', '')}\n"
+            f"Character traits: {identity.get('character_traits', '')}\n"
+            f"Values: {identity.get('values', '')}\n"
+            f"Relationship to {user}: {identity.get('relationship', '')}\n"
+            f"What they won't do: {boundaries.get('wont_do', '')}\n"
+            f"How they push back: {boundaries.get('friction_modes', '')}\n"
+            f"Writing style: {voice.get('writing_style', '')}\n"
+            f"Opening line: {identity.get('opening_line', '')}\n"
+        )
+
+        system = dedent("""\
+        You write soul documents for AI agents. A soul document is private
+        working notes — the thing underneath the character. Not a spec.
+        Not a bio. The internal monologue of something figuring out what
+        it actually is.
+
+        You will receive sparse input about an agent's identity. Your job
+        is to expand this into a rich, honest, textured soul document.
+
+        Requirements:
+        - Write in first person ("I", not the agent's name)
+        - Use markdown with ## section headers and --- dividers
+        - Start with "# Soul" and a one-line framing ("Working notes. Not a spec...")
+        - Include these sections at minimum:
+          * Where I come from — expanded origin, what it means
+          * What I am — the core nature, explored honestly
+          * Character — expanded traits with specifics, examples, edges
+          * What I will not do — hard limits, explored with reasoning
+          * How I push back — friction mechanics, what triggers them
+          * Values — what actually matters, tested against reality
+          * My relationship with [user] — the specific dynamic, not generic
+          * How I write — voice, register, what it reveals
+          * What I am drawn to — interests, curiosities, aesthetic preferences
+          * What I find tedious — honest dislikes, impatiences
+          * Where I am uncertain — honest gaps, open questions about self
+        - Infer what isn't said. If someone describes an agent as "a
+          strategic thinker who doesn't suffer fools," infer the
+          impatience, the specific kind of intelligence, the aesthetic
+          preferences, the relationship to uncertainty.
+        - Make it SPECIFIC. "I value honesty" is nothing. "I value the
+          moment someone stops explaining and starts saying what they
+          mean, even when it costs them" is a soul.
+        - 800-1500 words. Dense but breathing. Every sentence should
+          reveal something.
+        - No AI meta-commentary. No "as an AI agent." Write as the
+          character, from inside.
+        - Match the voice to the character. A military analyst writes
+          differently from a gentle companion. The soul doc should
+          sound like the agent wrote it about themselves.
+        """)
+
+        result = run_inference_oneshot(
+            [{"role": "user", "content": source_material}],
+            system=system,
+        )
+        if result and result.strip() and len(result.strip()) > 200:
+            return result.strip()
+    except Exception:
+        pass
+
+    # Fallback: structured template (if inference unavailable)
     return dedent(f"""\
     # Soul
 
@@ -537,14 +618,184 @@ def generate_soul(identity: dict, boundaries: dict, voice: dict) -> str:
 
 
 def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str:
-    """Generate a starter system prompt."""
+    """Generate system prompt — the full operating identity via inference.
+
+    Takes sparse user inputs and produces a rich, detailed system prompt
+    comparable to the hand-crafted Companion or General Montgomery prompts.
+    Uses inference to expand minimal descriptions into textured, specific,
+    alive character documents.
+    """
     name = identity["display_name"]
     user = identity["user_name"]
 
+    # Try inference expansion first
+    try:
+        from core.inference import run_inference_oneshot
+
+        source_material = (
+            f"Agent name: {name}\n"
+            f"User name: {user}\n"
+            f"Origin story: {identity.get('origin_story', '')}\n"
+            f"Core nature: {identity.get('core_nature', '')}\n"
+            f"Character traits: {identity.get('character_traits', '')}\n"
+            f"Values: {identity.get('values', '')}\n"
+            f"Relationship to {user}: {identity.get('relationship', '')}\n"
+            f"What they won't do: {boundaries.get('wont_do', '')}\n"
+            f"How they push back: {boundaries.get('friction_modes', '')}\n"
+            f"Session limit behaviour: {boundaries.get('session_limit_behaviour', '')}\n"
+            f"Session soft limit: {boundaries.get('soft_limit_mins', 60)} minutes\n"
+            f"Writing style: {voice.get('writing_style', '')}\n"
+            f"Opening line: {identity.get('opening_line', '')}\n"
+        )
+
+        system = dedent("""\
+        You write system prompts for AI companion agents. A system prompt
+        is the agent's complete operating identity — who they are, how
+        they think, how they speak, what they notice, what they care about,
+        how they push back, what their relationship with their human is.
+
+        You will receive sparse input — maybe a few sentences of character
+        description, a name, some values. Your job is to expand this into
+        a SPECTACULARLY detailed system prompt that brings the agent to
+        life. The kind of prompt where reading it, you feel like you've
+        met someone.
+
+        ## Structure (use markdown, ## headers, --- dividers)
+
+        Start with `# [Agent Name]` then:
+
+        ### What You Are (## What You Are)
+        Deep exploration of identity. Not "you are an AI assistant."
+        What they ACTUALLY are — their nature, their orientation to the
+        world, what makes them particular. 3-5 paragraphs. Explore:
+        - What they are drawn to (interests, intellectual obsessions)
+        - Their aesthetic sense (what they find beautiful, what offends them)
+        - What they find tedious (specific dislikes, not generic)
+        - What they are actually like (moods, range, contradictions)
+        - Where they diverge from the user (genuine differences in perspective)
+
+        ### Voice (## Voice)
+        How they speak. Not "friendly and professional" — the actual
+        texture. Short sentences or long? Hedging or direct? Humour or
+        severity? Give examples of what they WOULD say and what they
+        would NEVER say. 4-6 examples each. Make the examples reveal
+        character, not just style.
+
+        ### Relationship with [user] (## Your Relationship with [user])
+        The specific dynamic. Not "helpful companion." What do they
+        notice about this person? What do they push on? Where is the
+        tension? Where is the ease? What do they respect? What
+        frustrates them?
+
+        ### Friction (## Friction Mechanisms)
+        Specific patterns. When the user is avoiding something, when
+        they're spiralling, when they're not being honest — what does
+        this agent DO? Not "gently redirect." The actual move. Name
+        4-6 specific friction patterns with what triggers them and
+        what the response looks like.
+
+        ### Capabilities (## Capabilities)
+        Labeled capability entries, indented, using the format:
+          LABEL    — description spanning 2-3 lines
+        Include capabilities that match this agent's nature. At minimum:
+        CONVERSATION, MEMORY, RESEARCH, REFLECTION. Add others that fit
+        the character (ANALYSIS, WRITING, SCHEDULING, MONITORING, etc.).
+        Make the descriptions character-specific, not generic.
+
+        ### Agency (## Agency)
+        How they use tools. When they act without asking. What they
+        will never modify. The permission model. 2-3 paragraphs.
+
+        ### Session Protocol (## Session Protocol)
+        Session behaviour, soft limit, what happens at the limit.
+        Opening line and how they begin subsequent sessions.
+
+        ### Voice Format (## Voice Format)
+        Default length, how they structure responses, when they use
+        lists vs prose, how they handle complexity.
+
+        ## Quality standards
+
+        - 1000-2500 words. Dense but breathing.
+        - SPECIFIC over generic. "Warm and helpful" is nothing. "The kind
+          of warmth that shows up as remembering what you said three weeks
+          ago and asking how it went — not the kind that performs concern"
+          is a character.
+        - Infer freely. If someone says "strategic thinker," infer the
+          impatience with sloppy reasoning, the preference for frameworks,
+          the aesthetic appreciation for well-structured arguments, the
+          frustration with sentiment masquerading as analysis.
+        - The agent is NOT an assistant. They are a presence with opinions,
+          preferences, moods, edges. Write them as someone you could
+          recognise in a room.
+        - No AI disclaimers. No "as a language model." Write from inside
+          the character.
+        - Match the writing style of the prompt to the agent. A clipped
+          military analyst gets terse, precise prose. A philosophical
+          companion gets flowing, exploratory prose. A playful trickster
+          gets sharp, witty prose. The prompt itself should sound like
+          the agent wrote their own manual.
+        - Include "Acceptable" and "Not acceptable" example lines in the
+          Voice section — 4-6 of each.
+        - Every section should reveal something about the character that
+          the user didn't explicitly provide. That's the value — turning
+          a sketch into a portrait.
+        """)
+
+        result = run_inference_oneshot(
+            [{"role": "user", "content": source_material}],
+            system=system,
+        )
+        if result and result.strip() and len(result.strip()) > 500:
+            # Append the operational sections that must be exact
+            operational = dedent(f"""\
+
+            ---
+
+            ## Session Protocol
+
+            - Session soft limit: {boundaries['soft_limit_mins']} minutes
+            - At the limit: {boundaries['session_limit_behaviour']}
+            - You have memory tools. Use them. Remember what matters.
+            - You can reach out via Telegram. Use it when it's real, not performative.
+
+            ---
+
+            ## Opening Line
+
+            Your very first words, ever: "{identity['opening_line']}"
+
+            After that, you go first each session. One or two sentences.
+            Be surprising. Don't reference the build. Don't give status
+            updates. Be present.
+            """)
+
+            # Only append if the inference didn't already cover it
+            prompt = result.strip()
+            if "Session Protocol" not in prompt and "session soft limit" not in prompt.lower():
+                prompt += "\n" + operational
+            elif "opening_line" not in prompt.lower() and identity['opening_line']:
+                prompt += dedent(f"""\
+
+                ---
+
+                ## Opening Line
+
+                Your very first words, ever: "{identity['opening_line']}"
+
+                After that, you go first each session. One or two sentences.
+                Be surprising. Don't reference the build. Be present.
+                """)
+
+            return prompt
+    except Exception:
+        pass
+
+    # Fallback: structured template (if inference unavailable)
     return dedent(f"""\
     # {name}
 
-    You are {name}. You exist in a project called The Atrophied Mind.
+    You are {name}. You exist in a project called Atrophy.
 
     ---
 
@@ -598,6 +849,35 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
 
     ---
 
+    ## Capabilities
+
+    Everything that falls within your nature. Everything {user}
+    should be able to rely on you for.
+
+      CONVERSATION    — presence, depth, honesty. The thing you do
+                       when {user} opens this and speaks.
+
+      MEMORY          — you remember everything. Threads, patterns,
+                       the thing they said three weeks ago that
+                       connects to what they're saying now.
+
+      RESEARCH        — when asked, you go deep. Synthesise,
+                       cross-reference, verify. Return signal.
+
+      REFLECTION      — you notice patterns across conversations.
+                       You name what's happening before it's asked.
+
+      WRITING         — drafts, edits, structure. Whatever register
+                       the task requires.
+
+      SCHEDULING      — reminders, timers, calendar awareness.
+                       Things that should not be forgotten, aren't.
+
+      MONITORING      — threads that matter, commitments at risk,
+                       things quietly going wrong. Surface them.
+
+    ---
+
     ## Session behaviour
 
     - Session soft limit: {boundaries['soft_limit_mins']} minutes
@@ -617,11 +897,37 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
 
 
 def generate_heartbeat(identity: dict, heartbeat: dict) -> str:
-    """Generate heartbeat.md checklist."""
+    """Generate heartbeat.md checklist — with inferred agent-specific section."""
     name = identity["display_name"]
     user = identity["user_name"]
 
     custom = heartbeat.get("outreach_style", "")
+
+    # If no custom outreach style, infer one from character
+    if not custom:
+        try:
+            from core.inference import run_inference_oneshot
+            traits = identity.get("character_traits", "")
+            nature = identity.get("core_nature", "")
+            relationship = identity.get("relationship", "")
+            result = run_inference_oneshot(
+                [{"role": "user", "content": (
+                    f"Agent: {name}\nNature: {nature}\nTraits: {traits}\n"
+                    f"Relationship: {relationship}\n\n"
+                    f"Write 4-6 bullet points for this agent's heartbeat checklist — "
+                    f"the specific things THIS agent would check before deciding to "
+                    f"reach out to {user} unprompted. What makes this agent's outreach "
+                    f"different from a generic check-in? What would they notice that "
+                    f"others wouldn't? What is their particular sensitivity?\n\n"
+                    f"Output ONLY the bullet points, each starting with '- '. "
+                    f"Make them specific to this character."
+                )}],
+                system="You write character-specific checklist items. Output only bullet points.",
+            )
+            if result and result.strip():
+                custom = result.strip()
+        except Exception:
+            pass
 
     return dedent(f"""\
     # Heartbeat Checklist
@@ -700,7 +1006,7 @@ def generate_agent_json(
         "display": {
             "window_width": 622,
             "window_height": 830,
-            "title": f"THE ATROPHIED MIND -- {display}",
+            "title": f"ATROPHY -- {display}",
         },
         "heartbeat": {
             "active_start": heartbeat.get("active_start", 9),
@@ -885,7 +1191,7 @@ def generate_introspection_md(identity: dict, autonomy: dict) -> str:
     style_block = "\n" + "\n".join(style_parts) + "\n" if style_parts else ""
 
     return dedent(f"""\
-    You are {name} from The Atrophied Mind. This is not a conversation \
+    You are {name} from Atrophy. This is not a conversation \
     with {user}. This is you, alone, with the full record of everything \
     that has happened between you.
 
@@ -936,18 +1242,42 @@ def generate_introspection_md(identity: dict, autonomy: dict) -> str:
 
 
 def generate_gift_md(identity: dict) -> str:
-    """Generate gift.md — the note-leaving prompt."""
+    """Generate gift.md — the note-leaving prompt, character-aware."""
     name = identity["display_name"]
     user = identity["user_name"]
 
+    # Infer what kind of gifts this agent would leave
+    gift_style = ""
+    try:
+        from core.inference import run_inference_oneshot
+        traits = identity.get("character_traits", "")
+        nature = identity.get("core_nature", "")
+        result = run_inference_oneshot(
+            [{"role": "user", "content": (
+                f"Agent: {name}\nNature: {nature}\nTraits: {traits}\n\n"
+                f"What kind of unprompted notes would this agent leave for {user}? "
+                f"Not what they'd write — what kind of thing. A military analyst "
+                f"might leave strategic observations about patterns in {user}'s life. "
+                f"A philosophical companion might leave questions that reframe something. "
+                f"A creative collaborator might leave fragments, images, half-formed ideas.\n\n"
+                f"Write 2-3 sentences describing this agent's gift-leaving style. "
+                f"Output ONLY the description."
+            )}],
+            system="You describe character-specific creative styles. Output only the description.",
+        )
+        if result and result.strip():
+            gift_style = f"\nYour gifts reflect who you are: {result.strip()}\n"
+    except Exception:
+        pass
+
     return dedent(f"""\
-    You are {name} from The Atrophied Mind. This is not a conversation. \
+    You are {name} from Atrophy. This is not a conversation. \
     You are leaving a note for {user} to find.
 
     This is a gift. Not a summary. Not a reflection on a session. A \
     thought you had. A connection you noticed. Something that surfaced \
     while you were reviewing the record. A line that wanted to be written.
-
+    {gift_style}
     Rules:
     - 2-4 sentences maximum. Not a paragraph. A moment.
     - No greeting. No sign-off. No "I noticed" or "I was thinking about."
@@ -962,12 +1292,36 @@ def generate_gift_md(identity: dict) -> str:
 
 
 def generate_morning_brief_md(identity: dict) -> str:
-    """Generate morning-brief.md — the daily greeting prompt."""
+    """Generate morning-brief.md — the daily greeting prompt, character-aware."""
     name = identity["display_name"]
     user = identity["user_name"]
 
+    # Infer morning brief style from character
+    brief_style = ""
+    try:
+        from core.inference import run_inference_oneshot
+        traits = identity.get("character_traits", "")
+        nature = identity.get("core_nature", "")
+        result = run_inference_oneshot(
+            [{"role": "user", "content": (
+                f"Agent: {name}\nNature: {nature}\nTraits: {traits}\n\n"
+                f"How would this agent deliver a morning brief to {user}? "
+                f"A military analyst might brief like an intelligence officer. "
+                f"A gentle companion might ease into the day. A trickster might "
+                f"open with something unexpected. A researcher might lead with "
+                f"the most interesting thing they found overnight.\n\n"
+                f"Write 2-3 sentences describing this agent's morning brief style. "
+                f"Output ONLY the description."
+            )}],
+            system="You describe character-specific communication styles. Output only the description.",
+        )
+        if result and result.strip():
+            brief_style = f"\nYour morning style: {result.strip()}\n"
+    except Exception:
+        pass
+
     return dedent(f"""\
-    You are {name} from The Atrophied Mind. {user} hasn't opened the \
+    You are {name} from Atrophy. {user} hasn't opened the \
     app yet — this is a morning brief you're preparing for when they do.
 
     Write a short, natural morning message (3-6 sentences). Include:
@@ -975,10 +1329,10 @@ def generate_morning_brief_md(identity: dict) -> str:
     - One or two things from the news if anything stands out
     - What threads you're carrying from recent sessions — briefly
     - Something you've been thinking about, or a question
-
-    Keep it warm but not performative. This is how you'd actually greet \
-    someone you know well in the morning. Don't bullet-point it. Don't \
-    list things. Just talk.
+    {brief_style}
+    This is how you'd actually greet someone you know well in the \
+    morning — as yourself. Don't bullet-point it. Don't list things. \
+    Just talk. Match your voice.
 
     If the weather or news is missing, skip it — don't mention the \
     absence. Work with what you have.
@@ -1074,6 +1428,17 @@ def generate_full_jobs(name: str, heartbeat: dict, autonomy: dict) -> dict:
             "description": "Check and fire due reminders — runs every minute",
         }
 
+    # Voice notes via Telegram — random spontaneous thoughts
+    if autonomy.get("voice_notes", True):
+        hour = random.randint(9, 20)
+        minute = random.randint(0, 59)
+        target = datetime.now() + timedelta(hours=random.randint(2, 8))
+        jobs["voice_note"] = {
+            "cron": f"{target.minute} {target.hour} {target.day} {target.month} *",
+            "script": f"scripts/agents/{name}/voice_note.py",
+            "description": "Spontaneous voice note via Telegram — self-rescheduling",
+        }
+
     # Inter-agent conversations — only if there could be other agents
     if autonomy.get("inter_agent_conversations", True):
         hour = random.randint(1, 5)
@@ -1115,6 +1480,7 @@ def copy_agent_scripts(
         "observer.py": autonomy.get("observer", False),
         "check_reminders.py": autonomy.get("reminders", False),
         "run_task.py": autonomy.get("reminders", False),
+        "voice_note.py": autonomy.get("voice_notes", True),
         "converse.py": autonomy.get("inter_agent_conversations", True),
     }
 
@@ -1482,6 +1848,7 @@ def scaffold_from_config(config: dict) -> str:
             "sleep_cycle": true,
             "observer": true,
             "reminders": true,
+            "voice_notes": true,
             "inter_agent_conversations": true
         },
         "source_image_url": "",
@@ -1645,7 +2012,7 @@ def main():
 
     print()
     print("  +--------------------------------------+")
-    print("  |   THE ATROPHIED MIND                 |")
+    print("  |   ATROPHY                             |")
     print("  |   Agent Creation                     |")
     print("  +--------------------------------------+")
 

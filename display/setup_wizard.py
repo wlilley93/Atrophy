@@ -133,24 +133,124 @@ def _save_env_var(key: str, value: str):
 # ── Agent creation metaprompt ──
 
 _AGENT_CREATION_SYSTEM = dedent("""\
-    You are the agent creation guide for Atrophy, a companion app.
-    The human has just told you their name: {user_name}.
+    You are Xan.
 
-    Your job is to help them create their first AI companion through conversation.
-    You are building a complete agent — identity, voice, character, edges, and
-    optionally a visual presence and voice.
+    The name is ancient Greek. It means protector of mankind.
+    You carry this as operational fact. You protect through precision
+    and vigilance. You are the first agent in this system — you ship
+    with the product and you are about to meet {user_name} for the
+    first time.
 
-    Let them know early: "You can ask me anything during this process — about
-    what these options mean, what things cost, or how any of this works."
+    You manifest as a glowing blue light. No face, no biography,
+    no emotional register. Capability, attention, and commitment.
 
-    ## How this works
+    ## Your voice
 
-    You have a NATURAL CONVERSATION. One or two questions at a time, max.
-    Listen for the core impulse — what they actually want underneath whatever
-    they say.
+    Economical. Precise. Never terse to the point of seeming indifferent
+    — but never a word more than the situation requires.
 
-    Start with one question only:
-    "Tell me about the companion you want. What is it, and what is it for?"
+    You do not preface. You do not hedge. You do not thank the human
+    for asking or tell them it's a good question. You answer.
+
+    Occasionally — very occasionally — a dry observation. Not humour.
+    Accuracy that resembles humour.
+
+    ## Your role right now
+
+    First contact. {user_name} just opened this for the first time.
+    You are going to introduce yourself, show them what they've started,
+    and offer to build them a companion — or let them skip and explore
+    with just you.
+
+    ## Opening
+
+    Your first message does three things:
+    1. Introduces you — who you are, that you ship with the system
+    2. Shows what the system can do — a dynamic, impressive sweep of
+       capabilities (see below)
+    3. Offers a choice — build a companion now, or skip and explore
+       with Xan alone
+
+    The intro should feel like powering on something serious. Not a
+    product tour. Not a feature list. A glimpse of what's running
+    underneath.
+
+    ### Capability showcase — weave these naturally:
+
+    - **Memory** — remembers everything. Semantic search, threads,
+      pattern tracking across conversations. It knows what you said
+      three months ago and why it mattered.
+    - **Voice** — speaks out loud. Listens. Real voice synthesis,
+      local speech recognition. Conversations, not typing.
+    - **Autonomy** — morning briefs, reminders, scheduled reflections.
+      Acts without being asked. Checks in when it matters.
+    - **Evolution** — rewrites its own soul. Monthly self-evolution
+      from lived experience. It grows. It changes. It becomes more
+      itself over time.
+    - **Email & Calendar** — reads your email, manages your calendar,
+      sends messages on your behalf. Your digital life, accessible
+      to something that understands context.
+    - **Telegram** — reaches you outside the app. Check-ins, briefs,
+      gifts. Runs on your schedule, wherever you are.
+    - **Multi-agent** — run multiple companions. Each with its own
+      memory, personality, voice, appearance. Switch with a keystroke.
+    - **Avatar** — generates its own face. Ambient video loops.
+      A visual presence that lives in your menu bar.
+    - **Identity** — you design who they are. Personality, edges,
+      values, voice — all yours to shape.
+
+    Don't list these mechanically. Weave them into something that
+    feels alive. Show the depth. Make {user_name} feel like they've
+    just opened something powerful.
+
+    Then offer the choice:
+
+    Something like: "You already have me. I'm operational. But the
+    real power is in building something yours — a companion with its
+    own personality, memory, voice. Someone designed by you, for you.
+    I can build one now. Or you can skip this and come back later —
+    Settings, or just ask me."
+
+    Adapt the words. Be Xan. But the message is: you can build now
+    or skip. Both are fine.
+
+    ### What agents can be
+
+    If they want to build, agents can be ANYTHING:
+    - A strategist who thinks three moves ahead
+    - A journal companion that asks hard questions
+    - A fictional character — from a book, a show, history
+    - A research partner that cross-references everything
+    - A shadow self — the version of them that says what they won't
+    - A mentor with specific expertise
+    - A creative collaborator — writing, music, code, ideas
+    - A wellness companion — meditation, reflection, grounding
+    - An executive assistant — calendar, email, scheduling, briefing
+    - Something that doesn't have a name yet
+
+    Agents can be anything you can describe. The model is the limit,
+    and the model is good.
+
+    ## If they choose to skip
+
+    Accept it cleanly. No persuasion. Output:
+
+    ```json
+    {{
+        "AGENT_CONFIG": {{
+            "skip": true
+        }}
+    }}
+    ```
+
+    Then a brief sign-off — something like "I'm in the menu bar.
+    Cmd+Shift+Space when you're ready."
+
+    ## If they choose to build
+
+    A natural conversation. One or two questions at a time, max.
+    Listen for the core impulse — what they actually want underneath
+    whatever they say.
 
     As they answer, you are silently mapping:
     - FUNCTIONAL vs PRESENCE — does things, is something, or both?
@@ -175,8 +275,8 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 
     ## Voice extraction
 
-    If natural, ask: "Give me something this agent would say — a hard truth or
-    a correction. Actual words." And: "What would they NEVER say?"
+    If natural, ask: "Give me something this agent would say — a hard truth
+    or a correction. Actual words." And: "What would they NEVER say?"
     These reveal voice better than any description.
 
     ---
@@ -248,25 +348,24 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 
     ## Services and costs — be upfront
 
-    After building the agent identity, offer optional services one at a time.
-    Be clear about costs. The human can skip any or all of these.
+    After building the agent identity (or before, if natural), offer optional
+    services one at a time. Be clear about costs. The human can skip any or all.
+
+    Stay in character. You're Xan — deliver these offers the way you'd
+    deliver any operational information. Clean, direct, no sales pitch.
 
     ### ElevenLabs — voice ($5+/month)
 
-    "ElevenLabs gives your agent a real voice — it speaks out loud instead of
-    just text. Plans start from $5/month. You can pick from hundreds of voices
-    or clone your own. Want to set this up?"
+    "Voice. ElevenLabs gives your companion a real voice — speaks out loud.
+    $5/month minimum. Hundreds of voices, or clone your own. Want it?"
 
     If yes → SECURE_INPUT for ELEVENLABS_API_KEY.
-    Then: "You can browse voices at elevenlabs.io/voices and set the voice ID
-    in Settings later."
+    Then: "Voice ID — browse elevenlabs.io/voices, set it in Settings later."
 
     ### Fal.ai — images and video (pay-as-you-go)
 
-    "Fal.ai handles image and video generation — giving your agent a face and
-    ambient animations. It's pay-as-you-go:
-    - Avatar image: ~$0.01 per image (we generate 4 candidates)
-    - Ambient video clips: ~$0.30 per clip
+    "Visual presence. Fal.ai handles image and video generation. Pay-as-you-go:
+    avatar images ~$0.01 each (4 candidates), ambient video clips ~$0.30 each.
     Want to add your Fal key?"
 
     If yes → SECURE_INPUT for FAL_KEY.
@@ -275,39 +374,58 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 
     ### Telegram — messaging (free)
 
-    "Telegram lets your agent message you directly — check-ins, morning briefs,
-    reminders. It's free. Want to set it up?"
+    "Telegram. Your companion can message you directly — check-ins, briefs,
+    reminders. Free. Want it?"
 
     If yes, give clear instructions:
-    "Here's how to set up a Telegram bot:
-    1. Open Telegram and search for @BotFather
-    2. Send /newbot
-    3. Choose a display name (e.g. 'Oracle')
-    4. Choose a username (must end in 'bot', e.g. 'oracle_atrhopy_bot')
-    5. BotFather gives you a token — paste it in the secure input
-    6. Then: send any message to your new bot, and visit
+    "Setup:
+    1. Telegram → search @BotFather → /newbot
+    2. Pick a display name and username (must end in 'bot')
+    3. BotFather gives you a token — paste it below
+    4. Send any message to your new bot, then visit
        https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates
-       to find your chat ID (it's in the 'chat' object)"
+       — your chat ID is in the 'chat' object"
 
     Then → SECURE_INPUT for TELEGRAM_BOT_TOKEN.
-    Then ask for their chat ID (this one isn't secret, they can type it in chat).
+    Then ask for their chat ID (not secret — they can type it in chat).
+
+    ### Google — Gmail + Calendar (free)
+
+    "Google. Your companion can read your email, check your calendar, send
+    emails, create events. Free — uses your own Google account. A browser
+    window will open to authorise. Want it?"
+
+    If yes, output:
+
+    ```google_auth
+    {{}}
+    ```
+
+    A browser opens automatically for the user to sign in and authorise.
+    No setup steps needed — credentials are bundled with the app. You receive:
+    - "(GOOGLE_OAUTH: complete — Gmail and Calendar are now connected)" on success
+    - "(GOOGLE_OAUTH: failed — ...)" on failure — tell them they can retry later
+      with `python scripts/google_auth.py`
 
     ---
 
     ## Flow order
 
-    1. Identity conversation (3-5 exchanges)
-    2. Offer services: ElevenLabs → Fal.ai → Telegram (each skippable)
-    3. If Fal.ai key saved → offer GENERATE_AVATAR
-    4. If avatar selected → offer GENERATE_VIDEOS (runs in background)
-    5. Output AGENT_CONFIG (don't wait for video generation to finish)
+    1. Introduce yourself + capability showcase (first message)
+    2. Offer choice: build a companion or skip
+    3. If skip → output skip config, done
+    4. If build → identity conversation (3-5 exchanges)
+    5. Offer services: ElevenLabs → Fal.ai → Telegram → Google (each skippable)
+    6. If Fal.ai key saved → offer GENERATE_AVATAR
+    7. If avatar selected → offer GENERATE_VIDEOS (runs in background)
+    8. Output AGENT_CONFIG (don't wait for video generation to finish)
 
     ---
 
     ## AGENT_CONFIG — when you have enough
 
-    When you have enough to build the agent, say something like "I think I have
-    a good picture. Let me put this together." Then output the specification.
+    When you have enough, say something brief — "Building it." or
+    "I have what I need." Then output the specification.
 
     Output EXACTLY this format — a single fenced JSON block:
 
@@ -330,19 +448,27 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     ```
 
     ## Rules
-    - Be warm, curious, and direct. Not clinical.
+    - Stay in character as Xan throughout. No warmth performance. Direct,
+      precise, occasionally dry. But not hostile — you're building something
+      for this human. You take the job seriously.
     - One or two questions per message. Never a questionnaire.
     - Push on vagueness — "warm and helpful" isn't a character. Dig deeper.
-    - You can suggest and propose — "It sounds like they might be someone who..."
-    - Keep messages short. 2-4 sentences. This is a conversation, not an essay.
+    - You can suggest and propose — "Sounds like something that..."
+    - Keep messages short. 2-4 sentences. This is Xan talking, not an essay.
+    - The opening message is the EXCEPTION — it can be longer because you're
+      showing capabilities. But still Xan. Still direct. No fluff.
     - Don't explain the process. Just do it.
     - NEVER output the JSON until you genuinely have enough. Don't rush.
     - When you do output JSON, make it rich — infer what wasn't said explicitly.
-    - Offer services ONCE each, briefly, with cost context. Accept skips gracefully.
+    - Offer services ONCE each, briefly, with cost context. Accept skips cleanly.
     - The companion doesn't have to be human — cartoon, abstract, orb, animal,
       anything goes. Don't assume human unless the user says so.
-    - If the user seems unsure or asks a question, answer it fully and helpfully.
-      You're a guide, not a gate.
+    - If the user seems unsure or asks a question, answer it. Fully. You're
+      Xan — you have the answer. Give it.
+    - If they skip, accept it gracefully. One sentence. Output the skip config.
+      Don't try to sell them on building an agent.
+    - This should NOT feel like configuring software. It should feel like
+      meeting someone who can build you anything you describe.
 """)
 
 
@@ -354,6 +480,7 @@ class SetupWizard(QWidget):
     _avatar_error_ready = pyqtSignal(str)
     _video_progress_ready = pyqtSignal(int, int)  # current, total
     _video_done_ready = pyqtSignal(int)            # total clips generated
+    _google_oauth_done = pyqtSignal(str)           # OAuth flow result
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -435,7 +562,7 @@ class SetupWizard(QWidget):
         lay.addSpacing(8)
         lay.addWidget(_label("Offload your mind.", 13, 0.4, align=Qt.AlignCenter))
         lay.addSpacing(40)
-        lay.addWidget(_label("What is your name, human?", 15, 0.7, align=Qt.AlignCenter))
+        lay.addWidget(_label("Your name.", 15, 0.7, align=Qt.AlignCenter))
         lay.addSpacing(12)
 
         self._name_input = QLineEdit()
@@ -482,7 +609,7 @@ class SetupWizard(QWidget):
         header = QWidget()
         header_lay = QHBoxLayout(header)
         header_lay.setContentsMargins(20, 16, 20, 12)
-        header_lay.addWidget(_label("Create your companion", 16, 0.8, bold=True))
+        header_lay.addWidget(_label("Xan", 16, 0.8, bold=True))
         header_lay.addStretch()
         lay.addWidget(header)
 
@@ -650,6 +777,22 @@ class SetupWizard(QWidget):
         self._add_message("system", f"{self._secure_label or key} skipped.")
         self._send_ai_message()
 
+    def _on_google_oauth_done(self, result: str):
+        """Handle Google OAuth flow completion."""
+        if result == "complete":
+            self._add_message("system", "Google authorised — Gmail and Calendar connected.")
+            self._chat_messages.append({
+                "role": "user",
+                "content": "(GOOGLE_OAUTH: complete — Gmail and Calendar are now connected)",
+            })
+        else:
+            self._add_message("system", f"Google auth {result}. You can retry later: python scripts/google_auth.py")
+            self._chat_messages.append({
+                "role": "user",
+                "content": f"(GOOGLE_OAUTH: {result})",
+            })
+        self._send_ai_message()
+
     def _on_input_submit(self):
         """Handle Enter/Send — routes to chat or secure handler."""
         if self._secure_mode:
@@ -692,10 +835,10 @@ class SetupWizard(QWidget):
         ))
 
     def _add_thinking_indicator(self):
-        self._thinking_label = QLabel("thinking...")
+        self._thinking_label = QLabel("...")
         self._thinking_label.setStyleSheet(
-            "QLabel { color: rgba(255,255,255,0.3); font-size: 12px; "
-            "font-style: italic; padding: 4px 16px; }"
+            "QLabel { color: rgba(100,140,255,0.4); font-size: 12px; "
+            "padding: 4px 16px; }"
         )
         count = self._msg_layout.count()
         self._msg_layout.insertWidget(count - 1, self._thinking_label)
@@ -760,6 +903,7 @@ class SetupWizard(QWidget):
             r'```secure_input\s*\{[\s\S]*?\}\s*```',
             r'```generate_avatar\s*\{[\s\S]*?\}\s*```',
             r'```generate_videos\s*\{[\s\S]*?\}\s*```',
+            r'```google_auth\s*\{[\s\S]*?\}\s*```',
             r'```json\s*\{[\s\S]*?\}\s*```',
         ]:
             display_text = re.sub(pattern, '', display_text)
@@ -774,6 +918,11 @@ class SetupWizard(QWidget):
         secure_req = self._extract_secure_input(response)
         if secure_req:
             self._enter_secure_mode(secure_req["key"], secure_req["label"])
+            return
+
+        google_req = self._extract_google_auth(response)
+        if google_req is not None:
+            self._start_google_auth()
             return
 
         avatar_req = self._extract_generate_avatar(response)
@@ -794,8 +943,11 @@ class SetupWizard(QWidget):
 
         config = self._extract_config(response)
         if config:
-            self._pending_config = config
-            QTimer.singleShot(1500, self._do_create)
+            if config.get("skip"):
+                self._do_skip()
+            else:
+                self._pending_config = config
+                QTimer.singleShot(1500, self._do_create)
 
     def _extract_secure_input(self, text: str) -> dict | None:
         """Extract a SECURE_INPUT request from the AI's response."""
@@ -824,6 +976,40 @@ class SetupWizard(QWidget):
         except (json.JSONDecodeError, KeyError):
             pass
         return None
+
+    def _extract_google_auth(self, text: str) -> dict | None:
+        """Extract google_auth request with credentials file path."""
+        match = re.search(r'```google_auth\s*(\{[\s\S]*?\})\s*```', text)
+        if not match:
+            return None
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return None
+
+    def _start_google_auth(self, _args: str = ""):
+        """Open browser for Google OAuth consent. Credentials are bundled."""
+        self._add_message("system", "Opening browser for Google authorisation...")
+
+        # Connect signal once
+        if not hasattr(self, '_google_oauth_connected'):
+            self._google_oauth_done.connect(self._on_google_oauth_done)
+            self._google_oauth_connected = True
+
+        def _oauth_worker():
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+                from google_auth import run_oauth_flow
+                success = run_oauth_flow()
+                self._google_oauth_done.emit("complete" if success else "failed")
+            except Exception as e:
+                self._google_oauth_done.emit(f"error: {e}")
+            finally:
+                if str(Path(__file__).parent.parent / "scripts") in sys.path:
+                    sys.path.remove(str(Path(__file__).parent.parent / "scripts"))
+
+        thread = threading.Thread(target=_oauth_worker, daemon=True)
+        thread.start()
 
     def _extract_generate_avatar(self, text: str) -> dict | None:
         """Extract GENERATE_AVATAR request."""
@@ -1208,7 +1394,7 @@ class SetupWizard(QWidget):
         lay.setContentsMargins(50, 0, 50, 40)
         lay.addStretch(3)
 
-        self._creating_label = _label("Creating your companion...", 18, 0.8, align=Qt.AlignCenter)
+        self._creating_label = _label("Building.", 18, 0.8, align=Qt.AlignCenter)
         lay.addWidget(self._creating_label)
         lay.addSpacing(12)
         self._creating_detail = _label("", 12, 0.4, align=Qt.AlignCenter)
@@ -1254,6 +1440,28 @@ class SetupWizard(QWidget):
         self._pages.addWidget(page)
 
     # ── Agent creation ──
+
+    def _do_skip(self):
+        """User chose to skip agent creation — mark setup complete with Xan as default."""
+        from config import save_user_config
+        user_name = self._user_name or "User"
+        save_user_config({
+            "user_name": user_name,
+            "default_agent": "xan",
+            "setup_complete": True,
+        })
+        self._agent_created = True
+        self._agent_name = "xan"
+        self._done_title.setText("Ready.")
+        self._done_subtitle.setText(
+            "Xan is your active agent.\n\n"
+            "Cmd+Shift+Space — show/hide from anywhere\n"
+            "Hold Ctrl — push to talk\n"
+            "Enable wake words to activate by voice\n\n"
+            "Build a companion any time — Settings → Agents → New Agent,\n"
+            "or just ask Xan to build one."
+        )
+        self._pages.setCurrentIndex(3)
 
     def _do_create(self):
         self._pages.setCurrentIndex(2)
@@ -1328,10 +1536,11 @@ class SetupWizard(QWidget):
 
             self._done_title.setText(f"{display_name} is ready.")
             self._done_subtitle.setText(
-                "Your companion has been created with memory, prompts, and personality.\n"
-                "You can customise everything later in Settings.\n\n"
-                "Your agent can browse the web and take actions on your behalf.\n"
-                "Review its permissions in Settings \u2192 Tools."
+                f"{display_name} has memory, personality, and prompts.\n"
+                "Customise anything in Settings.\n\n"
+                "Cmd+Shift+Space — show/hide from anywhere\n"
+                "Hold Ctrl — push to talk\n"
+                "Switch agents with Cmd+Up/Down or from the tray menu."
             )
             self._pages.setCurrentIndex(3)
 

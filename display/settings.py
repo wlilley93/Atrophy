@@ -1045,7 +1045,7 @@ class SettingsModal(QWidget):
                           400, 1080, cfg.WINDOW_HEIGHT, suffix="px")
         self._add_text("window_title", "Window Title",
                        cfg.AGENT.get("display", {}).get("title",
-                           f"THE ATROPHIED MIND -- {cfg.AGENT_DISPLAY_NAME}"))
+                           f"ATROPHY --{cfg.AGENT_DISPLAY_NAME}"))
         self._add_checkbox("avatar_enabled", "Avatar Enabled", cfg.AVATAR_ENABLED)
         self._add_spinbox("avatar_resolution", "Avatar Resolution",
                           128, 1024, cfg.AVATAR_RESOLUTION)
@@ -1625,7 +1625,7 @@ class SettingsModal(QWidget):
         manifest["display"]["window_height"] = cfg.WINDOW_HEIGHT
         manifest["display"]["title"] = (
             self._get_value("window_title")
-            or f"THE ATROPHIED MIND -- {cfg.AGENT_DISPLAY_NAME}"
+            or f"ATROPHY --{cfg.AGENT_DISPLAY_NAME}"
         )
 
         manifest.setdefault("heartbeat", {})

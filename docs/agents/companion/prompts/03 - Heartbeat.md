@@ -20,6 +20,10 @@ The heartbeat evaluates:
 4. **External triggers** — deadlines, events, time-sensitive items
 5. **The real question** — would hearing from the agent feel like a gift or noise
 
+## Generation
+
+For new agents, `generate_heartbeat()` in `scripts/create_agent.py` produces the heartbeat checklist via LLM inference, inferring agent-specific checklist items from character traits. A military agent gets different outreach criteria than a contemplative one. Falls back to a generic template if inference is unavailable.
+
 ## Output
 
 If the heartbeat decides to reach out, it sends a message via Telegram (`mcp__memory__send_telegram`). If not, silence — silence is not failure.

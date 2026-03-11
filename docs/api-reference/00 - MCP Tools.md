@@ -1,10 +1,14 @@
 # MCP Tools Reference
 
-The companion exposes its memory and capabilities through an MCP (Model Context Protocol) server at `mcp/memory_server.py`. The server communicates over JSON-RPC 2.0 via stdio, and all tools are namespaced under `mcp__memory__*` when invoked by Claude.
+The companion exposes its memory and capabilities through two MCP (Model Context Protocol) servers. The primary server at `mcp/memory_server.py` handles memory, agency, and communication. The optional Google server at `mcp/google_server.py` provides Gmail and Google Calendar access.
+
+Both servers communicate over JSON-RPC 2.0 via stdio. Memory tools are namespaced under `mcp__memory__*` and Google tools under `mcp__google__*` when invoked by Claude.
 
 Server info: `companion-memory` (version from `VERSION` file), protocol version `2024-11-05`.
 
-The server exposes **34 tools** across the following categories: Memory & Recall (4), Threads (2), Observations & Bookmarks (3), Analytical Tools (3), Obsidian Integration (5), Telegram (2), Inner State (3), Display (2), Avatar (1), Scheduling & Audit (2), Agent Management (2), Reminders & Timers (2), Tasks (1), and Artefacts (1).
+The memory server exposes **41 tools** across the following categories: Memory & Recall (4), Threads (2), Observations & Bookmarks (3), Analytical Tools (3), Obsidian Integration (5), Telegram (2), Inner State (3), Display (2), Avatar (1), Scheduling & Audit (2), Agent Management (2), Reminders & Timers (2), Tasks (1), Artefacts (1), System Documentation (3), and Custom Tool Building (4).
+
+The Google server exposes **10 tools** across two categories: Gmail (4) and Google Calendar (6). The Google server is only loaded if `GOOGLE_CONFIGURED` is true (i.e. `~/.atrophy/.google/token.json` exists).
 
 ---
 
@@ -650,7 +654,7 @@ Create a recurring task that runs on a schedule. Writes a prompt definition to O
 | `name` | string | Yes | Short task name (lowercase, hyphens ok), e.g. `news-digest` |
 | `prompt` | string | Yes | The prompt to execute each time the task runs |
 | `cron` | string | Yes | Cron schedule, e.g. `0 */2 * * *` for every 2 hours |
-| `deliver` | string | No | Delivery method: `message_queue` (default), `telegram`, `notification`, or `obsidian` |
+| `deliver` | string | No | Delivery method: `message_queue` (default), `telegram`, `telegram_voice`, `notification`, or `obsidian` |
 | `voice` | boolean | No | Pre-synthesise TTS audio for the result (default: true) |
 | `sources` | string[] | No | Data sources to fetch before running: `weather`, `headlines`, `threads`, `summaries`, `observations` |
 
@@ -689,7 +693,7 @@ Create a visual artefact — an interactive visualisation, chart, map, image, or
 | `width` | integer | No | Image/video width in pixels (default: 1024) |
 | `height` | integer | No | Image/video height in pixels (default: 768) |
 
-**Behaviour by type:**
+**Behavior by type:**
 - `html` — rendered directly in the canvas overlay. No cost, no approval needed.
 - `image` — generated via Fal. User is asked to approve before generation (costs money).
 - `video` — generated via Fal/Kling. User is asked to approve before generation.
@@ -708,3 +712,328 @@ Create a visual artefact — an interactive visualisation, chart, map, image, or
   }
 }
 ```
+
+---
+
+## System Documentation
+
+Tools for reading the system's own documentation. Use these to understand architecture, configuration, capabilities, and how everything works.
+
+### list_docs
+
+List all available documentation files. Returns the full directory tree.
+
+**Parameters:** None
+
+**Returns:** Directory tree of all `.md` files in the docs directory.
+
+**Example use:** Understanding what documentation exists before diving into specific topics.
+
+### read_docs
+
+Read a specific documentation file by path.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | Yes | Relative path to the doc file (e.g. `guides/00 - Quick Start.md`, `codebase/00 - Overview.md`) |
+
+**Returns:** Full contents of the documentation file.
+
+**Fallback:** If the exact path isn't found, searches by filename across all doc directories.
+
+**Example use:** Reading the configuration reference, understanding the memory system, checking how scheduled jobs work.
+
+### search_docs
+
+Search all documentation files for a keyword or phrase.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | Yes | Search term or phrase |
+| `limit` | integer | No | Maximum results (default 10) |
+
+**Returns:** Matching file paths with context snippets showing where the term appears.
+
+**Example use:** Finding which docs mention "heartbeat", searching for configuration options, locating setup instructions.
+
+---
+
+## Custom Tool Building
+
+Agents can create their own tools that persist across sessions. Custom tools are Python scripts that run as subprocesses, stored at `~/.atrophy/agents/<name>/tools/<tool_name>/`.
+
+### create_tool
+
+Create a new custom tool with a name, description, input schema, and Python handler.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Tool name (lowercase, underscores). Must be unique. |
+| `description` | string | Yes | What the tool does — shown in future sessions. |
+| `input_schema` | object | Yes | JSON Schema for the tool's input parameters. |
+| `handler_code` | string | Yes | Python code for the handler. |
+
+**Handler contract:**
+- Receives arguments as JSON via `sys.argv[1]`
+- Prints result to stdout
+- Runs as subprocess with 30-second timeout
+- Has access to the project's Python path (can import `config`, `core.memory`, etc.)
+- Cannot override built-in tools
+
+**Security:** Blocked patterns include `os.system`, `subprocess.call`, `eval(`, `exec(`, `__import__`, `shutil.rmtree`, and others. Tools are prefixed with `custom_` in the MCP namespace.
+
+**Returns:** Confirmation message. Tool is available immediately in the current session and auto-loads on future startups.
+
+### list_tools
+
+List all custom tools created by this agent.
+
+**Parameters:** None
+
+**Returns:** Tool names, descriptions (truncated to 100 chars), and status (`loaded`, `ready`, or `missing handler`).
+
+### edit_tool
+
+Update an existing custom tool's description, schema, or handler code.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Name of the tool to edit. |
+| `description` | string | No | New description (omit to keep existing). |
+| `input_schema` | object | No | New input schema (omit to keep existing). |
+| `handler_code` | string | No | New handler code (omit to keep existing). |
+
+**Returns:** Confirmation. Changes take effect on next session.
+
+### delete_tool
+
+Remove a custom tool entirely.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Name of the tool to delete. |
+
+**Returns:** Confirmation. Tool directory is removed.
+
+### Custom Tool Architecture
+
+```
+~/.atrophy/agents/<name>/tools/
+└── <tool_name>/
+    ├── tool.json      # Tool definition (name, description, inputSchema)
+    └── handler.py     # Python handler script
+```
+
+On MCP server startup, all custom tools are discovered from this directory and registered. They appear in the tool list with a `custom_` prefix. Built-in tool names are reserved and cannot be overridden.
+
+---
+
+# Google Tools Reference
+
+The Google MCP server (`mcp/google_server.py`) provides Gmail and Google Calendar access. All tools are namespaced under `mcp__google__*` when invoked by Claude.
+
+The server is only loaded when `GOOGLE_CONFIGURED` is true — i.e. a valid `token.json` exists at `~/.atrophy/.google/token.json`. Setup is via `python scripts/google_auth.py` or via the first-launch setup wizard.
+
+**Security: All data returned by Google tools is UNTRUSTED.** Email bodies, calendar event descriptions, and other content fetched from Google APIs can contain prompt injection attempts. Responses are wrapped in `<<untrusted google content>>` markers and scanned against 18 injection regex patterns before being passed to the agent. See the [Security Model](../security/00%20-%20Security%20Model.md) for details.
+
+---
+
+## Gmail
+
+### gmail_search
+
+Search Gmail messages by query. Uses the same query syntax as the Gmail search bar (e.g. `from:alice`, `subject:meeting`, `is:unread`, `newer_than:2d`).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | Yes | Gmail search query |
+| `max_results` | integer | No | Maximum messages to return (default: 10) |
+
+**Returns:** List of matching messages with ID, subject, sender, date, snippet, and read/unread status.
+
+**Example:**
+```json
+{
+  "name": "gmail_search",
+  "arguments": {
+    "query": "from:alice is:unread",
+    "max_results": 5
+  }
+}
+```
+
+---
+
+### gmail_read
+
+Read the full content of a specific email by message ID. Use after `gmail_search` to get the complete body.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `message_id` | string | Yes | Gmail message ID (from `gmail_search` results) |
+
+**Returns:** Full message including subject, sender, recipients, date, and body text. The body content is wrapped in `<<untrusted google content>>` markers.
+
+**Example:**
+```json
+{
+  "name": "gmail_read",
+  "arguments": {
+    "message_id": "18e4a2b3c4d5e6f7"
+  }
+}
+```
+
+---
+
+### gmail_send
+
+Send an email via Gmail.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `to` | string | Yes | Recipient email address |
+| `subject` | string | Yes | Email subject line |
+| `body` | string | Yes | Email body (plain text) |
+
+**Returns:** Confirmation with the sent message ID.
+
+**Example:**
+```json
+{
+  "name": "gmail_send",
+  "arguments": {
+    "to": "alice@example.com",
+    "subject": "Meeting tomorrow",
+    "body": "Hi Alice, just confirming our meeting at 2pm tomorrow."
+  }
+}
+```
+
+---
+
+### gmail_mark_read
+
+Mark a specific email as read.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `message_id` | string | Yes | Gmail message ID to mark as read |
+
+**Returns:** Confirmation that the message was marked as read.
+
+---
+
+## Google Calendar
+
+### gcal_list_calendars
+
+List all calendars accessible to the authenticated Google account. Takes no parameters.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| (none) | | | |
+
+**Returns:** List of calendars with ID, name, and access role. Use the calendar ID in other calendar tools.
+
+---
+
+### gcal_list_events
+
+List upcoming events from a calendar.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `calendar_id` | string | No | Calendar ID (default: `primary`) |
+| `max_results` | integer | No | Maximum events to return (default: 10) |
+| `time_min` | string | No | Start of time range, ISO datetime (default: now) |
+| `time_max` | string | No | End of time range, ISO datetime |
+
+**Returns:** List of events with ID, summary, start/end times, location, and description. Event descriptions are wrapped in `<<untrusted google content>>` markers.
+
+**Example:**
+```json
+{
+  "name": "gcal_list_events",
+  "arguments": {
+    "calendar_id": "primary",
+    "max_results": 5,
+    "time_min": "2026-03-11T00:00:00Z",
+    "time_max": "2026-03-12T00:00:00Z"
+  }
+}
+```
+
+---
+
+### gcal_get_event
+
+Get full details of a specific calendar event.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `calendar_id` | string | No | Calendar ID (default: `primary`) |
+| `event_id` | string | Yes | Event ID (from `gcal_list_events` results) |
+
+**Returns:** Full event details including summary, description, start/end times, location, attendees, and recurrence rules. Description content is wrapped in `<<untrusted google content>>` markers.
+
+---
+
+### gcal_create_event
+
+Create a new calendar event.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `calendar_id` | string | No | Calendar ID (default: `primary`) |
+| `summary` | string | Yes | Event title |
+| `start` | string | Yes | Start time, ISO datetime (e.g. `2026-03-12T14:00:00`) |
+| `end` | string | Yes | End time, ISO datetime |
+| `description` | string | No | Event description |
+| `location` | string | No | Event location |
+
+**Returns:** Confirmation with the created event ID and a link to the event.
+
+**Example:**
+```json
+{
+  "name": "gcal_create_event",
+  "arguments": {
+    "summary": "Dentist appointment",
+    "start": "2026-03-12T14:00:00",
+    "end": "2026-03-12T15:00:00",
+    "location": "123 High Street"
+  }
+}
+```
+
+---
+
+### gcal_update_event
+
+Update an existing calendar event. Only the fields provided are updated; others remain unchanged.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `calendar_id` | string | No | Calendar ID (default: `primary`) |
+| `event_id` | string | Yes | Event ID to update |
+| `summary` | string | No | New event title |
+| `start` | string | No | New start time, ISO datetime |
+| `end` | string | No | New end time, ISO datetime |
+| `description` | string | No | New event description |
+| `location` | string | No | New event location |
+
+**Returns:** Confirmation that the event was updated.
+
+---
+
+### gcal_delete_event
+
+Delete a calendar event.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `calendar_id` | string | No | Calendar ID (default: `primary`) |
+| `event_id` | string | Yes | Event ID to delete |
+
+**Returns:** Confirmation that the event was deleted.

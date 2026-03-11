@@ -38,6 +38,22 @@ VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", os.path.expanduser("~/Documents/Ob
 AGENT_DIR = os.environ.get("OBSIDIAN_AGENT_DIR", os.path.join(VAULT_PATH, "Projects", "The Atrophied Mind", "Agent Workspace", "companion"))
 AGENT_NOTES = os.environ.get("OBSIDIAN_AGENT_NOTES", AGENT_DIR)
 
+# ── Docs path resolution ──
+# Docs ship with the bundle (repo or ~/.atrophy/src/)
+def _resolve_docs_dir():
+    """Find the docs directory — bundle first, then user data."""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    bundle_docs = os.path.join(project_root, "docs")
+    if os.path.isdir(bundle_docs):
+        return bundle_docs
+    # Fallback: ~/.atrophy/src/docs (installed app)
+    atrophy_docs = os.path.join(os.path.expanduser("~"), ".atrophy", "src", "docs")
+    if os.path.isdir(atrophy_docs):
+        return atrophy_docs
+    return None
+
+DOCS_DIR = _resolve_docs_dir()
+
 TOOLS = [
     {
         "name": "remember",
@@ -596,7 +612,7 @@ TOOLS = [
     {
         "name": "create_agent",
         "description": (
-            "Create a new agent for The Atrophied Mind. Accepts a complete configuration "
+            "Create a new agent for Atrophy. Accepts a complete configuration "
             "as JSON and scaffolds everything: repo directories, agent.json manifest, "
             "prompts (soul, system, heartbeat), Obsidian workspace (skills, notes, dashboard), "
             "memory database, scheduled job scripts, and cron jobs.json. "
@@ -868,7 +884,222 @@ TOOLS = [
             "properties": {},
         },
     },
+    {
+        "name": "read_docs",
+        "description": (
+            "Read a documentation file from the system docs. Use this to understand "
+            "how the system works — architecture, configuration, memory, scheduling, "
+            "tools, agents, and more. Pass a relative path like 'guides/00 - Quick Start.md' "
+            "or just a filename. Use search_docs first if you don't know the exact path."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative path to the doc file (e.g. 'guides/00 - Quick Start.md', 'codebase/00 - Overview.md')",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "search_docs",
+        "description": (
+            "Search the system documentation for a keyword or phrase. Returns matching "
+            "file paths with context snippets. Use this to find relevant docs before "
+            "reading them with read_docs."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search term or phrase",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results (default 10)",
+                    "default": 10,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "list_docs",
+        "description": (
+            "List all available documentation files. Returns the full directory "
+            "tree of system docs with descriptions. Use this to discover what "
+            "documentation exists."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "create_tool",
+        "description": (
+            "Create a new tool that you can use in future sessions. You write "
+            "the tool definition (name, description, input schema) and the Python "
+            "handler code. The tool becomes available next time the MCP server starts.\n\n"
+            "The handler receives arguments as a JSON dict via sys.argv[1] and should "
+            "print its result to stdout. It runs as a subprocess with a 30-second timeout.\n\n"
+            "The handler has access to standard library imports plus the project's modules "
+            "(config, core.memory, etc. via sys.path). Use this to extend your own "
+            "capabilities — API integrations, data processing, custom workflows.\n\n"
+            "Example handler:\n"
+            "import json, sys\n"
+            "args = json.loads(sys.argv[1])\n"
+            "# ... do work ...\n"
+            "print(json.dumps({'result': 'done'}))"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Tool name (lowercase, underscores). Must be unique.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "What this tool does — shown to you in future sessions.",
+                },
+                "input_schema": {
+                    "type": "object",
+                    "description": "JSON Schema for the tool's input parameters.",
+                },
+                "handler_code": {
+                    "type": "string",
+                    "description": "Python code for the handler. Receives args as JSON in sys.argv[1], prints result to stdout.",
+                },
+            },
+            "required": ["name", "description", "input_schema", "handler_code"],
+        },
+    },
+    {
+        "name": "list_tools",
+        "description": (
+            "List all custom tools you've created. Shows tool names, descriptions, "
+            "and whether they're currently loaded."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "edit_tool",
+        "description": (
+            "Edit an existing custom tool — update its description, schema, or handler code. "
+            "Changes take effect on next MCP server restart."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the tool to edit.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "New description (omit to keep existing).",
+                },
+                "input_schema": {
+                    "type": "object",
+                    "description": "New input schema (omit to keep existing).",
+                },
+                "handler_code": {
+                    "type": "string",
+                    "description": "New handler code (omit to keep existing).",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "delete_tool",
+        "description": "Delete a custom tool. Removes the tool definition and handler.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the tool to delete.",
+                },
+            },
+            "required": ["name"],
+        },
+    },
 ]
+
+# ── Custom tool loading ──
+
+_CUSTOM_TOOLS_DIR = os.path.join(
+    os.path.expanduser("~"), ".atrophy", "agents", AGENT_NAME, "tools"
+)
+
+# Reserved tool names that can't be overridden
+_RESERVED_TOOLS = {t["name"] for t in TOOLS}
+
+
+def _load_custom_tools():
+    """Discover and load agent-created tools from the custom tools directory."""
+    if not os.path.isdir(_CUSTOM_TOOLS_DIR):
+        return
+    for tool_dir in sorted(Path(_CUSTOM_TOOLS_DIR).iterdir()):
+        if not tool_dir.is_dir():
+            continue
+        definition = tool_dir / "tool.json"
+        handler = tool_dir / "handler.py"
+        if not definition.exists() or not handler.exists():
+            continue
+        try:
+            tool_def = json.loads(definition.read_text())
+            name = tool_def.get("name", tool_dir.name)
+            if name in _RESERVED_TOOLS:
+                continue  # Can't override built-in tools
+            # Add a prefix to avoid collisions in the MCP namespace
+            tool_def["name"] = f"custom_{name}" if not name.startswith("custom_") else name
+            TOOLS.append(tool_def)
+            # Create a handler that runs the script as subprocess
+            _register_custom_handler(tool_def["name"], str(handler))
+        except (json.JSONDecodeError, OSError):
+            continue
+
+
+def _register_custom_handler(tool_name: str, handler_path: str):
+    """Register a subprocess-based handler for a custom tool."""
+    import subprocess as _sp
+
+    def _handler(args):
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        try:
+            result = _sp.run(
+                [sys.executable, handler_path, json.dumps(args)],
+                capture_output=True, text=True, timeout=30,
+                cwd=project_root,
+                env={
+                    **os.environ,
+                    "AGENT": AGENT_NAME,
+                    "COMPANION_DB": DB_PATH,
+                    "PYTHONPATH": project_root,
+                },
+            )
+            if result.returncode != 0:
+                stderr = result.stderr.strip()[:500]
+                return f"Tool error (exit {result.returncode}): {stderr}"
+            return result.stdout.strip() or "(no output)"
+        except _sp.TimeoutExpired:
+            return "Error: tool execution timed out (30s limit)"
+        except Exception as e:
+            return f"Error running tool: {e}"
+
+    HANDLERS[tool_name] = _handler
+
+
+# NOTE: _load_custom_tools() is called after HANDLERS dict is defined (below)
 
 # Rate limit tracking for Telegram sends
 _telegram_sends_today: list[str] = []  # timestamps of sends today
@@ -2706,6 +2937,211 @@ def handle_self_status(args):
     return "\n".join(sections)
 
 
+def handle_read_docs(args):
+    path = args["path"]
+    if DOCS_DIR is None:
+        return "Error: docs directory not found."
+    # Prevent path traversal
+    full = os.path.normpath(os.path.join(DOCS_DIR, path))
+    if not full.startswith(os.path.normpath(DOCS_DIR)):
+        return f"Error: path '{path}' escapes the docs boundary."
+    if not os.path.isfile(full):
+        # Try finding by filename alone
+        for root, _dirs, files in os.walk(DOCS_DIR):
+            for fname in files:
+                if fname == os.path.basename(path):
+                    full = os.path.join(root, fname)
+                    break
+            if os.path.isfile(full) and full.startswith(os.path.normpath(DOCS_DIR)):
+                break
+        else:
+            return f"Doc not found: {path}\nUse list_docs to see available files."
+    try:
+        with open(full, "r") as f:
+            return f.read()
+    except Exception as e:
+        return f"Error reading {path}: {e}"
+
+
+def handle_search_docs(args):
+    query = args["query"].lower()
+    limit = args.get("limit", 10)
+    if DOCS_DIR is None:
+        return "Error: docs directory not found."
+    results = []
+    for root, dirs, files in os.walk(DOCS_DIR):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for fname in files:
+            if not fname.endswith(".md"):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, "r") as f:
+                    content = f.read()
+            except Exception:
+                continue
+            if query in content.lower():
+                rel = os.path.relpath(fpath, DOCS_DIR)
+                idx = content.lower().find(query)
+                start = max(0, idx - 80)
+                end = min(len(content), idx + len(query) + 80)
+                snippet = content[start:end].replace("\n", " ").strip()
+                results.append(f"- {rel}: ...{snippet}...")
+                if len(results) >= limit:
+                    break
+        if len(results) >= limit:
+            break
+    if not results:
+        return f"No docs found matching '{args['query']}'."
+    return f"Found {len(results)} doc(s):\n" + "\n".join(results)
+
+
+def handle_list_docs(args):
+    if DOCS_DIR is None:
+        return "Error: docs directory not found."
+    tree = []
+    for root, dirs, files in os.walk(DOCS_DIR):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        level = os.path.relpath(root, DOCS_DIR)
+        if level == ".":
+            for f in sorted(files):
+                if f.endswith(".md"):
+                    tree.append(f)
+        else:
+            indent = "  " * (level.count(os.sep))
+            tree.append(f"{indent}{os.path.basename(root)}/")
+            for f in sorted(files):
+                if f.endswith(".md"):
+                    tree.append(f"{indent}  {f}")
+    if not tree:
+        return "No documentation files found."
+    return "System documentation:\n" + "\n".join(tree)
+
+
+# ── Custom tool management handlers ──
+
+
+def handle_create_tool(args):
+    name = args["name"].lower().replace(" ", "_").replace("-", "_")
+    description = args["description"]
+    input_schema = args.get("input_schema", {"type": "object", "properties": {}})
+    handler_code = args["handler_code"]
+
+    # Validate name
+    if not name.isidentifier():
+        return f"Error: '{name}' is not a valid tool name (use lowercase letters, numbers, underscores)."
+    full_name = f"custom_{name}" if not name.startswith("custom_") else name
+    if name in _RESERVED_TOOLS:
+        return f"Error: '{name}' is a built-in tool and cannot be overridden."
+
+    # Security check — block obviously dangerous patterns
+    _BLOCKED = ["os.system", "subprocess.call", "eval(", "exec(", "__import__",
+                "shutil.rmtree", "os.remove", "os.unlink", "open('/etc",
+                "os.environ[", ".delete(", "DROP TABLE", "DROP DATABASE"]
+    for pattern in _BLOCKED:
+        if pattern in handler_code:
+            return f"Error: handler contains blocked pattern '{pattern}'. Revise the code."
+
+    # Create tool directory
+    tool_dir = os.path.join(_CUSTOM_TOOLS_DIR, name)
+    os.makedirs(tool_dir, exist_ok=True)
+
+    # Write tool definition
+    tool_def = {
+        "name": full_name,
+        "description": description,
+        "inputSchema": input_schema if "type" in input_schema else {
+            "type": "object",
+            "properties": input_schema,
+        },
+    }
+    with open(os.path.join(tool_dir, "tool.json"), "w") as f:
+        json.dump(tool_def, f, indent=2)
+
+    # Write handler
+    with open(os.path.join(tool_dir, "handler.py"), "w") as f:
+        f.write(handler_code)
+
+    # Register immediately for this session
+    if full_name not in HANDLERS:
+        TOOLS.append(tool_def)
+        _register_custom_handler(full_name, os.path.join(tool_dir, "handler.py"))
+        return f"Tool '{name}' created and available now as '{full_name}'."
+    else:
+        return f"Tool '{name}' created. It will be available as '{full_name}' on next session (already registered this session)."
+
+
+def handle_list_tools(args):
+    if not os.path.isdir(_CUSTOM_TOOLS_DIR):
+        return "No custom tools directory found. Create a tool first."
+    tools = []
+    for tool_dir in sorted(Path(_CUSTOM_TOOLS_DIR).iterdir()):
+        if not tool_dir.is_dir():
+            continue
+        definition = tool_dir / "tool.json"
+        handler = tool_dir / "handler.py"
+        if not definition.exists():
+            continue
+        try:
+            tool_def = json.loads(definition.read_text())
+            name = tool_def.get("name", tool_dir.name)
+            desc = tool_def.get("description", "(no description)")[:100]
+            has_handler = handler.exists()
+            loaded = name in HANDLERS
+            status = "loaded" if loaded else ("ready" if has_handler else "missing handler")
+            tools.append(f"- {name}: {desc} [{status}]")
+        except (json.JSONDecodeError, OSError):
+            tools.append(f"- {tool_dir.name}: (invalid tool.json)")
+    if not tools:
+        return "No custom tools found."
+    return f"Custom tools ({len(tools)}):\n" + "\n".join(tools)
+
+
+def handle_edit_tool(args):
+    name = args["name"].lower().replace(" ", "_").replace("-", "_")
+    # Strip custom_ prefix if provided
+    bare_name = name.removeprefix("custom_")
+    tool_dir = os.path.join(_CUSTOM_TOOLS_DIR, bare_name)
+    if not os.path.isdir(tool_dir):
+        return f"Tool '{bare_name}' not found."
+
+    definition_path = os.path.join(tool_dir, "tool.json")
+    handler_path = os.path.join(tool_dir, "handler.py")
+
+    try:
+        tool_def = json.loads(open(definition_path).read())
+    except Exception:
+        return f"Error reading tool definition for '{bare_name}'."
+
+    if "description" in args and args["description"]:
+        tool_def["description"] = args["description"]
+    if "input_schema" in args and args["input_schema"]:
+        schema = args["input_schema"]
+        tool_def["inputSchema"] = schema if "type" in schema else {
+            "type": "object", "properties": schema,
+        }
+
+    with open(definition_path, "w") as f:
+        json.dump(tool_def, f, indent=2)
+
+    if "handler_code" in args and args["handler_code"]:
+        with open(handler_path, "w") as f:
+            f.write(args["handler_code"])
+
+    return f"Tool '{bare_name}' updated. Changes take effect on next session."
+
+
+def handle_delete_tool(args):
+    name = args["name"].lower().replace(" ", "_").replace("-", "_")
+    bare_name = name.removeprefix("custom_")
+    tool_dir = os.path.join(_CUSTOM_TOOLS_DIR, bare_name)
+    if not os.path.isdir(tool_dir):
+        return f"Tool '{bare_name}' not found."
+    import shutil
+    shutil.rmtree(tool_dir)
+    return f"Tool '{bare_name}' deleted. It will be removed from the tool list on next session."
+
+
 HANDLERS = {
     "remember": handle_remember,
     "recall_session": handle_recall_session,
@@ -2741,7 +3177,17 @@ HANDLERS = {
     "render_canvas": handle_render_canvas,
     "render_memory_graph": handle_render_memory_graph,
     "self_status": handle_self_status,
+    "read_docs": handle_read_docs,
+    "search_docs": handle_search_docs,
+    "list_docs": handle_list_docs,
+    "create_tool": handle_create_tool,
+    "list_tools": handle_list_tools,
+    "edit_tool": handle_edit_tool,
+    "delete_tool": handle_delete_tool,
 }
+
+# Load custom tools now that HANDLERS is defined
+_load_custom_tools()
 
 
 # ── JSON-RPC dispatch ──

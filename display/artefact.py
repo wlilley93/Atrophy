@@ -1,4 +1,4 @@
-"""Artefact overlay and gallery for The Atrophied Mind.
+"""Artefact overlay and gallery for Atrophy.
 
 ArtefactOverlay: full-bleed overlay that displays HTML, images, or video artefacts.
 ArtefactGallery: scrollable modal listing recent artefacts with search/filter.

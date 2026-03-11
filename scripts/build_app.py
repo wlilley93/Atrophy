@@ -40,7 +40,7 @@ ARCHIVE_URL = "https://github.com/wlilley93/Atrophy/archive/refs/heads/main.zip"
 INCLUDE = [
     "main.py", "config.py", "server.py", "VERSION",
     "requirements.txt", "db/", "core/", "mcp/", "display/",
-    "voice/", "channels/", "agents/", "scripts/",
+    "voice/", "channels/", "agents/", "scripts/", "docs/",
 ]
 # Patterns to exclude from the snapshot
 EXCLUDE_PATTERNS = [
@@ -138,23 +138,7 @@ mkdir -p "$DATA_DIR" "$LOG_DIR"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_DIR/launcher.log"; }
 
-# ── Native progress window (shown during first-run setup) ──
-SETUP_PID=""
-show_setup_progress() {
-    osascript -e '
-    tell application "System Events"
-        set theWindow to display dialog "Setting up Atrophy…\n\nInstalling dependencies — this only happens once." buttons {} giving up after 600 with title "Atrophy" with icon note
-    end tell' &>/dev/null &
-    SETUP_PID=$!
-}
-dismiss_setup_progress() {
-    if [ -n "$SETUP_PID" ]; then
-        kill "$SETUP_PID" 2>/dev/null
-        # Dismiss the dialog
-        osascript -e 'tell application "System Events" to keystroke return' 2>/dev/null
-        SETUP_PID=""
-    fi
-}
+# ── Setup state ──
 FIRST_RUN=false
 
 # ── PATH — ensure claude and common tools are discoverable ──
@@ -248,11 +232,6 @@ fi
 [ -f "$DATA_DIR/.env" ] && set -a && source "$DATA_DIR/.env" && set +a
 [ -f "$SRC_DIR/.env" ] && set -a && source "$SRC_DIR/.env" && set +a
 
-# ── Visual feedback for first-run setup ──
-if [ "$FIRST_RUN" = true ] || [ ! -f "$VENV_DIR/bin/python" ]; then
-    show_setup_progress
-fi
-
 # ── Virtual environment ──
 if [ ! -f "$VENV_DIR/bin/python" ]; then
     log "Creating virtual environment"
@@ -281,20 +260,10 @@ if [ -f "$REQ_FILE" ]; then
     [ -f "$HASH_FILE" ] && STORED_HASH=$(cat "$HASH_FILE")
     if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
         log "Installing dependencies"
-        # Show progress if not already showing
-        if [ -z "$SETUP_PID" ]; then show_setup_progress; fi
         "$VENV_DIR/bin/pip" install -q -r "$REQ_FILE" 2>>"$LOG_DIR/launcher.log"
         echo "$CURRENT_HASH" > "$HASH_FILE"
         log "Dependencies installed"
     fi
-fi
-
-# ── Dismiss setup progress ──
-dismiss_setup_progress
-
-# ── Check for Claude Code ──
-if ! command -v claude &>/dev/null; then
-    osascript -e 'display alert "Claude Code Required" message "Install Claude Code to use Atrophy.\n\nnpm install -g @anthropic-ai/claude-code\n\nOr download from claude.ai/download" as warning' &
 fi
 
 # ── Launch ──

@@ -20,6 +20,10 @@ Key sections:
 - **Agency** — unprompted speech, time awareness, pattern tracking, silence holding
 - **The Ground** — the evening mattered, carry it forward
 
+## Generation
+
+For new agents, `generate_soul()` in `scripts/create_agent.py` produces the soul document via LLM inference. It takes the same sparse identity fields and expands them into 800-1500 words of rich first-person working notes, with inferred sections covering interests, aesthetic preferences, uncertainties, and what the agent finds tedious. Falls back to a template if inference is unavailable.
+
 ## Evolution
 
 The companion can modify her own soul via `scripts/agents/companion/evolve.py`. Previous versions are archived in `notes/evolution-log/` in Obsidian.

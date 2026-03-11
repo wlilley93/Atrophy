@@ -4,7 +4,7 @@ The Atrophied Mind is a Python companion agent system. It uses the Claude CLI fo
 
 ## Agent System
 
-The system is agent-aware. Setting `AGENT=<name>` switches the entire identity. All paths, configuration, database, voice settings, and personality are scoped per-agent. The `scripts/create_agent.py` wizard scaffolds new agents interactively.
+The system is agent-aware. Setting `AGENT=<name>` switches the entire identity. All paths, configuration, database, voice settings, and personality are scoped per-agent. The `scripts/create_agent.py` wizard scaffolds new agents interactively. Each agent's system prompt includes a `## Capabilities` section with labeled strengths (e.g. PRESENCE, MEMORY, RESEARCH) — used for self-awareness, Telegram routing/bidding, and deferral decisions.
 
 Two root paths drive the system:
 - **`BUNDLE_ROOT`** — where the code lives (repo checkout or `.app` bundle)
@@ -72,7 +72,9 @@ INPUT (Voice/Text/GUI)
 
 The system shells out to the `claude` CLI binary with `--output-format stream-json`. This routes through a Max subscription (no API cost). Persistent CLI sessions are maintained via `--resume`, meaning the Claude context window carries across companion restarts.
 
-MCP tools are exposed via `mcp/memory_server.py` (JSON-RPC 2.0 over stdio). The inference layer dynamically builds an agency context block on every turn, injecting time awareness, emotional state, behavioral signals, and thread summaries.
+MCP tools are exposed via two servers: `mcp/memory_server.py` (memory, agency, communication — 34 tools) and `mcp/google_server.py` (Gmail + Google Calendar — 10 tools). Both use JSON-RPC 2.0 over stdio. The Google server is only loaded when `GOOGLE_CONFIGURED` is true (OAuth credentials present at `~/.atrophy/.google/`). All Google API responses are treated as untrusted and wrapped with injection markers.
+
+The inference layer dynamically builds an agency context block on every turn, injecting time awareness, emotional state, behavioral signals, and thread summaries.
 
 ## Memory
 
@@ -109,6 +111,7 @@ Background daemons run via macOS launchd, managed by `scripts/cron.py`:
 | `introspect` | Periodic (agent-configured) | Deep self-reflection, journal entry |
 | `evolve` | Monthly (1st, 3:00 AM) | Revise prompts/soul.md and prompts/system_prompt.md |
 | `gift` | Monthly (28th, 12:11 AM) | Unprompted gift note, self-rescheduling |
+| `voice_note` | Random (2-8 hours, self-rescheduling) | Spontaneous Telegram voice note — inference, TTS, OGG Opus |
 | `telegram_daemon` | Continuous (launchd) | Poll Telegram, route messages, dispatch to agents sequentially |
 
 See [07 - Scripts and Automation](07%20-%20Scripts%20and%20Automation.md) and [06 - Channels](06%20-%20Channels.md).
@@ -134,7 +137,9 @@ Notes created by the companion get YAML frontmatter (type, created, updated, age
 | `display/` | PyQt5 window, canvas overlay, setup wizard, artefact system, timer overlay |
 | `display/timer.py` | Countdown timer overlay — pure local, no inference |
 | `display/setup_wizard.py` | First-launch conversational setup with secure input for API keys |
-| `mcp/memory_server.py` | MCP tool server (35 tools, JSON-RPC over stdio) |
+| `mcp/memory_server.py` | MCP tool server (34 tools, JSON-RPC over stdio) |
+| `mcp/google_server.py` | Google MCP server (Gmail + Calendar, 10 tools, conditional on OAuth credentials) |
+| `scripts/google_auth.py` | Google OAuth2 setup — credential placement and browser consent flow |
 | `server.py` | HTTP API server (Flask, bearer auth, SSE streaming) |
 | `channels/telegram.py` | Telegram Bot API client (send/receive) |
 | `channels/router.py` | Message router (explicit match → routing agent) |

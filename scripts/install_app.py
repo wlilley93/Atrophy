@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install / uninstall The Atrophied Mind as a login item.
+"""Install / uninstall Atrophy as a login item.
 
 Usage:
   python scripts/install_app.py install   — Register launchd agent (starts at login)
@@ -95,7 +95,7 @@ def install():
     subprocess.run(["launchctl", "load", str(PLIST_PATH)], check=True)
     print(f"  Loaded {LABEL}")
     print()
-    print("  The Atrophied Mind will now start at login.")
+    print("  Atrophy will now start at login.")
     print("  It restarts automatically if it crashes.")
     print(f"  Logs: {LOG_DIR}/")
 

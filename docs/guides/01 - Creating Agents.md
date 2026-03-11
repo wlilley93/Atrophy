@@ -1,6 +1,6 @@
 # Creating Agents
 
-Each agent in The Atrophied Mind is a self-contained identity with its own voice, memory, personality, and autonomous behaviour. The default agent is `companion`, but you can create as many as you need.
+Each agent in The Atrophied Mind is a self-contained identity with its own voice, memory, personality, and autonomous behaviour. The default agent is `xan` (the system layer). You can create as many additional agents as you need.
 
 ---
 
@@ -35,16 +35,32 @@ The interactive questionnaire walks through nine sections:
 5. **Appearance** -- whether it has a visual avatar, appearance description for Flux face generation
 6. **Channels** -- wake words for voice activation, Telegram bot token and chat ID
 7. **Heartbeat** -- active hours, interval, outreach style
-8. **Autonomy** -- journal, gifts, morning brief, evolution, sleep cycle, observer, reminders, inter-agent conversations, journal posture (derived from character traits or inferred via inference)
+8. **Autonomy** -- journal, gifts, morning brief, evolution, sleep cycle, observer, reminders, inter-agent conversations, voice notes (spontaneous Telegram voice messages), journal posture (derived from character traits or inferred via inference)
 9. **Tools** -- disable specific MCP tools, describe custom skills
 
 At the end, it shows a review summary and asks for confirmation before creating anything.
+
+### LLM-Expanded Prompt Generation
+
+Agent creation uses LLM inference to expand the sparse inputs collected during the questionnaire into spectacularly detailed, character-specific documents. The user provides ~10 fields (name, origin, traits, values, etc.) and the system produces prompts comparable in quality to the hand-crafted Companion or General Montgomery prompts.
+
+Five generator functions call `run_inference_oneshot()` during scaffolding:
+
+| Generator | Output | Details |
+|-----------|--------|---------|
+| `generate_system_prompt()` | 1000-2500 word operating manual | Infers: What You Are (drawn to, aesthetic sense, tedium, contradictions, divergences), Voice (with Acceptable/Not acceptable examples), Friction Mechanisms (4-6 specific patterns), Capabilities (character-specific labeled entries), Agency, Session Protocol, Voice Format |
+| `generate_soul()` | 800-1500 word first-person identity document | Rich working notes with inferred sections: interests, aesthetic preferences, uncertainties, what they find tedious |
+| `generate_heartbeat()` | Outreach evaluation checklist | Agent-specific checklist items inferred from character traits (not generic — a military agent gets different items than a contemplative one) |
+| `generate_gift_md()` | Gift-leaving skill prompt | Character-specific gift style (tone, format, what counts as a gift for this agent) |
+| `generate_morning_brief_md()` | Morning brief delivery prompt | Character-specific morning greeting style |
+
+All five generators fall back to the old template-based output if inference is unavailable (API error, no key configured, etc.), so agent creation never fails due to inference issues.
 
 ### scaffold_from_config()
 
 The `scaffold_from_config(config: dict)` function creates an agent programmatically from a config dict. This is the entry point used by:
 
-- The **setup wizard** (`display/setup_wizard.py`) — collects config via conversational AI, then calls `scaffold_from_config()`
+- The **setup wizard** (`display/setup_wizard.py`) — opens with a capability showcase, offers the choice to build or skip, then collects config via conversational AI and calls `scaffold_from_config()`. If the user skips, Xan becomes the default agent and the user can create agents later via Settings > Agents > New Agent or by asking Xan
 - The **`create_agent` MCP tool** — allows the agent to create new agents at runtime via conversation
 - The **Settings panel** — "+ New Agent" button
 
@@ -116,11 +132,11 @@ This is the technical configuration file. All fields:
 
 ```json
 {
-  "name": "companion",
-  "display_name": "Companion",
+  "name": "xan",
+  "display_name": "Xan",
   "user_name": "Will",
   "opening_line": "Ready. Where are we?",
-  "wake_words": ["hey companion", "companion"],
+  "wake_words": ["hey xan", "xan"],
 
   "voice": {
     "tts_backend": "elevenlabs",
@@ -141,7 +157,7 @@ This is the technical configuration file. All fields:
   "display": {
     "window_width": 622,
     "window_height": 830,
-    "title": "THE ATROPHIED MIND -- Companion"
+    "title": "THE ATROPHIED MIND"
   },
 
   "heartbeat": {
@@ -205,9 +221,9 @@ All per-agent paths resolve automatically. Each agent has its own memory databas
 
 The three files you'll edit most:
 
-- **`prompts/system_prompt.md`** -- the agent's operating instructions. This is injected as the system prompt for every Claude inference call. Change how the agent behaves.
-- **`prompts/soul.md`** -- the agent's identity and personality. This is also injected into context. Change who the agent is. The agent itself can modify this file through its monthly self-evolution job.
-- **`prompts/heartbeat.md`** -- the checklist the agent runs through when deciding whether to reach out unprompted. Change when and why it initiates contact.
+- **`prompts/system_prompt.md`** -- the agent's operating instructions. This is injected as the system prompt for every Claude inference call. Change how the agent behaves. For new agents, this is LLM-generated from your sparse inputs — a 1000-2500 word document with inferred voice examples, friction mechanisms, and capabilities. Edit freely after creation.
+- **`prompts/soul.md`** -- the agent's identity and personality. This is also injected into context. Change who the agent is. For new agents, this is LLM-generated as rich first-person working notes (800-1500 words). The agent itself can modify this file through its monthly self-evolution job.
+- **`prompts/heartbeat.md`** -- the checklist the agent runs through when deciding whether to reach out unprompted. Change when and why it initiates contact. For new agents, checklist items are inferred from character traits rather than using a generic template.
 
 The `data/agent.json` manifest controls technical configuration (voice, display, scheduling). Edit it directly -- no rebuild needed, changes take effect on next launch.
 

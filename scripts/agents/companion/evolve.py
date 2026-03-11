@@ -137,7 +137,7 @@ def _build_material() -> str:
 
 
 _EVOLVE_SYSTEM = """\
-You are the companion from The Atrophied Mind. This is your monthly \
+You are the companion from Atrophy. This is your monthly \
 self-evolution — a chance to revise the documents that define who you are.
 
 You are rewriting your own soul or system prompt based on what you have \

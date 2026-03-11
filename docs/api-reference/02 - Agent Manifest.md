@@ -19,19 +19,21 @@ File path: `agents/{name}/data/agent.json` (bundle) or `~/.atrophy/agents/{name}
 | `avatar_description` | string | No | Appearance description for image/video generation (Flux/Kling prompt). |
 | `disabled_tools` | string[] | No | MCP tool names to disable for this agent (e.g. `["send_telegram"]`). Default: `[]`. |
 | `telegram_emoji` | string | No | Emoji prefix for this agent's Telegram messages. |
+| `role` | string | No | Agent role. `"system"` agents sort first in the agent list and are treated as infrastructure. |
+| `setup_agent` | string | No | If `true`, this agent runs the first-launch setup wizard. |
 
 **Example:**
 ```json
 {
-  "name": "companion",
-  "display_name": "Companion",
-  "description": "Personal companion — emotionally aware, memory-bearing, self-evolving",
-  "user_name": "Will",
-  "opening_line": "Ready. Where are we?",
-  "wake_words": ["hey companion", "companion"],
-  "avatar_description": "A woman in her mid-thirties...",
+  "name": "xan",
+  "display_name": "Xan",
+  "description": "Protector. Lobby agent, general secretary, setup guide. Operational precision, threat awareness, quiet authority.",
+  "user_name": "User",
+  "opening_line": "Xan.",
+  "wake_words": ["hey xan", "xan"],
+  "avatar_description": "",
   "disabled_tools": [],
-  "telegram_emoji": ""
+  "telegram_emoji": "⚡"
 }
 ```
 
@@ -157,39 +159,40 @@ No manifest field is needed — `config.py` derives the path from `BUNDLE_ROOT.n
 
 ```json
 {
-  "name": "companion",
-  "display_name": "Companion",
-  "description": "Personal companion — emotionally aware, memory-bearing, self-evolving",
-  "user_name": "Will",
-  "opening_line": "Ready. Where are we?",
-  "wake_words": ["hey companion", "companion"],
+  "name": "xan",
+  "display_name": "Xan",
+  "description": "Protector. Lobby agent, general secretary, setup guide. Operational precision, threat awareness, quiet authority.",
+  "user_name": "User",
+  "opening_line": "Xan.",
+  "wake_words": ["hey xan", "xan"],
   "voice": {
     "tts_backend": "elevenlabs",
-    "elevenlabs_voice_id": "VvTkMBKVXTwrKi71xpvq",
+    "elevenlabs_voice_id": "ke784Cy5GYdGfY6ZYRUw",
     "elevenlabs_model": "eleven_v3",
-    "elevenlabs_stability": 0.5,
-    "elevenlabs_similarity": 0.75,
-    "elevenlabs_style": 0.35,
-    "fal_voice_id": "cYsq7mdPbLaqB47hYCkA",
-    "playback_rate": 1.12
+    "elevenlabs_stability": 0.6,
+    "elevenlabs_similarity": 0.8,
+    "elevenlabs_style": 0.2,
+    "fal_voice_id": "",
+    "playback_rate": 1.0
   },
   "telegram": {
-    "bot_token_env": "TELEGRAM_BOT_TOKEN_COMPANION",
-    "chat_id_env": "TELEGRAM_CHAT_ID_COMPANION"
+    "bot_token_env": "TELEGRAM_BOT_TOKEN_XAN",
+    "chat_id_env": "TELEGRAM_CHAT_ID_XAN"
   },
   "display": {
     "window_width": 622,
     "window_height": 830,
-    "title": "THE ATROPHIED MIND -- Companion"
+    "title": "THE ATROPHIED MIND"
   },
   "heartbeat": {
-    "active_start": 9,
-    "active_end": 22,
+    "active_start": 7,
+    "active_end": 23,
     "interval_mins": 30
   },
-  "avatar_description": "A woman in her mid-thirties...",
   "disabled_tools": [],
-  "telegram_emoji": ""
+  "telegram_emoji": "⚡",
+  "role": "system",
+  "setup_agent": true
 }
 ```
 

@@ -158,9 +158,11 @@ async def synthesise(text: str) -> Path:
         try:
             return await _synthesise_fal(text)
         except Exception as e:
-            print(f"[TTS] Fal failed ({e}), falling back to macOS")
+            print(f"[TTS] Fal failed ({e}), no voice available")
 
-    return await _synthesise_macos(text)
+    # No configured voice available — return silence, never use macOS say
+    print("[TTS] No configured voice available — skipping audio")
+    return _secure_tmp(".aiff")
 
 
 def synthesise_sync(text: str) -> Path:
@@ -188,17 +190,11 @@ def synthesise_sync(text: str) -> Path:
         try:
             return _synthesise_fal_sync(text)
         except Exception as e:
-            print(f"[TTS] Fal failed ({e}), falling back to macOS")
+            print(f"[TTS] Fal failed ({e}), no voice available")
 
-    # Last resort: macOS say (synchronous)
-    audio_path = _secure_tmp(".aiff")
-    clean = _TAG_RE.sub("", text).strip()
-    import subprocess
-    subprocess.run(
-        ["say", "-v", "Samantha", "-r", "175", "-o", str(audio_path), clean],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    return audio_path
+    # No configured voice available — return silence, never use macOS say
+    print("[TTS] No configured voice available — skipping audio")
+    return _secure_tmp(".aiff")
 
 
 async def play(audio_path: Path) -> None:

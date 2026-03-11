@@ -29,5 +29,10 @@ python-dotenv
 rich
 defusedxml
 
+# Google integration (optional — Gmail + Calendar)
+google-auth-oauthlib
+google-api-python-client
+google-auth-httplib2
+
 # Face generation (optional — only for scripts/generate_face.py)
 # replicate

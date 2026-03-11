@@ -15,7 +15,7 @@ AGENT=oracle python main.py --server       # run a specific agent
 
 On startup the server prints a summary including a truncated token, the token file path, and all available endpoints.
 
-The `AGENT` environment variable controls which agent is loaded (default: `companion`). The agent's system prompt, memory database, and identity are all resolved from that name.
+The `AGENT` environment variable controls which agent is loaded (default: `xan`). The agent's system prompt, memory database, and identity are all resolved from that name.
 
 ---
 
@@ -66,8 +66,8 @@ Health check. No auth required.
 ```json
 {
   "status": "ok",
-  "agent": "companion",
-  "display_name": "Companion"
+  "agent": "xan",
+  "display_name": "Xan"
 }
 ```
 
@@ -263,8 +263,8 @@ Current session metadata.
 {
   "session_id": "abc123",
   "cli_session_id": "def456",
-  "agent": "companion",
-  "display_name": "Companion"
+  "agent": "xan",
+  "display_name": "Xan"
 }
 ```
 
@@ -390,7 +390,7 @@ The `/chat/stream` endpoint uses POST, so the native `EventSource` API (which on
 
 | Variable | Default | Effect on server mode |
 |----------|---------|----------------------|
-| `AGENT` | `companion` | Which agent to load |
+| `AGENT` | `xan` | Which agent to load |
 | `ATROPHY_DATA` | `~/.atrophy` | Root for runtime data (token file, memory DBs) |
 | `CLAUDE_BIN` | `claude` | Path to Claude CLI binary used for inference |
 | `CLAUDE_EFFORT` | `medium` | Inference effort level |

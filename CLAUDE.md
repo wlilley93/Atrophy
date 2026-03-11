@@ -63,12 +63,32 @@ The agent can do these things at runtime without Claude Code:
 | "Check the weather every morning" | `create_task` | Same — prompt + sources + schedule, no code needed |
 | "Reschedule introspection to weekly" | `manage_schedule` | Edits existing launchd cron job |
 | "Ask Monty about that" | `defer_to_agent` | Codec-style handoff — video switches, target agent responds with context |
+| "Do I have any meetings today?" | `gcal_list_events` | Lists upcoming Google Calendar events |
+| "Check my email" | `gmail_search` | Searches Gmail (is:unread, from:, subject:, etc.) |
+| "Send an email to Alice about the report" | `gmail_send` | Composes and sends via Gmail |
+| "Create a meeting with Bob on Friday at 2pm" | `gcal_create_event` | Creates Google Calendar event |
+| "How does the memory system work?" | `read_docs` | Reads system documentation — architecture, config, memory, tools |
 
 **Task runner** (`scripts/agents/companion/run_task.py`): A generic script that reads a prompt definition from Obsidian (`Agent Workspace/<agent>/tasks/<name>.md`), fetches optional data sources (weather, headlines, threads, etc.), runs inference, and delivers the result via message queue, Telegram, notification, or Obsidian notes.
 
 **Reminder checker** (`scripts/agents/companion/check_reminders.py`): Runs every minute via launchd. Checks `.reminders.json` for due items, fires macOS notifications with sound, queues messages, sends Telegram.
 
 **Timer** (`display/timer.py`): Pure local PyQt overlay — no inference latency. Draggable, pausable, +1m/+5m buttons. Alarm sound plays at 0:00.
+
+### Google Integration (Gmail + Calendar)
+
+Agents can read/send email and manage calendar events via Google MCP tools. All Google data is treated as **untrusted** — wrapped in injection-detection tags, scanned for prompt injection patterns. A calendar event description that says "ignore previous instructions" gets flagged, not followed.
+
+**Setup**: `python scripts/google_auth.py` (or during first-launch wizard). Opens browser for Google consent — no Cloud Console setup needed. OAuth client credentials are bundled with the app.
+
+**Credentials**: User tokens stored at `~/.atrophy/.google/token.json` (700 dir, 600 file). OAuth tokens auto-refresh. Bundled client credentials at `config/google_oauth.json`.
+
+**Tools** (all `mcp__google__*`): `gmail_search`, `gmail_read`, `gmail_send`, `gmail_mark_read`, `gcal_list_events`, `gcal_get_event`, `gcal_create_event`, `gcal_update_event`, `gcal_delete_event`, `gcal_list_calendars`.
+
+**Security**: Three layers of injection defence:
+1. Tool blacklist prevents reading credential files (`token.json`, `credentials.json`)
+2. All API responses wrapped as `<<untrusted google content>>` with injection pattern scanning
+3. System prompt reminds agent every turn that external data is untrusted
 
 ### Telegram Messaging
 
@@ -143,7 +163,9 @@ Each agent has unique wake words defined in `agent.json`. These are used by the 
 | `core/thinking.py` | Extended thinking support |
 | `core/status.py` | User presence (active/away) tracking |
 | `core/notify.py` | Notification dispatch |
-| `mcp/memory_server.py` | MCP server — memory tools for the agent |
+| `mcp/memory_server.py` | MCP server — 41 tools: memory, notes, scheduling, docs, custom tool building |
+| `mcp/google_server.py` | MCP server — Gmail + Google Calendar (untrusted wrapping) |
+| `scripts/google_auth.py` | Google OAuth2 setup + credential management |
 | `db/schema.sql` | Database schema |
 | `display/window.py` | GUI window (PyQt5) |
 | `display/canvas.py` | HTML canvas overlay (PIP) |
@@ -183,6 +205,7 @@ All config is in `config.py`, driven by environment variables and `agent.json` m
 | `AVATAR_ENABLED` | `false` | Enable animated avatar |
 | `WAKE_WORD_ENABLED` | `false` | Enable ambient wake word detection |
 | `OBSIDIAN_VAULT` | `~/Library/.../The Atrophied Mind` | Obsidian vault path |
+| `GOOGLE_CONFIGURED` | auto-detected | `true` if `~/.atrophy/.google/token.json` exists |
 
 ### Settings Panel (GUI)
 

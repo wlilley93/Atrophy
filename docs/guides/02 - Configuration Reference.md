@@ -15,7 +15,7 @@ Environment variables win outright. For agent-specific settings (voice, heartbea
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AGENT` | `companion` | Active agent name. Determines which `agents/<name>/` directory is loaded. |
+| `AGENT` | `xan` | Active agent name. Determines which `agents/<name>/` directory is loaded. |
 | `INPUT_MODE` | `dual` | Input mode: `voice` (mic only), `text` (keyboard only), or `dual` (both). |
 | `OBSIDIAN_VAULT` | `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind` | Path to the Obsidian vault root. Used for journal entries, reflections, and notes. |
 | `AVATAR_ENABLED` | `false` | Enable the animated avatar in GUI mode. Plays ambient video loops from `~/.atrophy/agents/<name>/avatar/`. |
@@ -31,13 +31,14 @@ Environment variables win outright. For agent-specific settings (voice, heartbea
 | `CLAUDE_BIN` | `claude` | Path to the Claude Code CLI binary. Change if `claude` is not on your PATH. |
 | `CLAUDE_EFFORT` | `medium` | Default inference effort level for Claude. Options: `low`, `medium`, `high`. |
 | `ADAPTIVE_EFFORT` | `true` | Auto-adjust inference effort based on conversation topic complexity. |
-| `WAKE_WORD_ENABLED` | `false` | Enable background wake word detection. When enabled, the agent listens for its wake words. |
+| `WAKE_WORD_ENABLED` | `false` | Enable background wake word detection. When enabled, a background thread continuously listens via whisper.cpp. On hearing a wake word, it plays a pop sound and starts a one-shot recording — no PTT button press needed. This is independent of the mic/PTT system. Can also be toggled in the GUI via the wake word button (Cmd+Shift+W). |
 | `HEARTBEAT_ACTIVE_START` | `9` | Hour (0-23) when heartbeat checks begin. Overridden by agent manifest. |
 | `HEARTBEAT_ACTIVE_END` | `22` | Hour (0-23) when heartbeat checks stop. Overridden by agent manifest. |
 | `HEARTBEAT_INTERVAL_MINS` | `30` | Minutes between heartbeat evaluations. Overridden by agent manifest. |
 | `TELEGRAM_BOT_TOKEN` | *(empty)* | Default Telegram bot token. Per-agent tokens use agent-specific env var names (e.g. `TELEGRAM_BOT_TOKEN_COMPANION`). |
 | `TELEGRAM_CHAT_ID` | *(empty)* | Default Telegram chat ID. Per-agent chat IDs use agent-specific env var names. |
 | `NOTIFICATIONS_ENABLED` | `true` | Enable macOS native notifications (reminders, timer completion, etc.). |
+| `GOOGLE_CONFIGURED` | *(auto)* | Set automatically to `true` when `~/.atrophy/.google/token.json` exists. Controls whether the Google MCP server is loaded. Not set manually. |
 
 ---
 
@@ -247,3 +248,59 @@ TELEGRAM_CHAT_ID_ORACLE=987654321
 ```
 
 This allows multiple agents to use different Telegram bots without conflicting.
+
+---
+
+## Google Integration
+
+Google tools (Gmail + Google Calendar) are enabled automatically when OAuth2 credentials are present. No environment variables are needed — the system checks for `~/.atrophy/.google/token.json` at startup.
+
+### Setup
+
+Run the standalone auth script, or let the first-launch setup wizard handle it:
+
+```bash
+python scripts/google_auth.py
+```
+
+This will:
+1. Open a browser for the Google OAuth consent flow (client credentials are bundled with the app at `config/google_oauth.json` — no Google Cloud Console setup needed)
+2. Save the resulting `token.json` to `~/.atrophy/.google/`
+
+The first-launch setup wizard offers the same flow — just say "yes" when prompted and a browser opens for authorization.
+
+### Credential Storage
+
+| Path | Permissions | Contents |
+|------|-------------|----------|
+| `config/google_oauth.json` | — | Bundled OAuth2 client credentials (shipped with the app) |
+| `~/.atrophy/.google/` | `0700` | Token storage directory |
+| `~/.atrophy/.google/token.json` | `0600` | OAuth2 refresh + access tokens (generated during consent flow) |
+
+### OAuth2 Scopes
+
+| Scope | Purpose |
+|-------|---------|
+| `gmail.readonly` | Search and read emails |
+| `gmail.send` | Send emails |
+| `gmail.modify` | Mark emails as read |
+| `calendar.readonly` | List calendars and events |
+| `calendar.events` | Create, update, and delete events |
+
+### Per-Agent Disabling
+
+To disable Google tools for a specific agent, add entries to `disabled_tools` in the agent's `agent.json`:
+
+```json
+{
+  "disabled_tools": ["mcp__google__*"]
+}
+```
+
+Or disable specific tools:
+
+```json
+{
+  "disabled_tools": ["mcp__google__gmail_send", "mcp__google__gcal_delete_event"]
+}
+```

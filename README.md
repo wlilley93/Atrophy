@@ -2,7 +2,7 @@
 
 A companion agent system — voice-enabled, memory-bearing, self-evolving.
 
-Built on Claude, with persistent memory, emotional awareness, and autonomous behavior. The companion remembers conversations across sessions, maintains evolving observations about you, reflects nightly, and reaches out when something matters.
+Built on Claude, with persistent memory, emotional awareness, and autonomous behavior. Your agents remember conversations across sessions, maintains evolving observations about you, reflects nightly, and reaches out when something matters.
 
 ## Features
 
@@ -60,7 +60,7 @@ docs/               — Documentation
 
 ## Agents
 
-Each agent has two homes: the **bundle** (repo) for identity and config, and **`~/.atrophy/`** for runtime state and generated content. The default agent is `companion`.
+Each agent has two homes: the **bundle** (repo) for identity and config, and **`~/.atrophy/`** for runtime state and generated content. The default agent is `xan` — the system layer. Your personal companion is created during first-launch setup.
 
 ```
 agents/<name>/                         # In repo (bundle)
@@ -150,7 +150,7 @@ Config uses three-tier resolution: environment variables → `~/.atrophy/config.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AGENT` | `companion` | Which agent to run |
+| `AGENT` | `xan` | Which agent to run |
 | `INPUT_MODE` | `dual` | `voice`, `text`, or `dual` |
 | `TTS_BACKEND` | `elevenlabs` | TTS engine |
 | `ELEVENLABS_API_KEY` | — | ElevenLabs API key |

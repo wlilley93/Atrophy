@@ -29,7 +29,7 @@ A row of circular 34px toggle buttons in the top-right corner, ordered right-to-
 | Eye | `_EyeButton` | Eye shape (slash through when active) | Collapses window to a minimal input-only bar. Hides all other buttons except itself. Restores previous geometry on toggle-off. |
 | Mute | `_MuteButton` | Speaker with sound waves (X when muted) | Toggles TTS audio playback. When muted, inference still runs but audio is suppressed. |
 | Minimize | `_MinimizeButton` | Horizontal line | Hides window to system tray. Native Cmd+M / yellow button is intercepted to do the same (hide, not minimize). |
-| Wake | `_WakeButton` | Microphone with radio waves | Toggles wake word listener on/off. Background turns green when active. Starts/stops `WakeWordListener`. |
+| Wake | `_WakeButton` | Microphone with radio waves | Toggles wake word listener on/off. Background turns green when active. When enabled, a background thread continuously listens via whisper.cpp — independent of the mic/PTT button. On hearing a wake word, plays a pop sound and starts a one-shot recording. Starts/stops `WakeWordListener`. |
 | Settings | `_SettingsButton` | Gear | Opens/closes `SettingsPanel` full-screen overlay. Background changes when active. |
 
 All buttons use custom `paintEvent` rendering (no image assets) with dark semi-transparent pill backgrounds and white icons at 120 alpha (220 when active).
@@ -64,7 +64,7 @@ Two save modes:
 | Cmd+K | Toggle canvas overlay | Window |
 | Cmd+C | Copy selected text, or last companion message if nothing selected | Window |
 | Cmd+M | Minimize to tray (intercepted from native) | Window |
-| Cmd+Shift+Space | Toggle chat overlay panel | Global (works even when app is not focused, via NSEvent monitor) |
+| Cmd+Shift+Space | Show/hide the app window | Global (works even when app is not focused, via NSEvent monitor) |
 | Cmd+Up / Cmd+Down | Cycle through enabled agents | Window |
 | Escape | Close chat overlay | Chat overlay |
 
@@ -170,11 +170,13 @@ Artefacts are stored in `~/.atrophy/agents/<name>/artefacts/` with a sorted, ded
 `display/setup_wizard.py` — A first-launch conversational setup wizard that runs before the main window. The wizard uses a `SetupWizard(QWidget)` class with an AI-guided chat interface.
 
 **Flow:**
-1. Welcome — AI greets the user and asks their name
-2. API key collection — AI requests keys via a `SECURE_INPUT` tool (renders as an orange-bordered input bar). Keys go straight to `~/.atrophy/.env` and never appear in the AI's context
-3. Agent creation — AI walks through identity, voice, appearance, and autonomy preferences conversationally
-4. Avatar generation — if enabled, generates face candidates via Flux (`generate_avatar` tool), lets user pick, optionally generates video clips (`generate_videos` tool)
-5. Agent scaffolding — calls `create_agent.scaffold_from_config()` with the collected config
+1. Welcome — asks the user's name
+2. Capability showcase — Xan introduces itself and delivers a dynamic sweep of system capabilities (memory, voice, autonomy, evolution, email/calendar, Telegram, multi-agent, avatar, identity). The opening is designed to feel like powering on something serious — not a product tour, but a glimpse of what's running underneath
+3. Choice — build a companion agent now, or skip. If the user skips, Xan outputs `{"AGENT_CONFIG": {"skip": true}}` and the wizard marks setup complete with Xan as the default agent. Users can build agents later via Settings > Agents > New Agent, or by asking Xan
+4. Agent creation (if not skipped) — Xan walks through identity, voice, appearance, and autonomy preferences conversationally, framing agents as "anything you can describe"
+5. API key collection — AI requests keys via a `SECURE_INPUT` tool (renders as an orange-bordered input bar). Keys go straight to `~/.atrophy/.env` and never appear in the AI's context
+6. Avatar generation — if enabled, generates face candidates via Flux (`generate_avatar` tool), lets user pick, optionally generates video clips (`generate_videos` tool)
+7. Agent scaffolding — calls `create_agent.scaffold_from_config()` with the collected config
 
 The wizard is controlled by `needs_setup()` (checks `setup_complete` flag in `~/.atrophy/config.json`) and `run_setup(app)`. Accessible again via Settings > About > Reset Setup Wizard.
 

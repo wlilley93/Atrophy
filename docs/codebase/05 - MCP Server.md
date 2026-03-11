@@ -303,6 +303,67 @@ Generate a new ambient avatar loop segment via Kling.
 | `prompt` | string | yes | Cinematic description of expression/movement |
 | `agent` | string | no | Target agent (defaults to current) |
 
+## Documentation Tools
+
+The MCP server can serve the system's own documentation to the agent at runtime.
+
+### Docs Path Resolution (`_resolve_docs_dir()`)
+
+The docs directory is resolved at startup with a two-step fallback:
+
+1. **Bundle path** — checks if `docs/` exists relative to the project root (for development / repo installs)
+2. **Installed path** — falls back to `~/.atrophy/src/docs/` (for distributed installs where the repo isn't present)
+
+This allows the same MCP server code to work in both development and installed contexts. The resolved path is cached for the lifetime of the server process.
+
+### Tools
+
+- **`list_docs`** — walks the resolved docs directory, returns the full tree of `.md` files
+- **`read_docs`** — reads a specific doc by relative path; if exact match fails, searches by filename across all subdirectories
+- **`search_docs`** — case-insensitive substring search across all doc files, returns paths with context snippets
+
+## Custom Tool System
+
+Agents can create their own MCP tools that persist across sessions. Custom tools are Python scripts stored on disk and loaded dynamically at server startup.
+
+### Storage (`_CUSTOM_TOOLS_DIR`)
+
+Custom tools live at `~/.atrophy/agents/<name>/tools/<tool_name>/`. Each tool directory contains:
+
+- `tool.json` — tool definition (name, description, inputSchema)
+- `handler.py` — Python handler script
+
+The base directory is computed from the agent name (`AGENT` env var) and created on first tool creation.
+
+### Loading (`_load_custom_tools()`)
+
+Called once during MCP server startup. Walks the custom tools directory and for each subdirectory:
+
+1. Reads `tool.json` for the tool definition
+2. Checks that `handler.py` exists
+3. Registers the tool with the MCP server under a `custom_` prefix (e.g. a tool named `weather_lookup` becomes `custom_weather_lookup`)
+
+Built-in tool names are reserved — custom tools cannot shadow them.
+
+### Handler Registration (`_register_custom_handler()`)
+
+Each custom tool gets a dynamically created handler function that:
+
+1. Parses the incoming arguments
+2. Runs `handler.py` as a subprocess with `sys.argv[1]` set to the JSON-encoded arguments
+3. Captures stdout as the tool result
+4. Enforces a 30-second timeout
+5. Returns errors as formatted strings (not exceptions)
+
+The handler has access to the project's Python path, so it can import project modules like `config`, `core.memory`, etc.
+
+### Management Tools
+
+- **`create_tool`** — validates the name and handler code against a security blocklist (patterns like `os.system`, `eval(`, `exec(`, `__import__`), writes `tool.json` and `handler.py`, registers the tool immediately in the running server
+- **`list_tools`** — enumerates all custom tool directories, reports name, description, and status
+- **`edit_tool`** — updates specific fields (description, schema, handler) of an existing tool
+- **`delete_tool`** — removes the tool directory entirely
+
 ## Artefact System
 
 The MCP server handles artefact creation (HTML documents and generated images). The flow is:

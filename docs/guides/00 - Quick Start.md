@@ -12,9 +12,10 @@ Get The Atrophied Mind running on your machine. This guide covers the minimum pa
 
 Optional:
 
-- **ElevenLabs API key** -- for text-to-speech (the companion can speak)
+- **ElevenLabs API key** -- for text-to-speech (your agent can speak)
 - **Telegram bot** -- for notifications and unprompted outreach
-- **Obsidian vault** -- the companion writes journal entries, reflections, and notes here
+- **Obsidian vault** -- agents write journal entries, reflections, and notes here
+- **Google account** -- for Gmail and Google Calendar integration (OAuth credentials are bundled; just authorize in-browser)
 
 ---
 
@@ -73,6 +74,18 @@ AVATAR_ENABLED=true          # Set true to enable animated avatar
 
 Non-secret settings can also be saved via the GUI settings panel, which writes to `~/.atrophy/config.json`.
 
+### Google Integration (Optional)
+
+To enable Gmail and Google Calendar tools:
+
+```bash
+python scripts/google_auth.py
+```
+
+OAuth client credentials are bundled with the app — no Google Cloud Console setup needed. The script opens a browser where you authorize access, then saves `token.json` to `~/.atrophy/.google/` with strict permissions (directory 700, file 600). The Google MCP server loads automatically on next launch.
+
+Alternatively, the first-launch setup wizard handles Google setup — just say "yes" when prompted and the browser opens for authorization.
+
 See [02 - Configuration Reference](02%20-%20Configuration%20Reference.md) for the full list of configuration options.
 
 ---
@@ -97,12 +110,12 @@ python main.py --server --port 8080  # Custom port
 You can also specify an agent explicitly:
 
 ```bash
-python main.py --agent companion --text
+python main.py --agent xan --text
 # or
-AGENT=companion python main.py --app
+AGENT=xan python main.py --app
 ```
 
-The default agent is `companion`.
+The default agent is `xan`.
 
 ---
 
@@ -113,7 +126,7 @@ When running with `--gui` or `--app`, the window has a row of icon buttons in th
 | Button | Icon | Action | Shortcut |
 |--------|------|--------|----------|
 | Settings | Gear | Opens a full-screen settings overlay where you can configure everything in-app | Cmd+, |
-| Wake | Microphone | Toggles wake word detection on/off (green when active) | Cmd+Shift+W |
+| Wake | Microphone with waves | Toggles wake word detection on/off (green when active). When enabled, a background thread continuously listens via whisper.cpp. On hearing a wake word, it plays a pop sound and starts a one-shot recording — no PTT needed. This is independent of the mic/PTT button. | Cmd+Shift+W |
 | Minimize | Minus | Minimizes to system tray | Cmd+M |
 | Mute | Speaker | Toggles TTS audio playback (muted = text only, no speech) | -- |
 | Eye | Eye | Collapses to a minimal input-only bar | -- |
@@ -122,9 +135,9 @@ Additional keyboard shortcuts:
 
 | Shortcut | Action |
 |----------|--------|
-| Cmd+Shift+Space | Toggle the chat overlay panel (works globally, even when the app is not focused) |
+| Cmd+Shift+Space | Show/hide the app window (works globally, even when the app is not focused — registered via macOS NSEvent monitor) |
 | Cmd+K | Toggle the canvas overlay (HTML content panel) |
-| Cmd+C | Copy selected text, or last companion message if nothing is selected |
+| Cmd+C | Copy selected text, or last agent message if nothing is selected |
 | Cmd+Up / Cmd+Down | Cycle through enabled agents (fade-out/fade-in transition) |
 | Escape | Close the chat overlay |
 
@@ -134,12 +147,13 @@ The **Settings panel** (gear icon or Cmd+,) lets you adjust all configuration li
 
 ## First Session
 
-On first run (GUI/app modes), the companion checks for Claude Code CLI availability, then launches the **setup wizard** if `setup_complete` is not set in `~/.atrophy/config.json`. The wizard is a conversational AI-guided flow:
+On first run (GUI/app modes), Xan checks for Claude Code CLI availability, then launches the **setup wizard** if `setup_complete` is not set in `~/.atrophy/config.json`. The wizard is a conversational AI-guided flow:
 
-1. **Welcome** — the AI greets you, asks your name, sets `user_name` in config
-2. **API keys** — collects ElevenLabs, Fal, and Telegram credentials via a secure input mode (orange-bordered input bar). Keys go straight to `~/.atrophy/.env` — the AI never sees the actual values, only "saved" or "skipped"
-3. **Agent creation** — walks through identity, voice, appearance, and autonomy preferences conversationally, then scaffolds the agent via `create_agent.scaffold_from_config()`
-4. **Avatar generation** — if appearance is enabled, generates face candidates via Flux and optionally video clips via Kling
+1. **Welcome** — asks your name, sets `user_name` in config
+2. **Capability showcase** — Xan introduces itself and delivers a dynamic sweep of what the system can do: memory, voice, autonomy, self-evolution, email/calendar, Telegram, multi-agent, avatar, identity. The opening is designed to feel like powering on something serious — not a product tour, but a glimpse of what's running underneath
+3. **Choice** — build a companion agent now, or skip. If you skip, Xan marks setup complete and becomes your default agent. You can build agents later via Settings > Agents > New Agent, or by asking Xan
+4. **Agent creation** (if not skipped) — Xan extracts identity through conversation, walking through voice, appearance, and autonomy preferences, then scaffolds the agent via `create_agent.scaffold_from_config()`
+5. **Avatar generation** (if not skipped) — if appearance is enabled, generates face candidates via Flux and optionally video clips via Kling
 
 After the wizard completes, `setup_complete: true` is written to `~/.atrophy/config.json`. The wizard can be re-run from Settings > About > Reset Setup Wizard.
 
@@ -150,7 +164,7 @@ Once setup is done:
 2. Starts a new session
 3. In `--gui` mode, generates an opening line with time-of-day context and randomised style. In `--app` mode, starts silent — no window until you activate it.
 
-Just start talking. The companion uses Claude Code as its inference backend, with an MCP memory server that gives it access to 34 tools: memory search, threads, observations, Obsidian notes, Telegram, reminders, timers, task scheduling, artefact creation, agent management, and more.
+Just start talking. Your agent uses Claude Code as its inference backend, with an MCP memory server that gives it access to 34 tools: memory search, threads, observations, Obsidian notes, Telegram, reminders, timers, task scheduling, artefact creation, agent management, and more.
 
 On subsequent runs, it resumes its Claude CLI session and checks recent memory for anything worth surfacing.
 
@@ -161,4 +175,4 @@ On subsequent runs, it resumes its Claude CLI session and checks recent memory f
 - [01 - Creating Agents](01%20-%20Creating%20Agents.md) -- build a second agent with its own identity and voice
 - [02 - Configuration Reference](02%20-%20Configuration%20Reference.md) -- every knob and switch
 - [03 - Scheduling Jobs](03%20-%20Scheduling%20Jobs.md) -- autonomous behaviour (heartbeats, introspection, evolution)
-- [04 - Memory System](04%20-%20Memory%20System.md) -- how the companion remembers
+- [04 - Memory System](04%20-%20Memory%20System.md) -- how agents remember

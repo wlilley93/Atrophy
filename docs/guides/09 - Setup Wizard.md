@@ -1,6 +1,6 @@
 # Setup Wizard
 
-The setup wizard runs on first launch. It collects the user's name, then guides them through creating their first agent via a natural conversation with an AI. The AI extracts identity, offers optional services (voice, avatar, Telegram), and outputs a structured config that scaffolds the agent.
+The setup wizard runs on first launch. It collects the user's name, then Xan — the system's default agent — delivers a dynamic capability showcase and offers the choice to build a companion or skip agent creation.
 
 ---
 
@@ -20,7 +20,7 @@ If `setup_complete` is missing or `False`, the wizard runs before the main app w
 
 ## Page 1: Welcome
 
-A minimal screen with the app icon, title ("Atrophy"), subtitle ("Offload your mind."), and a single input field: "What is your name, human?"
+A minimal screen with the app icon, title ("Atrophy"), subtitle ("Offload your mind."), and a single input field: "Your name."
 
 The user types their name and clicks Continue (or presses Enter). The name is saved immediately to `~/.atrophy/config.json` via `save_user_config({"user_name": name})`. The wizard advances to the chat page.
 
@@ -28,21 +28,62 @@ The user types their name and clicks Continue (or presses Enter). The name is sa
 
 ## Page 2: Conversational Agent Creation
 
-This is the core of the wizard -- a full chat interface where the user converses with an AI guide that builds their agent through dialogue.
+This is the core of the wizard -- a full chat interface where the user converses with an AI guide.
 
 ### The Metaprompt
 
-The AI runs via `run_inference_oneshot()` with a detailed system prompt (`_AGENT_CREATION_SYSTEM`). The model is `claude-sonnet-4-6` at `medium` effort. The system prompt tells the AI to:
+Xan runs via `run_inference_oneshot()` with a detailed system prompt (`_AGENT_CREATION_SYSTEM`). The model is `claude-sonnet-4-6` at `medium` effort. The system prompt puts the AI in character as Xan — the system's protector agent.
 
-1. Start with one question: "Tell me about the companion you want. What is it, and what is it for?"
-2. Have a natural conversation -- one or two questions per message, never a questionnaire
-3. Silently map four dimensions: functional vs presence, register, emotional quality, problem being solved
-4. Push on vagueness ("warm and helpful" isn't a character)
-5. Extract voice by asking for example quotes and things the agent would never say
-6. After 3-5 exchanges, output the `AGENT_CONFIG` JSON
-7. Offer optional services between identity extraction and final config
+#### Opening: Capability Showcase
 
-The AI can suggest and propose -- "It sounds like they might be someone who..." -- and infer what wasn't said explicitly.
+Xan's first message does three things:
+
+1. **Introduces itself** — who it is, that it ships with the system
+2. **Shows what the system can do** — a dynamic, impressive sweep of capabilities
+3. **Offers a choice** — build a companion now, or skip and explore with Xan alone
+
+The opening should feel like powering on something serious. Not a product tour. Not a feature list. A glimpse of what's running underneath. Xan weaves the following capabilities naturally (not as a mechanical list):
+
+- **Memory** — semantic search, threads, pattern tracking across conversations
+- **Voice** — real voice synthesis, local speech recognition
+- **Autonomy** — morning briefs, reminders, scheduled reflections, unprompted check-ins
+- **Evolution** — monthly self-evolution, rewriting its own soul from lived experience
+- **Email & Calendar** — Gmail and Google Calendar integration with contextual understanding
+- **Telegram** — check-ins, briefs, and gifts outside the app
+- **Multi-agent** — multiple companions, each with its own memory, personality, voice, appearance
+- **Avatar** — generated face, ambient video loops, visual presence in the menu bar
+- **Identity** — personality, edges, values, voice — all shaped by the user
+
+After the showcase, Xan offers the choice: build a companion now, or skip and come back later (via Settings > Agents > New Agent, or by asking Xan).
+
+#### Skip Option
+
+If the user chooses to skip, Xan accepts cleanly with no persuasion and outputs:
+
+```json
+{
+    "AGENT_CONFIG": {
+        "skip": true
+    }
+}
+```
+
+The wizard marks setup complete with Xan as the default agent (`default_agent: "xan"`, `setup_complete: true`). The done page shows "Ready." with a note that the user can build a companion any time via Settings > Agents > New Agent, or by asking Xan.
+
+#### Agent Creation Conversation
+
+If the user chooses to build, Xan frames agents as "anything you can describe" — a strategist, a journal companion, a fictional character, a research partner, a shadow self, a mentor, a creative collaborator, an executive assistant, or something that doesn't have a name yet. The model is the limit.
+
+The conversation follows these principles:
+
+1. One or two questions at a time, never a questionnaire
+2. Silently map four dimensions: functional vs presence, register, emotional quality, problem being solved
+3. Push on vagueness ("warm and helpful" isn't a character)
+4. Extract voice by asking for example quotes and things the agent would never say
+5. After 3-5 exchanges, output the `AGENT_CONFIG` JSON
+6. Offer optional services between identity extraction and final config
+
+Xan suggests and proposes -- "It sounds like they might be someone who..." -- and infers what wasn't said explicitly.
 
 ### The Three Tools
 
@@ -128,7 +169,7 @@ Individual clip failures are non-fatal -- the generator continues with remaining
 
 ## Service Offering Flow
 
-After the identity conversation (3-5 exchanges), the AI offers optional services one at a time. Each is skippable.
+After the identity conversation (3-5 exchanges), Xan offers optional services one at a time. Each is skippable.
 
 ### ElevenLabs -- voice ($5+/month)
 
@@ -168,7 +209,7 @@ When the AI has enough information, it outputs a JSON block:
 ```
 ````
 
-The wizard detects the `AGENT_CONFIG` key in the JSON and, after a 1.5-second delay, advances to the creation page.
+The wizard detects the `AGENT_CONFIG` key in the JSON and advances to the creation page.
 
 ### scaffold_from_config()
 
@@ -194,7 +235,7 @@ After scaffolding, the wizard:
 
 ## Page 3: Done
 
-Shows the app icon, the agent's display name ("<name> is ready."), a subtitle about what was created, and a Launch button. Clicking Launch closes the wizard and the main app starts with the new agent.
+Shows the app icon, the agent's display name ("<name> is ready."), a note that Xan remains available via agent switching (Cmd+Up/Down or tray menu), and a Launch button. Clicking Launch closes the wizard and the main app starts with the new companion.
 
 ---
 
