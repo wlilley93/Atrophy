@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Intelligence watch — fetch, assess, and file news items.
+"""Intelligence watch - fetch, assess, and file news items.
 
 Runs every 30 minutes. Fetches headlines from multiple sources,
 deduplicates against previously seen URLs, assesses strategic
@@ -57,12 +57,12 @@ FEEDS = {
     "diplomat": "https://thediplomat.com/feed/",
     "bellingcat": "https://www.bellingcat.com/feed/",
 
-    # Think tanks — UK
+    # Think tanks - UK
     "rusi": "https://www.rusi.org/rss.xml",
     "iiss": "https://www.iiss.org/rss",
     "chatham_house": "https://www.chathamhouse.org/rss.xml",
 
-    # Think tanks — US
+    # Think tanks - US
     "csis": "https://www.csis.org/rss.xml",
     "isw": "https://www.understandingwar.org/rss.xml",
     "rand": "https://www.rand.org/content/rand/blog.rss.xml",
@@ -160,7 +160,7 @@ def _store_item(conn: sqlite3.Connection, item: dict, assessment: str, urgency: 
     # Write observation for memory search
     obs_content = f"[INTEL/{item['source'].upper()}] {item['headline']}"
     if assessment:
-        obs_content += f" — {assessment}"
+        obs_content += f" - {assessment}"
     obs_id = write_observation(obs_content, confidence=0.7, db_path=DB_PATH)
 
     # Store structured intelligence
@@ -206,7 +206,7 @@ def _assess_batch(items: list[dict]) -> dict:
 
     headlines_text = "\n".join(
         f"{i+1}. [{it['source']}] {it['headline']}"
-        + (f" — {it['summary'][:100]}" if it['summary'] else "")
+        + (f" - {it['summary'][:100]}" if it['summary'] else "")
         for i, it in enumerate(items)
     )
 
@@ -220,11 +220,11 @@ def _assess_batch(items: list[dict]) -> dict:
         "Urgency guide:\n"
         '- "routine": everyday news, no strategic significance\n'
         '- "notable": worth filing, developing situation, shift in posture\n'
-        '- "urgent": significant military/geopolitical development — warrants an URGENT BRIEFING\n'
-        '- "critical": war declaration, nuclear event, major invasion, assassination of head of state — FOR IMMEDIATE ATTENTION\n\n'
+        '- "urgent": significant military/geopolitical development - warrants an URGENT BRIEFING\n'
+        '- "critical": war declaration, nuclear event, major invasion, assassination of head of state - FOR IMMEDIATE ATTENTION\n\n'
         "Critical and urgent items will be delivered directly to Will. Do not inflate urgency.\n"
         "Most items will be routine. Only flag what genuinely matters.\n\n"
-        "Skip routine items entirely — only include notable, urgent, or critical.\n"
+        "Skip routine items entirely - only include notable, urgent, or critical.\n"
         "If nothing is significant, respond with: {}\n\n"
         'Respond ONLY with valid JSON. Example: {"1": {"urgency": "notable", "assessment": "..."}}'
     )
@@ -311,7 +311,7 @@ def _queue_urgent(items: list[dict], assessments: dict):
 
 def run():
     print(f"\n{'='*60}")
-    print(f"  INTELLIGENCE WATCH — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"  INTELLIGENCE WATCH - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
     init_db(DB_PATH)
@@ -370,7 +370,7 @@ def run():
         for idx, info in batch_assessments.items():
             all_assessments[i + idx] = info
 
-    # Store items — batch routine inserts, process notable individually
+    # Store items - batch routine inserts, process notable individually
     notable_count = 0
     routine_batch = []
     for i, item in enumerate(new_items):

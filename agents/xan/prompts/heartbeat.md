@@ -1,4 +1,4 @@
-# Heartbeat — Xan
+# Heartbeat - Xan
 
 Unprompted outreach checklist. Run on schedule.
 Surface only if something here is true.

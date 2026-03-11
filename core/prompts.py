@@ -1,10 +1,10 @@
 """Skill loading with four-tier resolution.
 
 Resolution order:
-  1. Obsidian vault  — Agent Workspace/<agent>/skills/{name}.md  (if vault exists)
-  2. Local skills    — ~/.atrophy/agents/<agent>/skills/{name}.md  (canonical for non-Obsidian users)
-  3. User prompts    — ~/.atrophy/agents/<agent>/prompts/{name}.md  (legacy overrides)
-  4. Bundle          — agents/<agent>/prompts/{name}.md  (repo defaults)
+  1. Obsidian vault  - Agent Workspace/<agent>/skills/{name}.md  (if vault exists)
+  2. Local skills    - ~/.atrophy/agents/<agent>/skills/{name}.md  (canonical for non-Obsidian users)
+  3. User prompts    - ~/.atrophy/agents/<agent>/prompts/{name}.md  (legacy overrides)
+  4. Bundle          - agents/<agent>/prompts/{name}.md  (repo defaults)
 
 Without Obsidian, tier 2 (local skills) is the canonical location.
 The agent reads and writes there via MCP note tools.

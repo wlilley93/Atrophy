@@ -1,7 +1,7 @@
-"""server.py — Minimal HTTP API for Atrophy.
+"""server.py - Minimal HTTP API for Atrophy.
 
 Exposes chat, memory, and status endpoints.
-Runs headless — no GUI, no TTS, no voice input.
+Runs headless - no GUI, no TTS, no voice input.
 
 Usage:
   python main.py --server              # localhost:5000
@@ -187,7 +187,7 @@ def memory_threads():
 
     GET /memory/threads?status=active
     """
-    # Only active threads have a dedicated query — return those
+    # Only active threads have a dedicated query - return those
     threads = memory.get_active_threads()
     return jsonify({"threads": threads})
 
@@ -217,7 +217,7 @@ def run_server(port=5000, host="127.0.0.1"):
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    print(f"\n  Atrophy — HTTP API")
+    print(f"\n  Atrophy - HTTP API")
     print(f"  Agent: {AGENT_DISPLAY_NAME}")
     print(f"  http://{host}:{port}")
     print(f"  Token: {_SERVER_TOKEN[:8]}...{_SERVER_TOKEN[-4:]}")

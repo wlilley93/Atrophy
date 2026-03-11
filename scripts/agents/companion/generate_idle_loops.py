@@ -7,9 +7,9 @@ Requires:
   - Idle driver audio at avatar/source/idle_driver.wav (generated if missing)
 
 Renders:
-  - avatar/idle_loop.mp4      — neutral, at rest
-  - avatar/idle_thinking.mp4  — slight downward gaze
-  - avatar/idle_listening.mp4 — forward attention
+  - avatar/idle_loop.mp4      - neutral, at rest
+  - avatar/idle_thinking.mp4  - slight downward gaze
+  - avatar/idle_listening.mp4 - forward attention
 """
 import subprocess
 import sys
@@ -56,7 +56,7 @@ def generate_idle_driver():
 
 def render_idle(output_path: Path, label: str):
     if output_path.exists():
-        print(f"Already exists: {output_path} — skipping")
+        print(f"Already exists: {output_path} - skipping")
         return
 
     print(f"Rendering {label}...", flush=True)

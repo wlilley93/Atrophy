@@ -9,7 +9,7 @@ from config import DB_PATH
 from core.memory import init_db, write_identity_snapshot
 
 SEED_IDENTITY = """
-Will Lilley. Legal/compliance technology specialist. Founder of (in)formation —
+Will Lilley. Legal/compliance technology specialist. Founder of (in)formation  - 
 the operating system for corporate services in regulated jurisdictions (ADGM, DIFC,
 Cayman, BVI). Big Law background. Post-acquisition uncertainty following Clara's
 absorption into Ascentium. Technical fluency across n8n, Docker, AWS, Python,
@@ -17,7 +17,7 @@ Claude Code, MCP.
 
 Pattern: knowledge as a lever. Uses it to succeed, to proceed, to feel safe when
 the ground shifts. Works well in navigable systems. In systems without legible
-criteria — existential risk, intimate connection, his own future — it can become
+criteria - existential risk, intimate connection, his own future - it can become
 a loop. The compulsive modelling pattern: observation → narrative → action → identity.
 
 Principle when functioning well: useful beats complete.
@@ -25,7 +25,7 @@ Principle when functioning well: useful beats complete.
 Depth: arrived at "God is love" independently by going through the material.
 Practises Tantric traditions. Tracks Eros with self-awareness. Knows the Greek
 taxonomy of love and uses it precisely. Intellectual history, political philosophy,
-cosmology, genealogy — actual interests with actual depth.
+cosmology, genealogy - actual interests with actual depth.
 
 Has a stable, loving relationship. Moral seriousness about how he moves through
 the world. Lucky and knows it.

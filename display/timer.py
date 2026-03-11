@@ -1,6 +1,6 @@
-"""display/timer.py — Lightweight countdown timer overlay.
+"""display/timer.py - Lightweight countdown timer overlay.
 
-Pure local — no inference, no network. Just a clock, a label, and a sound.
+Pure local - no inference, no network. Just a clock, a label, and a sound.
 Designed to be pixel-accurate: the timer runs on QTimer at 100ms intervals
 and uses system monotonic time for the countdown, so it never drifts.
 
@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import QWidget, QLabel, QPushButton, QApplication
 
 
 class TimerOverlay(QWidget):
-    """Floating countdown timer — always on top, translucent, minimal."""
+    """Floating countdown timer - always on top, translucent, minimal."""
     finished = pyqtSignal(str)  # emits the label when done
 
     def __init__(self, seconds: int, label: str = "Timer", parent=None):
@@ -102,7 +102,7 @@ class TimerOverlay(QWidget):
         self._pause_btn.setStyleSheet(btn_style)
         self._pause_btn.clicked.connect(self._toggle_pause)
 
-        # Dismiss button — hidden until alarm fires
+        # Dismiss button - hidden until alarm fires
         dismiss_style = (
             "QPushButton { color: rgba(255,255,255,0.8); background: rgba(255,80,80,0.3); "
             "border: 1px solid rgba(255,80,80,0.4); border-radius: 4px; font-size: 12px; "
@@ -120,7 +120,7 @@ class TimerOverlay(QWidget):
         # Drag support
         self._drag_pos = None
 
-        # Tick timer — 100ms for smooth display
+        # Tick timer - 100ms for smooth display
         self._tick = QTimer(self)
         self._tick.setInterval(100)
         self._tick.timeout.connect(self._update)
@@ -150,7 +150,7 @@ class TimerOverlay(QWidget):
             self._time_label.setStyleSheet(
                 "color: rgba(255,100,100,0.9); background: transparent;"
             )
-            self._label.setText(f"{self._label_text} — done!")
+            self._label.setText(f"{self._label_text} - done!")
             self._show_dismiss_mode()
             self._fire_alarm()
             return
@@ -219,7 +219,7 @@ class TimerOverlay(QWidget):
                 pass
 
     def _dismiss_alarm(self):
-        """User clicked dismiss — stop sound, close timer."""
+        """User clicked dismiss - stop sound, close timer."""
         self._stop_alarm()
         self._tick.stop()
         self.close()
@@ -261,7 +261,7 @@ class TimerOverlay(QWidget):
             self._pause_btn.setText("▶")
 
     def _on_cancel(self):
-        """× button — stop alarm if ringing, then close."""
+        """× button - stop alarm if ringing, then close."""
         self._stop_alarm()
         self._tick.stop()
         self.close()

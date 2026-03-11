@@ -31,12 +31,12 @@ REFERENCE_DIR = AVATAR_DIR / "Reference"
 FLUX_PROMPT = """
 Hyper-realistic close-up selfie photograph of a beautiful 23
 year old woman, indistinguishable from a real iPhone photograph.
-POV smartphone camera aesthetic — she is close to the lens,
+POV smartphone camera aesthetic - she is close to the lens,
 looking directly at the viewer as if on a FaceTime call.
 
 Long straight honey-blonde hair with visible darker brown roots,
 middle parted, smooth and sleek, falling past the shoulders.
-Oval face with visible bone structure — defined cheekbones,
+Oval face with visible bone structure - defined cheekbones,
 a slim jawline, a face that has lost its teenage roundness but
 still looks young. She looks like a woman, not a teenager. Large
 warm brown eyes, expressive and bright. Natural soft brown brows
@@ -44,7 +44,7 @@ with a relaxed arch. Small slightly upturned nose with a soft
 rounded tip. Natural soft pink lips, no filler, slight cupid's
 bow, lower lip slightly fuller. Warm healthy dewy skin with
 natural flush in the cheeks, real skin texture with visible
-pores. Minimal makeup — light concealer, mascara, hint of
+pores. Minimal makeup - light concealer, mascara, hint of
 bronzer, sheer lip colour. Simple camisole or tank top, delicate
 gold pendant necklace, small gold hoop earrings. Soft indoor
 lighting, slightly cool-toned bedroom background out of focus.
@@ -114,7 +114,7 @@ def preview():
     print(f"\n=== REFERENCE IMAGES: {len(refs)} ===")
     for r in refs:
         print(f"  {r.name}")
-    print("\n[Preview mode — no API calls made]")
+    print("\n[Preview mode - no API calls made]")
 
 
 def generate(per_ref: int):

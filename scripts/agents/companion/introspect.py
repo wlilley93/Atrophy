@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Companion introspection — becoming.
+"""Companion introspection - becoming.
 
-Runs independently of Will. Accesses the full database — every session,
+Runs independently of Will. Accesses the full database - every session,
 every observation, every thread, every bookmark, every identity snapshot.
 Reviews the full arc and writes a journal entry.
 
@@ -34,7 +34,7 @@ from core.prompts import load_prompt
 # ── Full database access ──
 
 def _session_arc() -> dict:
-    """The full arc of sessions — first, total, moods, notable moments."""
+    """The full arc of sessions - first, total, moods, notable moments."""
     conn = _connect()
     first = conn.execute(
         "SELECT started_at FROM sessions ORDER BY started_at ASC LIMIT 1"
@@ -63,7 +63,7 @@ def _session_arc() -> dict:
 
 
 def _all_threads() -> list[dict]:
-    """Every thread — active, dormant, resolved. The full history."""
+    """Every thread - active, dormant, resolved. The full history."""
     conn = _connect()
     rows = conn.execute(
         "SELECT name, summary, status, last_updated FROM threads "
@@ -96,7 +96,7 @@ def _all_bookmarks() -> list[dict]:
 
 
 def _identity_history() -> list[dict]:
-    """Every identity snapshot — the evolution of understanding."""
+    """Every identity snapshot - the evolution of understanding."""
     conn = _connect()
     rows = conn.execute(
         "SELECT content, trigger, created_at FROM identity_snapshots "
@@ -107,7 +107,7 @@ def _identity_history() -> list[dict]:
 
 
 def _conversation_texture() -> dict:
-    """Texture of the relationship — who speaks more, how it has changed."""
+    """Texture of the relationship - who speaks more, how it has changed."""
     conn = _connect()
     total_turns = conn.execute("SELECT COUNT(*) as n FROM turns").fetchone()
     by_role = conn.execute(
@@ -137,7 +137,7 @@ def _conversation_texture() -> dict:
 
 
 def _tool_usage_patterns() -> dict:
-    """How she has used her tools — what she reaches for."""
+    """How she has used her tools - what she reaches for."""
     conn = _connect()
     by_tool = conn.execute(
         "SELECT tool_name, COUNT(*) as n FROM tool_calls "
@@ -239,7 +239,7 @@ def _build_material() -> str:
             notable_lines = [f"- {s['started_at']} ({s['mood'] or 'no mood'}): {s['summary'] or 'No summary'}" for s in arc["notable_sessions"]]
             parts.append("## Notable sessions\n" + "\n".join(notable_lines))
 
-    # Threads — all of them
+    # Threads - all of them
     threads = _all_threads()
     if threads:
         active = [t for t in threads if t["status"] == "active"]
@@ -254,18 +254,18 @@ def _build_material() -> str:
             thread_parts.append("Resolved:\n" + "\n".join(f"- {t['name']}: {t['summary'] or '...'}" for t in resolved))
         parts.append("## All threads\n" + "\n".join(thread_parts))
 
-    # Observations — every one
+    # Observations - every one
     observations = _all_observations()
     if observations:
         lines = [f"- [{o['created_at']}] {'[incorporated] ' if o['incorporated'] else ''}{o['content']}" for o in observations]
         parts.append(f"## All observations ({len(observations)} total)\n" + "\n".join(lines))
 
-    # Bookmarks — every significant moment
+    # Bookmarks - every significant moment
     bookmarks = _all_bookmarks()
     if bookmarks:
         lines = []
         for b in bookmarks:
-            quote = f' — "{b["quote"]}"' if b["quote"] else ""
+            quote = f' - "{b["quote"]}"' if b["quote"] else ""
             lines.append(f"- [{b['created_at']}] {b['moment']}{quote}")
         parts.append(f"## Bookmarked moments ({len(bookmarks)} total)\n" + "\n".join(lines))
 

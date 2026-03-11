@@ -1,14 +1,14 @@
-"""Central configuration — three-tier path resolution.
+"""Central configuration - three-tier path resolution.
 
 Resolution order (highest wins):
   1. Environment variables
   2. User config     (~/.atrophy/config.json)
-  3. Agent manifest  (agents/<name>/data/agent.json — bundled or user-installed)
+  3. Agent manifest  (agents/<name>/data/agent.json - bundled or user-installed)
   4. Hardcoded defaults
 
 Two root paths:
-  BUNDLE_ROOT — where the code lives (repo checkout or .app bundle)
-  USER_DATA   — ~/.atrophy/ — runtime state, memory DBs, user config
+  BUNDLE_ROOT - where the code lives (repo checkout or .app bundle)
+  USER_DATA   - ~/.atrophy/ - runtime state, memory DBs, user config
 
 Agent definitions (agent.json, prompts/) are searched in USER_DATA first,
 then BUNDLE_ROOT. This lets users install custom agents by dropping a folder
@@ -80,7 +80,7 @@ def _migrate_legacy_data():
                         shutil.copy2(src, dest)
 
 
-# Run on import — lightweight, idempotent
+# Run on import - lightweight, idempotent
 ensure_user_data()
 
 
@@ -121,7 +121,7 @@ AGENT_NAME = _cfg("AGENT", "xan")
 
 
 def _find_agent_dir(name: str) -> Path:
-    """Find agent definition — user-installed agents take precedence over bundled."""
+    """Find agent definition - user-installed agents take precedence over bundled."""
     user_agent = USER_DATA / "agents" / name
     bundle_agent = BUNDLE_ROOT / "agents" / name
     if (user_agent / "data" / "agent.json").exists():
@@ -199,7 +199,7 @@ IDLE_LISTENING = _AVATAR_USER / "idle_listening.mp4"
 # ── Per-agent tool disabling ──
 DISABLED_TOOLS = AGENT.get("disabled_tools", [])
 
-# ── Voice — TTS (per-agent from manifest) ──
+# ── Voice - TTS (per-agent from manifest) ──
 _voice = AGENT.get("voice", {})
 TTS_BACKEND = _voice.get("tts_backend", _cfg("TTS_BACKEND", "elevenlabs"))
 ELEVENLABS_API_KEY = _cfg("ELEVENLABS_API_KEY", "")
@@ -212,7 +212,7 @@ TTS_PLAYBACK_RATE = _voice.get("playback_rate", float(_cfg("TTS_PLAYBACK_RATE", 
 FAL_TTS_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3"
 FAL_VOICE_ID = _voice.get("fal_voice_id", _cfg("FAL_VOICE_ID", ""))
 
-# ── Voice — Input ──
+# ── Voice - Input ──
 PTT_KEY = "ctrl"
 INPUT_MODE = _cfg("INPUT_MODE", "dual")
 
@@ -244,7 +244,7 @@ MCP_GOOGLE_SCRIPT = MCP_DIR / "google_server.py"
 GOOGLE_DIR = USER_DATA / ".google"
 GOOGLE_CONFIGURED = (GOOGLE_DIR / "token.json").exists()
 
-# ── Obsidian vault (optional — technical users can set OBSIDIAN_VAULT env var) ──
+# ── Obsidian vault (optional - technical users can set OBSIDIAN_VAULT env var) ──
 _obsidian_default = str(Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "The Atrophied Mind")
 _obsidian_base = Path(_cfg("OBSIDIAN_VAULT", _obsidian_default))
 OBSIDIAN_AVAILABLE = _obsidian_base.is_dir()
@@ -255,7 +255,7 @@ if OBSIDIAN_AVAILABLE:
     OBSIDIAN_AGENT_DIR = OBSIDIAN_PROJECT_DIR / "Agent Workspace" / AGENT_NAME
     OBSIDIAN_AGENT_NOTES = OBSIDIAN_AGENT_DIR
 else:
-    # No vault — agent notes, skills, and workspace live inside ~/.atrophy/agents/<name>/
+    # No vault - agent notes, skills, and workspace live inside ~/.atrophy/agents/<name>/
     OBSIDIAN_PROJECT_DIR = USER_DATA / "agents"
     OBSIDIAN_AGENT_DIR = USER_DATA / "agents" / AGENT_NAME
     OBSIDIAN_AGENT_NOTES = OBSIDIAN_AGENT_DIR
@@ -304,5 +304,5 @@ WINDOW_WIDTH = _disp.get("window_width", 622)
 WINDOW_HEIGHT = _disp.get("window_height", 830)
 
 # ── Backward compat ──
-# Some modules use PROJECT_ROOT — alias to BUNDLE_ROOT
+# Some modules use PROJECT_ROOT - alias to BUNDLE_ROOT
 PROJECT_ROOT = BUNDLE_ROOT

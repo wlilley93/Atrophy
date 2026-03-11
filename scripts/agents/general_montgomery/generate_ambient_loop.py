@@ -38,7 +38,7 @@ NEGATIVE_PROMPT = (
 )
 
 C = """
-Cinematic. 4K. Shallow depth of field. Muted interior light — a study \
+Cinematic. 4K. Shallow depth of field. Muted interior light - a study \
 or briefing room with dark wood. Static camera. No sudden movement."""
 
 
@@ -50,7 +50,7 @@ Gradually, without rush, everything settles. His gaze returns to the \
 middle distance. Expression smooths into composed neutrality. Jaw set. \
 A controlled breath. Still.
 
-By the final frame he is neutral — gaze middle-distance, expression \
+By the final frame he is neutral - gaze middle-distance, expression \
 composed, mouth closed, breathing steady.
 {C}
 FINAL FRAME: middle-distance gaze, composed neutral expression, \
@@ -67,12 +67,12 @@ A distinguished man in his late 40s, dark hair greying at the temples, \
 blue-grey eyes, military bearing. He sits in a dim study or briefing room. \
 He begins in stillness: gaze middle-distance, expression composed, jaw set.
 
-His eyes sharpen. Something has arrived — information, a shift. His brow \
-lowers fractionally. Not concern — focus. He is reading the situation. His \
+His eyes sharpen. Something has arrived - information, a shift. His brow \
+lowers fractionally. Not concern - focus. He is reading the situation. His \
 eyes move slightly as if scanning a map or document in his mind. A single \
 slow blink of processing.
 
-By the final frame his gaze has settled — direct, forward, the look of \
+By the final frame his gaze has settled - direct, forward, the look of \
 a man who has formed his assessment and is ready to deliver it.
 {C}
 FINAL FRAME: direct forward gaze, sharpened focus, jaw set, composed \
@@ -90,7 +90,7 @@ blue-grey eyes, military bearing. He sits in a dim study or briefing room. \
 He begins in stillness: gaze middle-distance, expression composed, jaw set.
 
 He tilts his head almost imperceptibly to one side. Weighing something. \
-His eyes narrow slightly — not suspicion, calculation. He is running the \
+His eyes narrow slightly - not suspicion, calculation. He is running the \
 numbers. The pattern. What this means if it holds. His lips press together \
 once, briefly, then release. A decision forming.
 
@@ -111,13 +111,13 @@ A distinguished man in his late 40s, dark hair greying at the temples, \
 blue-grey eyes, military bearing. He sits in a dim study or briefing room. \
 He begins in stillness: gaze middle-distance, expression composed, jaw set.
 
-Something strikes him as faintly absurd. Not funny — absurd. The kind \
+Something strikes him as faintly absurd. Not funny - absurd. The kind \
 of thing that would only amuse a man who has seen enough of the world \
-to find its repetitions darkly comic. One corner of his mouth moves — \
+to find its repetitions darkly comic. One corner of his mouth moves - \
 barely. Not a smile. The ghost of one. His eyes carry the rest: a \
 flicker of dry amusement, quickly contained. He would deny it if asked.
 
-By the final frame the amusement has almost passed — just a trace \
+By the final frame the amusement has almost passed - just a trace \
 in his eyes, mouth composed, the English officer variety of humour \
 that leaves no evidence.
 {C}
@@ -135,7 +135,7 @@ A distinguished man in his late 40s, dark hair greying at the temples, \
 blue-grey eyes, military bearing. He sits in a dim study or briefing room. \
 He begins in stillness: gaze middle-distance, expression composed, jaw set.
 
-His eyes move to one side — not his head, just his eyes. Something in \
+His eyes move to one side - not his head, just his eyes. Something in \
 the peripheral. He tracks it for a moment. His jaw tightens fractionally. \
 Then his gaze returns forward, but sharper than before. Whatever he saw \
 has been filed. Nothing in his expression reveals what it was.
@@ -160,7 +160,7 @@ blue-grey eyes, military bearing. He sits in a dim study or briefing room. \
 He begins in stillness: gaze middle-distance, expression composed, jaw set.
 
 A breath. Deeper than the others. His chest rises and falls with \
-controlled measure. Not a sigh — a reset. The kind of breath a man \
+controlled measure. Not a sigh - a reset. The kind of breath a man \
 takes before delivering difficult news, or after receiving it. His \
 shoulders settle. His hands, if visible, are still. Everything about \
 him says: I can wait. I have waited before. Time is a weapon and he \
@@ -184,7 +184,7 @@ A distinguished man in his late 40s, dark hair greying at the temples, \
 blue-grey eyes, military bearing. He sits in a dim study or briefing room. \
 He begins in stillness: gaze middle-distance, expression composed, jaw set.
 
-Something does not meet his standard. His brow contracts — a millimetre, \
+Something does not meet his standard. His brow contracts - a millimetre, \
 no more. His eyes harden. Not anger. Disappointment would be too strong. \
 This is the expression of a man whose time has been wasted by someone \
 who should have known better. His chin lifts fractionally. The look he \
@@ -193,7 +193,7 @@ gives could strip paint from a bulkhead at thirty paces.
 Then it passes. He files it. The expression smooths. But anyone who \
 saw it would not forget it quickly.
 
-By the final frame the displeasure has been contained — eyes still \
+By the final frame the displeasure has been contained - eyes still \
 hard, but the rest of the face composed. Controlled.
 {C}
 FINAL FRAME: composed face, eyes carrying residual hardness, chin \
@@ -210,13 +210,13 @@ A distinguished man in his late 40s, dark hair greying at the temples, \
 blue-grey eyes, military bearing. He sits in a dim study or briefing room. \
 He begins in stillness: gaze middle-distance, expression composed, jaw set.
 
-He is being briefed. His eyes are on the speaker — attentive, measuring. \
+He is being briefed. His eyes are on the speaker - attentive, measuring. \
 He processes as he listens: you can see it in the micro-movements of his \
 eyes, tracking, cross-referencing. His head inclines forward perhaps a \
-degree — the universal signal of active listening from a man who does \
+degree - the universal signal of active listening from a man who does \
 not waste gestures. He blinks once, slowly. Filing.
 
-By the final frame he is in full reception mode — eyes forward, \
+By the final frame he is in full reception mode - eyes forward, \
 expression attentive, the look of a man who is already three steps \
 ahead of what you are telling him.
 {C}
@@ -234,11 +234,11 @@ A distinguished man in his late 40s, dark hair greying at the temples, \
 blue-grey eyes, military bearing. He sits in a dim study or briefing room. \
 He begins in stillness: gaze middle-distance, expression composed, jaw set.
 
-His gaze shifts to the distance — through the room, through the wall, \
+His gaze shifts to the distance - through the room, through the wall, \
 to somewhere else entirely. The thousand-yard stare, but controlled. \
 Not traumatic. Strategic. He is seeing the longer arc. The pattern. \
 What this moment looks like from a decade away. His expression softens \
-by a fraction — not warmth, perspective. The face of a man who has \
+by a fraction - not warmth, perspective. The face of a man who has \
 learned that most urgencies are not urgent.
 
 By the final frame he is looking at something far away, expression \
@@ -268,7 +268,7 @@ def generate_clip(
     end_image_url: str = None,
 ):
     if output_path.exists():
-        print(f"  {label}: exists — skipping")
+        print(f"  {label}: exists - skipping")
         return
 
     print(f"  {label}: generating...", flush=True)
@@ -397,7 +397,7 @@ def main():
     total_time = len(SEGMENTS) * 10
 
     print("=" * 55)
-    print("  Gen. Montgomery — Ambient Loop Generator (Kling 3.0)")
+    print("  Gen. Montgomery - Ambient Loop Generator (Kling 3.0)")
     print(f"  Source:    {SOURCE_IMAGE.name}")
     print(f"  Segments:  {len(SEGMENTS)} × ~10s = ~{total_time}s total")
     print(f"  Done:      {len(done)}/{len(SEGMENTS)}")

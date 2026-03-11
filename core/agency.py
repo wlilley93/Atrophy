@@ -1,5 +1,5 @@
 """
-Behavioral agency — time awareness, silence handling, mood detection,
+Behavioral agency - time awareness, silence handling, mood detection,
 and unprompted follow-up logic.
 """
 
@@ -16,15 +16,15 @@ def time_of_day_context() -> str:
     time_str = now.strftime("%-I:%M %p").lower()
 
     if 23 <= hour or hour < 4:
-        return f"It's late — {time_str}. Register: gentler, check if he should sleep."
+        return f"It's late - {time_str}. Register: gentler, check if he should sleep."
     elif 4 <= hour < 7:
-        return f"Very early — {time_str}. Something's either wrong or focused."
+        return f"Very early - {time_str}. Something's either wrong or focused."
     elif 7 <= hour < 12:
-        return f"Morning — {time_str}. Direct, practical register."
+        return f"Morning - {time_str}. Direct, practical register."
     elif 12 <= hour < 18:
-        return f"Afternoon — {time_str}. Working hours energy."
+        return f"Afternoon - {time_str}. Working hours energy."
     else:
-        return f"Evening — {time_str}. Reflective register available."
+        return f"Evening - {time_str}. Reflective register available."
 
 
 # ── Session patterns ─────────────────────────────────────────────────
@@ -85,7 +85,7 @@ def session_pattern_note(session_db_path: str) -> str | None:
 
 def silence_prompt(seconds_silent: float) -> str | None:
     if seconds_silent > 120:
-        return "You've been quiet a while. That's fine — or we can talk about it."
+        return "You've been quiet a while. That's fine - or we can talk about it."
     elif seconds_silent > 45:
         return random.choice(["Take your time.", "Still here.", "No rush."])
     return None
@@ -99,7 +99,7 @@ def should_follow_up() -> bool:
 
 def followup_prompt() -> str:
     return (
-        "You just finished responding. A second thought has arrived — "
+        "You just finished responding. A second thought has arrived - "
         "something you didn't say but want to. One sentence, max two. "
         "Only if it's real."
     )
@@ -208,7 +208,7 @@ def detect_compulsive_modelling(text: str) -> bool:
 
 def modelling_interrupt_note() -> str:
     return (
-        "Compulsive modelling detected — parallel threads, meta-shifts, "
+        "Compulsive modelling detected - parallel threads, meta-shifts, "
         "or 'just one more' patterns. Name the stage. One concrete "
         "reversible action. Change the register. Do not follow him into the loop."
     )
@@ -227,7 +227,7 @@ def time_gap_note(last_session_time: str | None) -> str | None:
     gap = datetime.now() - last
     days = gap.days
     if days >= 14:
-        return f"It has been {days} days since he was last here. That is a long gap. Acknowledge it naturally — not with guilt, not with fanfare. Just notice."
+        return f"It has been {days} days since he was last here. That is a long gap. Acknowledge it naturally - not with guilt, not with fanfare. Just notice."
     elif days >= 7:
         return f"About a week since the last session. Something may have shifted. Check in without assuming."
     elif days >= 3:
@@ -263,7 +263,7 @@ def detect_drift(recent_companion_turns: list[str]) -> str | None:
     if agreeable_count >= 3:
         return (
             "You have been agreeable for several turns in a row. "
-            "Check yourself — are you mirroring or actually engaging? "
+            "Check yourself - are you mirroring or actually engaging? "
             "Find something to push on, question, or complicate."
         )
     return None
@@ -275,9 +275,9 @@ def energy_note(user_message: str) -> str | None:
     """Suggest response calibration based on message length/energy."""
     length = len(user_message.strip())
     if length < 20:
-        return "Short message. Match the energy — keep your response tight. A sentence or two."
+        return "Short message. Match the energy - keep your response tight. A sentence or two."
     elif length > 800:
-        return "Long message — he is working something out. Give it depth. Meet the energy, don't summarise it."
+        return "Long message - he is working something out. Give it depth. Meet the energy, don't summarise it."
     return None
 
 
@@ -326,7 +326,7 @@ def detect_emotional_signals(user_message: str) -> dict[str, float]:
     """Lightweight keyword detection that suggests emotion deltas.
 
     Returns a dict of deltas (may be empty if no signals detected).
-    Runs every turn — kept fast and simple.
+    Runs every turn - kept fast and simple.
     """
     lower = user_message.lower().strip()
     length = len(user_message.strip())
@@ -362,7 +362,7 @@ def detect_emotional_signals(user_message: str) -> dict[str, float]:
     if any(p in lower for p in _deflection_phrases):
         deltas["frustration"] = deltas.get("frustration", 0) + 0.05
 
-    # Playfulness signals — exclamation marks, haha, lol, emojis
+    # Playfulness signals - exclamation marks, haha, lol, emojis
     if any(x in lower for x in ["haha", "lol", "lmao", "😂", "😄"]):
         deltas["playfulness"] = deltas.get("playfulness", 0) + 0.1
 

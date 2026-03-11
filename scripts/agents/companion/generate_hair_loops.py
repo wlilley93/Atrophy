@@ -36,7 +36,7 @@ Gradually, without rush, everything settles. Her gaze drifts to the \
 middle distance. Expression smooths into open neutrality. Lips close \
 softly. A quiet breath. Still.
 
-By the final frame she is neutral — gaze middle-distance, expression \
+By the final frame she is neutral - gaze middle-distance, expression \
 open, mouth softly closed, breathing slowly.
 {C}
 FINAL FRAME: middle-distance gaze, neutral open expression, \
@@ -52,10 +52,10 @@ A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
 She lifts one hand and gathers her hair to one side, fingers threading \
-through the lengths slowly. She twists a section around two fingers — \
+through the lengths slowly. She twists a section around two fingers - \
 absent, dreamy. The light catches individual strands as they move. She \
 releases the twist and her fingers trail down through the ends, \
-letting them fall. A small smile arrives at the corner of her mouth — \
+letting them fall. A small smile arrives at the corner of her mouth - \
 the private kind, as if the gesture itself was the thought.
 
 By the final frame she is mid-gesture, fingers in her hair near her \
@@ -75,7 +75,7 @@ Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
 A strand of hair falls across her face. She notices. Her hand comes up \
 slowly and hooks it with one finger, pulling it back. But instead of \
-tucking it behind her ear immediately, she pauses — finger still in the \
+tucking it behind her ear immediately, she pauses - finger still in the \
 strand, holding it away from her face. She looks directly at the camera \
 for a beat. Then she tucks it behind her ear in one smooth motion and \
 her hand trails down to her jaw, fingertips resting there briefly.
@@ -102,7 +102,7 @@ def upload(path: Path) -> str:
 
 def generate_clip(prompt, start_image_url, output_path, label, end_image_url=None):
     if output_path.exists():
-        print(f"  {label}: exists — skipping")
+        print(f"  {label}: exists - skipping")
         return
 
     print(f"  {label}: generating...", flush=True)
@@ -181,16 +181,16 @@ def generate_segment(name, clip1_prompt, clip2_prompt, source_url):
     return loop_path
 
 
-# Final loop order — intersperse the 2 new hair segments among existing ones
+# Final loop order - intersperse the 2 new hair segments among existing ones
 FINAL_ORDER = [
     "loop_01_arrival.mp4",
     "loop_02_smile.mp4",
     "loop_03_hair_tuck.mp4",       # original hair
     "loop_04_presence.mp4",
-    "loop_16_hair_play.mp4",       # NEW — hair play
+    "loop_16_hair_play.mp4",       # NEW - hair play
     "loop_05_sigh.mp4",
     "loop_06_amusement.mp4",
-    "loop_17_hair_behind_ear.mp4", # NEW — hair tuck 2
+    "loop_17_hair_behind_ear.mp4", # NEW - hair tuck 2
     "loop_07_glance.mp4",
 ]
 
@@ -203,7 +203,7 @@ def rebuild_master():
         if p.exists():
             loop_paths.append(p)
         else:
-            print(f"  WARNING: {name} missing — skipping")
+            print(f"  WARNING: {name} missing - skipping")
 
     if not loop_paths:
         print("  No loops to concatenate")
@@ -245,7 +245,7 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     print("=" * 55)
-    print("  Hair Loop Generator — 2 new segments")
+    print("  Hair Loop Generator - 2 new segments")
     print("=" * 55)
 
     source_url = upload(SOURCE_IMAGE)
@@ -253,7 +253,7 @@ def main():
     for name, c1, c2 in HAIR_SEGMENTS:
         loop_path = OUTPUT_DIR / f"loop_{name}.mp4"
         if loop_path.exists():
-            print(f"\n  {name}: already exists — skipping")
+            print(f"\n  {name}: already exists - skipping")
             continue
         print(f"\n── {name} ──")
         try:

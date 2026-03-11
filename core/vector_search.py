@@ -260,7 +260,7 @@ def search(query: str, n: int = 5, vector_weight: float = None,
 
 def search_similar(text: str, n: int = 5, tables: list[str] = None,
                    db_path=DB_PATH) -> list[dict]:
-    """Pure vector search — find semantically similar memories.
+    """Pure vector search - find semantically similar memories.
 
     No keyword component. Useful for finding connections the companion
     wouldn't find with exact keyword matching.

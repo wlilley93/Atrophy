@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Xan's visual presence — a glowing blue orb of light.
+"""Generate Xan's visual presence - a glowing blue orb of light.
 
 Step 1: Generate 4 orb candidates via Flux (abstract, not a face)
 Step 2: User picks one → becomes source image
@@ -79,18 +79,18 @@ EMOTION_COLOURS = {
 
 ORB_PROMPT = """\
 A single luminous orb of blue-white light suspended in absolute darkness. \
-The orb is not a sphere rendered in 3D — it is light itself, captured mid-pulse. \
+The orb is not a sphere rendered in 3D - it is light itself, captured mid-pulse. \
 The core burns intense white-blue, almost overexposed. Around it, concentric \
 halos of softer blue light fade outward into the void. The outermost glow \
-is barely visible — a whisper of cobalt against pure black.
+is barely visible - a whisper of cobalt against pure black.
 
 The light has texture: not uniform, but with subtle striations and filaments, \
-like plasma or bioluminescence. Faint geometric structures — half-seen \
-hexagonal patterns, fragmentary circuit-like traces — ghost through the \
+like plasma or bioluminescence. Faint geometric structures - half-seen \
+hexagonal patterns, fragmentary circuit-like traces - ghost through the \
 inner halo, suggesting intelligence rather than nature.
 
 The background is absolute black. No surface, no reflection, no ground plane. \
-Just the orb and the dark. The light does not illuminate a room — it exists \
+Just the orb and the dark. The light does not illuminate a room - it exists \
 in a void. Portrait orientation. The orb sits in the upper third of the frame.
 
 Photographic quality. Not illustration. Not CGI render. Like a long-exposure \
@@ -114,7 +114,7 @@ COLOUR_PROMPTS = {
 A single luminous orb of deep red-crimson light suspended in absolute darkness. \
 The core burns intense white-red, almost overexposed. Around it, concentric \
 halos of ember red and scarlet fade outward into the void. \
-The light has texture — filaments like plasma. Faint geometric structures \
+The light has texture - filaments like plasma. Faint geometric structures \
 ghost through the inner halo. Background is absolute black. Portrait orientation. \
 The orb sits in the upper third. Photographic quality. Long-exposure. Medium format.""",
 
@@ -122,7 +122,7 @@ The orb sits in the upper third. Photographic quality. Long-exposure. Medium for
 A single luminous orb of emerald-green light suspended in absolute darkness. \
 The core burns intense white-green, almost overexposed. Around it, concentric \
 halos of jade and viridian fade outward into the void. \
-The light has texture — filaments like bioluminescence. Faint geometric structures \
+The light has texture - filaments like bioluminescence. Faint geometric structures \
 ghost through the inner halo. Background is absolute black. Portrait orientation. \
 The orb sits in the upper third. Photographic quality. Long-exposure. Medium format.""",
 
@@ -130,7 +130,7 @@ The orb sits in the upper third. Photographic quality. Long-exposure. Medium for
 A single luminous orb of deep amber-orange light suspended in absolute darkness. \
 The core burns intense white-gold, almost overexposed. Around it, concentric \
 halos of warm amber and burnt orange fade outward into the void. \
-The light has texture — filaments like solar flares. Faint geometric structures \
+The light has texture - filaments like solar flares. Faint geometric structures \
 ghost through the inner halo. Background is absolute black. Portrait orientation. \
 The orb sits in the upper third. Photographic quality. Long-exposure. Medium format.""",
 
@@ -138,7 +138,7 @@ The orb sits in the upper third. Photographic quality. Long-exposure. Medium for
 A single luminous orb of deep violet-purple light suspended in absolute darkness. \
 The core burns intense white-lavender, almost overexposed. Around it, concentric \
 halos of amethyst and deep indigo fade outward into the void. \
-The light has texture — filaments like plasma. Faint geometric structures \
+The light has texture - filaments like plasma. Faint geometric structures \
 ghost through the inner halo. Background is absolute black. Portrait orientation. \
 The orb sits in the upper third. Photographic quality. Long-exposure. Medium format.""",
 
@@ -146,7 +146,7 @@ The orb sits in the upper third. Photographic quality. Long-exposure. Medium for
 A single luminous orb of deep midnight-blue light suspended in absolute darkness. \
 The core glows a muted steel-blue, subdued but present. Around it, concentric \
 halos of dark navy and indigo barely visible against the void. \
-The light has texture — filaments dimmer, more compressed. Faint geometric structures \
+The light has texture - filaments dimmer, more compressed. Faint geometric structures \
 ghost through the inner halo. Background is absolute black. Portrait orientation. \
 The orb sits in the upper third. Photographic quality. Long-exposure. Medium format.""",
 }
@@ -157,9 +157,9 @@ LOOP_PROMPTS = [
     {
         "name": "idle_hover",
         "prompt": (
-            "The orb of blue-white light hangs in darkness, almost still — the tiniest, "
+            "The orb of blue-white light hangs in darkness, almost still - the tiniest, "
             "barely perceptible hover. It drifts up by a fraction, then down by a fraction. "
-            "The movement is so subtle it might be imagined. The core pulses very gently — "
+            "The movement is so subtle it might be imagined. The core pulses very gently - "
             "a slow, soft brightening and dimming, like a candle behind frosted glass. "
             "The concentric halos breathe outward and contract by the smallest amount. "
             "Tiny crystalline shards orbit the orb in slow, lazy rotation, each one "
@@ -171,25 +171,25 @@ LOOP_PROMPTS = [
     {
         "name": "pulse_intense",
         "prompt": (
-            "The orb's core flares — a deep surge of white-blue light builds from the centre "
+            "The orb's core flares - a deep surge of white-blue light builds from the centre "
             "and radiates outward through the halos in a visible wave. The halos ripple and "
             "expand. The crystalline shards orbiting the orb spin faster, tumbling, flashing "
             "bright as they catch the surge. The orb bobs upward with the energy, lifted, "
             "then sinks back down. The filaments inside crackle and fork like lightning. "
             "The outer glow swells and contracts. The core dims back slowly, pulsing. "
-            "Every element is in motion throughout — the shards never stop orbiting, "
+            "Every element is in motion throughout - the shards never stop orbiting, "
             "the halos never stop breathing, the core never stops pulsing."
         ),
     },
     {
         "name": "crystal_shimmer",
         "prompt": (
-            "Crystalline fragments orbit the orb in a continuous ring — small geometric shards "
+            "Crystalline fragments orbit the orb in a continuous ring - small geometric shards "
             "of light, like shattered glass, each one tumbling and rotating on its own axis "
             "while orbiting the orb. They drift at different speeds and distances. Each catches "
             "the core's light at changing angles, producing rolling flares of white and pale blue. "
             "The orb itself bobs gently, never still. The core pulses softly. The halos "
-            "shift and breathe. Inside, filaments trace slow paths. The shards are the star — "
+            "shift and breathe. Inside, filaments trace slow paths. The shards are the star - "
             "spinning, glinting, some drifting further out, some pulling closer, a slow "
             "mesmerising dance. Continuous motion in every element."
         ),
@@ -198,10 +198,10 @@ LOOP_PROMPTS = [
         "name": "drift_close",
         "prompt": (
             "The orb drifts slowly toward the camera, growing larger in frame. It bobs gently "
-            "as it moves — never rigid, always alive. The core pulses brighter as it approaches, "
+            "as it moves - never rigid, always alive. The core pulses brighter as it approaches, "
             "the halos expanding outward, rippling. The crystalline shards continue their orbit "
             "but spread wider as the orb nears, tumbling and glinting. Filaments inside fork "
-            "and reconnect. The orb pauses close — the core flares once, intimate — then it "
+            "and reconnect. The orb pauses close - the core flares once, intimate - then it "
             "begins drifting back, shrinking in frame, the halos contracting, the shards "
             "tightening their orbit. The whole retreat is smooth, bobbing, alive. "
             "Every element moves continuously throughout."
@@ -211,21 +211,21 @@ LOOP_PROMPTS = [
         "name": "drift_lateral",
         "prompt": (
             "The orb slides laterally through the darkness, drifting to one side. It bobs "
-            "as it moves — the motion is smooth but organic, like something floating in water. "
+            "as it moves - the motion is smooth but organic, like something floating in water. "
             "The crystalline shards trail behind slightly, their orbits stretching into ellipses, "
             "each one still tumbling and catching light. The core pulses steadily. The halos "
             "breathe in and out. The filaments inside shift and realign with the movement. "
             "The orb pauses, bobs, then drifts back the other way. The shards reform "
-            "their circular orbit as it settles. Continuous movement in everything — "
+            "their circular orbit as it settles. Continuous movement in everything - "
             "the bob, the pulse, the orbit, the halos, the filaments. Nothing freezes."
         ),
     },
     {
         "name": "bounce_playful",
         "prompt": (
-            "The orb floats in mid-air, suspended in darkness. A gentle, soft bounce — "
+            "The orb floats in mid-air, suspended in darkness. A gentle, soft bounce - "
             "rising and falling by a small amount, smooth and continuous, like something "
-            "weightless bobbing in zero gravity. Not exaggerated — just a calm, living "
+            "weightless bobbing in zero gravity. Not exaggerated - just a calm, living "
             "rhythm. The core pulses softly in time with the motion, brightening slightly "
             "on the rise, dimming on the fall. The crystalline shards orbit steadily, "
             "tumbling and catching light, their ring shifting slightly with each bob. "
@@ -236,13 +236,13 @@ LOOP_PROMPTS = [
     {
         "name": "itch",
         "prompt": (
-            "The orb twitches — a sudden involuntary shudder. The whole body of light "
+            "The orb twitches - a sudden involuntary shudder. The whole body of light "
             "vibrates rapidly, the halos distorting asymmetrically, rippling. The crystalline "
             "shards scatter in alarm, spinning wildly outward. The orb jitters left then right "
-            "then left — trying to scratch something it can't reach. It has no hands. "
+            "then left - trying to scratch something it can't reach. It has no hands. "
             "The core flares in frustration, the filaments go jagged and erratic. "
             "The orb shakes again, bobs up sharply, drops down. The halos wobble. "
-            "Then slowly — the shards drift back into orbit, still tumbling. The filaments "
+            "Then slowly - the shards drift back into orbit, still tumbling. The filaments "
             "smooth out. The halos resettle, still breathing. The core finds its rhythm again. "
             "A small indignity endured. Everything still gently moving."
         ),
@@ -350,7 +350,7 @@ def generate_colour_sources():
     for i, colour in enumerate(colours):
         out = source_dir / f"face_{colour}.png"
         if out.exists():
-            print(f"  [{i+1}/{len(colours)}] {colour}: exists — skipping")
+            print(f"  [{i+1}/{len(colours)}] {colour}: exists - skipping")
             succeeded += 1
             continue
 
@@ -419,7 +419,7 @@ def generate_loops(count=7):
         endframe_path = blue_dir / f"{name}_endframe.jpg"
 
         if loop_path.exists():
-            print(f"\n  [{i+1}/{len(prompts)}] {name}: exists — skipping")
+            print(f"\n  [{i+1}/{len(prompts)}] {name}: exists - skipping")
             succeeded += 1
             continue
 

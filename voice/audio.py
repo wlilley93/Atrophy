@@ -87,7 +87,7 @@ class PushToTalk:
             return None
 
         audio = np.concatenate(self._frames, axis=0).flatten()
-        if len(audio) < SAMPLE_RATE * 0.3:  # less than 300ms — skip
+        if len(audio) < SAMPLE_RATE * 0.3:  # less than 300ms - skip
             return None
 
         return audio

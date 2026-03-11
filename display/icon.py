@@ -43,7 +43,7 @@ def _render_orb(size: int) -> QImage:
     p.setBrush(g_ambient)
     p.drawEllipse(QRectF(0, 0, size, size))
 
-    # -- Layer 2: Outer halo — soft purple/blue envelope --
+    # -- Layer 2: Outer halo - soft purple/blue envelope --
     g_outer = QRadialGradient(QPointF(cx, cy * 0.97), radius * 0.78)
     g_outer.setColorAt(0.0, QColor(140, 160, 255, 100))
     g_outer.setColorAt(0.3, QColor(100, 110, 210, 75))
@@ -53,7 +53,7 @@ def _render_orb(size: int) -> QImage:
     p.setBrush(g_outer)
     p.drawEllipse(QRectF(0, 0, size, size))
 
-    # -- Layer 3: Mid-glow — the visible body of the orb --
+    # -- Layer 3: Mid-glow - the visible body of the orb --
     g_mid = QRadialGradient(QPointF(cx, cy * 0.93), radius * 0.55)
     g_mid.setColorAt(0.0, QColor(190, 210, 255, 200))
     g_mid.setColorAt(0.25, QColor(150, 170, 245, 160))
@@ -63,7 +63,7 @@ def _render_orb(size: int) -> QImage:
     p.setBrush(g_mid)
     p.drawEllipse(QRectF(0, 0, size, size))
 
-    # -- Layer 4: Inner bright core — white/blue hot center --
+    # -- Layer 4: Inner bright core - white/blue hot center --
     # Offset upward and slightly left for depth
     core_cx = cx * 0.96
     core_cy = cy * 0.85
@@ -77,7 +77,7 @@ def _render_orb(size: int) -> QImage:
     p.setBrush(g_core)
     p.drawEllipse(QRectF(0, 0, size, size))
 
-    # -- Layer 5: Hot specular highlight — the "window reflection" --
+    # -- Layer 5: Hot specular highlight - the "window reflection" --
     spec_cx = cx * 0.88
     spec_cy = cy * 0.72
     spec_r = radius * 0.15
@@ -89,7 +89,7 @@ def _render_orb(size: int) -> QImage:
     p.setBrush(g_spec)
     p.drawEllipse(QRectF(0, 0, size, size))
 
-    # -- Layer 6: Light flare — vertical streak through the orb --
+    # -- Layer 6: Light flare - vertical streak through the orb --
     # Use a narrow ellipse with a linear gradient for the flare
     p.save()
     p.translate(cx, cy)

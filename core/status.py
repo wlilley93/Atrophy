@@ -1,4 +1,4 @@
-"""User presence status — active/away tracking.
+"""User presence status - active/away tracking.
 
 Status is persisted to disk so cron jobs can check it.
 Any user input (text or voice) sets status to active.
@@ -62,7 +62,7 @@ def set_active():
         }
         USER_STATUS_FILE.write_text(json.dumps(data))
     else:
-        # Already active — clear returned_from after first read
+        # Already active - clear returned_from after first read
         if current.get("returned_from"):
             current.pop("returned_from", None)
             current.pop("away_since", None)

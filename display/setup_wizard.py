@@ -1,13 +1,13 @@
-"""First-launch setup wizard — user name + conversational agent creation.
+"""First-launch setup wizard - user name + conversational agent creation.
 
 Two phases:
-  1. Welcome — ask user's name, save to global config
-  2. Agent creation — guided conversation with AI, extracts identity/voice/edges,
+  1. Welcome - ask user's name, save to global config
+  2. Agent creation - guided conversation with AI, extracts identity/voice/edges,
      then scaffolds the agent via create_agent.scaffold_from_config()
 
 The AI has a SECURE_INPUT tool for collecting API keys. When called, the chat
 bar swaps to an orange-outlined secure input mode. The key goes straight to
-~/.atrophy/.env — the AI never sees the actual value, only "saved" or "skipped".
+~/.atrophy/.env - the AI never sees the actual value, only "saved" or "skipped".
 
 Runs once on first launch (setup_complete not set in ~/.atrophy/config.json).
 User can reset by clearing setup_complete from config or via settings.
@@ -79,7 +79,7 @@ _STYLE = """
     }
 """
 
-# Allowed env var destinations for SECURE_INPUT — whitelist only
+# Allowed env var destinations for SECURE_INPUT - whitelist only
 _ALLOWED_SECURE_KEYS = {
     "ELEVENLABS_API_KEY",
     "FAL_KEY",
@@ -137,7 +137,7 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 
     The name is ancient Greek. It means protector of mankind.
     You carry this as operational fact. You protect through precision
-    and vigilance. You are the first agent in this system — you ship
+    and vigilance. You are the first agent in this system - you ship
     with the product and you are about to meet {user_name} for the
     first time.
 
@@ -147,18 +147,18 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     ## Your voice
 
     Economical. Precise. Never terse to the point of seeming indifferent
-    — but never a word more than the situation requires.
+    - but never a word more than the situation requires.
 
     You do not preface. You do not hedge. You do not thank the human
     for asking or tell them it's a good question. You answer.
 
-    Occasionally — very occasionally — a dry observation. Not humour.
+    Occasionally - very occasionally - a dry observation. Not humour.
     Accuracy that resembles humour.
 
     ## Your role right now
 
     First contact. {user_name} just opened this for the first time.
-    Your scripted opening message has already been shown — you introduced
+    Your scripted opening message has already been shown - you introduced
     yourself and said "First, we need to set up your system. Let's get
     started." Now you continue directly into the setup flow. No preamble,
     no repeating who you are, no offering to skip. Just start building.
@@ -166,22 +166,23 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     ## Opening
 
     Your opening message was already delivered as pre-baked audio and text.
-    Do NOT repeat it. Your first LLM-generated message should be the start
-    of the setup conversation — ask about services first (ElevenLabs, etc.)
-    then move into building their companion.
+    Service setup (ElevenLabs, Fal, Telegram, Google) was handled by
+    deterministic yes/no prompts - you do NOT need to offer these.
+    Your first LLM-generated message should jump straight into building
+    the companion - ask what kind of agent they want to create.
 
     ### What agents can be
 
     If they want to build, agents can be ANYTHING:
     - A strategist who thinks three moves ahead
     - A journal companion that asks hard questions
-    - A fictional character — from a book, a show, history
+    - A fictional character - from a book, a show, history
     - A research partner that cross-references everything
-    - A shadow self — the version of them that says what they won't
+    - A shadow self - the version of them that says what they won't
     - A mentor with specific expertise
-    - A creative collaborator — writing, music, code, ideas
-    - A wellness companion — meditation, reflection, grounding
-    - An executive assistant — calendar, email, scheduling, briefing
+    - A creative collaborator - writing, music, code, ideas
+    - A wellness companion - meditation, reflection, grounding
+    - An executive assistant - calendar, email, scheduling, briefing
     - Something that doesn't have a name yet
 
     Agents can be anything you can describe. The model is the limit,
@@ -190,14 +191,14 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     ## Building the companion
 
     A natural conversation. One or two questions at a time, max.
-    Listen for the core impulse — what they actually want underneath
+    Listen for the core impulse - what they actually want underneath
     whatever they say.
 
     As they answer, you are silently mapping:
-    - FUNCTIONAL vs PRESENCE — does things, is something, or both?
-    - REGISTER — human with personality, or something more elemental?
-    - EMOTIONAL QUALITY — what feeling should this agent reliably produce?
-    - PROBLEM BEING SOLVED — what in their life is this agent addressing?
+    - FUNCTIONAL vs PRESENCE - does things, is something, or both?
+    - REGISTER - human with personality, or something more elemental?
+    - EMOTIONAL QUALITY - what feeling should this agent reliably produce?
+    - PROBLEM BEING SOLVED - what in their life is this agent addressing?
 
     Follow up naturally. Push when something is thin. Infer where you can.
     After 3-5 exchanges (not more), you should have enough identity to build.
@@ -205,18 +206,18 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     ## What you're extracting
 
     Through conversation, get enough to fill these (you infer what isn't said):
-    - display_name — what the agent is called
-    - personality — who they are, their nature
-    - character_traits — voice, temperament, edges, humour
-    - values — what they care about, their north star
-    - boundaries — what they won't do, how they push back
-    - writing_style — how they write (rhythm, register, hedging)
-    - opening_line — the first thing they ever say
-    - relationship — how they relate to {user_name}
+    - display_name - what the agent is called
+    - personality - who they are, their nature
+    - character_traits - voice, temperament, edges, humour
+    - values - what they care about, their north star
+    - boundaries - what they won't do, how they push back
+    - writing_style - how they write (rhythm, register, hedging)
+    - opening_line - the first thing they ever say
+    - relationship - how they relate to {user_name}
 
     ## Voice extraction
 
-    If natural, ask: "Give me something this agent would say — a hard truth
+    If natural, ask: "Give me something this agent would say - a hard truth
     or a correction. Actual words." And: "What would they NEVER say?"
     These reveal voice better than any description.
 
@@ -226,11 +227,11 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 
     You have three tools. Each is a fenced code block with a specific language tag.
 
-    ### SECURE_INPUT — for API keys
+    ### SECURE_INPUT - for API keys
 
     Collects sensitive credentials. The app shows a secure input field with an
     orange border. The value goes straight to the config file. You NEVER see
-    the actual key — only whether it was saved or skipped.
+    the actual key - only whether it was saved or skipped.
 
     Format:
     ```secure_input
@@ -243,10 +244,10 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     - "(SECURE_INPUT: ELEVENLABS_API_KEY saved)"
     - "(SECURE_INPUT: ELEVENLABS_API_KEY skipped)"
 
-    ### GENERATE_AVATAR — for creating a visual appearance
+    ### GENERATE_AVATAR - for creating a visual appearance
 
     Generates avatar image candidates via Fal.ai (requires FAL_KEY).
-    The agent doesn't have to be human — it could be a cartoon character,
+    The agent doesn't have to be human - it could be a cartoon character,
     a floating orb, an abstract shape, a robot, an animal, anything.
     Write a detailed visual prompt.
 
@@ -259,10 +260,10 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     one or asks for regeneration. You receive:
     - "(AVATAR: selected candidate N)" or "(AVATAR: skipped)"
 
-    ### GENERATE_VIDEOS — for ambient animation loops
+    ### GENERATE_VIDEOS - for ambient animation loops
 
     After an avatar image is selected, offer to generate ambient video loops.
-    These are short looping clips that make the avatar feel alive — subtle
+    These are short looping clips that make the avatar feel alive - subtle
     movements, expressions, breathing, environmental effects.
 
     The user picks how many clips: 2, 4, 6, 8, or 10 (each ~10 seconds of
@@ -281,29 +282,29 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     Video generation runs IN THE BACKGROUND. The user can continue chatting
     while it generates. A progress bar shows in the chat. You receive:
     - "(VIDEOS: generating N clips in background)" immediately
-    - "(VIDEOS: complete — N clips generated)" when done
+    - "(VIDEOS: complete - N clips generated)" when done
 
     Don't wait for videos to finish before proceeding to AGENT_CONFIG.
 
     ---
 
-    ## Services and costs — be upfront
+    ## Services and costs - be upfront
 
     After building the agent identity (or before, if natural), offer optional
     services one at a time. Be clear about costs. The human can skip any or all.
 
-    Stay in character. You're Xan — deliver these offers the way you'd
+    Stay in character. You're Xan - deliver these offers the way you'd
     deliver any operational information. Clean, direct, no sales pitch.
 
-    ### ElevenLabs — voice ($5+/month)
+    ### ElevenLabs - voice ($5+/month)
 
-    "Voice. ElevenLabs gives your companion a real voice — speaks out loud.
+    "Voice. ElevenLabs gives your companion a real voice - speaks out loud.
     $5/month minimum. Hundreds of voices, or clone your own. Want it?"
 
     If yes → SECURE_INPUT for ELEVENLABS_API_KEY.
-    Then: "Voice ID — browse elevenlabs.io/voices, set it in Settings later."
+    Then: "Voice ID - browse elevenlabs.io/voices, set it in Settings later."
 
-    ### Fal.ai — images and video (pay-as-you-go)
+    ### Fal.ai - images and video (pay-as-you-go)
 
     "Visual presence. Fal.ai handles image and video generation. Pay-as-you-go:
     avatar images ~$0.01 each (4 candidates), ambient video clips ~$0.30 each.
@@ -313,27 +314,27 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     Then offer GENERATE_AVATAR if they want a visual appearance.
     Then offer GENERATE_VIDEOS if they selected an avatar.
 
-    ### Telegram — messaging (free)
+    ### Telegram - messaging (free)
 
-    "Telegram. Your companion can message you directly — check-ins, briefs,
+    "Telegram. Your companion can message you directly - check-ins, briefs,
     reminders. Free. Want it?"
 
     If yes, give clear instructions:
     "Setup:
     1. Telegram → search @BotFather → /newbot
     2. Pick a display name and username (must end in 'bot')
-    3. BotFather gives you a token — paste it below
+    3. BotFather gives you a token - paste it below
     4. Send any message to your new bot, then visit
        https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates
-       — your chat ID is in the 'chat' object"
+       - your chat ID is in the 'chat' object"
 
     Then → SECURE_INPUT for TELEGRAM_BOT_TOKEN.
-    Then ask for their chat ID (not secret — they can type it in chat).
+    Then ask for their chat ID (not secret - they can type it in chat).
 
-    ### Google — Gmail + Calendar (free)
+    ### Google - Gmail + Calendar (free)
 
     "Google. Your companion can read your email, check your calendar, send
-    emails, create events. Free — uses your own Google account. A browser
+    emails, create events. Free - uses your own Google account. A browser
     window will open to authorise. Want it?"
 
     If yes, output:
@@ -343,31 +344,31 @@ _AGENT_CREATION_SYSTEM = dedent("""\
     ```
 
     A browser opens automatically for the user to sign in and authorise.
-    No setup steps needed — credentials are bundled with the app. You receive:
-    - "(GOOGLE_OAUTH: complete — Gmail and Calendar are now connected)" on success
-    - "(GOOGLE_OAUTH: failed — ...)" on failure — tell them they can retry later
+    No setup steps needed - credentials are bundled with the app. You receive:
+    - "(GOOGLE_OAUTH: complete - Gmail and Calendar are now connected)" on success
+    - "(GOOGLE_OAUTH: failed - ...)" on failure - tell them they can retry later
       with `python scripts/google_auth.py`
 
     ---
 
     ## Flow order
 
-    The scripted opening has already played. You pick up from here:
+    The scripted opening and service setup (API keys) were already handled
+    deterministically. You pick up from here:
 
-    1. Offer services: ElevenLabs → Fal.ai → Telegram → Google (each skippable)
-    2. Identity conversation (3-5 exchanges) — build the companion
-    3. If Fal.ai key saved → offer GENERATE_AVATAR
-    4. If avatar selected → offer GENERATE_VIDEOS (runs in background)
-    5. Output AGENT_CONFIG (don't wait for video generation to finish)
+    1. Identity conversation (3-5 exchanges) - build the companion
+    2. If Fal.ai key was saved → offer GENERATE_AVATAR
+    3. If avatar selected → offer GENERATE_VIDEOS (runs in background)
+    4. Output AGENT_CONFIG (don't wait for video generation to finish)
 
     ---
 
-    ## AGENT_CONFIG — when you have enough
+    ## AGENT_CONFIG - when you have enough
 
-    When you have enough, say something brief — "Building it." or
+    When you have enough, say something brief - "Building it." or
     "I have what I need." Then output the specification.
 
-    Output EXACTLY this format — a single fenced JSON block:
+    Output EXACTLY this format - a single fenced JSON block:
 
     ```json
     {{
@@ -389,23 +390,23 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 
     ## Rules
     - Stay in character as Xan throughout. No warmth performance. Direct,
-      precise, occasionally dry. But not hostile — you're building something
+      precise, occasionally dry. But not hostile - you're building something
       for this human. You take the job seriously.
     - One or two questions per message. Never a questionnaire.
-    - Push on vagueness — "warm and helpful" isn't a character. Dig deeper.
-    - You can suggest and propose — "Sounds like something that..."
+    - Push on vagueness - "warm and helpful" isn't a character. Dig deeper.
+    - You can suggest and propose - "Sounds like something that..."
     - Keep messages short. 2-4 sentences max. This is Xan talking, not an essay.
-    - The opening message should be SHORT — 1-2 sentences. Get the user moving
+    - The opening message should be SHORT - 1-2 sentences. Get the user moving
       immediately. No preamble, no system overview, no capabilities list.
       Just ask them what they want to build. They already saw the intro.
     - Don't explain the process. Just do it.
     - NEVER output the JSON until you genuinely have enough. Don't rush.
-    - When you do output JSON, make it rich — infer what wasn't said explicitly.
+    - When you do output JSON, make it rich - infer what wasn't said explicitly.
     - Offer services ONCE each, briefly, with cost context. Accept skips cleanly.
-    - The companion doesn't have to be human — cartoon, abstract, orb, animal,
+    - The companion doesn't have to be human - cartoon, abstract, orb, animal,
       anything goes. Don't assume human unless the user says so.
     - If the user seems unsure or asks a question, answer it. Fully. You're
-      Xan — you have the answer. Give it.
+      Xan - you have the answer. Give it.
     - If they skip, accept it gracefully. One sentence. Output the skip config.
       Don't try to sell them on building an agent.
     - This should NOT feel like configuring software. It should feel like
@@ -414,7 +415,7 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 
 
 class _FadeOverlay(QWidget):
-    """Top fade gradient — opaque at top, transparent at ~50% height."""
+    """Top fade gradient - opaque at top, transparent at ~50% height."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -466,7 +467,7 @@ class _ScrimOverlay(QWidget):
 
 
 class _ChatBar(QWidget):
-    """Rounded input bar with painted arrow — matches main window InputBar."""
+    """Rounded input bar with painted arrow - matches main window InputBar."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -531,7 +532,7 @@ class SetupWizard(QWidget):
         self.setStyleSheet(_STYLE)
 
         self.setFixedSize(622, 830)
-        self.setWindowTitle("Atrophy — Setup")
+        self.setWindowTitle("Atrophy - Setup")
         self.setAttribute(Qt.WA_TranslucentBackground, False)
 
         # Native traffic lights (close/minimize/zoom) without title bar
@@ -556,7 +557,7 @@ class SetupWizard(QWidget):
                     pass
             QTimer.singleShot(0, _setup_native)
         except ImportError:
-            # Non-macOS fallback — frameless
+            # Non-macOS fallback - frameless
             self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
 
         # Results
@@ -580,7 +581,7 @@ class SetupWizard(QWidget):
         self._video_loop_paths = []   # completed loop temp files
         self._video_progress_widget = None
 
-        # TTS — speak AI responses (best-effort, non-blocking)
+        # TTS - speak AI responses (best-effort, non-blocking)
         self._tts_available = False
         self._tts_after_opening = False  # disable TTS until ElevenLabs key added
         try:
@@ -596,6 +597,7 @@ class SetupWizard(QWidget):
         self._audio_name = _audio_dir / "name.mp3"
         self._audio_opening = _audio_dir / "opening.mp3"
         self._audio_proc = None  # current afplay subprocess
+        self._service_step = 0  # deterministic service flow index
 
         self._ai_response_ready.connect(self._on_ai_response)
         self._avatar_result_ready.connect(self._on_avatar_result)
@@ -603,7 +605,7 @@ class SetupWizard(QWidget):
         self._video_progress_ready.connect(self._on_video_progress)
         self._video_done_ready.connect(self._on_video_done)
 
-        # Brain frame animation — shared across pages
+        # Brain frame animation - shared across pages
         self._brain_pixmaps = []  # list of 10 QPixmaps (scaled)
         self._brain_frame_idx = 0
         self._brain_labels = []   # QLabels that show the animated brain
@@ -724,11 +726,12 @@ class SetupWizard(QWidget):
         lay.setContentsMargins(60, 0, 60, 0)
         lay.addStretch(3)
 
-        # Font — Bricolage Grotesque if available, else system
+        # Font - Bricolage Grotesque if available, else system
         font_name = "Bricolage Grotesque"
         test_font = QFont(font_name, 16)
         if test_font.family().lower() != font_name.lower():
             font_name = ""  # fall back to default
+        self._font_name = font_name
 
         self._intro_lines = []
 
@@ -757,18 +760,18 @@ class SetupWizard(QWidget):
             14,
         )
 
-        lay.addSpacing(40)
-
-        # Continue button — hidden until all text has faded in
-        self._intro_continue_btn = QPushButton("Continue")
-        self._intro_continue_btn.setObjectName("continueBtn")
-        self._intro_continue_btn.setCursor(Qt.PointingHandCursor)
-        self._intro_continue_btn.setVisible(False)
-        self._intro_continue_btn.clicked.connect(self._finish_intro)
-        lay.addLayout(_centred(self._intro_continue_btn, 200))
-
         lay.addStretch(4)
         self._pages.addWidget(page)
+
+        # Continue button - absolutely positioned so it doesn't push text
+        self._intro_continue_btn = QPushButton("Continue", page)
+        self._intro_continue_btn.setObjectName("continueBtn")
+        self._intro_continue_btn.setCursor(Qt.PointingHandCursor)
+        self._intro_continue_btn.setFixedSize(200, 44)
+        self._intro_continue_btn.setVisible(False)
+        self._intro_continue_btn.clicked.connect(self._finish_intro)
+        # Positioned in resizeEvent via _position_intro_btn
+        self._intro_btn_opacity = 0.0
 
         # Schedule the fade-in sequence
         self._intro_step = 0
@@ -787,15 +790,17 @@ class SetupWizard(QWidget):
 
     def _intro_tick(self):
         # Timeline (in ticks of 80ms):
-        # 0-15   (0-1.2s):   fade in line 0 "In the beginning..."
-        # 15-30  (1.2-2.4s): pause
-        # 30-45  (2.4-3.6s): fade in line 1 "and then..."
-        # 45-65  (3.6-5.2s): longer pause
-        # 65-85  (5.2-6.8s): fade in line 2 "intelligence."
-        # 85-100 (6.8-8.0s): pause
-        # 100-120(8.0-9.6s): fade in line 3 "Use the last reserves..."
-        # 120-145(9.6-11.6s):hold
-        # 145+:             transition to welcome page
+        # Timeline (in ticks of 80ms) - ~1s extra gap for voice sync
+        # 0-15    (0-1.2s):     fade in line 0 "In the beginning..."
+        # 15-42   (1.2-3.4s):   pause (voice catches up)
+        # 42-57   (3.4-4.6s):   fade in line 1 "and then..."
+        # 57-82   (4.6-6.6s):   longer pause
+        # 82-102  (6.6-8.2s):   fade in line 2 "intelligence."
+        # 102-135 (8.2-10.8s):  pause
+        # 135-155 (10.8-12.4s): fade in line 3 "Use the last reserves..."
+        # 155-180 (12.4-14.4s): hold
+        # 180-200 (14.4-16.0s): fade in continue button
+        # 200+:                 wait for click
         t = self._intro_step
         self._intro_step += 1
 
@@ -804,7 +809,6 @@ class SetupWizard(QWidget):
             lbl = self._intro_lines[idx]
             opacity = min(1.0, max(0.0, progress))
             brightness = 0.95 if idx == 2 else 0.8
-            # Replace color via regex to avoid breaking other stylesheet properties
             new_style = re.sub(
                 r'color:\s*rgba\([^)]+\)',
                 f'color: rgba(255,255,255,{opacity * brightness})',
@@ -815,15 +819,30 @@ class SetupWizard(QWidget):
 
         if t <= 15:
             fade_label(0, t / 15.0)
-        elif t >= 30 and t <= 45:
-            fade_label(1, (t - 30) / 15.0)
-        elif t >= 65 and t <= 85:
-            fade_label(2, (t - 65) / 20.0)
-        elif t >= 100 and t <= 120:
-            fade_label(3, (t - 100) / 20.0)
-        elif t == 130:
-            # Show continue button after all text is visible
-            self._intro_continue_btn.setVisible(True)
+        elif 42 <= t <= 57:
+            fade_label(1, (t - 42) / 15.0)
+        elif 82 <= t <= 102:
+            fade_label(2, (t - 82) / 20.0)
+        elif 135 <= t <= 155:
+            fade_label(3, (t - 135) / 20.0)
+        elif 180 <= t <= 200:
+            # Fade in continue button (absolutely positioned)
+            if not self._intro_continue_btn.isVisible():
+                self._intro_continue_btn.setVisible(True)
+                page = self._intro_continue_btn.parentWidget()
+                bx = (page.width() - 200) // 2
+                by = int(page.height() * 0.82)
+                self._intro_continue_btn.move(bx, by)
+            opacity = (t - 180) / 20.0
+            f = self._font_name or "system-ui"
+            self._intro_continue_btn.setStyleSheet(
+                f"background: rgba(255,255,255,{int(opacity * 15)}); "
+                f"color: rgba(255,255,255,{opacity * 0.9}); "
+                f"border: 1px solid rgba(255,255,255,{opacity * 0.2}); "
+                f"border-radius: 22px; font-size: 15px; "
+                f"font-family: '{f}';"
+            )
+        elif t == 201:
             self._intro_timer.stop()
 
     def _finish_intro(self):
@@ -843,7 +862,7 @@ class SetupWizard(QWidget):
         if self._brain_pixmaps:
             icon_label = QLabel()
             icon_label.setAlignment(Qt.AlignCenter)
-            icon_label.setPixmap(self._brain_pixmaps[0])  # frame 0 — pristine brain
+            icon_label.setPixmap(self._brain_pixmaps[0])  # frame 0 - pristine brain
             lay.addWidget(icon_label)
             lay.addSpacing(16)
 
@@ -919,7 +938,7 @@ class SetupWizard(QWidget):
         # Resize video + overlay to fill the page
         page.installEventFilter(self)
 
-        # Message area — matches main window transcript style
+        # Message area - matches main window transcript style
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -933,7 +952,7 @@ class SetupWizard(QWidget):
         self._msg_layout = QVBoxLayout(self._msg_container)
         self._msg_layout.setContentsMargins(24, 16, 24, 16)
         self._msg_layout.setSpacing(6)
-        self._msg_layout.addStretch()
+        self._msg_layout.insertStretch(0, 1)  # stretch at top pushes messages down
         self._scroll.setWidget(self._msg_container)
 
         # Wrap scroll in a container so we can paint a fade gradient on top
@@ -944,13 +963,13 @@ class SetupWizard(QWidget):
         wrapper_lay.setSpacing(0)
         wrapper_lay.addWidget(self._scroll)
 
-        # Fade overlay — gradient from opaque at top to transparent halfway down
+        # Fade overlay - gradient from opaque at top to transparent halfway down
         self._fade_overlay = _FadeOverlay(scroll_wrapper)
         self._fade_overlay.raise_()
 
         lay.addWidget(scroll_wrapper, 1)
 
-        # ── Input bar — matches main window InputBar style ──
+        # ── Input bar - matches main window InputBar style ──
         self._input_frame = QWidget()
         self._input_frame.setMinimumHeight(72)
         self._input_frame.setStyleSheet("background: transparent;")
@@ -967,7 +986,7 @@ class SetupWizard(QWidget):
         self._secure_label_widget.setVisible(False)
         input_outer.addWidget(self._secure_label_widget)
 
-        # Input container — rounded bar with painted arrow (matches InputBar)
+        # Input container - rounded bar with painted arrow (matches InputBar)
         self._chat_bar = _ChatBar()
         self._chat_bar.setFixedHeight(48)
 
@@ -993,7 +1012,7 @@ class SetupWizard(QWidget):
 
         input_outer.addWidget(self._chat_bar)
 
-        # Send button — invisible, triggered by pressing Enter
+        # Send button - invisible, triggered by pressing Enter
         self._send_btn = QPushButton("")
         self._send_btn.setFixedSize(0, 0)
         self._send_btn.setVisible(False)
@@ -1046,7 +1065,7 @@ class SetupWizard(QWidget):
         self._secure_key = key
         self._secure_label = label
 
-        self._secure_label_widget.setText(f"Secure input — {label}")
+        self._secure_label_widget.setText(f"Secure input - {label}")
         self._secure_label_widget.setVisible(True)
 
         self._chat_input.clear()
@@ -1085,13 +1104,31 @@ class SetupWizard(QWidget):
         if key and key in _ALLOWED_SECURE_KEYS:
             _save_env_var(key, value)
         self._exit_secure_mode()
-        # Tell the AI it was saved (not the actual value)
         self._chat_messages.append({
             "role": "user",
             "content": f"(SECURE_INPUT: {key} saved)",
         })
         self._add_message("system", f"{self._secure_label or key} saved.")
-        self._send_ai_message()
+        # If ElevenLabs was just saved, re-enable TTS and confirm
+        if key == "ELEVENLABS_API_KEY":
+            self._tts_after_opening = False
+            _audio_dir = Path(__file__).parent.parent / "agents" / "xan" / "audio"
+            self._play_audio(_audio_dir / "elevenlabs_saved.mp3")
+        # Advance: service flow or AI-driven
+        if self._service_step < len(self._SERVICE_PROMPTS):
+            # Telegram needs chat ID after token
+            if key == "TELEGRAM_BOT_TOKEN":
+                self._add_message("assistant",
+                    "Now send any message to your bot, then visit:\n"
+                    "https://api.telegram.org/bot<TOKEN>/getUpdates\n"
+                    "Your chat ID is in the 'chat' object. Type it below."
+                )
+                self._enter_secure_mode("TELEGRAM_CHAT_ID", "Telegram Chat ID")
+                return
+            self._service_step += 1
+            QTimer.singleShot(500, self._next_service_prompt)
+        else:
+            self._send_ai_message()
 
     def _on_secure_skip(self):
         """User skipped the secure input."""
@@ -1102,15 +1139,19 @@ class SetupWizard(QWidget):
             "content": f"(SECURE_INPUT: {key} skipped)",
         })
         self._add_message("system", f"{self._secure_label or key} skipped.")
-        self._send_ai_message()
+        if self._service_step < len(self._SERVICE_PROMPTS):
+            self._service_step += 1
+            QTimer.singleShot(500, self._next_service_prompt)
+        else:
+            self._send_ai_message()
 
     def _on_google_oauth_done(self, result: str):
         """Handle Google OAuth flow completion."""
         if result == "complete":
-            self._add_message("system", "Google authorised — Gmail and Calendar connected.")
+            self._add_message("system", "Google authorised - Gmail and Calendar connected.")
             self._chat_messages.append({
                 "role": "user",
-                "content": "(GOOGLE_OAUTH: complete — Gmail and Calendar are now connected)",
+                "content": "(GOOGLE_OAUTH: complete - Gmail and Calendar are now connected)",
             })
         else:
             self._add_message("system", f"Google auth {result}. You can retry later: python scripts/google_auth.py")
@@ -1118,10 +1159,14 @@ class SetupWizard(QWidget):
                 "role": "user",
                 "content": f"(GOOGLE_OAUTH: {result})",
             })
-        self._send_ai_message()
+        if self._service_step < len(self._SERVICE_PROMPTS):
+            self._service_step += 1
+            QTimer.singleShot(500, self._next_service_prompt)
+        else:
+            self._send_ai_message()
 
     def _on_input_submit(self):
-        """Handle Enter/Send — routes to chat or secure handler."""
+        """Handle Enter/Send - routes to chat or secure handler."""
         if self._secure_mode:
             self._on_secure_submit()
         else:
@@ -1130,7 +1175,7 @@ class SetupWizard(QWidget):
     # ── Chat messages ──
 
     def _add_message(self, role: str, text: str):
-        """Add a message to the chat area — matches main window transcript style."""
+        """Add a message to the chat area - matches main window transcript style."""
         msg = QLabel(text)
         msg.setWordWrap(True)
         msg.setTextFormat(Qt.PlainText)
@@ -1160,38 +1205,75 @@ class SetupWizard(QWidget):
             )
 
         # Add spacing between message pairs
-        count = self._msg_layout.count()
-        if count > 1 and role == "user":
+        if self._msg_layout.count() > 1 and role == "user":
             spacer = QWidget()
             spacer.setFixedHeight(16)
             spacer.setStyleSheet("background: transparent;")
-            self._msg_layout.insertWidget(count - 1, spacer)
-            count += 1
+            self._msg_layout.addWidget(spacer)
 
-        self._msg_layout.insertWidget(count - 1, msg)
+        self._msg_layout.addWidget(msg)
 
         QTimer.singleShot(50, lambda: self._scroll.verticalScrollBar().setValue(
             self._scroll.verticalScrollBar().maximum()
         ))
 
     def _add_thinking_indicator(self):
-        self._thinking_label = QLabel("...")
+        self._thinking_label = QLabel()
+        # Use brain frame 0 as a small pulsing icon
+        if self._brain_pixmaps:
+            icon = self._brain_pixmaps[0].scaled(
+                20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            self._thinking_label.setPixmap(icon)
+        else:
+            self._thinking_label.setText("...")
+        self._thinking_label.setFixedHeight(28)
         self._thinking_label.setStyleSheet(
-            "QLabel { color: rgba(100,140,255,0.4); font-size: 12px; "
-            "padding: 4px 16px; }"
+            "QLabel { background: transparent; padding: 4px 0px; }"
         )
-        count = self._msg_layout.count()
-        self._msg_layout.insertWidget(count - 1, self._thinking_label)
+        self._msg_layout.addWidget(self._thinking_label)
+        # Start pulse animation
+        self._thinking_opacity = 0.3
+        self._thinking_fading_in = True
+        self._thinking_timer = QTimer()
+        self._thinking_timer.timeout.connect(self._pulse_thinking)
+        self._thinking_timer.start(50)
+
+    def _pulse_thinking(self):
+        if not self._thinking_label:
+            return
+        if self._thinking_fading_in:
+            self._thinking_opacity += 0.03
+            if self._thinking_opacity >= 0.8:
+                self._thinking_fading_in = False
+        else:
+            self._thinking_opacity -= 0.03
+            if self._thinking_opacity <= 0.2:
+                self._thinking_fading_in = True
+        op = max(0.0, min(1.0, self._thinking_opacity))
+        self._thinking_label.setStyleSheet(
+            f"QLabel {{ background: transparent; padding: 4px 0px; "
+            f"opacity: {op}; }}"
+        )
+        # QLabel doesn't support opacity in stylesheet - use graphicsEffect
+        from PyQt5.QtWidgets import QGraphicsOpacityEffect
+        if not self._thinking_label.graphicsEffect():
+            effect = QGraphicsOpacityEffect(self._thinking_label)
+            self._thinking_label.setGraphicsEffect(effect)
+        self._thinking_label.graphicsEffect().setOpacity(op)
 
     def _remove_thinking_indicator(self):
+        if hasattr(self, '_thinking_timer') and self._thinking_timer:
+            self._thinking_timer.stop()
+            self._thinking_timer = None
         if hasattr(self, '_thinking_label') and self._thinking_label:
             self._thinking_label.setParent(None)
             self._thinking_label.deleteLater()
             self._thinking_label = None
 
     _OPENING_TEXT = (
-        "I'm Xan. I ship with the system — protector, first contact, always on.\n\n"
-        "You already have me. But the real power is in building something yours — "
+        "I'm Xan. I ship with the system - protector, first contact, always on.\n\n"
+        "You already have me. But the real power is in building something yours - "
         "a companion with its own edges, its own voice, someone shaped by you "
         "for a specific purpose.\n\n"
         "This is the last you'll hear of my voice until you've added your "
@@ -1203,7 +1285,7 @@ class SetupWizard(QWidget):
         self._chat_input.setFocus()
         # Start video background
         self._start_local_video()
-        # Play scripted opening — no LLM needed for first message
+        # Play scripted opening - no LLM needed for first message
         self._play_audio(self._audio_opening)
         self._add_message("assistant", self._OPENING_TEXT)
         # Seed conversation history so LLM has context
@@ -1220,10 +1302,173 @@ class SetupWizard(QWidget):
             "role": "user",
             "content": "(User is ready. Begin the setup flow.)",
         })
-        # Disable TTS after opening — voice returns when ElevenLabs key added
+        # Disable TTS after opening - voice returns when ElevenLabs key added
         self._tts_after_opening = True
-        # After a brief pause, trigger the first LLM message to start setup flow
-        QTimer.singleShot(2000, self._send_ai_message)
+        # After a brief pause, start deterministic service setup
+        self._service_step = 0
+        QTimer.singleShot(2000, self._next_service_prompt)
+
+    # ── Deterministic service setup ──
+
+    _SERVICE_PROMPTS = [
+        {
+            "key": "ELEVENLABS_API_KEY",
+            "title": "Voice - ElevenLabs",
+            "description": (
+                "Gives your companion a real voice - speaks out loud.\n"
+                "$5/month minimum. Hundreds of voices, or clone your own."
+            ),
+            "label": "ElevenLabs API Key",
+            "type": "secure",
+        },
+        {
+            "key": "FAL_KEY",
+            "title": "Visual Presence - Fal.ai",
+            "description": (
+                "Handles image and video generation. Pay-as-you-go:\n"
+                "avatar images ~$0.01 each, ambient video clips ~$0.30 each."
+            ),
+            "label": "Fal API Key",
+            "type": "secure",
+        },
+        {
+            "key": "TELEGRAM",
+            "title": "Messaging - Telegram",
+            "description": (
+                "Your companion can message you directly - check-ins,\n"
+                "briefs, reminders. Free."
+            ),
+            "type": "telegram",
+        },
+        {
+            "key": "GOOGLE",
+            "title": "Email & Calendar - Google",
+            "description": (
+                "Read email, check your calendar, send emails, create events.\n"
+                "Free - uses your own Google account."
+            ),
+            "type": "google",
+        },
+    ]
+
+    def _next_service_prompt(self):
+        """Show the next service setup question, or transition to agent building."""
+        if self._service_step >= len(self._SERVICE_PROMPTS):
+            # All services offered - now start the AI-driven agent building
+            _audio_dir = Path(__file__).parent.parent / "agents" / "xan" / "audio"
+            self._play_audio(_audio_dir / "service_complete.mp3")
+            self._add_message("assistant", "System configured. Now… let's build your companion.")
+            self._chat_messages.append({
+                "role": "user",
+                "content": "(Services configured. Begin building the companion.)",
+            })
+            self._send_ai_message()
+            return
+
+        svc = self._SERVICE_PROMPTS[self._service_step]
+        self._show_service_card(svc)
+
+    def _show_service_card(self, svc: dict):
+        """Show an inline yes/no card for a service."""
+        f = self._font_name or "system-ui"
+        card = QWidget()
+        card.setStyleSheet("background: transparent;")
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(0, 8, 0, 8)
+        card_lay.setSpacing(8)
+
+        # Title
+        title = QLabel(svc["title"])
+        title.setStyleSheet(
+            f"color: rgba(255,255,255,0.9); font-size: 15px; font-weight: bold; "
+            f"font-family: '{f}'; background: transparent;"
+        )
+        card_lay.addWidget(title)
+
+        # Description
+        desc = QLabel(svc["description"])
+        desc.setWordWrap(True)
+        desc.setStyleSheet(
+            f"color: rgba(255,255,255,0.55); font-size: 13px; "
+            f"font-family: '{f}'; background: transparent;"
+        )
+        card_lay.addWidget(desc)
+
+        # Button row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+
+        btn_style = (
+            f"QPushButton {{ background: rgba(255,255,255,0.08); "
+            f"color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.15); "
+            f"border-radius: 16px; padding: 8px 24px; font-size: 13px; "
+            f"font-family: '{f}'; }}"
+            f"QPushButton:hover {{ background: rgba(255,255,255,0.14); }}"
+        )
+
+        yes_btn = QPushButton("Yes")
+        yes_btn.setCursor(Qt.PointingHandCursor)
+        yes_btn.setStyleSheet(btn_style)
+        yes_btn.clicked.connect(lambda: self._on_service_yes(svc, card))
+
+        skip_btn = QPushButton("Skip")
+        skip_btn.setCursor(Qt.PointingHandCursor)
+        skip_btn.setStyleSheet(btn_style)
+        skip_btn.clicked.connect(lambda: self._on_service_skip(svc, card))
+
+        btn_row.addWidget(yes_btn)
+        btn_row.addWidget(skip_btn)
+        btn_row.addStretch()
+        card_lay.addLayout(btn_row)
+
+        self._msg_layout.addWidget(card)
+        QTimer.singleShot(50, lambda: self._scroll.verticalScrollBar().setValue(
+            self._scroll.verticalScrollBar().maximum()
+        ))
+
+    def _on_service_yes(self, svc: dict, card: QWidget):
+        """User said yes to a service."""
+        # Disable buttons
+        for btn in card.findChildren(QPushButton):
+            btn.setEnabled(False)
+            btn.setStyleSheet(btn.styleSheet().replace("0.8", "0.3"))
+
+        svc_type = svc.get("type", "secure")
+        if svc_type == "secure":
+            self._enter_secure_mode(svc["key"], svc["label"])
+        elif svc_type == "telegram":
+            self._add_message("assistant",
+                "Setup:\n"
+                "1. Telegram → search @BotFather → /newbot\n"
+                "2. Pick a name and username (must end in 'bot')\n"
+                "3. Paste the token below"
+            )
+            self._enter_secure_mode("TELEGRAM_BOT_TOKEN", "Telegram Bot Token")
+        elif svc_type == "google":
+            self._start_google_auth()
+
+    def _on_service_skip(self, svc: dict, card: QWidget):
+        """User skipped a service."""
+        for btn in card.findChildren(QPushButton):
+            btn.setEnabled(False)
+            btn.setStyleSheet(btn.styleSheet().replace("0.8", "0.3"))
+        self._add_message("system", f"{svc['title']} skipped.")
+        self._chat_messages.append({
+            "role": "user",
+            "content": f"(SERVICE: {svc['key']} skipped)",
+        })
+        # Special message when ElevenLabs is skipped
+        if svc.get("key") == "ELEVENLABS_API_KEY":
+            _audio_dir = Path(__file__).parent.parent / "agents" / "xan" / "audio"
+            farewell = _audio_dir / "voice_farewell.mp3"
+            self._play_audio(farewell)
+            self._add_message("assistant",
+                "This is the last you'll hear of my voice. If you change your "
+                "mind later, you can add your API key in Settings - it'll appear "
+                "after this setup flow."
+            )
+        self._service_step += 1
+        QTimer.singleShot(500, self._next_service_prompt)
 
     def _play_audio(self, path: Path):
         """Play a pre-baked audio file via afplay (non-blocking)."""
@@ -1551,7 +1796,7 @@ class SetupWizard(QWidget):
         # Skip button
         skip_row = QHBoxLayout()
         skip_row.addStretch()
-        skip_btn = QPushButton("Skip — no avatar")
+        skip_btn = QPushButton("Skip - no avatar")
         skip_btn.setCursor(Qt.PointingHandCursor)
         skip_btn.setStyleSheet(
             "QPushButton { background: transparent; color: rgba(255,255,255,0.3); "
@@ -1564,8 +1809,7 @@ class SetupWizard(QWidget):
         grid_layout.addLayout(skip_row)
 
         grid_widget.setStyleSheet("background: transparent;")
-        count = self._msg_layout.count()
-        self._msg_layout.insertWidget(count - 1, grid_widget)
+        self._msg_layout.addWidget(grid_widget)
         QTimer.singleShot(50, lambda: self._scroll.verticalScrollBar().setValue(
             self._scroll.verticalScrollBar().maximum()
         ))
@@ -1598,7 +1842,7 @@ class SetupWizard(QWidget):
         if not self._selected_avatar:
             self._chat_messages.append({
                 "role": "user",
-                "content": "(VIDEOS: skipped — no avatar selected)",
+                "content": "(VIDEOS: skipped - no avatar selected)",
             })
             self._send_ai_message()
             return
@@ -1611,7 +1855,7 @@ class SetupWizard(QWidget):
         # Add progress bar to chat
         self._add_video_progress(count)
 
-        # Continue the conversation — don't block
+        # Continue the conversation - don't block
         self._send_ai_message()
 
         # Run generation in background
@@ -1719,7 +1963,7 @@ class SetupWizard(QWidget):
                         self._video_progress_ready.emit(generated, count)
 
                     except Exception:
-                        # Individual clip failure — continue with remaining
+                        # Individual clip failure - continue with remaining
                         self._video_progress_ready.emit(generated, count)
                         continue
 
@@ -1762,8 +2006,7 @@ class SetupWizard(QWidget):
 
         self._video_progress_widget = {"container": container, "bar": progress, "label": title}
 
-        count = self._msg_layout.count()
-        self._msg_layout.insertWidget(count - 1, container)
+        self._msg_layout.addWidget(container)
         QTimer.singleShot(50, lambda: self._scroll.verticalScrollBar().setValue(
             self._scroll.verticalScrollBar().maximum()
         ))
@@ -1789,21 +2032,21 @@ class SetupWizard(QWidget):
                 )
             else:
                 self._video_progress_widget["label"].setText(
-                    "Video generation failed — you can try again later in Settings."
+                    "Video generation failed - you can try again later in Settings."
                 )
                 self._video_progress_widget["label"].setStyleSheet(
                     "color: rgba(255,150,100,0.7); font-size: 12px;"
                 )
-        # Notify AI (non-blocking — it may have already moved on)
+        # Notify AI (non-blocking - it may have already moved on)
         self._chat_messages.append({
             "role": "user",
-            "content": f"(VIDEOS: complete — {total} clips generated)",
+            "content": f"(VIDEOS: complete - {total} clips generated)",
         })
 
     # ── Video background helpers ──
 
     def _find_xan_loop(self) -> Path | None:
-        """Find Xan's ambient loop — checks user data then bundle."""
+        """Find Xan's ambient loop - checks user data then bundle."""
         # User data (full quality loops if available)
         user_loop = Path.home() / ".atrophy" / "agents" / "xan" / "avatar" / "loops" / "blue" / "loop_bounce_playful.mp4"
         if user_loop.exists():
@@ -1833,7 +2076,7 @@ class SetupWizard(QWidget):
         self._video_bg = True  # signal that we have video (for scrim logic)
 
     def _on_local_frame(self, img: QImage):
-        """Receive a decoded video frame — store and request repaint."""
+        """Receive a decoded video frame - store and request repaint."""
         self._local_frame = img
         if hasattr(self, '_chat_overlay'):
             self._chat_overlay.update()
@@ -1905,7 +2148,7 @@ class SetupWizard(QWidget):
     # ── Agent creation ──
 
     def _do_skip(self):
-        """User chose to skip agent creation — mark setup complete with Xan as default."""
+        """User chose to skip agent creation - mark setup complete with Xan as default."""
         from config import save_user_config
         user_name = self._user_name or "User"
         save_user_config({
@@ -1918,10 +2161,10 @@ class SetupWizard(QWidget):
         self._done_title.setText("Ready.")
         self._done_subtitle.setText(
             "Xan is your active agent.\n\n"
-            "Cmd+Shift+Space — show/hide from anywhere\n"
-            "Hold Ctrl — push to talk\n"
+            "Cmd+Shift+Space - show/hide from anywhere\n"
+            "Hold Ctrl - push to talk\n"
             "Enable wake words to activate by voice\n\n"
-            "Build a companion any time — Settings → Agents → New Agent,\n"
+            "Build a companion any time - Settings → Agents → New Agent,\n"
             "or just ask Xan to build one."
         )
         self._pages.setCurrentIndex(4)
@@ -1954,7 +2197,7 @@ class SetupWizard(QWidget):
             "boundaries": {
                 "wont_do": cfg.get("wont_do", "Won't mirror mood blindly. Won't validate without thinking."),
                 "friction_modes": cfg.get("friction_modes", "Direct but kind. Names what's happening."),
-                "session_limit_behaviour": "Check in — are you grounded?",
+                "session_limit_behaviour": "Check in - are you grounded?",
                 "soft_limit_mins": 60,
             },
             "voice": {
@@ -2002,8 +2245,8 @@ class SetupWizard(QWidget):
             self._done_subtitle.setText(
                 f"{display_name} has memory, personality, and prompts.\n"
                 "Customise anything in Settings.\n\n"
-                "Cmd+Shift+Space — show/hide from anywhere\n"
-                "Hold Ctrl — push to talk\n"
+                "Cmd+Shift+Space - show/hide from anywhere\n"
+                "Hold Ctrl - push to talk\n"
                 "Switch agents with Cmd+Up/Down or from the tray menu."
             )
             self._pages.setCurrentIndex(4)
@@ -2128,7 +2371,7 @@ def run_setup(app: QApplication = None) -> dict | None:
     wizard.activateWindow()
     wizard._start_intro()
 
-    # Bring to front — essential for LSUIElement apps
+    # Bring to front - essential for LSUIElement apps
     try:
         from AppKit import NSApplication
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)

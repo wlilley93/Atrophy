@@ -1,4 +1,4 @@
-"""SENTINEL — mid-session coherence monitor.
+"""SENTINEL - mid-session coherence monitor.
 
 Checks every 5 minutes for signs of conversational degradation:
 - Repetition (same phrases/structures across recent turns)
@@ -92,7 +92,7 @@ def check_coherence(recent_turns: list[str]) -> dict:
                 signals.append(
                     f"Energy flatness: last {len(turns)} responses all within "
                     f"20% of the same length (~{int(avg_len)} chars). "
-                    f"Vary your depth — short when short serves, long when it matters."
+                    f"Vary your depth - short when short serves, long when it matters."
                 )
                 scores.append(0.3)
 
@@ -139,7 +139,7 @@ def check_coherence(recent_turns: list[str]) -> dict:
                 )
                 scores.append(0.4)
 
-    # Composite score — average of triggered check scores, 0 if none triggered
+    # Composite score - average of triggered check scores, 0 if none triggered
     score = sum(scores) / len(scores) if scores else 0.0
 
     return {
@@ -155,11 +155,11 @@ def format_reanchor_prompt(signals: list[str]) -> str:
     """Build a re-anchoring prompt from detected signals."""
     signal_block = "\n".join(f"  - {s}" for s in signals)
     return (
-        "[COHERENCE CHECK — you are drifting. The following signals were detected:\n"
+        "[COHERENCE CHECK - you are drifting. The following signals were detected:\n"
         f"{signal_block}\n"
         "Re-anchor: reconnect with what actually matters in this conversation. "
         "Be specific. Push back if you need to. Don't just agree. "
-        "Change your rhythm — if you've been long, go short. If you've been "
+        "Change your rhythm - if you've been long, go short. If you've been "
         "agreeable, find a real question. If your language has gone flat, reach "
         "for something precise.\n"
         "Work this into your next response naturally. Do not announce the "
@@ -181,7 +181,7 @@ def run_coherence_check(cli_session_id: str, system: str) -> str | None:
     recent = get_recent_companion_turns(n=5)[::-1]  # DESC→chronological
 
     if len(recent) < 3:
-        print("  [sentinel] skipped — fewer than 3 turns")
+        print("  [sentinel] skipped - fewer than 3 turns")
         return None
 
     t0 = time.time()
@@ -209,7 +209,7 @@ def run_coherence_check(cli_session_id: str, system: str) -> str | None:
     if not result["degraded"]:
         return None
 
-    # Fire re-anchoring turn — silent, no UI output
+    # Fire re-anchoring turn - silent, no UI output
     reanchor_prompt = format_reanchor_prompt(result["signals"])
     print("  [sentinel] firing re-anchor turn...")
 

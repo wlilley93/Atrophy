@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate General Montgomery face candidates via Flux on Fal.
 
-No reference images — generates from prompt only using Flux.
+No reference images - generates from prompt only using Flux.
 
 Usage:
     python scripts/agents/general_montgomery/generate_face.py --preview
@@ -28,16 +28,16 @@ OUTPUT_DIR = AVATAR_DIR / "candidates"
 FLUX_PROMPT = """
 RAW photograph, Nikon D850, 85mm f/1.4 lens, natural window light.
 Portrait of a distinguished British military officer, 48 years old.
-Not young, not old — exactly the age where authority sits naturally.
+Not young, not old - exactly the age where authority sits naturally.
 Dark hair with definite grey through it, more salt-and-pepper than
 brown now, cut short and precise, side-parted. A mature face with
-real character — visible lines across the forehead and around the
+real character - visible lines across the forehead and around the
 eyes, the weathering of a man who has spent two decades making hard
 decisions. Clean-shaven, strong jaw, blue-grey eyes.
 
-He is fit but not athletic-looking. A lean, wiry build — the frame
+He is fit but not athletic-looking. A lean, wiry build - the frame
 of a man who has never carried excess anything, including weight.
-Real skin — pores, slight ruddiness, crow's feet. He looks like
+Real skin - pores, slight ruddiness, crow's feet. He looks like
 a real person photographed in real light. Not retouched.
 
 Wearing a dark navy military dress shirt with rank insignia, or a
@@ -45,7 +45,7 @@ charcoal wool suit with white shirt and regimental tie. The kind
 of man who looks more authoritative in civilian clothes than most
 men look in uniform.
 
-Expression: measured, steady, appraising. Not cold — composed. The
+Expression: measured, steady, appraising. Not cold - composed. The
 look of a man listening to an intelligence briefing and already
 forming his assessment. Mouth closed. Direct eye contact with camera.
 
@@ -91,7 +91,7 @@ def preview():
     print(f"\n=== MODEL: {MODEL} ===")
     print(f"\n=== OUTPUT: {OUTPUT_DIR} ===")
     print(f"=== SOURCE: {SOURCE_IMAGE} ===")
-    print("\n[Preview mode — no API calls made]")
+    print("\n[Preview mode - no API calls made]")
 
 
 def generate(count: int):

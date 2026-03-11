@@ -2,7 +2,7 @@
 """Rebuild an agent's ambient_loop.mp4 from all loop segments.
 
 Globs all loop_*.mp4 in the agent's loops directory and concatenates
-them into a single ambient_loop.mp4. No hardcoded segment list — just
+them into a single ambient_loop.mp4. No hardcoded segment list - just
 whatever's there.
 
 Usage:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Companion scheduled tasks — launchd control plane.
+"""Companion scheduled tasks - launchd control plane.
 
 Usage:
     python scripts/cron.py list                     # Show all companion jobs
@@ -44,7 +44,7 @@ def _parse_cron(cron_str: str) -> dict:
     """Parse '17 3 * * *' into launchd StartCalendarInterval dict."""
     parts = cron_str.split()
     if len(parts) != 5:
-        raise ValueError(f"Invalid cron: '{cron_str}' — need 5 fields: min hour dom month dow")
+        raise ValueError(f"Invalid cron: '{cron_str}' - need 5 fields: min hour dom month dow")
 
     minute, hour, dom, month, dow = parts
     interval = {}

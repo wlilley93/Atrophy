@@ -2,7 +2,7 @@
 """Regenerate all embeddings for existing memory rows.
 
 Run this once after initial setup, or periodically to ensure all rows
-have up-to-date embeddings. Safe to run multiple times — it overwrites
+have up-to-date embeddings. Safe to run multiple times - it overwrites
 existing embeddings.
 
 Usage:

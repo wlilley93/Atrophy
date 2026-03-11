@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Google OAuth2 setup — browser-based flow for Gmail + Calendar access.
+"""Google OAuth2 setup - browser-based flow for Gmail + Calendar access.
 
 Usage:
     python scripts/google_auth.py              # Authorize (opens browser)
@@ -18,7 +18,7 @@ from pathlib import Path
 GOOGLE_DIR = Path.home() / ".atrophy" / ".google"
 TOKEN_FILE = GOOGLE_DIR / "token.json"
 
-# Bundled OAuth client credentials — identifies the app, not the user.
+# Bundled OAuth client credentials - identifies the app, not the user.
 # These are safe to ship: Google's security model for "Desktop" apps treats
 # client_id/secret as public (the user still authorizes via consent screen).
 _BUNDLED_CREDENTIALS_FILE = Path(__file__).parent.parent / "config" / "google_oauth.json"
@@ -38,7 +38,7 @@ def ensure_dir():
 
 
 def _credentials_file() -> Path:
-    """Find OAuth client credentials — bundled with the app."""
+    """Find OAuth client credentials - bundled with the app."""
     if _BUNDLED_CREDENTIALS_FILE.exists():
         return _BUNDLED_CREDENTIALS_FILE
     raise FileNotFoundError(
@@ -131,7 +131,7 @@ def revoke_credentials():
 
 
 def is_configured() -> bool:
-    """Quick check — do we have a token file at all?"""
+    """Quick check - do we have a token file at all?"""
     return TOKEN_FILE.exists()
 
 
@@ -145,7 +145,7 @@ if __name__ == "__main__":
         print("=" * 40)
         print()
         print("This will open your browser to authorize Gmail + Calendar access.")
-        print("Your Google account data stays on your machine — nothing is sent to Atrophy.")
+        print("Your Google account data stays on your machine - nothing is sent to Atrophy.")
         print()
         if run_oauth_flow():
             print("\nDone. Google integration is ready.")

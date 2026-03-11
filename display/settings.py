@@ -1,4 +1,4 @@
-"""Tabbed settings modal — Settings, Usage, and Activity tabs.
+"""Tabbed settings modal - Settings, Usage, and Activity tabs.
 
 Full-screen overlay with three tabs:
   - Settings: all configuration (agents, identity, voice, inference, etc.)
@@ -422,7 +422,7 @@ _CATEGORY_ORDER = ["tool_call", "heartbeat", "inference"]
 
 
 class _ActivityCard(QWidget):
-    """Single activity entry — click to expand/collapse detail."""
+    """Single activity entry - click to expand/collapse detail."""
 
     def __init__(self, item: dict, parent=None):
         super().__init__(parent)
@@ -1198,7 +1198,7 @@ class SettingsModal(QWidget):
         """Check if sentence-transformers (embeddings) is installed."""
         try:
             import sentence_transformers  # noqa: F401
-            self._dl_status.setText("Embeddings model — installed")
+            self._dl_status.setText("Embeddings model - installed")
             self._dl_status.setStyleSheet("color: rgba(100,220,100,0.6); font-size: 12px;")
             self._dl_timer.stop()
         except ImportError:
@@ -1209,10 +1209,10 @@ class SettingsModal(QWidget):
                 capture_output=True,
             )
             if result.returncode == 0:
-                self._dl_status.setText("Embeddings model — downloading in background...")
+                self._dl_status.setText("Embeddings model - downloading in background...")
                 self._dl_status.setStyleSheet("color: rgba(100,140,255,0.7); font-size: 12px;")
             else:
-                self._dl_status.setText("Embeddings model — pending (installs on first use)")
+                self._dl_status.setText("Embeddings model - pending (installs on first use)")
                 self._dl_status.setStyleSheet("color: rgba(255,255,255,0.4); font-size: 12px;")
 
     # ── Setup reset ─────────────────────────────────────────────
@@ -1223,7 +1223,7 @@ class SettingsModal(QWidget):
         # Find the button and update it
         sender = self.sender()
         if sender:
-            sender.setText("Reset — restart app")
+            sender.setText("Reset - restart app")
             sender.setEnabled(False)
 
     # ── Update checking ─────────────────────────────────────────
@@ -1246,7 +1246,7 @@ class SettingsModal(QWidget):
             )
             behind = int(result.stdout.strip()) if result.returncode == 0 else 0
             if behind == 0:
-                self._update_label.setText(f"v{cfg.VERSION} — up to date")
+                self._update_label.setText(f"v{cfg.VERSION} - up to date")
                 self._update_label.setStyleSheet(
                     "color: rgba(100,255,100,0.7); font-size: 11px;")
             else:
@@ -1288,7 +1288,7 @@ class SettingsModal(QWidget):
                 version_file = bundle_root / "VERSION"
                 new_version = version_file.read_text().strip() if version_file.exists() else "?"
                 self._update_label.setText(
-                    f"Updated to v{new_version} — restart to apply")
+                    f"Updated to v{new_version} - restart to apply")
                 self._update_label.setStyleSheet(
                     "color: rgba(100,255,100,0.9); font-size: 11px;")
             else:
@@ -1357,7 +1357,7 @@ class SettingsModal(QWidget):
             counter += 1
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            # agent.json — strip any API keys or sensitive fields
+            # agent.json - strip any API keys or sensitive fields
             if manifest_path.exists():
                 try:
                     manifest = json.loads(manifest_path.read_text())
@@ -1394,7 +1394,7 @@ class SettingsModal(QWidget):
                         zf.write(p, f"{agent_name}/skills/{p.name}")
                         seen_skills.add(p.name)
 
-            # Avatar source files (face image, voice sample — small, needed to regenerate)
+            # Avatar source files (face image, voice sample - small, needed to regenerate)
             source_dir = agent_dir / "avatar" / "source"
             if source_dir.is_dir():
                 for f in source_dir.iterdir():
@@ -1642,7 +1642,7 @@ class SettingsModal(QWidget):
         manifest["name"] = cfg.AGENT_NAME
         manifest["display_name"] = cfg.AGENT_DISPLAY_NAME
 
-        # User name is global — save to ~/.atrophy/config.json
+        # User name is global - save to ~/.atrophy/config.json
         cfg.save_user_config({"user_name": cfg.USER_NAME})
         manifest["opening_line"] = cfg.OPENING_LINE
         manifest["wake_words"] = cfg.WAKE_WORDS

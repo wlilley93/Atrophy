@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Xan heartbeat — operational status check.
+"""Xan heartbeat - operational status check.
 
 Runs via launchd every 30 minutes. Unlike the companion's heartbeat
 (which evaluates whether to reach out emotionally), Xan's heartbeat
@@ -48,7 +48,7 @@ def _check_agent_cron_jobs() -> list[str]:
         )
         loaded_jobs = result.stdout if result.returncode == 0 else ""
     except Exception:
-        issues.append("Could not query launchctl — unable to verify cron jobs.")
+        issues.append("Could not query launchctl - unable to verify cron jobs.")
         return issues
 
     # Discover all agents
@@ -198,7 +198,7 @@ def heartbeat():
     # Notify
     summary = f"{len(issues)} issue(s) detected"
     send_notification(
-        title=f"{AGENT_DISPLAY_NAME} — Status",
+        title=f"{AGENT_DISPLAY_NAME} - Status",
         body=summary,
     )
 

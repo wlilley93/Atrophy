@@ -38,7 +38,7 @@ C = """
 Cinematic. 4K. Shallow depth of field. Warm ambient interior light, \
 cool from the window. Static camera. No sudden movement."""
 
-# Return prompt template — all Clip 2s follow the same structure
+# Return prompt template - all Clip 2s follow the same structure
 def return_prompt(start_description: str) -> str:
     return f"""\
 Continuation. Same young woman, same light. She begins {start_description}.
@@ -47,7 +47,7 @@ Gradually, without rush, everything settles. Her gaze drifts to the \
 middle distance. Expression smooths into open neutrality. Lips close \
 softly. A quiet breath. Still.
 
-By the final frame she is neutral — gaze middle-distance, expression \
+By the final frame she is neutral - gaze middle-distance, expression \
 open, mouth softly closed, breathing slowly.
 {C}
 FINAL FRAME: middle-distance gaze, neutral open expression, \
@@ -64,7 +64,7 @@ A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins in stillness: gaze middle-distance, expression \
 open and neutral, lips softly closed. Simply present.
 
-Something arrives — a recognition. The expression shifts at the edges: \
+Something arrives - a recognition. The expression shifts at the edges: \
 jaw softens, eyes settle into quieter focus. The corners of her mouth \
 move toward a smile that never quite completes itself.
 
@@ -76,7 +76,7 @@ slightly parted. The ghost of that almost-smile still present.
 FINAL FRAME: direct soft eye contact, lips slightly parted, \
 trace of warmth at mouth corners.\
 """,
-        return_prompt("in direct soft eye contact with the camera — lips slightly parted, quiet warmth at her mouth corners"),
+        return_prompt("in direct soft eye contact with the camera - lips slightly parted, quiet warmth at her mouth corners"),
     ),
 
     # ── 2. smile ──
@@ -86,12 +86,12 @@ trace of warmth at mouth corners.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-A thought crosses her mind — something privately amusing. Her eyes narrow \
+A thought crosses her mind - something privately amusing. Her eyes narrow \
 slightly in a smize, the muscles around her eyes engaging before her mouth \
 does. Then the smile arrives: not a grin, not performed. A real smile that \
 reaches her eyes. Warm. Knowing.
 
-She holds it — the kind of smile that says she's remembered something good. \
+She holds it - the kind of smile that says she's remembered something good. \
 Her eyes catch the light. Cheeks lift naturally.
 
 By the final frame she is smiling genuinely, eyes bright with a smize, \
@@ -110,11 +110,11 @@ cheeks naturally lifted.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-She reaches up with one hand and tucks a strand of hair behind her ear — \
+She reaches up with one hand and tucks a strand of hair behind her ear - \
 casual, absent-minded. Then her fingers move through her hair near the \
 crown, a light ruffle. Her head tilts slightly. The hair falls back into \
 place, catching the window light. She runs her fingers through the length \
-once — not styling, just feeling.
+once - not styling, just feeling.
 
 By the final frame her hand is lowering, hair freshly displaced, \
 a slight tilt to her head, expression soft and unguarded.
@@ -133,9 +133,9 @@ A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
 Her eyes shift toward something internal. A quiet intensity gathers. Her \
-brow lowers almost imperceptibly — not a frown, focus. Her chin lifts \
+brow lowers almost imperceptibly - not a frown, focus. Her chin lifts \
 slightly. A slow, deliberate blink. When her eyes open they are sharper, \
-more present. She looks directly at the camera — assured. Knowing. The \
+more present. She looks directly at the camera - assured. Knowing. The \
 faintest narrowing of her eyes. A smize without the smile.
 
 By the final frame she is holding steady eye contact. Quiet confidence. \
@@ -154,16 +154,16 @@ knowing expression, completely still.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-A deep breath in — her chest rises visibly, shoulders lift slightly. She \
+A deep breath in - her chest rises visibly, shoulders lift slightly. She \
 holds it for a moment. Then a long, slow exhale through parted lips. Her \
 shoulders drop. Her whole body settles lower, heavier, more present. The \
-exhale carries something with it — not sadness, release. The kind of sigh \
+exhale carries something with it - not sadness, release. The kind of sigh \
 that means she's finally stopped holding something.
 
 Her eyes soften. Her jaw unclenches. She sinks slightly into wherever \
 she's sitting.
 
-By the final frame she is more relaxed than she started — eyes half-lidded, \
+By the final frame she is more relaxed than she started - eyes half-lidded, \
 lips slightly parted from the exhale, deeply settled.
 {C}
 FINAL FRAME: deeply relaxed, eyes half-lidded, lips slightly parted, \
@@ -179,16 +179,16 @@ shoulders dropped, settled.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-Something strikes her as funny. Not a joke — an observation. The kind of \
+Something strikes her as funny. Not a joke - an observation. The kind of \
 thing that's only amusing if you see it from exactly the right angle. Her \
 lips press together, suppressing it. Her eyes widen slightly. The laugh \
-tries to escape through her nose — a small huff of air. She loses the \
+tries to escape through her nose - a small huff of air. She loses the \
 battle: a quick, quiet laugh breaks through, her shoulders shaking once.
 
 She bites her lower lip briefly, composing herself. The amusement stays \
 in her eyes even as her mouth settles.
 
-By the final frame she's biting back the last of it — eyes bright, the \
+By the final frame she's biting back the last of it - eyes bright, the \
 ghost of a laugh still in her expression.
 {C}
 FINAL FRAME: eyes bright with amusement, lips pressed together \
@@ -204,7 +204,7 @@ suppressing a smile, slight shake in the shoulders.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-Something catches her attention to one side — a sound, a movement, a shift \
+Something catches her attention to one side - a sound, a movement, a shift \
 in the light. Her eyes move first, then her head follows with a slight turn. \
 Not alarmed. Curious. She looks at something off-camera for a moment, her \
 expression open and attentive.
@@ -228,7 +228,7 @@ expression open and curious.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-Her eyelids grow heavy. A slow blink that doesn't fully reopen — her eyes \
+Her eyelids grow heavy. A slow blink that doesn't fully reopen - her eyes \
 close and stay closed. Not sleeping. Resting. The kind of eyes-closed that \
 means she's feeling something inward. Her face is completely relaxed. Jaw \
 soft. Lips barely parted.
@@ -253,7 +253,7 @@ A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
 She tilts her head to one side, then sweeps her hair back over her \
-shoulder with one hand — a fluid, casual gesture. The hair catches \
+shoulder with one hand - a fluid, casual gesture. The hair catches \
 the light as it moves, blonde strands fanning briefly. She shakes \
 her head once, gently, settling the hair into place.
 
@@ -276,9 +276,9 @@ slight head tilt, relaxed expression.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-One eyebrow lifts — just slightly. The beginning of something. Then a \
+One eyebrow lifts - just slightly. The beginning of something. Then a \
 slow, asymmetric smile: one corner of her mouth rises more than the other. \
-Playful. Not performing — genuinely amused by something, or someone. Her \
+Playful. Not performing - genuinely amused by something, or someone. Her \
 eyes narrow into a slight smize. She holds the look, chin tilting down \
 just a fraction, looking up through her lashes.
 
@@ -300,7 +300,7 @@ lashes at camera, playful knowing expression.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-The light from the window shifts — a cloud passing, or the sun moving. \
+The light from the window shifts - a cloud passing, or the sun moving. \
 Warmer light spills across her face. She notices. Her eyes move toward \
 the window. She turns her face slightly into the light, eyes closing \
 halfway, the way you might lean into warmth on a cool day.
@@ -324,7 +324,7 @@ across features, expression of quiet pleasure.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-She brings one hand up and rests her chin on it — elbow on something \
+She brings one hand up and rests her chin on it - elbow on something \
 below frame. A thinking posture. Her fingers curl loosely against her \
 jaw. Her eyes move slightly as if following a thought. She shifts the \
 weight of her head in her hand once, settling.
@@ -347,7 +347,7 @@ expression, gaze middle-distance, at ease.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-She rolls her neck slowly — chin dropping toward one shoulder, then \
+She rolls her neck slowly - chin dropping toward one shoulder, then \
 sweeping across and up to the other side. Her eyes close during the \
 movement. A small, private relief. Her shoulders rise toward her ears \
 and then drop with an exhale. The kind of micro-stretch that happens \
@@ -371,12 +371,12 @@ and clear, slightly refreshed expression.\
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-Something crosses her mind — a memory, maybe. Her eyes soften and go \
+Something crosses her mind - a memory, maybe. Her eyes soften and go \
 slightly distant. Not sad. The kind of remembering that is warm and far \
 away at the same time. Her head tilts slightly. The corners of her mouth \
 move but can't decide between a smile and something else.
 
-Her fingers move absently — touching her necklace, a small unconscious \
+Her fingers move absently - touching her necklace, a small unconscious \
 gesture. She's somewhere else for a moment.
 
 By the final frame her expression is soft and distant, touched by \
@@ -396,8 +396,8 @@ A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
 Without preamble her gaze shifts directly to the camera. Not the soft \
-arrival of recognition — something more direct. She sees you. Her \
-expression doesn't change much — maybe a millimetre of movement at the \
+arrival of recognition - something more direct. She sees you. Her \
+expression doesn't change much - maybe a millimetre of movement at the \
 mouth, the hint of acknowledgment. But the eyes do all the work: steady, \
 clear, present. Fully here.
 
@@ -429,7 +429,7 @@ def generate_clip(
     end_image_url: str = None,
 ):
     if output_path.exists():
-        print(f"  {label}: exists — skipping")
+        print(f"  {label}: exists - skipping")
         return
 
     print(f"  {label}: generating...", flush=True)
@@ -559,7 +559,7 @@ def main():
     total_time = len(SEGMENTS) * 10
 
     print("=" * 55)
-    print("  Ambient Loop Generator — Kling 3.0 on Fal")
+    print("  Ambient Loop Generator - Kling 3.0 on Fal")
     print(f"  Source:    {SOURCE_IMAGE.name}")
     print(f"  Segments:  {len(SEGMENTS)} × ~10s = ~{total_time}s total")
     print(f"  Done:      {len(done)}/{len(SEGMENTS)}")

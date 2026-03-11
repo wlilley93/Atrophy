@@ -88,11 +88,11 @@ def register():
     commands = _build_commands()
     print(f"Registering {len(commands)} commands:")
     for cmd in commands:
-        print(f"  /{cmd['command']} — {cmd['description'][:60]}")
+        print(f"  /{cmd['command']} - {cmd['description'][:60]}")
 
     result = _api_post("setMyCommands", {"commands": commands})
     if result:
-        print("Done — commands registered.")
+        print("Done - commands registered.")
     else:
         print("Failed to register commands.")
         sys.exit(1)
@@ -106,7 +106,7 @@ def clear():
 
     result = _api_post("deleteMyCommands", {})
     if result:
-        print("Done — all commands cleared.")
+        print("Done - all commands cleared.")
     else:
         print("Failed to clear commands.")
         sys.exit(1)

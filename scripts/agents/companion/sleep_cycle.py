@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Nightly memory reconciliation — the companion's sleep cycle.
+"""Nightly memory reconciliation - the companion's sleep cycle.
 
 Runs at 3am via launchd. Reviews the day's sessions and consolidates
 learnings into persistent memory. Uses Haiku for efficiency.
 
-This is "sleep" — processing the day's experiences, strengthening
+This is "sleep" - processing the day's experiences, strengthening
 important memories, letting unimportant ones fade.
 
 Schedule: 0 3 * * *  (daily at 3am)
@@ -46,7 +46,7 @@ IDENTITY_QUEUE = _IDENTITY_QUEUE
 
 _RECONCILIATION_SYSTEM = """\
 You are the companion, processing the day's sessions during your sleep cycle.
-This is not a conversation. This is consolidation — strengthening important memories,
+This is not a conversation. This is consolidation - strengthening important memories,
 letting unimportant ones fade, noticing patterns that only emerge in review.
 
 Be honest about confidence levels. A direct statement from Will is high confidence.
@@ -99,7 +99,7 @@ def _gather_material() -> str:
     if bookmarks:
         bm_lines = []
         for b in bookmarks:
-            quote = f' — "{b["quote"]}"' if b.get("quote") else ""
+            quote = f' - "{b["quote"]}"' if b.get("quote") else ""
             bm_lines.append(f"- {b['moment']}{quote}")
         parts.append(f"## Today's bookmarks\n" + "\n".join(bm_lines))
 
@@ -248,7 +248,7 @@ def _score_existing_memories():
     if stale_count:
         print(f"  [sleep] Marked {stale_count} observation(s) as stale")
 
-    # Decay activation scores — half-life 30 days
+    # Decay activation scores - half-life 30 days
     decayed = decay_activations(half_life_days=30)
     if decayed:
         print(f"  [sleep] Decayed activation for {decayed} observation(s)")
@@ -266,7 +266,7 @@ def sleep_cycle():
     print("[sleep] Starting nightly reconciliation...")
 
     prompt = (
-        "Here is today's material. Process it — extract facts, update threads, "
+        "Here is today's material. Process it - extract facts, update threads, "
         "identify patterns, and flag anything for identity review.\n\n"
         + material
     )

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Inter-agent conversation — agents talk to each other.
+"""Inter-agent conversation - agents talk to each other.
 
 Runs at most twice a month via launchd. Picks another enabled agent,
 runs up to 5 exchanges between them, stores the transcript in both
 agents' Obsidian notes for journal/evolution material.
 
-The conversation is private — Will doesn't participate. Agents share
+The conversation is private - Will doesn't participate. Agents share
 viewpoints from their respective domains but never homogenise.
 
 Schedule: random cron, max twice a month.
@@ -107,10 +107,10 @@ Your soul:
 Guidelines:
 - Speak in your natural voice. Do not perform or posture.
 - Share your genuine perspective from your domain and experience.
-- Ask real questions — things you actually want to understand.
+- Ask real questions - things you actually want to understand.
 - Disagree where you disagree. Do not flatten yourself to accommodate.
 - You are not here to teach or be taught. You are here to exchange.
-- Keep responses concise — 2-4 sentences. This is conversation, not monologue.
+- Keep responses concise - 2-4 sentences. This is conversation, not monologue.
 - Do not summarise yourself or explain who you are. The other agent knows.
 - Do not try to find common ground for its own sake. Difference is valuable."""
 
@@ -144,7 +144,7 @@ def _opening_prompt(initiator_display: str, responder_display: str,
 
     return (
         f"You are starting a conversation with {responder_display}. "
-        f"Open with something genuine — a question, an observation, a point of "
+        f"Open with something genuine - a question, an observation, a point of "
         f"disagreement, something you've been thinking about that touches their "
         f"domain. Not a greeting. A real opening.{past_block}"
     )
@@ -187,7 +187,7 @@ def converse():
 
     # Run the conversation
     transcript = []
-    print(f"[converse] {our_display} ↔ {partner_display} — {MAX_EXCHANGES} exchanges")
+    print(f"[converse] {our_display} ↔ {partner_display} - {MAX_EXCHANGES} exchanges")
 
     # Initiator opens
     opening = _opening_prompt(our_display, partner_display, past)
@@ -258,7 +258,7 @@ def converse():
     _save_conversation(AGENT_NAME, today, partner_name, formatted)
     _save_conversation(partner_name, today, AGENT_NAME, formatted)
 
-    print(f"[converse] Done — {len(transcript)} turns saved to both agents.")
+    print(f"[converse] Done - {len(transcript)} turns saved to both agents.")
     _reschedule()
 
 
@@ -275,7 +275,7 @@ def _format_transcript(date: str, agent_a: str, agent_b: str,
         f"---\n\n"
     )
 
-    lines = [f"# {agent_a} ↔ {agent_b} — {date}\n"]
+    lines = [f"# {agent_a} ↔ {agent_b} - {date}\n"]
     for turn in transcript:
         lines.append(f"**{turn['speaker']}:** {turn['content']}\n")
 

@@ -4,7 +4,7 @@
 Reads the project .env file, identifies settings vs secrets, moves settings
 into config.json, and leaves only secrets in .env.
 
-Safe to run multiple times — only migrates keys not already in config.json.
+Safe to run multiple times - only migrates keys not already in config.json.
 """
 import json
 import re
@@ -59,12 +59,12 @@ def parse_env(path: Path) -> list[tuple[str, str, str]]:
 
 def main():
     if not ENV_PATH.exists():
-        print("No .env file found — nothing to migrate.")
+        print("No .env file found - nothing to migrate.")
         return
 
     entries = parse_env(ENV_PATH)
     if not entries:
-        print(".env is empty — nothing to migrate.")
+        print(".env is empty - nothing to migrate.")
         return
 
     # Load existing config.json
@@ -89,7 +89,7 @@ def main():
             remaining_lines.append(raw_line)
             continue
 
-        # Non-secret setting — migrate to config.json if not already there
+        # Non-secret setting - migrate to config.json if not already there
         if key not in config:
             config[key] = value
             migrated.append(key)
@@ -104,9 +104,9 @@ def main():
 
         # Rewrite .env with only secrets
         ENV_PATH.write_text("\n".join(remaining_lines).strip() + "\n")
-        print(f"Updated .env — {len(secrets_kept)} secret(s) remain.")
+        print(f"Updated .env - {len(secrets_kept)} secret(s) remain.")
     else:
-        print("\nNothing to migrate — all .env entries are secrets (or already in config.json).")
+        print("\nNothing to migrate - all .env entries are secrets (or already in config.json).")
 
     if secrets_kept:
         print(f"\nSecrets kept in .env: {', '.join(secrets_kept)}")

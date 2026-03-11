@@ -1,4 +1,4 @@
-"""Adaptive thinking — classify message complexity to set inference effort.
+"""Adaptive thinking - classify message complexity to set inference effort.
 
 Simple heuristic classifier. No ML, no API calls. Runs in <1ms.
 """
@@ -86,7 +86,7 @@ def classify_effort(user_message: str, recent_context: list[str] = None) -> str:
 
     Returns: "low", "medium", or "high"
 
-    Fast heuristic only — no inference, no model calls.
+    Fast heuristic only - no inference, no model calls.
     Defaults to "medium" when unsure.
     """
     text = user_message.strip()
@@ -141,7 +141,7 @@ def classify_effort(user_message: str, recent_context: list[str] = None) -> str:
     elif reasoning_hits == 1:
         high_score += 1
 
-    # Context momentum — if recent conversation was deep, maintain it
+    # Context momentum - if recent conversation was deep, maintain it
     if _context_is_deep(recent_context):
         high_score += 1
 

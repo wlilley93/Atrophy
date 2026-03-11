@@ -1,4 +1,4 @@
-"""Text-to-speech — async, three-tier fallback.
+"""Text-to-speech - async, three-tier fallback.
 
 Chain: ElevenLabs streaming → ElevenLabs batch → Fal → macOS say.
 
@@ -142,7 +142,7 @@ async def synthesise(text: str) -> Path:
     text = _INLINE_CODE_RE.sub('', text)
     # Strip tags and check for empty text
     cleaned, _ = _process_prosody(text)
-    # Skip if empty or too short — ElevenLabs hallucinates on tiny fragments
+    # Skip if empty or too short - ElevenLabs hallucinates on tiny fragments
     if not cleaned or len(cleaned.strip()) < 8:
         return _secure_tmp(".aiff")
 
@@ -160,13 +160,13 @@ async def synthesise(text: str) -> Path:
         except Exception as e:
             print(f"[TTS] Fal failed ({e}), no voice available")
 
-    # No configured voice available — return silence, never use macOS say
-    print("[TTS] No configured voice available — skipping audio")
+    # No configured voice available - return silence, never use macOS say
+    print("[TTS] No configured voice available - skipping audio")
     return _secure_tmp(".aiff")
 
 
 def synthesise_sync(text: str) -> Path:
-    """Blocking synthesise — for use in QThread workers. No event loop needed."""
+    """Blocking synthesise - for use in QThread workers. No event loop needed."""
     # Strip code blocks before processing
     text = _CODE_BLOCK_RE.sub('', text)
     text = _INLINE_CODE_RE.sub('', text)
@@ -192,8 +192,8 @@ def synthesise_sync(text: str) -> Path:
         except Exception as e:
             print(f"[TTS] Fal failed ({e}), no voice available")
 
-    # No configured voice available — return silence, never use macOS say
-    print("[TTS] No configured voice available — skipping audio")
+    # No configured voice available - return silence, never use macOS say
+    print("[TTS] No configured voice available - skipping audio")
     return _secure_tmp(".aiff")
 
 
@@ -208,7 +208,7 @@ async def play(audio_path: Path) -> None:
 
 
 def play_sync(audio_path: Path) -> None:
-    """Blocking play — for use in threads."""
+    """Blocking play - for use in threads."""
     subprocess.run(
         ["afplay", "-r", str(TTS_PLAYBACK_RATE), str(audio_path)],
         stdout=subprocess.DEVNULL,
@@ -223,7 +223,7 @@ async def speak(text: str) -> Path:
     return path
 
 
-# ── ElevenLabs streaming (primary — lowest latency) ──
+# ── ElevenLabs streaming (primary - lowest latency) ──
 
 async def _synthesise_elevenlabs_stream(text: str) -> Path:
     """ElevenLabs streaming endpoint. Audio bytes arrive while generating."""
@@ -232,7 +232,7 @@ async def _synthesise_elevenlabs_stream(text: str) -> Path:
     if not text or not text.strip():
         raise ValueError("Empty text after prosody stripping")
 
-    # Clamp overrides to ±0.15 — enough to be expressive without losing coherence
+    # Clamp overrides to ±0.15 - enough to be expressive without losing coherence
     stab_d = max(-0.15, min(0.15, prosody_overrides.get('stability', 0)))
     sim_d = max(-0.15, min(0.15, prosody_overrides.get('similarity_boost', 0)))
     sty_d = max(-0.15, min(0.15, prosody_overrides.get('style', 0)))
@@ -282,7 +282,7 @@ async def _synthesise_elevenlabs_stream(text: str) -> Path:
 async def _synthesise_fal(text: str) -> Path:
     import fal_client
 
-    # fal_client.subscribe is blocking — run in executor to not block the event loop
+    # fal_client.subscribe is blocking - run in executor to not block the event loop
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         None,
@@ -308,7 +308,7 @@ async def _synthesise_fal(text: str) -> Path:
 
 
 def _synthesise_fal_sync(text: str) -> Path:
-    """Fully synchronous Fal TTS — no event loop needed."""
+    """Fully synchronous Fal TTS - no event loop needed."""
     import fal_client
 
     result = fal_client.subscribe(

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-compaction observer — periodic fact extraction from recent conversation.
+"""Pre-compaction observer - periodic fact extraction from recent conversation.
 
 Runs every 15 minutes via launchd. Scans recent turns for durable facts
 worth preserving between compaction events. Complements the memory flush
@@ -49,7 +49,7 @@ def _save_state(state: dict):
 
 _OBSERVER_SYSTEM = """\
 You are extracting durable facts from a conversation transcript.
-Not everything is worth preserving — only extract things that would be
+Not everything is worth preserving - only extract things that would be
 useful to remember in a future session.
 
 Output format (one per line):
@@ -104,7 +104,7 @@ def observe():
     turns = _get_recent_turns(last_id)
 
     if not turns:
-        # Fast path — nothing new
+        # Fast path - nothing new
         return
 
     print(f"[observer] {len(turns)} new turn(s) since ID {last_id}")

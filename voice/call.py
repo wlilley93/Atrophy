@@ -1,10 +1,10 @@
-"""Voice call — hands-free continuous conversation loop.
+"""Voice call - hands-free continuous conversation loop.
 
 Captures audio from the mic, detects speech via energy + silence,
 transcribes with whisper, runs inference, speaks the response via
 ElevenLabs TTS. Repeats until stopped.
 
-The ambient video keeps playing — this only touches audio I/O.
+The ambient video keeps playing - this only touches audio I/O.
 """
 import numpy as np
 import subprocess
@@ -30,11 +30,11 @@ class VoiceCall(QThread):
     """Runs a hands-free voice conversation in a background thread.
 
     Signals:
-        status_changed(str)   — "listening", "thinking", "speaking", "idle"
-        user_said(str)        — transcribed user speech
-        agent_said(str)       — agent response text
-        error(str)            — error message
-        call_ended()          — call terminated
+        status_changed(str)   - "listening", "thinking", "speaking", "idle"
+        user_said(str)        - transcribed user speech
+        agent_said(str)       - agent response text
+        error(str)            - error message
+        call_ended()          - call terminated
     """
     status_changed = pyqtSignal(str)
     user_said = pyqtSignal(str)
@@ -67,7 +67,7 @@ class VoiceCall(QThread):
         try:
             import sounddevice as sd
         except ImportError:
-            self.error.emit("sounddevice not installed — voice call unavailable")
+            self.error.emit("sounddevice not installed - voice call unavailable")
             self.call_ended.emit()
             return
 

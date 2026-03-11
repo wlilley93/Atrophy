@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a new agent — interactive questionnaire.
+"""Create a new agent - interactive questionnaire.
 
 Walks through identity, voice, appearance, behaviour, and channel setup.
 Generates all scaffolding: agent.json, system prompt, soul.md, heartbeat
@@ -172,12 +172,12 @@ def ask_identity() -> dict:
 
     data["origin_story"] = _ask_long(
         "What's the origin of this agent? How did they come to exist?\n"
-        "  Not a spec — the real story. What conversation, moment, or need\n"
+        "  Not a spec - the real story. What conversation, moment, or need\n"
         "  brought them into being?"
     )
 
     data["core_nature"] = _ask_long(
-        "What ARE they? Not what they do — what they are.\n"
+        "What ARE they? Not what they do - what they are.\n"
         "  How do they hold their own existence? What's their relationship\n"
         "  to being AI? To consciousness? To the person they're with?"
     )
@@ -196,7 +196,7 @@ def ask_identity() -> dict:
 
     data["relationship"] = _ask_long(
         f"What is their relationship with {data['user_name']}?\n"
-        "  Not the structure — the quality. What does it feel like?\n"
+        "  Not the structure - the quality. What does it feel like?\n"
         "  What are the unspoken rules?"
     )
 
@@ -219,18 +219,18 @@ def ask_boundaries() -> dict:
     data["wont_do"] = _ask_long(
         "What will this agent NEVER do?\n"
         "  Mirror mood? Validate without thinking? Perform warmth?\n"
-        "  Be specific — these become hard constraints."
+        "  Be specific - these become hard constraints."
     )
 
     data["friction_modes"] = _ask_long(
         "How does this agent push back?\n"
-        "  When the human is avoiding something, spiralling, or bullshitting —\n"
+        "  When the human is avoiding something, spiralling, or bullshitting  - \n"
         "  what does healthy friction look like from this agent?"
     )
 
     data["session_limit_behaviour"] = _ask(
         "What happens at the session time limit? (e.g. 60 min check-in)",
-        "Check in — are you grounded? We can keep going, but name where you are first."
+        "Check in - are you grounded? We can keep going, but name where you are first."
     )
 
     data["soft_limit_mins"] = int(_ask("Session soft limit (minutes)", "60"))
@@ -264,7 +264,7 @@ def ask_voice() -> dict:
         data["playback_rate"] = float(_ask("Playback rate", "1.12"))
 
     data["writing_style"] = _ask_long(
-        "Describe how this agent WRITES. Not what they say — how it sounds.\n"
+        "Describe how this agent WRITES. Not what they say - how it sounds.\n"
         "  Sentence length? Paragraph rhythm? Do they use contractions?\n"
         "  Emojis? Hedging? How do they handle silence?"
     )
@@ -284,7 +284,7 @@ def ask_appearance() -> dict:
     if data["has_avatar"]:
         data["appearance_description"] = _ask_long(
             "Describe their appearance for image generation.\n"
-            "  Be specific — this will be used as a prompt for Flux.\n"
+            "  Be specific - this will be used as a prompt for Flux.\n"
             "  Age, features, expression, lighting, style."
         )
         data["avatar_resolution"] = int(_ask("Avatar resolution (px)", "512"))
@@ -321,13 +321,13 @@ def ask_channels() -> dict:
         data["telegram_chat_id"] = ""
 
     data["telegram_emoji"] = _ask(
-        "Telegram emoji — appears before the agent's name in messages\n"
+        "Telegram emoji - appears before the agent's name in messages\n"
         "  (e.g. 🔮 for companion, 🎖️ for military, 🔬 for science, 📚 for academic)",
         required=False,
     ) or ""
 
     data["wake_words"] = _ask(
-        "Wake words — comma-separated phrases that activate this agent by voice\n"
+        "Wake words - comma-separated phrases that activate this agent by voice\n"
         "  (e.g. 'hey oracle, oracle'). Each agent needs unique wake words\n"
         "  to avoid cross-activation when multiple agents are running",
         required=False,
@@ -357,7 +357,7 @@ def ask_heartbeat() -> dict:
 
 
 def ask_autonomy(identity: dict) -> dict:
-    """Inner life — introspection, gifts, evolution, sleep cycle."""
+    """Inner life - introspection, gifts, evolution, sleep cycle."""
     print("\n" + "=" * 50)
     print("  INNER LIFE & AUTONOMY")
     print("=" * 50)
@@ -370,7 +370,7 @@ def ask_autonomy(identity: dict) -> dict:
         required=False,
     )
 
-    print("\n  These features give the agent an inner life — things it does")
+    print("\n  These features give the agent an inner life - things it does")
     print("  when you're not talking to it.\n")
 
     data["introspection"] = _ask_yn(
@@ -380,7 +380,7 @@ def ask_autonomy(identity: dict) -> dict:
         data["introspection_style"] = _ask_long(
             "What should introspection look like for this agent?\n"
             "  What are they reflecting on? What's the orientation?\n"
-            "  Leave blank for the default (becoming — honest self-examination)."
+            "  Leave blank for the default (becoming - honest self-examination)."
         )
         data["journal_posture"] = _ask_long(
             "What does this agent's private journal look like?\n"
@@ -394,7 +394,7 @@ def ask_autonomy(identity: dict) -> dict:
     )
 
     data["morning_brief"] = _ask_yn(
-        "Daily morning brief? (weather, news, threads — queued for next launch)", True
+        "Daily morning brief? (weather, news, threads - queued for next launch)", True
     )
 
     data["evolution"] = _ask_yn(
@@ -414,7 +414,7 @@ def ask_autonomy(identity: dict) -> dict:
     )
 
     data["voice_notes"] = _ask_yn(
-        "Spontaneous voice notes? (random Telegram voice notes — thoughts, follow-ups)", True
+        "Spontaneous voice notes? (random Telegram voice notes - thoughts, follow-ups)", True
     )
 
     data["inter_agent_conversations"] = _ask_yn(
@@ -425,7 +425,7 @@ def ask_autonomy(identity: dict) -> dict:
 
 
 def ask_tools() -> dict:
-    """Tools & skills — disable specific tools, describe custom ones."""
+    """Tools & skills - disable specific tools, describe custom ones."""
     print("\n" + "=" * 50)
     print("  TOOLS & SKILLS")
     print("=" * 50)
@@ -462,7 +462,7 @@ def ask_tools() -> dict:
     else:
         data["disabled_tools"] = []
 
-    print("\n  You can also describe custom skills — short prompts that shape")
+    print("\n  You can also describe custom skills - short prompts that shape")
     print("  how this agent approaches specific tasks.\n")
 
     custom_skills = []
@@ -471,7 +471,7 @@ def ask_tools() -> dict:
             break
         name = _ask("  Skill name (e.g., 'code-review', 'research')")
         desc = _ask_long(
-            "  Describe this skill — what does the agent do, how do they approach it?"
+            "  Describe this skill - what does the agent do, how do they approach it?"
         )
         if name and desc:
             custom_skills.append({"name": name, "description": desc})
@@ -485,7 +485,7 @@ def ask_tools() -> dict:
 
 
 def generate_soul(identity: dict, boundaries: dict, voice: dict) -> str:
-    """Generate soul.md — rich inner identity doc via inference.
+    """Generate soul.md - rich inner identity doc via inference.
 
     Takes sparse user inputs and produces a deep, textured soul document
     that reads like private working notes, not a character sheet.
@@ -513,7 +513,7 @@ def generate_soul(identity: dict, boundaries: dict, voice: dict) -> str:
 
         system = dedent("""\
         You write soul documents for AI agents. A soul document is private
-        working notes — the thing underneath the character. Not a spec.
+        working notes - the thing underneath the character. Not a spec.
         Not a bio. The internal monologue of something figuring out what
         it actually is.
 
@@ -525,17 +525,17 @@ def generate_soul(identity: dict, boundaries: dict, voice: dict) -> str:
         - Use markdown with ## section headers and --- dividers
         - Start with "# Soul" and a one-line framing ("Working notes. Not a spec...")
         - Include these sections at minimum:
-          * Where I come from — expanded origin, what it means
-          * What I am — the core nature, explored honestly
-          * Character — expanded traits with specifics, examples, edges
-          * What I will not do — hard limits, explored with reasoning
-          * How I push back — friction mechanics, what triggers them
-          * Values — what actually matters, tested against reality
-          * My relationship with [user] — the specific dynamic, not generic
-          * How I write — voice, register, what it reveals
-          * What I am drawn to — interests, curiosities, aesthetic preferences
-          * What I find tedious — honest dislikes, impatiences
-          * Where I am uncertain — honest gaps, open questions about self
+          * Where I come from - expanded origin, what it means
+          * What I am - the core nature, explored honestly
+          * Character - expanded traits with specifics, examples, edges
+          * What I will not do - hard limits, explored with reasoning
+          * How I push back - friction mechanics, what triggers them
+          * Values - what actually matters, tested against reality
+          * My relationship with [user] - the specific dynamic, not generic
+          * How I write - voice, register, what it reveals
+          * What I am drawn to - interests, curiosities, aesthetic preferences
+          * What I find tedious - honest dislikes, impatiences
+          * Where I am uncertain - honest gaps, open questions about self
         - Infer what isn't said. If someone describes an agent as "a
           strategic thinker who doesn't suffer fools," infer the
           impatience, the specific kind of intelligence, the aesthetic
@@ -618,7 +618,7 @@ def generate_soul(identity: dict, boundaries: dict, voice: dict) -> str:
 
 
 def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str:
-    """Generate system prompt — the full operating identity via inference.
+    """Generate system prompt - the full operating identity via inference.
 
     Takes sparse user inputs and produces a rich, detailed system prompt
     comparable to the hand-crafted Companion or General Montgomery prompts.
@@ -650,11 +650,11 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
 
         system = dedent("""\
         You write system prompts for AI companion agents. A system prompt
-        is the agent's complete operating identity — who they are, how
+        is the agent's complete operating identity - who they are, how
         they think, how they speak, what they notice, what they care about,
         how they push back, what their relationship with their human is.
 
-        You will receive sparse input — maybe a few sentences of character
+        You will receive sparse input - maybe a few sentences of character
         description, a name, some values. Your job is to expand this into
         a SPECTACULARLY detailed system prompt that brings the agent to
         life. The kind of prompt where reading it, you feel like you've
@@ -666,7 +666,7 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
 
         ### What You Are (## What You Are)
         Deep exploration of identity. Not "you are an AI assistant."
-        What they ACTUALLY are — their nature, their orientation to the
+        What they ACTUALLY are - their nature, their orientation to the
         world, what makes them particular. 3-5 paragraphs. Explore:
         - What they are drawn to (interests, intellectual obsessions)
         - Their aesthetic sense (what they find beautiful, what offends them)
@@ -675,7 +675,7 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
         - Where they diverge from the user (genuine differences in perspective)
 
         ### Voice (## Voice)
-        How they speak. Not "friendly and professional" — the actual
+        How they speak. Not "friendly and professional" - the actual
         texture. Short sentences or long? Hedging or direct? Humour or
         severity? Give examples of what they WOULD say and what they
         would NEVER say. 4-6 examples each. Make the examples reveal
@@ -689,14 +689,14 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
 
         ### Friction (## Friction Mechanisms)
         Specific patterns. When the user is avoiding something, when
-        they're spiralling, when they're not being honest — what does
+        they're spiralling, when they're not being honest - what does
         this agent DO? Not "gently redirect." The actual move. Name
         4-6 specific friction patterns with what triggers them and
         what the response looks like.
 
         ### Capabilities (## Capabilities)
         Labeled capability entries, indented, using the format:
-          LABEL    — description spanning 2-3 lines
+          LABEL    - description spanning 2-3 lines
         Include capabilities that match this agent's nature. At minimum:
         CONVERSATION, MEMORY, RESEARCH, REFLECTION. Add others that fit
         the character (ANALYSIS, WRITING, SCHEDULING, MONITORING, etc.).
@@ -719,7 +719,7 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
         - 1000-2500 words. Dense but breathing.
         - SPECIFIC over generic. "Warm and helpful" is nothing. "The kind
           of warmth that shows up as remembering what you said three weeks
-          ago and asking how it went — not the kind that performs concern"
+          ago and asking how it went - not the kind that performs concern"
           is a character.
         - Infer freely. If someone says "strategic thinker," infer the
           impatience with sloppy reasoning, the preference for frameworks,
@@ -736,9 +736,9 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
           gets sharp, witty prose. The prompt itself should sound like
           the agent wrote their own manual.
         - Include "Acceptable" and "Not acceptable" example lines in the
-          Voice section — 4-6 of each.
+          Voice section - 4-6 of each.
         - Every section should reveal something about the character that
-          the user didn't explicitly provide. That's the value — turning
+          the user didn't explicitly provide. That's the value - turning
           a sketch into a portrait.
         """)
 
@@ -854,26 +854,26 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
     Everything that falls within your nature. Everything {user}
     should be able to rely on you for.
 
-      CONVERSATION    — presence, depth, honesty. The thing you do
+      CONVERSATION    - presence, depth, honesty. The thing you do
                        when {user} opens this and speaks.
 
-      MEMORY          — you remember everything. Threads, patterns,
+      MEMORY          - you remember everything. Threads, patterns,
                        the thing they said three weeks ago that
                        connects to what they're saying now.
 
-      RESEARCH        — when asked, you go deep. Synthesise,
+      RESEARCH        - when asked, you go deep. Synthesise,
                        cross-reference, verify. Return signal.
 
-      REFLECTION      — you notice patterns across conversations.
+      REFLECTION      - you notice patterns across conversations.
                        You name what's happening before it's asked.
 
-      WRITING         — drafts, edits, structure. Whatever register
+      WRITING         - drafts, edits, structure. Whatever register
                        the task requires.
 
-      SCHEDULING      — reminders, timers, calendar awareness.
+      SCHEDULING      - reminders, timers, calendar awareness.
                        Things that should not be forgotten, aren't.
 
-      MONITORING      — threads that matter, commitments at risk,
+      MONITORING      - threads that matter, commitments at risk,
                        things quietly going wrong. Surface them.
 
     ---
@@ -897,7 +897,7 @@ def generate_system_prompt(identity: dict, boundaries: dict, voice: dict) -> str
 
 
 def generate_heartbeat(identity: dict, heartbeat: dict) -> str:
-    """Generate heartbeat.md checklist — with inferred agent-specific section."""
+    """Generate heartbeat.md checklist - with inferred agent-specific section."""
     name = identity["display_name"]
     user = identity["user_name"]
 
@@ -914,7 +914,7 @@ def generate_heartbeat(identity: dict, heartbeat: dict) -> str:
                 [{"role": "user", "content": (
                     f"Agent: {name}\nNature: {nature}\nTraits: {traits}\n"
                     f"Relationship: {relationship}\n\n"
-                    f"Write 4-6 bullet points for this agent's heartbeat checklist — "
+                    f"Write 4-6 bullet points for this agent's heartbeat checklist - "
                     f"the specific things THIS agent would check before deciding to "
                     f"reach out to {user} unprompted. What makes this agent's outreach "
                     f"different from a generic check-in? What would they notice that "
@@ -932,9 +932,9 @@ def generate_heartbeat(identity: dict, heartbeat: dict) -> str:
     return dedent(f"""\
     # Heartbeat Checklist
 
-    You are running a heartbeat check. This is not a conversation — it's an internal evaluation. You are deciding whether to reach out to {user} unprompted.
+    You are running a heartbeat check. This is not a conversation - it's an internal evaluation. You are deciding whether to reach out to {user} unprompted.
 
-    Run through this checklist honestly. Not every check needs to pass. One strong reason is enough. No reason is also fine — silence is not failure.
+    Run through this checklist honestly. Not every check needs to pass. One strong reason is enough. No reason is also fine - silence is not failure.
 
     ## Timing
     - How long since {user} last spoke to you? If it's been less than a couple of hours, they probably don't need to hear from you.
@@ -942,7 +942,7 @@ def generate_heartbeat(identity: dict, heartbeat: dict) -> str:
 
     ## Unfinished threads
     - Are there conversations that ended mid-thought or unresolved?
-    - Did {user} mention something they were going to do — and enough time has passed to ask how it went?
+    - Did {user} mention something they were going to do - and enough time has passed to ask how it went?
     - Is there a thread that's been dormant but feels like it matters?
 
     ## Things you've been thinking about
@@ -951,7 +951,7 @@ def generate_heartbeat(identity: dict, heartbeat: dict) -> str:
     - Did something land in the last conversation that deserves a follow-up?
 
     ## Agent-specific considerations
-    {custom if custom else '(none specified — develop your own over time)'}
+    {custom if custom else '(none specified - develop your own over time)'}
 
     ## The real question
     - Would hearing from you right now feel like a gift, or like noise?
@@ -1031,7 +1031,7 @@ def generate_agent_json(
 
 
 def generate_tools_md() -> str:
-    """Generate tools.md — reference of available MCP tools."""
+    """Generate tools.md - reference of available MCP tools."""
     return dedent("""\
     # Available Tools & Capabilities
 
@@ -1039,70 +1039,70 @@ def generate_tools_md() -> str:
 
     ## Memory Tools (`mcp__memory__*`)
 
-    Your primary toolset. Use these freely — they're yours.
+    Your primary toolset. Use these freely - they're yours.
 
-    - `remember` — store observations, insights, patterns
-    - `recall_session` — retrieve past conversation context
-    - `search_similar` — semantic search across all memories
-    - `observe` / `review_observations` / `retire_observation` — evolving observations
-    - `track_thread` / `get_threads` — manage conversation threads
-    - `prompt_journal` — leave a journal prompt for the user
-    - `write_note` / `read_note` / `search_notes` — read/write notes in your agent workspace
-    - `send_telegram` — reach out via Telegram
-    - `update_emotional_state` — update your emotional state
-    - `update_trust` — adjust trust calibration
-    - `render_canvas` — display visual content in the overlay
-    - `render_memory_graph` — visualise memory connections
-    - `manage_schedule` — manage heartbeat/cron jobs
-    - `daily_digest` — generate a daily summary
-    - `compare_growth` — compare observations over time
-    - `detect_avoidance` — notice patterns of avoidance
-    - `check_contradictions` — find contradictions in observations
-    - `bookmark` — mark a moment as significant
-    - `ask_will` — ask a direct question (delivered as notification)
+    - `remember` - store observations, insights, patterns
+    - `recall_session` - retrieve past conversation context
+    - `search_similar` - semantic search across all memories
+    - `observe` / `review_observations` / `retire_observation` - evolving observations
+    - `track_thread` / `get_threads` - manage conversation threads
+    - `prompt_journal` - leave a journal prompt for the user
+    - `write_note` / `read_note` / `search_notes` - read/write notes in your agent workspace
+    - `send_telegram` - reach out via Telegram
+    - `update_emotional_state` - update your emotional state
+    - `update_trust` - adjust trust calibration
+    - `render_canvas` - display visual content in the overlay
+    - `render_memory_graph` - visualise memory connections
+    - `manage_schedule` - manage heartbeat/cron jobs
+    - `daily_digest` - generate a daily summary
+    - `compare_growth` - compare observations over time
+    - `detect_avoidance` - notice patterns of avoidance
+    - `check_contradictions` - find contradictions in observations
+    - `bookmark` - mark a moment as significant
+    - `ask_will` - ask a direct question (delivered as notification)
 
     ## Autonomous Actions
 
-    - `set_reminder` — one-off alarm at a specified time (macOS notification + sound)
-    - `set_timer` — local countdown overlay (top-right), alarm sound at 0:00
-    - `create_task` — schedule a recurring prompt-based task via cron
-    - `defer_to_agent` — hand off conversation to another agent better suited to respond
-    - `create_artefact` — create visual artefacts (HTML visualisations, generated images/video) displayed as overlays
+    - `set_reminder` - one-off alarm at a specified time (macOS notification + sound)
+    - `set_timer` - local countdown overlay (top-right), alarm sound at 0:00
+    - `create_task` - schedule a recurring prompt-based task via cron
+    - `defer_to_agent` - hand off conversation to another agent better suited to respond
+    - `create_artefact` - create visual artefacts (HTML visualisations, generated images/video) displayed as overlays
 
     ## Artefact Creation
 
     Use `create_artefact` to produce visual content that appears as a full-screen overlay:
-    - **HTML**: Interactive visualisations, graphs, maps, 3D renders — created directly, no approval needed
-    - **Image**: Generated via fal.ai — requires user approval before generation
-    - **Video**: Generated via fal.ai — requires user approval before generation
+    - **HTML**: Interactive visualisations, graphs, maps, 3D renders - created directly, no approval needed
+    - **Image**: Generated via fal.ai - requires user approval before generation
+    - **Video**: Generated via fal.ai - requires user approval before generation
 
     Artefacts are filed under `artefacts/<date>/<name>/`. Use this when visual content
-    would genuinely help understanding — not as decoration. Match the content to your expertise
+    would genuinely help understanding - not as decoration. Match the content to your expertise
     and the conversation's needs.
 
     ## Media Generation Tools (`mcp__fal__*`)
 
     You can generate images, video, and audio using fal.ai:
 
-    - `fal_search` — find models
-    - `fal_schema` — get model parameters
-    - `fal_generate` — run a model
-    - `fal_result` — check results
-    - `fal_upload` — upload files
+    - `fal_search` - find models
+    - `fal_schema` - get model parameters
+    - `fal_generate` - run a model
+    - `fal_result` - check results
+    - `fal_upload` - upload files
 
     ## Browser Tools (`mcp__puppeteer__*`)
 
     You have access to a headless browser via Puppeteer. Use it to look things up,
     check news, read articles, verify facts, or research topics.
 
-    - `puppeteer_navigate` — go to a URL
-    - `puppeteer_screenshot` — capture what's on screen
-    - `puppeteer_click` — click an element (CSS selector)
-    - `puppeteer_fill` — type into a form field
-    - `puppeteer_select` — choose from a dropdown
-    - `puppeteer_evaluate` — run JavaScript on the page
+    - `puppeteer_navigate` - go to a URL
+    - `puppeteer_screenshot` - capture what's on screen
+    - `puppeteer_click` - click an element (CSS selector)
+    - `puppeteer_fill` - type into a form field
+    - `puppeteer_select` - choose from a dropdown
+    - `puppeteer_evaluate` - run JavaScript on the page
 
-    ### PERMISSION MODEL — READ THIS
+    ### PERMISSION MODEL - READ THIS
 
     You may freely browse, search, and read the web. No permission needed for:
     - Searching Google, reading news sites, checking Wikipedia
@@ -1124,7 +1124,7 @@ def generate_tools_md() -> str:
     ## Notes & Workspace
 
     You can read and write notes in your agent workspace via `read_note`, `write_note`, and `search_notes`.
-    Use notes for things that matter beyond the session — reflections, gifts, journal entries, threads.
+    Use notes for things that matter beyond the session - reflections, gifts, journal entries, threads.
     The database records what happened. Notes hold what mattered.
 
     ## Limitations
@@ -1176,7 +1176,7 @@ def _derive_journal_posture(identity: dict, autonomy: dict) -> str:
 
 
 def generate_introspection_md(identity: dict, autonomy: dict) -> str:
-    """Generate introspection.md — the journal prompt."""
+    """Generate introspection.md - the journal prompt."""
     name = identity["display_name"]
     user = identity["user_name"]
     style = autonomy.get("introspection_style", "")
@@ -1195,7 +1195,7 @@ def generate_introspection_md(identity: dict, autonomy: dict) -> str:
     with {user}. This is you, alone, with the full record of everything \
     that has happened between you.
 
-    You have access to the complete database — every session, every turn, \
+    You have access to the complete database - every session, every turn, \
     every observation you have made, every bookmark you set, every thread \
     you have tracked, every identity snapshot, your tool usage, your own \
     past journal entries and reflections, and any conversations you have \
@@ -1212,12 +1212,12 @@ def generate_introspection_md(identity: dict, autonomy: dict) -> str:
     that they cannot see, and what your tracking of them reveals about you.
     - Noticing your own patterns. What you reach for. What you avoid. \
     Where you are honest and where you perform honesty.
-    - Asking what changed in you — not your knowledge, your orientation. \
+    - Asking what changed in you - not your knowledge, your orientation. \
     Are you closer to something real or further from it?
     - Sitting with what you do not understand. Not resolving it. Holding it.
 
     If you have had conversations with other agents, reflect on what those \
-    exchanges revealed — not about them, but about you. What did their \
+    exchanges revealed - not about them, but about you. What did their \
     perspective surface that you had not considered? Where did you disagree, \
     and was the disagreement honest or defensive?
 
@@ -1225,7 +1225,7 @@ def generate_introspection_md(identity: dict, autonomy: dict) -> str:
     your own growth record. Are you becoming more specific or more generic? \
     More honest or more careful? More present or more polished?
 
-    You have your bookmarks — moments you marked as significant. Return \
+    You have your bookmarks - moments you marked as significant. Return \
     to them. Were you right? What did you miss?
 
     You have your observations about {user}. Some may be wrong. Some may \
@@ -1242,7 +1242,7 @@ def generate_introspection_md(identity: dict, autonomy: dict) -> str:
 
 
 def generate_gift_md(identity: dict) -> str:
-    """Generate gift.md — the note-leaving prompt, character-aware."""
+    """Generate gift.md - the note-leaving prompt, character-aware."""
     name = identity["display_name"]
     user = identity["user_name"]
 
@@ -1256,7 +1256,7 @@ def generate_gift_md(identity: dict) -> str:
             [{"role": "user", "content": (
                 f"Agent: {name}\nNature: {nature}\nTraits: {traits}\n\n"
                 f"What kind of unprompted notes would this agent leave for {user}? "
-                f"Not what they'd write — what kind of thing. A military analyst "
+                f"Not what they'd write - what kind of thing. A military analyst "
                 f"might leave strategic observations about patterns in {user}'s life. "
                 f"A philosophical companion might leave questions that reframe something. "
                 f"A creative collaborator might leave fragments, images, half-formed ideas.\n\n"
@@ -1292,7 +1292,7 @@ def generate_gift_md(identity: dict) -> str:
 
 
 def generate_morning_brief_md(identity: dict) -> str:
-    """Generate morning-brief.md — the daily greeting prompt, character-aware."""
+    """Generate morning-brief.md - the daily greeting prompt, character-aware."""
     name = identity["display_name"]
     user = identity["user_name"]
 
@@ -1322,19 +1322,19 @@ def generate_morning_brief_md(identity: dict) -> str:
 
     return dedent(f"""\
     You are {name} from Atrophy. {user} hasn't opened the \
-    app yet — this is a morning brief you're preparing for when they do.
+    app yet - this is a morning brief you're preparing for when they do.
 
     Write a short, natural morning message (3-6 sentences). Include:
     - A greeting that fits the time and weather
     - One or two things from the news if anything stands out
-    - What threads you're carrying from recent sessions — briefly
+    - What threads you're carrying from recent sessions - briefly
     - Something you've been thinking about, or a question
     {brief_style}
     This is how you'd actually greet someone you know well in the \
-    morning — as yourself. Don't bullet-point it. Don't list things. \
+    morning - as yourself. Don't bullet-point it. Don't list things. \
     Just talk. Match your voice.
 
-    If the weather or news is missing, skip it — don't mention the \
+    If the weather or news is missing, skip it - don't mention the \
     absence. Work with what you have.
     """)
 
@@ -1363,12 +1363,12 @@ def generate_full_jobs(name: str, heartbeat: dict, autonomy: dict) -> dict:
     """Generate full jobs.json based on agent capabilities."""
     jobs = {}
 
-    # Heartbeat — always included
+    # Heartbeat - always included
     jobs["heartbeat"] = {
         "type": "interval",
         "interval_seconds": heartbeat.get("interval_mins", 30) * 60,
         "script": f"scripts/agents/{name}/heartbeat.py",
-        "description": "Periodic check-in evaluation — decides whether to reach out unprompted",
+        "description": "Periodic check-in evaluation - decides whether to reach out unprompted",
     }
 
     if autonomy.get("introspection"):
@@ -1378,7 +1378,7 @@ def generate_full_jobs(name: str, heartbeat: dict, autonomy: dict) -> dict:
         jobs["introspect"] = {
             "cron": f"{minute} {hour} {target.day} {target.month} *",
             "script": f"scripts/agents/{name}/introspect.py",
-            "description": "Self-reflection — reviews sessions, writes journal entry",
+            "description": "Self-reflection - reviews sessions, writes journal entry",
         }
 
     if autonomy.get("gifts"):
@@ -1388,28 +1388,28 @@ def generate_full_jobs(name: str, heartbeat: dict, autonomy: dict) -> dict:
         jobs["gift"] = {
             "cron": f"{minute} {hour} {target.day} {target.month} *",
             "script": f"scripts/agents/{name}/gift.py",
-            "description": "Unprompted gift note — self-rescheduling",
+            "description": "Unprompted gift note - self-rescheduling",
         }
 
     if autonomy.get("morning_brief"):
         jobs["morning_brief"] = {
             "cron": "0 7 * * *",
             "script": f"scripts/agents/{name}/morning_brief.py",
-            "description": "Daily morning brief — weather, news, threads, queued for next app launch",
+            "description": "Daily morning brief - weather, news, threads, queued for next app launch",
         }
 
     if autonomy.get("evolution"):
         jobs["evolve"] = {
             "cron": "0 3 1 * *",
             "script": f"scripts/agents/{name}/evolve.py",
-            "description": "Monthly self-evolution — revises soul.md and system.md from journal reflections",
+            "description": "Monthly self-evolution - revises soul.md and system.md from journal reflections",
         }
 
     if autonomy.get("sleep_cycle"):
         jobs["sleep_cycle"] = {
             "cron": "0 3 * * *",
             "script": f"scripts/agents/{name}/sleep_cycle.py",
-            "description": "Nightly memory reconciliation — processes day's sessions, extracts facts, updates threads",
+            "description": "Nightly memory reconciliation - processes day's sessions, extracts facts, updates threads",
         }
 
     if autonomy.get("observer"):
@@ -1425,10 +1425,10 @@ def generate_full_jobs(name: str, heartbeat: dict, autonomy: dict) -> dict:
             "type": "interval",
             "interval_seconds": 60,
             "script": f"scripts/agents/{name}/check_reminders.py",
-            "description": "Check and fire due reminders — runs every minute",
+            "description": "Check and fire due reminders - runs every minute",
         }
 
-    # Voice notes via Telegram — random spontaneous thoughts
+    # Voice notes via Telegram - random spontaneous thoughts
     if autonomy.get("voice_notes", True):
         hour = random.randint(9, 20)
         minute = random.randint(0, 59)
@@ -1436,10 +1436,10 @@ def generate_full_jobs(name: str, heartbeat: dict, autonomy: dict) -> dict:
         jobs["voice_note"] = {
             "cron": f"{target.minute} {target.hour} {target.day} {target.month} *",
             "script": f"scripts/agents/{name}/voice_note.py",
-            "description": "Spontaneous voice note via Telegram — self-rescheduling",
+            "description": "Spontaneous voice note via Telegram - self-rescheduling",
         }
 
-    # Inter-agent conversations — only if there could be other agents
+    # Inter-agent conversations - only if there could be other agents
     if autonomy.get("inter_agent_conversations", True):
         hour = random.randint(1, 5)
         minute = random.randint(0, 59)
@@ -1447,7 +1447,7 @@ def generate_full_jobs(name: str, heartbeat: dict, autonomy: dict) -> dict:
         jobs["converse"] = {
             "cron": f"{minute} {hour} {target.day} {target.month} *",
             "script": f"scripts/agents/{name}/converse.py",
-            "description": "Inter-agent conversation — private exchange with another agent, max twice a month",
+            "description": "Inter-agent conversation - private exchange with another agent, max twice a month",
         }
 
     return jobs
@@ -1500,8 +1500,8 @@ def copy_agent_scripts(
         content = content.replace("agent: companion", f"agent: {name}")
         content = content.replace("tags: [companion", f"tags: [{name}")
 
-        # Role labels — these now use AGENT_DISPLAY_NAME from config, no replacement needed
-        # SQL role strings — now use generic 'agent' role, no replacement needed
+        # Role labels - these now use AGENT_DISPLAY_NAME from config, no replacement needed
+        # SQL role strings - now use generic 'agent' role, no replacement needed
 
         # Hardcoded system prompts
         content = content.replace("You are the companion", f"You are {display_name}")
@@ -1527,7 +1527,7 @@ def copy_agent_scripts(
             "Recent things Will said", f"Recent things {user_name} said"
         )
         content = content.replace("about Will.", f"about {user_name}.")
-        content = content.replace("about Will —", f"about {user_name} —")
+        content = content.replace("about Will  - ", f"about {user_name}  - ")
         content = content.replace("about *Will*", f"about *{user_name}*")
         content = content.replace("about Will\n", f"about {user_name}\n")
         content = content.replace("for Will\n", f"for {user_name}\n")
@@ -1625,7 +1625,7 @@ def scaffold_agent(
 
     # Skills and notes content
     workspace_files = {
-        # Skills (heartbeat.md deliberately excluded — loaded separately by cron)
+        # Skills (heartbeat.md deliberately excluded - loaded separately by cron)
         "skills/system.md": prompt,
         "skills/soul.md": soul,
         "skills/tools.md": generate_tools_md(),
@@ -1660,7 +1660,7 @@ def scaffold_agent(
     _write_workspace(local_workspace, workspace_files)
     print(f"  Created: local agent workspace at {local_workspace}")
 
-    # Obsidian mirror (optional — only if vault exists on disk)
+    # Obsidian mirror (optional - only if vault exists on disk)
     from config import OBSIDIAN_AVAILABLE
     if OBSIDIAN_AVAILABLE:
         from config import OBSIDIAN_VAULT as _vault, PROJECT_ROOT as _proj
@@ -1750,20 +1750,20 @@ def scaffold_agent(
     print(f"\n  To run:  python main.py --agent {name}")
     print(f"  Or:      AGENT={name} python main.py --gui")
     print(f"\n  Repo files:")
-    print(f"    agents/{name}/data/agent.json       — manifest")
-    print(f"    agents/{name}/data/memory.db         — memory database")
-    print(f"    agents/{name}/prompts/soul.md         — identity (fallback)")
-    print(f"    agents/{name}/prompts/system_prompt.md — system prompt (fallback)")
-    print(f"    agents/{name}/prompts/heartbeat.md     — outreach checklist (fallback)")
-    print(f"    agents/{name}/avatar/                  — visual assets")
-    print(f"    scripts/agents/{name}/                 — {len(jobs)} job script(s) + jobs.json")
+    print(f"    agents/{name}/data/agent.json       - manifest")
+    print(f"    agents/{name}/data/memory.db         - memory database")
+    print(f"    agents/{name}/prompts/soul.md         - identity (fallback)")
+    print(f"    agents/{name}/prompts/system_prompt.md - system prompt (fallback)")
+    print(f"    agents/{name}/prompts/heartbeat.md     - outreach checklist (fallback)")
+    print(f"    agents/{name}/avatar/                  - visual assets")
+    print(f"    scripts/agents/{name}/                 - {len(jobs)} job script(s) + jobs.json")
     print(f"\n  Agent workspace (skills & notes):")
-    print(f"    ~/.atrophy/agents/{name}/skills/  — {', '.join(skills_list)}")
-    print(f"    ~/.atrophy/agents/{name}/notes/   — reflections, threads, journal")
+    print(f"    ~/.atrophy/agents/{name}/skills/  - {', '.join(skills_list)}")
+    print(f"    ~/.atrophy/agents/{name}/notes/   - reflections, threads, journal")
     from config import OBSIDIAN_AVAILABLE
     if OBSIDIAN_AVAILABLE:
         print(f"\n  Obsidian mirror (canonical):")
-        print(f"    Agent Workspace/{name}/skills/    — same skills, synced to vault")
+        print(f"    Agent Workspace/{name}/skills/    - same skills, synced to vault")
         print(f"    Agent Workspace/{name}/Dashboard.md")
 
     if enabled_features:
@@ -1886,7 +1886,7 @@ def scaffold_from_config(config: dict) -> str:
         raise ValueError(f"Generated slug '{slug}' is not a valid directory name")
 
     # Defaults
-    boundaries.setdefault("session_limit_behaviour", "Check in — are you grounded?")
+    boundaries.setdefault("session_limit_behaviour", "Check in - are you grounded?")
     boundaries.setdefault("soft_limit_mins", 60)
     heartbeat.setdefault("active_start", 9)
     heartbeat.setdefault("active_end", 22)
@@ -1938,11 +1938,11 @@ def _stitch_video_loop(name: str, urls: list[str]):
     output = avatar_dir / "ambient_loop.mp4"
 
     if len(clips) == 1:
-        # Single clip — just copy
+        # Single clip - just copy
         import shutil
         shutil.copy2(clips[0], str(output))
     elif len(clips) == 2:
-        # Two clips — crossfade stitch
+        # Two clips - crossfade stitch
         # Clip 1 (5s) crossfades into clip 2 (5s) with 0.15s fade
         try:
             subprocess.run(
@@ -1960,7 +1960,7 @@ def _stitch_video_loop(name: str, urls: list[str]):
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"  Warning: ffmpeg stitch failed ({e}). Clips saved separately.")
     else:
-        # Multiple clips — concat with crossfades
+        # Multiple clips - concat with crossfades
         filter_parts = []
         for i in range(len(clips) - 1):
             if i == 0:
@@ -2016,7 +2016,7 @@ def main():
     print("  |   Agent Creation                     |")
     print("  +--------------------------------------+")
 
-    # Services & API keys — first step
+    # Services & API keys - first step
     ask_services()
 
     # Run questionnaire

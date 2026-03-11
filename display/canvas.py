@@ -1,4 +1,4 @@
-"""Canvas — PIP overlay for the companion window.
+"""Canvas - PIP overlay for the companion window.
 
 A QWebEngineView that overlays the video surface, like screen sharing
 on a video call. Content is pushed via a local file, updated when the
@@ -53,7 +53,7 @@ class _CloseButton(QPushButton):
 
 
 class CanvasOverlay(QWidget):
-    """PIP overlay — child widget of CompanionWindow.
+    """PIP overlay - child widget of CompanionWindow.
 
     Sits on top of the video surface. Fades in when content is written,
     fades out on dismiss. Parent is responsible for calling reposition()
@@ -70,7 +70,7 @@ class CanvasOverlay(QWidget):
         self._opacity_effect.setOpacity(0.0)
         self.setGraphicsEffect(self._opacity_effect)
 
-        # Fade animation — finished signal connected once here
+        # Fade animation - finished signal connected once here
         self._fade_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
         self._fade_anim.setDuration(300)
         self._fade_anim.setEasingCurve(QEasingCurve.InOutCubic)
@@ -84,7 +84,7 @@ class CanvasOverlay(QWidget):
             page.setBackgroundColor(_BG)
         else:
             self._web = None
-            log.warning("PyQtWebEngine not installed — canvas overlay disabled")
+            log.warning("PyQtWebEngine not installed - canvas overlay disabled")
 
         # Close button (top-right corner)
         self._close_btn = _CloseButton(self)
@@ -181,7 +181,7 @@ class CanvasOverlay(QWidget):
                 self._watcher.addPath(str(CANVAS_CONTENT))
 
     def _on_file_changed(self, path):
-        """File watcher callback — auto-show and refresh."""
+        """File watcher callback - auto-show and refresh."""
         self._ensure_watched()
         # Auto-show when content is written (e.g. by MCP tool)
         if not self._active:

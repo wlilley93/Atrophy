@@ -47,7 +47,7 @@ def transcribe(audio_data: np.ndarray) -> str:
         if result.returncode != 0:
             return ""
 
-        # whisper.cpp outputs metadata lines starting with [ — skip those
+        # whisper.cpp outputs metadata lines starting with [ - skip those
         lines = []
         for line in result.stdout.split("\n"):
             stripped = line.strip()
@@ -64,7 +64,7 @@ def transcribe_fast(audio_data: np.ndarray) -> str:
     """Fast transcription optimised for short (2-second) clips.
 
     Uses whisper.cpp tiny model with minimal settings for speed.
-    Designed for wake word detection — completes in <200ms on Metal
+    Designed for wake word detection - completes in <200ms on Metal
     for a 2-second clip.
 
     Args:
@@ -89,7 +89,7 @@ def transcribe_fast(audio_data: np.ndarray) -> str:
                 "-m", str(model),
                 "-f", str(tmp_path),
                 "--no-timestamps",
-                "-t", "2",          # fewer threads — lighter footprint
+                "-t", "2",          # fewer threads - lighter footprint
                 "--language", "en",
             ],
             capture_output=True,

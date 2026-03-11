@@ -2,10 +2,10 @@
 """Build a macOS .app bundle for Atrophy.
 
 Usage:
-  python scripts/build_app.py              — Build to build/
-  python scripts/build_app.py --install    — Build and install to ~/Applications
-  python scripts/build_app.py --open       — Build, install, and launch
-  python scripts/build_app.py --dmg        — Build, install, and create a DMG
+  python scripts/build_app.py              - Build to build/
+  python scripts/build_app.py --install    - Build and install to ~/Applications
+  python scripts/build_app.py --open       - Build, install, and launch
+  python scripts/build_app.py --dmg        - Build, install, and create a DMG
 
 Architecture:
   The .app is a thin launcher. The actual code lives in ~/.atrophy/src/.
@@ -14,10 +14,10 @@ Architecture:
 
   No git required. Updates via curl + unzip from GitHub archive URL.
 
-  ~/Applications/Atrophy.app   — launcher (rarely changes)
-  ~/.atrophy/src/              — source (auto-updates from GitHub zip)
-  ~/.atrophy/venv/             — Python virtual environment
-  ~/.atrophy/agents/, etc.     — user data (never overwritten)
+  ~/Applications/Atrophy.app   - launcher (rarely changes)
+  ~/.atrophy/src/              - source (auto-updates from GitHub zip)
+  ~/.atrophy/venv/             - Python virtual environment
+  ~/.atrophy/agents/, etc.     - user data (never overwritten)
 """
 import os
 import shutil
@@ -342,11 +342,11 @@ end run
 
 LAUNCHER_SCRIPT = r'''#!/bin/bash
 # ─────────────────────────────────────────────────────
-#  Atrophy — App Launcher
+#  Atrophy - App Launcher
 # ─────────────────────────────────────────────────────
 #
 #  Code lives in ~/.atrophy/src/ (auto-updated from GitHub).
-#  No git required — downloads source zip on each launch.
+#  No git required - downloads source zip on each launch.
 #  User data lives in ~/.atrophy/ (never overwritten).
 #
 
@@ -379,7 +379,7 @@ splash_done() {
     rm -f "$STATUS_FILE"
 }
 
-# ── PATH — ensure claude and common tools are discoverable ──
+# ── PATH - ensure claude and common tools are discoverable ──
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.local/share/claude:$PATH"
 
 # ── Download source from GitHub zip archive ──
@@ -398,16 +398,16 @@ download_source() {
     mkdir -p "$tmp_dir"
     unzip -qo "$tmp_zip" -d "$tmp_dir" 2>>"$LOG_DIR/launcher.log"
 
-    # GitHub archives extract to repo-name-branch/ — find it
+    # GitHub archives extract to repo-name-branch/ - find it
     local extracted
     extracted=$(find "$tmp_dir" -mindepth 1 -maxdepth 1 -type d | head -1)
     if [ -z "$extracted" ] || [ ! -f "$extracted/main.py" ]; then
-        log "Archive extraction failed — no main.py found"
+        log "Archive extraction failed - no main.py found"
         rm -rf "$tmp_zip" "$tmp_dir"
         return 1
     fi
 
-    # Atomic swap — preserve .env, rename in one step so a running app
+    # Atomic swap - preserve .env, rename in one step so a running app
     # never sees a half-written source tree
     local saved_env=""
     [ -f "$SRC_DIR/.env" ] && saved_env=$(cat "$SRC_DIR/.env")
@@ -453,7 +453,7 @@ fi
 
 # ── First run: set up source ──
 if [ ! -f "$SRC_DIR/main.py" ]; then
-    log "First run — setting up source"
+    log "First run - setting up source"
     splash_update "Downloading source..." 5
 
     # Try downloading from GitHub
@@ -535,7 +535,7 @@ if [ -f "$REQ_FILE" ]; then
         TOTAL_PKGS=$(grep -cve '^\s*$' -e '^\s*#' "$REQ_FILE" 2>/dev/null || echo 20)
         INSTALLED=0
 
-        # Install with progress tracking — pip outputs one line per package
+        # Install with progress tracking - pip outputs one line per package
         "$VENV_DIR/bin/pip" install --progress-bar off -r "$REQ_FILE" 2>>"$LOG_DIR/launcher.log" | while IFS= read -r line; do
             case "$line" in
                 *"Successfully installed"*)
@@ -635,7 +635,7 @@ def build_app():
     if ICNS_PATH.exists():
         shutil.copy2(ICNS_PATH, resources / "TheAtrophiedMind.icns")
 
-    # ── Splash screen (native AppleScript — no dependencies) ──
+    # ── Splash screen (native AppleScript - no dependencies) ──
     splash_path = resources / "splash.applescript"
     splash_path.write_text(SPLASH_APPLESCRIPT)
 
@@ -664,7 +664,7 @@ def build_app():
 
 
 def _install_dir() -> Path:
-    """Pick install location — /Applications if writable, else ~/Applications."""
+    """Pick install location - /Applications if writable, else ~/Applications."""
     system_apps = Path("/Applications")
     try:
         test = system_apps / ".atrophy_write_test"

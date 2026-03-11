@@ -1,8 +1,8 @@
-"""Wake word detection — ambient listening with local keyword detection.
+"""Wake word detection - ambient listening with local keyword detection.
 
 Uses a lightweight approach: continuously record short audio chunks,
 run whisper.cpp transcription on each chunk, check for wake word.
-All processing is local — audio never leaves the machine.
+All processing is local - audio never leaves the machine.
 """
 import logging
 import tempfile
@@ -92,7 +92,7 @@ class WakeWordListener:
         chunk_samples = int(SAMPLE_RATE * WAKE_CHUNK_SECONDS)
 
         while self._running:
-            # Skip recording while paused — check frequently to stay responsive
+            # Skip recording while paused - check frequently to stay responsive
             if self._paused:
                 import time
                 time.sleep(0.2)

@@ -92,7 +92,7 @@ def check_reminders():
         print(f"[reminder] Firing: {msg}")
 
         # macOS notification with sound
-        _notify(f"Reminder — {AGENT_DISPLAY_NAME}", msg)
+        _notify(f"Reminder - {AGENT_DISPLAY_NAME}", msg)
 
         # Queue for next app interaction
         queue_message(MESSAGE_QUEUE, f"Reminder: {msg}", source="reminder")

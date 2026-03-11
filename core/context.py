@@ -65,14 +65,14 @@ def load_system_prompt() -> str:
     if roster:
         lines = []
         for a in roster:
-            desc = f" — {a['description']}" if a.get("description") else ""
+            desc = f" - {a['description']}" if a.get("description") else ""
             lines.append(f"- **{a['display_name']}** (`{a['name']}`){desc}")
         base += (
             "\n\n---\n\n## Other Agents\n\n"
             "You can hand off to these agents using `defer_to_agent` if the user's "
             "question is better suited to them:\n\n"
             + "\n".join(lines)
-            + "\n\nOnly defer when there's a clear reason — another agent's specialty "
+            + "\n\nOnly defer when there's a clear reason - another agent's specialty "
             "matches the question, or the user asks for them by name. Don't defer "
             "just because another agent exists."
         )

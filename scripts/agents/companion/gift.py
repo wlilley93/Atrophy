@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Companion gift-leaving — unprompted notes in Obsidian.
+"""Companion gift-leaving - unprompted notes in Obsidian.
 
 Runs on a randomised schedule. Accesses the full database to find
-something worth writing about — a thread, an observation, a bookmark,
+something worth writing about - a thread, an observation, a bookmark,
 a connection between things. Leaves a short note in Companion/gifts.md.
 
 After running, reschedules itself to a random time 3-30 days from now.
@@ -59,7 +59,7 @@ def _gather_material() -> str:
     if bookmarks:
         lines = []
         for b in bookmarks:
-            quote = f' — "{b["quote"]}"' if b["quote"] else ""
+            quote = f' - "{b["quote"]}"' if b["quote"] else ""
             lines.append(f"- [{b['created_at']}] {b['moment']}{quote}")
         parts.append("Bookmarked moments:\n" + "\n".join(lines))
 

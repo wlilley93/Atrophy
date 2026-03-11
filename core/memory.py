@@ -22,12 +22,12 @@ def init_db(db_path: Path = DB_PATH):
     """Create all tables from schema.sql, then run migrations."""
     schema = SCHEMA_PATH.read_text()
     conn = _connect(db_path)
-    # Run migrations first — adds missing columns that the schema's
+    # Run migrations first - adds missing columns that the schema's
     # CREATE INDEX statements may reference (e.g. activation).
     try:
         conn.executescript(schema)
     except sqlite3.OperationalError:
-        # Schema has new columns/indexes the old DB lacks — migrate first
+        # Schema has new columns/indexes the old DB lacks - migrate first
         _migrate(conn)
         conn.executescript(schema)
     conn.commit()
@@ -82,7 +82,7 @@ def _migrate(conn: sqlite3.Connection):
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'"
     ).fetchone()
     if check_sql and "'companion'" in (check_sql[0] or ""):
-        # Old table has CHECK(role IN ('will','companion')) — can't update
+        # Old table has CHECK(role IN ('will','companion')) - can't update
         # to 'agent' directly. Copy data to unconstrained temp, transform,
         # then move into properly constrained table.
         conn.executescript("""
@@ -565,7 +565,7 @@ def update_thread_summary(thread_name: str, summary: str,
         (summary, thread_name),
     )
     if cursor.rowcount == 0:
-        print(f"  [memory] No thread found matching '{thread_name}' — skipped")
+        print(f"  [memory] No thread found matching '{thread_name}' - skipped")
     conn.commit()
     conn.close()
 
@@ -714,7 +714,7 @@ def extract_entities(text: str, db_path: Path = DB_PATH) -> list[dict]:
     """Simple entity extraction using regex patterns.
 
     Catches proper nouns, quoted terms, and known entity names.
-    Not ML-based — just pattern matching.
+    Not ML-based - just pattern matching.
     """
     entities = []
     seen = set()
@@ -741,7 +741,7 @@ def extract_entities(text: str, db_path: Path = DB_PATH) -> list[dict]:
             seen.add(term.lower())
             entities.append({"name": term, "entity_type": "concept"})
 
-    # Store/update entities in DB — batch lookups and writes
+    # Store/update entities in DB - batch lookups and writes
     conn = _connect(db_path)
 
     # Fetch all existing entities in one query
@@ -776,7 +776,7 @@ def extract_entities(text: str, db_path: Path = DB_PATH) -> list[dict]:
             to_update,
         )
 
-    # Insert new entities — need lastrowid per row, so iterate
+    # Insert new entities - need lastrowid per row, so iterate
     for ent in entities:
         if ent["name"].lower() not in existing_map:
             cursor = conn.execute(

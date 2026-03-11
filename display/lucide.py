@@ -1,4 +1,4 @@
-"""Lucide icon helper — renders SVG icons as QPixmaps for PyQt5 buttons.
+"""Lucide icon helper - renders SVG icons as QPixmaps for PyQt5 buttons.
 
 Uses python-lucide for offline SVG generation + QSvgRenderer for rendering.
 Caches rendered pixmaps by (name, size, color) to avoid re-rendering.

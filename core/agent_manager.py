@@ -1,4 +1,4 @@
-"""core/agent_manager.py — Multi-agent discovery, switching, and state management."""
+"""core/agent_manager.py - Multi-agent discovery, switching, and state management."""
 
 import importlib
 import json
@@ -14,7 +14,7 @@ AGENT_STATES_FILE = USER_DATA / "agent_states.json"
 
 
 def _agent_search_dirs() -> list[Path]:
-    """Agent dirs to scan — user-installed first, then bundled."""
+    """Agent dirs to scan - user-installed first, then bundled."""
     dirs = []
     user_agents = USER_DATA / "agents"
     bundle_agents = BUNDLE_ROOT / "agents"
@@ -97,11 +97,24 @@ def set_agent_state(agent_name: str, muted: bool | None = None, enabled: bool | 
     _save_states(states)
 
 
+def set_last_active_agent(agent_name: str):
+    """Save which agent was last active (for resuming on next launch)."""
+    states = _load_states()
+    states["_last_active"] = agent_name
+    _save_states(states)
+
+
+def get_last_active_agent() -> str | None:
+    """Return the last active agent name, or None."""
+    states = _load_states()
+    return states.get("_last_active")
+
+
 def toggle_agent_cron(agent_name: str, enable: bool):
     """Install or uninstall an agent's cron jobs via scripts/cron.py."""
     jobs_file = BUNDLE_ROOT / "scripts" / "agents" / agent_name / "jobs.json"
     if not jobs_file.exists():
-        print(f"  [No jobs.json for {agent_name} — skipping cron toggle]")
+        print(f"  [No jobs.json for {agent_name} - skipping cron toggle]")
         return
 
     cmd = "install" if enable else "uninstall"

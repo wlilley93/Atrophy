@@ -54,7 +54,7 @@ def _update_request(agent: str, name: str, status: str, **extra):
 
 
 def _get_source_image(agent: str) -> Path:
-    """Find the source face image — check bundle first, then user data."""
+    """Find the source face image - check bundle first, then user data."""
     import importlib
     os.environ["AGENT"] = agent
     import config as cfg
@@ -67,7 +67,7 @@ def _get_loops_dir(agent: str) -> Path:
 
 
 def _build_clip1_prompt(prompt: str, agent: str) -> str:
-    """Build clip 1 prompt — neutral → expression."""
+    """Build clip 1 prompt - neutral → expression."""
     # Load agent manifest for physical description
     import importlib
     os.environ["AGENT"] = agent
@@ -93,7 +93,7 @@ Cinematic. 4K. Shallow depth of field. Static camera. No sudden movement.
 
 
 def _build_clip2_prompt(prompt: str) -> str:
-    """Build clip 2 prompt — expression → return to neutral."""
+    """Build clip 2 prompt - expression → return to neutral."""
     return f"""\
 Continuation. Same person, same light. They begin {prompt}.
 
@@ -101,7 +101,7 @@ Gradually, without rush, everything settles. Their gaze returns to the \
 middle distance. Expression smooths into composed neutrality. Mouth \
 closes. A controlled breath. Still.
 
-By the final frame they are neutral — gaze middle-distance, expression \
+By the final frame they are neutral - gaze middle-distance, expression \
 composed, mouth closed, breathing steady.
 
 Cinematic. 4K. Shallow depth of field. Static camera. No sudden movement.
@@ -123,7 +123,7 @@ def generate_clip(prompt, start_image_url, output_path, label, end_image_url=Non
     import httpx
 
     if output_path.exists():
-        print(f"  {label}: exists — skipping")
+        print(f"  {label}: exists - skipping")
         return
 
     print(f"  {label}: generating...", flush=True)

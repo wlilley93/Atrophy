@@ -1,4 +1,4 @@
-"""display/window.py — PyQt5 companion window.
+"""display/window.py - PyQt5 companion window.
 
 Full-bleed video with overlay text and floating input bar.
 Streaming inference → sentence-level TTS pipelining for low latency.
@@ -45,7 +45,7 @@ try:
 except ImportError:
     _HAS_EMOTION_COLOUR = False
 
-# Canvas — PIP overlay (graceful if QWebEngineView unavailable)
+# Canvas - PIP overlay (graceful if QWebEngineView unavailable)
 try:
     from display.canvas import CanvasOverlay, HAS_WEBENGINE
     HAS_CANVAS = True
@@ -82,7 +82,7 @@ def _build_brain_frames(base: 'QImage') -> list:
     from PyQt5.QtCore import Qt
 
     frames = []
-    # Convert to ARGB32 — QPainter can't paint on indexed/palette formats
+    # Convert to ARGB32 - QPainter can't paint on indexed/palette formats
     if base.format() != QImage.Format_ARGB32_Premultiplied:
         base = base.convertToFormat(QImage.Format_ARGB32_Premultiplied)
     w, h = base.width(), base.height()
@@ -93,11 +93,11 @@ def _build_brain_frames(base: 'QImage') -> list:
         fp.setCompositionMode(QPainter.CompositionMode_SourceAtop)
 
         if i < 3:
-            # Organic — warm pink/flesh shift, mute the cyan nodes
+            # Organic - warm pink/flesh shift, mute the cyan nodes
             warmth = 20 + i * 10  # 20, 30, 40
             fp.fillRect(0, 0, w, h, QColor(warmth, 8, 0, 35 + i * 8))
         elif i < 7:
-            # Cybernetic — cold blue intensifies, nodes glow
+            # Cybernetic - cold blue intensifies, nodes glow
             cyber = (i - 3) / 3.0  # 0.0 → 1.0
             blue_a = int(30 + cyber * 60)
             fp.fillRect(0, 0, w, h, QColor(0, 20, int(80 + cyber * 80), blue_a))
@@ -106,7 +106,7 @@ def _build_brain_frames(base: 'QImage') -> list:
             glow_a = int(20 + cyber * 50)
             fp.fillRect(0, 0, w, h, QColor(60, 180, 255, glow_a))
         else:
-            # Rot — desaturate, green-brown decay, nodes die
+            # Rot - desaturate, green-brown decay, nodes die
             rot = (i - 7) / 2.0  # 0.0 → 1.0
             # Desaturate by overlaying grey
             fp.setCompositionMode(QPainter.CompositionMode_SourceAtop)
@@ -158,12 +158,12 @@ def _orb_colors_for_frame(frame_idx: int) -> list:
         int(70 + t * 30),             # 70→100
     )
 
-    # Layer 2 — slightly dimmer
+    # Layer 2 - slightly dimmer
     inner2 = (max(0, inner[0] - 20), max(0, inner[1] - 20), max(0, inner[2] - 15))
     mid2 = (max(0, mid[0] - 15), max(0, mid[1] - 10), max(0, mid[2] - 10))
     outer2 = (max(0, outer[0] - 10), max(0, outer[1] - 5), max(0, outer[2] - 5))
 
-    # Layer 3 — dimmest
+    # Layer 3 - dimmest
     inner3 = (max(0, inner[0] - 40), max(0, inner[1] - 40), max(0, inner[2] - 30))
     mid3 = (max(0, mid[0] - 30), max(0, mid[1] - 20), max(0, mid[2] - 20))
     outer3 = (max(0, outer[0] - 20), max(0, outer[1] - 10), max(0, outer[2] - 10))
@@ -175,7 +175,7 @@ def _orb_colors_for_frame(frame_idx: int) -> list:
     ]
 
 
-# Precomputed lookup table — avoids recomputing 30x/sec
+# Precomputed lookup table - avoids recomputing 30x/sec
 _ORB_COLORS_TABLE = [_orb_colors_for_frame(i) for i in range(10)]
 
 
@@ -231,7 +231,7 @@ class StreamingPipelineWorker(QThread):
     This means sentence 2 is being read while sentence 1 is being synthesised.
     """
     text_ready = pyqtSignal(str, int)       # text available immediately (before TTS)
-    sentence_ready = pyqtSignal(str, str, int)  # TTS done — audio path available
+    sentence_ready = pyqtSignal(str, str, int)  # TTS done - audio path available
     tool_use = pyqtSignal(str, str)
     compacting = pyqtSignal()
     done = pyqtSignal(str, str)
@@ -256,7 +256,7 @@ class StreamingPipelineWorker(QThread):
         full_text = ""
         session_id = self._cli_session_id or ""
 
-        # TTS worker thread — synthesises sentences from queue
+        # TTS worker thread - synthesises sentences from queue
         def tts_loop():
             while True:
                 item = sentence_queue.get()
@@ -364,10 +364,10 @@ class OpeningWorker(QThread):
 # ── Thinking spinner ──
 
 
-# ── Status bar — loading / shutting down ──
+# ── Status bar - loading / shutting down ──
 
 class StatusBar(QWidget):
-    """Thin animated progress line — sits as top stroke of the chat bar."""
+    """Thin animated progress line - sits as top stroke of the chat bar."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -405,7 +405,7 @@ class StatusBar(QWidget):
         p.setPen(Qt.NoPen)
 
         if self._progress < 0:
-            # Indeterminate — sliding highlight
+            # Indeterminate - sliding highlight
             bar_w = int(w * 0.3)
             x = int(self._sweep * (w + bar_w)) - bar_w
             p.setBrush(QColor(255, 255, 255, 100))
@@ -465,7 +465,7 @@ class TranscriptOverlay(QWidget):
         self._last_rendered_reveal = 0  # reveal count of last partial message
 
         self._reveal_timer = QTimer(self)
-        self._reveal_timer.setInterval(25)  # 40fps — smooth enough for text, fewer rebuilds
+        self._reveal_timer.setInterval(25)  # 40fps - smooth enough for text, fewer rebuilds
         self._reveal_timer.timeout.connect(self._tick_reveal)
 
         # Track scroll position for auto-scroll detection
@@ -481,7 +481,7 @@ class TranscriptOverlay(QWidget):
             )
 
     def _on_scroll_changed(self, value):
-        """Detect manual scrolling — disable auto-scroll when user scrolls up."""
+        """Detect manual scrolling - disable auto-scroll when user scrolls up."""
         vbar = self._browser.verticalScrollBar()
         if vbar.maximum() > 0 and value < vbar.maximum():
             self._auto_scroll = False
@@ -540,7 +540,7 @@ class TranscriptOverlay(QWidget):
         return "".join(parts)
 
     def _rebuild_html(self):
-        """Incrementally update HTML — only re-render changed/new messages."""
+        """Incrementally update HTML - only re-render changed/new messages."""
         if not self._html_dirty:
             return
         self._html_dirty = False
@@ -550,11 +550,11 @@ class TranscriptOverlay(QWidget):
         # Check if only the last message's reveal count changed (typing animation)
         if (n > 0 and n == self._last_rendered_count
                 and self._messages[-1]["revealed"] != self._last_rendered_reveal):
-            # Only the last message changed — update just that div
+            # Only the last message changed - update just that div
             last_html = self._msg_to_html(self._messages[-1], n - 1)
             cursor = self._browser.textCursor()
             cursor.movePosition(cursor.End)
-            # Find and replace the last block — faster than full rebuild
+            # Find and replace the last block - faster than full rebuild
             # Fall through to full rebuild if cursor manipulation is tricky
             # For now, use the fast path: rebuild only if message count changed
             pass
@@ -603,7 +603,7 @@ class TranscriptOverlay(QWidget):
             return
         msg = self._messages[-1]
         msg["text"] = (msg["text"] + " " + text).strip() if msg["text"] else text
-        # For streaming, reveal immediately — text arrives as it streams
+        # For streaming, reveal immediately - text arrives as it streams
         msg["revealed"] = len(msg["text"])
         self._html_dirty = True
         self._rebuild_html()
@@ -620,7 +620,7 @@ class TranscriptOverlay(QWidget):
         self._rebuild_html()
 
     def add_divider(self, label: str = ""):
-        """Add a visual divider — used during agent deferral (codec-style)."""
+        """Add a visual divider - used during agent deferral (codec-style)."""
         self._messages.append({
             "role": "divider", "text": label, "revealed": len(label),
         })
@@ -669,7 +669,7 @@ class TranscriptOverlay(QWidget):
         changed = False
         for msg in self._messages:
             if msg["revealed"] < len(msg["text"]):
-                # Reveal 8 chars per tick (was 3) — fewer rebuilds, smoother feel
+                # Reveal 8 chars per tick (was 3) - fewer rebuilds, smoother feel
                 msg["revealed"] = min(msg["revealed"] + 8, len(msg["text"]))
                 any_pending = True
                 changed = True
@@ -684,7 +684,7 @@ class TranscriptOverlay(QWidget):
         self._browser.setGeometry(0, 0, self.width(), self.height())
 
     def paintEvent(self, event):
-        """Paint the transcript — no fade mask, just transparent background."""
+        """Paint the transcript - no fade mask, just transparent background."""
         if self._opacity <= 0.001:
             return
         super().paintEvent(event)
@@ -773,7 +773,7 @@ class _MinimizeButton(_PillButton):
 
 
 class _WakeButton(_PillButton):
-    """Wake word listener toggle button — microphone with radio waves."""
+    """Wake word listener toggle button - microphone with radio waves."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self._active = False
@@ -1022,7 +1022,7 @@ _OLD_SETTINGS_STYLE = """
 
 
 class _LegacySettingsPanel(QWidget):
-    """DEPRECATED — replaced by display.settings.SettingsModal."""
+    """DEPRECATED - replaced by display.settings.SettingsModal."""
     closed = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -1467,7 +1467,7 @@ class _LegacySettingsPanel(QWidget):
             behind = int(result.stdout.strip()) if result.returncode == 0 else 0
 
             if behind == 0:
-                self._update_label.setText(f"v{cfg.VERSION} — up to date")
+                self._update_label.setText(f"v{cfg.VERSION} - up to date")
                 self._update_label.setStyleSheet(
                     "color: rgba(100,255,100,0.7); font-size: 11px;")
             else:
@@ -1514,7 +1514,7 @@ class _LegacySettingsPanel(QWidget):
                 version_file = bundle_root / "VERSION"
                 new_version = version_file.read_text().strip() if version_file.exists() else "?"
                 self._update_label.setText(
-                    f"Updated to v{new_version} — restart to apply")
+                    f"Updated to v{new_version} - restart to apply")
                 self._update_label.setStyleSheet(
                     "color: rgba(100,255,100,0.9); font-size: 11px;")
             else:
@@ -2000,13 +2000,13 @@ class CompanionWindow(QWidget):
         self._needs_memory_flush = False
         self._flush_worker = None
 
-        # Ken Burns drift — slow, gentle movement
+        # Ken Burns drift - slow, gentle movement
         self._drift_x = 0.0
         self._drift_y = 0.0
-        self._drift_dx = 0.08  # doubled — timer interval is 100ms not 50ms
+        self._drift_dx = 0.08  # doubled - timer interval is 100ms not 50ms
         self._drift_dy = 0.06
         self._drift_timer = QTimer(self)
-        self._drift_timer.setInterval(100)  # 10fps — drift is subtle, doesn't need 20fps
+        self._drift_timer.setInterval(100)  # 10fps - drift is subtle, doesn't need 20fps
         self._drift_timer.timeout.connect(self._tick_drift)
         self._drift_timer.start()
 
@@ -2021,11 +2021,11 @@ class CompanionWindow(QWidget):
         self._vignette_img = None  # cached vignette image
         self._vignette_size = (0, 0)  # size it was rendered at
 
-        # PIP transition — video shrinks to bottom-right when artefact is shown
+        # PIP transition - video shrinks to bottom-right when artefact is shown
         self._pip_progress = 0.0  # 0.0 = full-bleed, 1.0 = PIP corner
         self._pip_anim = None
 
-        # Iris wipe — agent switch transition
+        # Iris wipe - agent switch transition
         self._iris_progress = 0.0  # 0.0 = fully open, 1.0 = fully closed
         self._iris_phase = None    # "closing" or "opening"
 
@@ -2033,7 +2033,7 @@ class CompanionWindow(QWidget):
         self.resize(_W, _H)
         self.setMinimumSize(360, 480)
 
-        # Normal window — allows macOS tiling (ctrl+left/right)
+        # Normal window - allows macOS tiling (ctrl+left/right)
         # Pin on top can be toggled later if needed
 
         # Audio player thread
@@ -2068,7 +2068,7 @@ class CompanionWindow(QWidget):
         self._idle_timer.timeout.connect(self._on_idle_timeout)
         self._idle_timer.start(IDLE_TIMEOUT_SECS * 1000)
 
-        # Boot overlay — black screen that fades out when ready
+        # Boot overlay - black screen that fades out when ready
         self._boot_opacity = 1.0
         self._booting = True
         self._brain_overlay = None  # Lazy-loaded in paintEvent
@@ -2088,7 +2088,7 @@ class CompanionWindow(QWidget):
         self._build_canvas()
         self._reflow()
 
-        # Eagerly preload brain frames during boot — avoids first-paint jank
+        # Eagerly preload brain frames during boot - avoids first-paint jank
         self._ensure_brain_frames()
         # Pre-scale at boot animation sizes so first paint is instant
         if self._brain_frames:
@@ -2110,7 +2110,7 @@ class CompanionWindow(QWidget):
         self._status_bar.start("connecting...")
         self._centre_status_bar()
 
-        # Dormant mode — skip boot sequence until first shown
+        # Dormant mode - skip boot sequence until first shown
         if self._dormant:
             self._opening_worker = None
             self._status_bar.stop()
@@ -2142,7 +2142,7 @@ class CompanionWindow(QWidget):
             QTimer.singleShot(600, _default_boot)
 
     def wake_up(self):
-        """Wake from dormant mode — called on first show."""
+        """Wake from dormant mode - called on first show."""
         if not self._dormant:
             return
         self._dormant = False
@@ -2151,7 +2151,7 @@ class CompanionWindow(QWidget):
         self._start_boot_sequence()
 
     def _centre_status_bar(self):
-        # During boot — centre horizontally, middle of screen
+        # During boot - centre horizontally, middle of screen
         w = self.width()
         bar_w = w - _PAD * 4
         self._status_bar.setFixedWidth(bar_w)
@@ -2171,9 +2171,9 @@ class CompanionWindow(QWidget):
         self._call_btn.show()
         self._position_status_bar()  # restore normal position
 
-        # Reveal animation — iris open for agent switch, fade for cold boot
+        # Reveal animation - iris open for agent switch, fade for cold boot
         if self._iris_phase == "closing":
-            # Iris open — circle expands from center to reveal new agent
+            # Iris open - circle expands from center to reveal new agent
             self._iris_phase = "opening"
             self._boot_anim = QPropertyAnimation(self, b"iris_progress", self)
             self._boot_anim.setStartValue(0.0)
@@ -2198,34 +2198,34 @@ class CompanionWindow(QWidget):
         # Reset iris state
         self._iris_progress = 0.0
         self._iris_phase = None
-        # Schedule a journal nudge — random point 15-45 mins into session
+        # Schedule a journal nudge - random point 15-45 mins into session
         delay_ms = random.randint(15 * 60_000, 45 * 60_000)
         self._journal_nudge_timer = QTimer(self)
         self._journal_nudge_timer.setSingleShot(True)
         self._journal_nudge_timer.timeout.connect(self._do_journal_nudge)
         self._journal_nudge_timer.start(delay_ms)
 
-        # SENTINEL coherence monitor — every 5 minutes
+        # SENTINEL coherence monitor - every 5 minutes
         self._coherence_timer = QTimer(self)
         self._coherence_timer.setInterval(5 * 60_000)  # 300 seconds
         self._coherence_timer.timeout.connect(self._do_coherence_check)
         self._coherence_timer.start()
         self._coherence_worker = None
 
-        # Timer request watcher — check every 2 seconds for MCP-requested timers
+        # Timer request watcher - check every 2 seconds for MCP-requested timers
         self._timer_watcher = QTimer(self)
         self._timer_watcher.setInterval(2000)
         self._timer_watcher.timeout.connect(self._check_timer_requests)
         self._timer_watcher.start()
         self._active_timers = []
 
-        # Inbox watcher — check all agents' message queues every 30 seconds
+        # Inbox watcher - check all agents' message queues every 30 seconds
         self._inbox_timer = QTimer(self)
         self._inbox_timer.setInterval(30_000)
         self._inbox_timer.timeout.connect(self._check_inbox)
         self._inbox_timer.start()
 
-        # Deferral request watcher — check every 2 seconds for agent handoffs
+        # Deferral request watcher - check every 2 seconds for agent handoffs
         self._deferral_watcher = QTimer(self)
         self._deferral_watcher.setInterval(2000)
         self._deferral_watcher.timeout.connect(self._check_deferral_requests)
@@ -2233,7 +2233,7 @@ class CompanionWindow(QWidget):
         self._deferral_count = 0
         self._deferral_window_start = 0.0
 
-        # Artefact display watcher — check every 2 seconds for new artefacts to show
+        # Artefact display watcher - check every 2 seconds for new artefacts to show
         self._artefact_display_watcher = QTimer(self)
         self._artefact_display_watcher.setInterval(2000)
         self._artefact_display_watcher.timeout.connect(self._check_artefact_display)
@@ -2291,7 +2291,7 @@ class CompanionWindow(QWidget):
         # Drain active agent's queue
         self._drain_agent_queue(self._current_agent, is_active=True)
 
-        # Check other agents' queues — notify but don't speak
+        # Check other agents' queues - notify but don't speak
         for agent in discover_agents():
             if agent["name"] != self._current_agent:
                 self._drain_agent_queue(agent["name"], is_active=False)
@@ -2332,13 +2332,13 @@ class CompanionWindow(QWidget):
                 audio = ""
 
             if is_active:
-                # Pace messages — delay between each one
+                # Pace messages - delay between each one
                 delay = i * 4000  # 4 seconds between messages
                 QTimer.singleShot(delay, lambda t=text, a=audio, m=agent_muted: (
                     self._deliver_transmission(t, a, m)
                 ))
             else:
-                # Inactive agent — macOS notification only, don't interrupt
+                # Inactive agent - macOS notification only, don't interrupt
                 # Load display name
                 from config import _find_agent_dir
                 manifest = _find_agent_dir(agent_name) / "data" / "agent.json"
@@ -2407,7 +2407,7 @@ class CompanionWindow(QWidget):
         self._player.setMuted(True)
         self._player.mediaStatusChanged.connect(self._on_media_status)
 
-        # Emotion clip state (Xan's orb — clip-based reactions)
+        # Emotion clip state (Xan's orb - clip-based reactions)
         self._reaction_playing = False  # True while a one-shot reaction clip plays
         self._default_loop = None       # path to the default ambient clip
         self._revert_timer = QTimer(self)
@@ -2429,11 +2429,11 @@ class CompanionWindow(QWidget):
     def _on_media_status(self, status):
         if status == QMediaPlayer.EndOfMedia:
             if self._reaction_playing:
-                # Reaction clip finished — revert to default
+                # Reaction clip finished - revert to default
                 self._reaction_playing = False
                 self._play_default()
             else:
-                # Default loop — just repeat
+                # Default loop - just repeat
                 self._player.setPosition(0)
                 self._player.play()
 
@@ -2501,11 +2501,11 @@ class CompanionWindow(QWidget):
             self._drift_y += self._drift_dy
             if abs(self._drift_y) > 2.0:
                 self._drift_dy = -self._drift_dy
-            # Smooth vignette interpolation — only repaint when actually changing
+            # Smooth vignette interpolation - only repaint when actually changing
             diff = self._vignette_target - self._vignette_opacity
             if abs(diff) > 0.001:
                 self._vignette_opacity += diff * 0.10
-            # Drift doesn't need its own repaint — video _on_frame handles it
+            # Drift doesn't need its own repaint - video _on_frame handles it
         except RuntimeError:
             pass  # widget deleted during shutdown
 
@@ -2527,7 +2527,7 @@ class CompanionWindow(QWidget):
         if self._pip_progress < 0.001:
             return x_full, y_full, sw_full, sh_full
 
-        # PIP rect — bottom-right corner, 25% of window size
+        # PIP rect - bottom-right corner, 25% of window size
         pip_w = int(win_w * 0.25)
         pip_h = int(pip_w * img_h / img_w)
         pip_margin = 16
@@ -2550,10 +2550,10 @@ class CompanionWindow(QWidget):
         p.setRenderHint(QPainter.SmoothPixmapTransform)
         if self._eye_mode or self._frame.isNull():
             p.fillRect(self.rect(), QColor(12, 12, 14))
-            # Shutdown overlay — brain reverses 9→0 (decay+cyber → pristine)
+            # Shutdown overlay - brain reverses 9→0 (decay+cyber → pristine)
             if self._shutdown_mode:
                 win_w, win_h = self.width(), self.height()
-                cx, cy = win_w / 2.0, win_h / 2.0 - 20
+                cx, cy = win_w / 2.0, win_h / 2.0 - 50
                 self._ensure_brain_frames()
                 # Advance backwards one frame at a time
                 now = time.monotonic()
@@ -2565,6 +2565,33 @@ class CompanionWindow(QWidget):
                 pulse = 0.5 + 0.5 * math.sin(time.time() * 3.0)
                 self._paint_orb_brain(p, cx, cy, frame_idx, pulse,
                                       [(80, 18), (55, 35), (30, 60)], 90, 0.9, 40)
+
+                # Progress bar below the orb
+                bar_w = 200
+                bar_h = 4
+                bar_x = int(cx - bar_w / 2)
+                bar_y = int(cy + 80)
+                prog = getattr(self, '_shutdown_progress', 0.0)
+                # Track background
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(255, 255, 255, 15))
+                p.drawRoundedRect(bar_x, bar_y, bar_w, bar_h, 2, 2)
+                # Fill
+                fill_w = int(bar_w * max(0.0, min(1.0, prog)))
+                if fill_w > 0:
+                    p.setBrush(QColor(255, 255, 255, 80))
+                    p.drawRoundedRect(bar_x, bar_y, fill_w, bar_h, 2, 2)
+
+                # Status text below progress bar
+                label = getattr(self, '_shutdown_label', '')
+                if label:
+                    p.setPen(QColor(255, 255, 255, 120))
+                    if not MainWindow._ATROPHY_FONT:
+                        MainWindow._ATROPHY_FONT = QFont("Bricolage Grotesque", 12)
+                    p.setFont(MainWindow._ATROPHY_FONT)
+                    text_rect = QRectF(bar_x - 50, bar_y + 14, bar_w + 100, 30)
+                    p.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop, label)
+
                 QTimer.singleShot(33, self.update)
             p.end()
             return
@@ -2573,10 +2600,10 @@ class CompanionWindow(QWidget):
         # Black background
         p.fillRect(self.rect(), QColor(0, 0, 0))
 
-        # Video frame — full-bleed or PIP depending on _pip_progress
+        # Video frame - full-bleed or PIP depending on _pip_progress
         vx, vy, vw, vh = self._video_rect()
 
-        # Scale frame to target size (cached — only rescale when needed)
+        # Scale frame to target size (cached - only rescale when needed)
         need_rescale = (
             self._scaled_frame is None
             or self._scaled_frame.width() != vw
@@ -2590,7 +2617,7 @@ class CompanionWindow(QWidget):
             self._frame_needs_rescale = False
 
         if self._pip_progress > 0.01:
-            # PIP mode — clip to rounded rect with shadow
+            # PIP mode - clip to rounded rect with shadow
             p.save()
             pip_radius = int(8 + 4 * self._pip_progress)
             pip_path = QPainterPath()
@@ -2613,7 +2640,7 @@ class CompanionWindow(QWidget):
             p.drawPath(pip_path)
             p.restore()
         else:
-            # Full-bleed — no clipping needed
+            # Full-bleed - no clipping needed
             p.drawImage(vx, vy, self._scaled_frame)
 
         # Warm vignette overlay (only in full-bleed mode)
@@ -2636,7 +2663,7 @@ class CompanionWindow(QWidget):
             p.drawImage(0, 0, self._vignette_img)
             p.setOpacity(1.0)
 
-        # Iris wipe — circular mask for agent switch transitions
+        # Iris wipe - circular mask for agent switch transitions
         if self._iris_progress > 0.001:
             cx, cy = win_w / 2, win_h / 2
             max_radius = (win_w ** 2 + win_h ** 2) ** 0.5 / 2
@@ -2656,7 +2683,7 @@ class CompanionWindow(QWidget):
             p.setBrush(QColor(0, 0, 0))
             p.drawPath(mask)
 
-        # Boot overlay — dark screen with brain advancing 0→9 (pristine→decay+cyber)
+        # Boot overlay - dark screen with brain advancing 0→9 (pristine→decay+cyber)
         if self._booting and self._boot_opacity > 0.001:
             alpha = int(255 * self._boot_opacity)
             p.fillRect(self.rect(), QColor(12, 12, 14, alpha))
@@ -2785,7 +2812,7 @@ class CompanionWindow(QWidget):
         self._bar.stop_requested.connect(self._on_stop)
         self._bar.raise_()
 
-        # Metrics label — small text above right side of input bar
+        # Metrics label - small text above right side of input bar
         self._metrics_label = QLabel(self)
         self._metrics_label.setStyleSheet(
             "color: rgba(255,255,255,0.25); font-size: 10px; background: transparent;"
@@ -2795,7 +2822,7 @@ class CompanionWindow(QWidget):
         self._metrics_label.hide()
         self._response_start_time = None
 
-        # Global Cmd+C shortcut — copies last companion message when no text selected
+        # Global Cmd+C shortcut - copies last companion message when no text selected
         from PyQt5.QtWidgets import QShortcut
         from PyQt5.QtGui import QKeySequence
         copy_shortcut = QShortcut(QKeySequence.Copy, self)
@@ -2840,7 +2867,7 @@ class CompanionWindow(QWidget):
         self._metrics_label.move(left, bar_y - 16)
 
     def _handle_copy(self):
-        """Global Cmd+C handler — copy selected transcript text, input text, or last companion message."""
+        """Global Cmd+C handler - copy selected transcript text, input text, or last companion message."""
         if self._bar._input.hasSelectedText():
             self._bar._input.copy()
         else:
@@ -2995,7 +3022,7 @@ class CompanionWindow(QWidget):
         self._position_status_bar()
 
     def _position_status_bar(self):
-        # Sits as top stroke of the chat bar — same x/width, just above it
+        # Sits as top stroke of the chat bar - same x/width, just above it
         bar_x = self._bar.x()
         bar_y = self._bar.y()
         bar_w = self._bar.width()
@@ -3003,7 +3030,7 @@ class CompanionWindow(QWidget):
         self._status_bar.move(bar_x, bar_y - 2)
 
     def _toggle_mute(self):
-        """Toggle global mute — overrides all per-agent mute states."""
+        """Toggle global mute - overrides all per-agent mute states."""
         self._global_muted = not self._global_muted
         self._muted = self._global_muted or self._agent_muted
         self._mute_btn.set_active(self._global_muted)
@@ -3058,7 +3085,7 @@ class CompanionWindow(QWidget):
             return
 
         # Flash status bar to indicate activation
-        self._status_bar.start("wake word detected — recording...")
+        self._status_bar.start("wake word detected - recording...")
 
         # Play subtle activation sound
         import threading
@@ -3168,7 +3195,7 @@ class CompanionWindow(QWidget):
         if hasattr(self, '_journal_nudge_timer') and self._journal_nudge_timer:
             self._journal_nudge_timer.stop()
 
-        # Iris wipe — circle closes to center, swaps agent, circle opens
+        # Iris wipe - circle closes to center, swaps agent, circle opens
         self._iris_phase = "closing"
         self._switch_anim = QPropertyAnimation(self, b"iris_progress", self)
         self._switch_anim.setStartValue(0.0)
@@ -3179,7 +3206,7 @@ class CompanionWindow(QWidget):
         self._switch_anim.start()
 
     def _on_switch_faded_out(self):
-        """At peak black — swap everything, then fade back in."""
+        """At peak black - swap everything, then fade back in."""
         import threading
         from core.agent_manager import reload_agent_config, get_agent_state
         from core.context import load_system_prompt
@@ -3292,7 +3319,7 @@ class CompanionWindow(QWidget):
             self._deferral_window_start = now
         self._deferral_count += 1
         if self._deferral_count > 3:
-            print("  [deferral] suppressed — too many in 60s")
+            print("  [deferral] suppressed - too many in 60s")
             return
 
         self._defer_to_agent(target, data)
@@ -3310,10 +3337,10 @@ class CompanionWindow(QWidget):
         if self._wake_listener:
             self._stop_wake_listener()
 
-        # Kill audio — current agent's speech stops
+        # Kill audio - current agent's speech stops
         self._kill_audio()
 
-        # Iris wipe — fast, like switching channels
+        # Iris wipe - fast, like switching channels
         self._iris_phase = "closing"
         self._switch_anim = QPropertyAnimation(self, b"iris_progress", self)
         self._switch_anim.setStartValue(0.0)
@@ -3324,7 +3351,7 @@ class CompanionWindow(QWidget):
         self._switch_anim.start()
 
     def _on_deferral_faded_out(self):
-        """At peak black during deferral — swap agent, inject context, respond."""
+        """At peak black during deferral - swap agent, inject context, respond."""
         from core.agent_manager import (
             reload_agent_config, get_agent_state,
             suspend_agent_session, resume_agent_session,
@@ -3337,7 +3364,7 @@ class CompanionWindow(QWidget):
         deferral = self._deferral_data
         source_agent = self._current_agent
 
-        # Suspend current agent's session (don't end it — preserves CLI conversation)
+        # Suspend current agent's session (don't end it - preserves CLI conversation)
         suspend_agent_session(
             source_agent,
             cli_session_id=self._cli_session_id,
@@ -3358,7 +3385,7 @@ class CompanionWindow(QWidget):
         # Update window
         self.setWindowTitle(cfg.AGENT_DISPLAY_NAME)
 
-        # DO NOT clear transcript — conversation should feel continuous
+        # DO NOT clear transcript - conversation should feel continuous
         # Add a codec-style divider instead
         source_name = deferral.get("source_display_name", source_agent)
         self._transcript.add_divider(f"{source_name}  ›  {cfg.AGENT_DISPLAY_NAME}")
@@ -3390,10 +3417,10 @@ class CompanionWindow(QWidget):
         # Update mute button
         self._mute_btn.set_active(self._global_muted)
 
-        # Flash agent name — codec style
+        # Flash agent name - codec style
         self._flash_agent_name(cfg.AGENT_DISPLAY_NAME)
 
-        # Iris open — fast reveal of new agent
+        # Iris open - fast reveal of new agent
         self._iris_phase = "opening"
         self._switch_anim = QPropertyAnimation(self, b"iris_progress", self)
         self._switch_anim.setStartValue(0.0)
@@ -3404,7 +3431,7 @@ class CompanionWindow(QWidget):
         self._switch_anim.start()
 
     def _on_deferral_faded_in(self):
-        """Deferral fade-in complete — send the deferred question to the new agent."""
+        """Deferral fade-in complete - send the deferred question to the new agent."""
         self._switching = False
         self._switch_anim = None
         self._iris_progress = 0.0
@@ -3421,7 +3448,7 @@ class CompanionWindow(QWidget):
             f"Context: {context}]\n\n{user_question}"
         )
 
-        # Launch inference — the new agent responds to the deferred question
+        # Launch inference - the new agent responds to the deferred question
         self._bar.set_stop_mode(True)
         self._status_bar.start("thinking...")
         self._first_sentence_shown = False
@@ -3525,7 +3552,7 @@ class CompanionWindow(QWidget):
         self._artefact_btn.set_has_new(False)
 
     def _on_artefact_selected(self, artefact_dir, atype, file_path):
-        """User clicked an artefact in the gallery — display it."""
+        """User clicked an artefact in the gallery - display it."""
         self._artefact_overlay.reposition(0, 0, self.width(), self.height())
         self._artefact_overlay.show_artefact(artefact_dir, atype, file_path)
         self._animate_to_pip()
@@ -3566,13 +3593,13 @@ class CompanionWindow(QWidget):
         except Exception:
             return
 
-        # Loading state — show progress bar
+        # Loading state - show progress bar
         if data.get("status") == "generating":
             if not self._artefact_loading:
                 self._show_artefact_loading(data.get("name", "artefact"))
             return
 
-        # Final artefact — dismiss loading, show result
+        # Final artefact - dismiss loading, show result
         display_file.unlink(missing_ok=True)
         self._dismiss_artefact_loading()
 
@@ -3658,18 +3685,18 @@ class CompanionWindow(QWidget):
         if self._wake_listener:
             self._wake_listener.pause()
 
-        # Detect away intent — set status before processing
+        # Detect away intent - set status before processing
         from core.status import detect_away_intent, set_away
         away_reason = detect_away_intent(text)
         if away_reason:
             set_away(away_reason)
 
-        # Cancel opening if still loading — user went first
+        # Cancel opening if still loading - user went first
         if getattr(self, '_opening_worker', None):
             self._opening_worker = None
             self._status_bar.stop()
 
-        # Cut off any active response — kill worker + audio
+        # Cut off any active response - kill worker + audio
         if self._worker:
             self._worker.terminate()
             self._worker.wait(2000)
@@ -3679,7 +3706,7 @@ class CompanionWindow(QWidget):
         # Add user message to transcript
         self._transcript.add_message("user", text)
 
-        # Record user turn — companion text filled in when done
+        # Record user turn - companion text filled in when done
         self._history.append({"user": text, "companion": ""})
 
         if self._session:
@@ -3718,11 +3745,11 @@ class CompanionWindow(QWidget):
     def _auto_retry(self):
         """Reset session and retry the last message once."""
         if self._retried:
-            self._present("[couldn't connect — try again]")
+            self._present("[couldn't connect - try again]")
             self._bar.set_stop_mode(False)
             return
         self._retried = True
-        print("  [Session reset — retrying...]")
+        print("  [Session reset - retrying...]")
         self._cli_session_id = None
         if self._session:
             self._session.set_cli_session_id(None)
@@ -3730,7 +3757,7 @@ class CompanionWindow(QWidget):
         self._launch_worker(self._retry_text, None)
 
     def _on_text_ready(self, sentence, index):
-        """Text available immediately — show in transcript before TTS finishes."""
+        """Text available immediately - show in transcript before TTS finishes."""
         if not self._first_sentence_shown:
             self._first_sentence_shown = True
             self._status_bar.stop()
@@ -3739,17 +3766,17 @@ class CompanionWindow(QWidget):
             self._transcript.append_to_last(_strip_tags(sentence))
 
     def _on_sentence_ready(self, sentence, audio_path, index):
-        """TTS done — queue audio only (text already shown by _on_text_ready)."""
+        """TTS done - queue audio only (text already shown by _on_text_ready)."""
         if audio_path and not self._muted:
             self._audio_player.enqueue(audio_path, index)
 
     def _on_tool_use(self, name, tool_id):
-        """Claude invoked a tool — show in UI."""
+        """Claude invoked a tool - show in UI."""
         if name == "mcp__memory__defer_to_agent":
             self._status_bar.start("handing off...")
 
     def _on_compacting(self):
-        """Context window is being compacted — set flush flag and show status."""
+        """Context window is being compacted - set flush flag and show status."""
         self._needs_memory_flush = True
         self._compaction_warned = False
         # After compaction, context is roughly halved
@@ -3763,7 +3790,7 @@ class CompanionWindow(QWidget):
         if session_id:
             self._cli_session_id = session_id
 
-        # Empty response — auto-retry with fresh session
+        # Empty response - auto-retry with fresh session
         if not full_text and not self._first_sentence_shown:
             self._auto_retry()
             return
@@ -3793,7 +3820,7 @@ class CompanionWindow(QWidget):
         self._approx_tokens += (len(user_text) // 4) + response_tokens
         if self._approx_tokens > 150000 and not self._compaction_warned:
             self._compaction_warned = True
-            self._status_bar.start("context getting full — compaction soon")
+            self._status_bar.start("context getting full - compaction soon")
             QTimer.singleShot(5000, self._status_bar.stop)
 
         # Update metrics label
@@ -3815,7 +3842,7 @@ class CompanionWindow(QWidget):
             else:
                 self._present(full_text)
 
-        # Pre-compaction memory flush — fire in background, invisible to user
+        # Pre-compaction memory flush - fire in background, invisible to user
         if self._needs_memory_flush:
             self._needs_memory_flush = False
             self._flush_worker = MemoryFlushWorker(self._cli_session_id, self._system)
@@ -3827,7 +3854,7 @@ class CompanionWindow(QWidget):
         if full_text and should_follow_up():
             QTimer.singleShot(random.randint(3000, 8000), self._do_follow_up)
         else:
-            # No follow-up — safe to resume wake listener
+            # No follow-up - safe to resume wake listener
             self._resume_wake_after_turn()
 
     def _resume_wake_after_turn(self):
@@ -3837,7 +3864,7 @@ class CompanionWindow(QWidget):
             QTimer.singleShot(500, self._wake_listener.resume)
 
     def _do_follow_up(self):
-        """Unprompted follow-up — a second thought that arrived late."""
+        """Unprompted follow-up - a second thought that arrived late."""
         if self._worker is not None:
             return  # already streaming something new
         from core.agency import followup_prompt
@@ -3848,7 +3875,7 @@ class CompanionWindow(QWidget):
 
         self._first_sentence_shown = False
         self._worker = StreamingPipelineWorker(
-            user_text="(continue — your second thought)",
+            user_text="(continue - your second thought)",
             system=followup_system,
             cli_session_id=self._cli_session_id,
             synth_fn=self._on_synth,
@@ -3893,30 +3920,30 @@ class CompanionWindow(QWidget):
         self._drain_message_queue()
 
     def _on_timer_finished(self, label: str):
-        """Timer completed — clean up reference."""
+        """Timer completed - clean up reference."""
         self._active_timers = [t for t in self._active_timers if t.isVisible()]
 
     def _do_journal_nudge(self):
-        """Unprompted journal nudge — once per session, timed randomly."""
+        """Unprompted journal nudge - once per session, timed randomly."""
         if self._worker is not None:
-            # Busy — try again in 5 minutes
+            # Busy - try again in 5 minutes
             QTimer.singleShot(5 * 60_000, self._do_journal_nudge)
             return
 
         nudge_system = (
             self._system + "\n\n"
             "RIGHT NOW: Gently but directly suggest Will take some time to journal. "
-            "This is not a subtle weave — tell him openly. Reference what you've "
+            "This is not a subtle weave - tell him openly. Reference what you've "
             "been talking about if there's something worth sitting with, or just "
             "invite him to write about whatever's on his mind. Keep it to 2-3 "
             "sentences. Use prompt_journal to leave him a specific question in "
-            "Obsidian. Be warm but don't overthink it — just ask him to write."
+            "Obsidian. Be warm but don't overthink it - just ask him to write."
         )
 
         self._first_sentence_shown = False
         self._bar.set_stop_mode(True)
         self._worker = StreamingPipelineWorker(
-            user_text="(journal nudge — speak unprompted)",
+            user_text="(journal nudge - speak unprompted)",
             system=nudge_system,
             cli_session_id=self._cli_session_id,
             synth_fn=self._on_synth,
@@ -3956,7 +3983,7 @@ class CompanionWindow(QWidget):
                 self._present(full_text)
 
     def _on_flush_done(self, new_session_id):
-        """Memory flush complete — update session ID if changed."""
+        """Memory flush complete - update session ID if changed."""
         self._flush_worker = None
         if new_session_id:
             self._cli_session_id = new_session_id
@@ -3964,9 +3991,9 @@ class CompanionWindow(QWidget):
                 self._session.set_cli_session_id(new_session_id)
 
     def _do_coherence_check(self):
-        """SENTINEL — periodic coherence check. Skipped if streaming or no session."""
+        """SENTINEL - periodic coherence check. Skipped if streaming or no session."""
         if self._worker is not None:
-            return  # mid-stream — skip this cycle
+            return  # mid-stream - skip this cycle
         if not self._cli_session_id:
             return  # no active CLI session
         if self._coherence_worker is not None:
@@ -3976,7 +4003,7 @@ class CompanionWindow(QWidget):
         self._coherence_worker.start()
 
     def _on_coherence_done(self, new_session_id):
-        """SENTINEL check complete — update session ID if re-anchoring changed it."""
+        """SENTINEL check complete - update session ID if re-anchoring changed it."""
         self._coherence_worker = None
         if new_session_id:
             self._cli_session_id = new_session_id
@@ -3996,7 +4023,7 @@ class CompanionWindow(QWidget):
                 break
 
     def _on_stop(self):
-        """User pressed stop — kill inference and audio."""
+        """User pressed stop - kill inference and audio."""
         if self._worker:
             self._worker.terminate()
             self._worker.wait(2000)
@@ -4084,7 +4111,7 @@ class CompanionWindow(QWidget):
         # Input bar
         self._bar.setFixedSize(content_w, _BAR_H)
         self._bar.move(left, h - _PAD - _BAR_H)
-        # Transcript — bottom half, above input bar
+        # Transcript - bottom half, above input bar
         bar_y = h - _PAD - _BAR_H
         gap = 10
         transcript_h = h // 2
@@ -4150,12 +4177,19 @@ class CompanionWindow(QWidget):
         """Run cleanup with visible progress, then close."""
         self._shutdown_started = True
         self._shutdown_mode = True
+        self._shutdown_label = "stopping audio..."
+        self._shutdown_progress = 0.0
         self._brain_frame_idx = 9  # start at full decay, count down to pristine
         self._brain_last_advance = time.monotonic()
         self._drift_timer.stop()
         self._player.stop()
         self._audio_player.stop()
         self._stop_wake_listener()
+
+        # Save current agent for next launch
+        from core.agent_manager import set_last_active_agent
+        set_last_active_agent(self._current_agent)
+
         # Hide chat panel and tray icon
         if _chat_panel:
             _chat_panel.hide()
@@ -4164,7 +4198,6 @@ class CompanionWindow(QWidget):
         if _menu_bar_icon:
             _menu_bar_icon.hide()
         # Kill any orphaned afplay processes
-        import os, signal
         try:
             subprocess.run(["pkill", "-f", "afplay"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
@@ -4173,7 +4206,7 @@ class CompanionWindow(QWidget):
             self._worker.terminate()
             self._worker.wait(2000)
 
-        # Cut to black — hide everything
+        # Cut to black - hide everything except the brain orb painted in paintEvent
         self._bar.hide()
         self._transcript.hide()
         self._mute_btn.hide()
@@ -4184,22 +4217,14 @@ class CompanionWindow(QWidget):
         self._call_btn.hide()
         if self._settings_open:
             self._settings_panel.hide()
+        self._status_bar.hide()
         self._frame = QImage()  # clear video frame
         self._scaled_frame = None
-        self.update()  # repaint black
-
-        # Centre the status bar
-        self._status_bar.setFixedWidth(self.width() - _PAD * 4)
-        cx = (self.width() - self._status_bar.width()) // 2
-        cy = self.height() // 2
-        self._status_bar.move(cx, cy)
-        self._status_bar.start("stopping audio...")
+        self.update()  # repaint - brain orb + shutdown text drawn in paintEvent
 
         # Connect signals for thread-safe updates
         self._shutting_down.connect(self._finish_shutdown)
-        self._shutdown_status.connect(
-            lambda label, prog: self._status_bar.set_progress(prog, label)
-        )
+        self._shutdown_status.connect(self._on_shutdown_progress)
 
         import threading
 
@@ -4211,13 +4236,22 @@ class CompanionWindow(QWidget):
                 except Exception:
                     pass
 
-            self._shutdown_status.emit("done", 1.0)
+            self._shutdown_status.emit("closing down...", 0.7)
+            import time as _t
+            _t.sleep(0.5)
+            self._shutdown_status.emit("done.", 1.0)
+            _t.sleep(0.3)
             self._shutting_down.emit()
 
         threading.Thread(target=_cleanup, daemon=True).start()
 
+    def _on_shutdown_progress(self, label: str, progress: float):
+        """Thread-safe update of shutdown overlay text and progress."""
+        self._shutdown_label = label
+        self._shutdown_progress = progress
+        self.update()
+
     def _finish_shutdown(self):
-        self._status_bar.stop()
         self._shutdown_done = True
         self.close()
 
@@ -4225,7 +4259,7 @@ class CompanionWindow(QWidget):
 # ── Chat panel (lightweight floating overlay) ──
 
 class ChatPanel(QWidget):
-    """Cmd+Shift+Space chat overlay — text-only, no video."""
+    """Cmd+Shift+Space chat overlay - text-only, no video."""
 
     def __init__(self, companion):
         super().__init__()
@@ -4325,7 +4359,7 @@ class ChatPanel(QWidget):
             user_text=text,
             system=c._system,
             cli_session_id=c._cli_session_id,
-            synth_fn=None,  # text-only — no TTS
+            synth_fn=None,  # text-only - no TTS
             muted=True,
         )
         self._worker.text_ready.connect(self._on_text_ready)
@@ -4342,7 +4376,7 @@ class ChatPanel(QWidget):
             self._transcript.append_to_last(_strip_tags(sentence))
 
     def _on_sentence_ready(self, sentence, audio_path, index):
-        pass  # text-only — audio ignored
+        pass  # text-only - audio ignored
 
     def _on_done(self, full_text, session_id):
         self._worker = None
@@ -4400,7 +4434,7 @@ class MenuBarIcon:
                 NSVariableStatusItemLength
             )
 
-            # Menu bar brain icon (template image — adapts to light/dark)
+            # Menu bar brain icon (template image - adapts to light/dark)
             icon_dir = os.path.join(os.path.dirname(__file__), "icons")
             icon_2x = os.path.join(icon_dir, "menubar_brain@2x.png")
             icon_1x = os.path.join(icon_dir, "menubar_brain.png")
@@ -4478,7 +4512,7 @@ class MenuBarIcon:
             self._menu = menu  # prevent gc
 
         except ImportError:
-            print("  [AppKit unavailable — no menu bar icon]")
+            print("  [AppKit unavailable - no menu bar icon]")
             # Fallback to QSystemTrayIcon
             self._setup_qt_fallback()
 
@@ -4617,14 +4651,14 @@ class GlobalHotkey:
                     and event.modifierFlags() & NSEventModifierFlagShift):
                     QTimer.singleShot(0, self._callback)
 
-            # Global monitor — fires when app is NOT focused
+            # Global monitor - fires when app is NOT focused
             m1 = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
                 NSEventMaskKeyDown, handler
             )
             if m1:
                 self._monitors.append(m1)
 
-            # Local monitor — fires when app IS focused
+            # Local monitor - fires when app IS focused
             def local_handler(event):
                 if (event.keyCode() == 49
                     and event.modifierFlags() & NSEventModifierFlagCommand
@@ -4641,7 +4675,7 @@ class GlobalHotkey:
 
             print("  [Global hotkey: Cmd+Shift+Space registered]")
         except Exception as e:
-            print(f"  [Global hotkey failed: {e} — use tray icon instead]")
+            print(f"  [Global hotkey failed: {e} - use tray icon instead]")
 
     def stop(self):
         try:
@@ -4658,7 +4692,7 @@ class GlobalHotkey:
 def run_app(on_synth_callback=None, on_opening_callback=None,
             system_prompt="", cli_session_id=None, session=None,
             cached_opening_audio="", menu_bar_mode=False):
-    # High DPI and rendering quality — must be set before QApplication
+    # High DPI and rendering quality - must be set before QApplication
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
@@ -4670,7 +4704,7 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
     font.setStyleStrategy(QFont.PreferAntialias)
     app.setFont(font)
 
-    # Menu-bar-only mode — hide from Dock (like Amphetamine)
+    # Menu-bar-only mode - hide from Dock (like Amphetamine)
     if menu_bar_mode:
         try:
             from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
@@ -4678,9 +4712,9 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
                 NSApplicationActivationPolicyAccessory
             )
         except ImportError:
-            print("  [AppKit unavailable — app will still appear in Dock]")
+            print("  [AppKit unavailable - app will still appear in Dock]")
 
-    # App icon — orb (Qt windows + macOS Dock)
+    # App icon - orb (Qt windows + macOS Dock)
     from display.icon import get_app_icon
     app_icon = get_app_icon()
     app.setWindowIcon(app_icon)
@@ -4720,7 +4754,7 @@ def run_app(on_synth_callback=None, on_opening_callback=None,
     _companion_window.activateWindow()
     _companion_window._bar.focus_input()
 
-    # Bring app to front — essential for menu-bar apps (LSUIElement)
+    # Bring app to front - essential for menu-bar apps (LSUIElement)
     try:
         from AppKit import NSApplication, NSApplicationActivationPolicyRegular
         ns_app = NSApplication.sharedApplication()

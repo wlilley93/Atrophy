@@ -1,7 +1,7 @@
-"""Telegram channel — send and receive via Bot API.
+"""Telegram channel - send and receive via Bot API.
 
 Uses inline keyboards for confirmations/permissions and polls for
-text replies to questions. No webhooks — pure HTTP polling with
+text replies to questions. No webhooks - pure HTTP polling with
 urllib so there are no extra dependencies.
 """
 import json

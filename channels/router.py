@@ -1,4 +1,4 @@
-"""Telegram message router — routes incoming messages to the right agent(s).
+"""Telegram message router - routes incoming messages to the right agent(s).
 
 Two-tier routing:
   1. Explicit: user names an agent via /prefix, @mention, wake word → route directly
@@ -66,14 +66,14 @@ def _check_explicit(text: str, agents: list[dict]) -> list[str] | None:
     """
     lower = text.lower().strip()
 
-    # /command prefix — e.g. "/companion what's up" or "/monty analyze this"
+    # /command prefix - e.g. "/companion what's up" or "/monty analyze this"
     if lower.startswith("/"):
         cmd = lower.split()[0][1:]  # strip /
         for a in agents:
             if cmd == a["name"] or cmd == a["display_name"].lower():
                 return [a["name"]]
 
-    # @mention — e.g. "@companion"
+    # @mention - e.g. "@companion"
     mentions = re.findall(r"@(\w+)", lower)
     if mentions:
         matched = []
@@ -92,7 +92,7 @@ def _check_explicit(text: str, agents: list[dict]) -> list[str] | None:
             if lower.startswith(ww):
                 return [a["name"]]
 
-    # Multiple agents named explicitly — "companion and monty, what do you think"
+    # Multiple agents named explicitly - "companion and monty, what do you think"
     named = []
     for a in agents:
         name_lower = a["display_name"].lower()

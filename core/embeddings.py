@@ -1,4 +1,4 @@
-"""Local embedding engine — sentence-transformers on MPS/CPU.
+"""Local embedding engine - sentence-transformers on MPS/CPU.
 
 Embeds text into 384-dim vectors. Model loads lazily on first call.
 Vectors stored as numpy blobs in SQLite.

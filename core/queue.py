@@ -18,7 +18,7 @@ def queue_message(
 ):
     """Append a message to the queue file with file locking.
 
-    Safe to call from multiple processes concurrently — uses
+    Safe to call from multiple processes concurrently - uses
     fcntl.flock to serialize reads and writes.
     """
     queue_file.parent.mkdir(parents=True, exist_ok=True)

@@ -9,9 +9,9 @@ import subprocess
 def send_notification(title: str, body: str, subtitle: str = ""):
     """Send a macOS notification via osascript.
 
-    Uses AppleScript for reliability — no pyobjc dependency required.
+    Uses AppleScript for reliability - no pyobjc dependency required.
     If the companion app is running, clicking the notification brings it forward.
-    Gated by NOTIFICATIONS_ENABLED config — silenced when disabled.
+    Gated by NOTIFICATIONS_ENABLED config - silenced when disabled.
     """
     try:
         from config import NOTIFICATIONS_ENABLED
@@ -24,7 +24,7 @@ def send_notification(title: str, body: str, subtitle: str = ""):
         title = title.replace(*char)
         body = body.replace(*char)
         subtitle = subtitle.replace(*char)
-    # Newlines break AppleScript — replace with spaces
+    # Newlines break AppleScript - replace with spaces
     title = title.replace('\n', ' ').replace('\r', ' ')
     body = body.replace('\n', ' ').replace('\r', ' ')
     subtitle = subtitle.replace('\n', ' ').replace('\r', ' ')

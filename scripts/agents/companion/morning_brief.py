@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Morning brief — queued for next app launch.
+"""Morning brief - queued for next app launch.
 
 Runs via launchd at 7am. Gathers weather (Leeds), active threads,
 recent session summaries, and observations. Composes a natural brief

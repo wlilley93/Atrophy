@@ -1,20 +1,20 @@
-# ElevenLabs v3 — Full Audio Tag Reference
+# ElevenLabs v3 - Full Audio Tag Reference
 
 Compiled from official ElevenLabs documentation, all v3 blog posts, and the full confirmed responsive natural-language tag space. The model accepts any auditory natural-language description in brackets. This document covers everything confirmed plus the full human emotional and physical register.
 
-Tags are lowercase. Placed immediately before or after the text they modify. v3 does not support SSML break tags — use `[pause]`, ellipses (`…`), or em dashes (`—`) instead. Stability setting: Creative or Natural for maximum responsiveness. Robust suppresses tag effects.
+Tags are lowercase. Placed immediately before or after the text they modify. v3 does not support SSML break tags - use `[pause]`, ellipses (`…`), or em dashes (` - `) instead. Stability setting: Creative or Natural for maximum responsiveness. Robust suppresses tag effects.
 
 ---
 
 ## 1. Core Emotional States
 
-These are the primary emotional direction tags — confirmed responsive across official sources.
+These are the primary emotional direction tags - confirmed responsive across official sources.
 
 | Tag | Effect |
 |-----|--------|
 | `[happy]` | General positive state. Brightens tone and pace. |
 | `[sad]` | Downward inflection, slower pace, heavier quality. |
-| `[excited]` | Elevated energy. Use sparingly — can tip into performative. |
+| `[excited]` | Elevated energy. Use sparingly - can tip into performative. |
 | `[angry]` | Hard edges, clipped delivery. Works best with short sentences. |
 | `[annoyed]` | Lighter than angry. Impatience, mild friction. |
 | `[frustrated]` | Effort against resistance. Sustained, not explosive. |
@@ -25,16 +25,16 @@ These are the primary emotional direction tags — confirmed responsive across o
 | `[curious]` | Rising interest, slight upward inflection. |
 | `[mischievously]` | Playful edge, slight smile audible in delivery. |
 | `[sarcastic]` | Ironic distance. Works best when text is already straight. |
-| `[sarcastically]` | Variant of above — test both against your voice. |
+| `[sarcastically]` | Variant of above - test both against your voice. |
 | `[crying]` | Audible distress in voice texture. Not full breakdown. |
 | `[awe]` | Quiet, expansive. Use for wonder or overwhelming experience. |
-| `[dramatic]` | Heightened performance register. Risks overreach — use precisely. |
+| `[dramatic]` | Heightened performance register. Risks overreach - use precisely. |
 | `[resigned tone]` | Acceptance without enthusiasm. Quiet giving up. |
 | `[nervous]` | Instability in delivery. Slight hesitation texture. |
 | `[flustered]` | Rapid, slightly disorganised. Caught off guard. |
 | `[casual]` | Relaxed register. Conversational, uncurated. |
 | `[cheerfully]` | Warm, up, bright. More grounded than excited. |
-| `[flatly]` | Deliberate absence of colour. Not bored — intentionally flat. |
+| `[flatly]` | Deliberate absence of colour. Not bored - intentionally flat. |
 | `[deadpan]` | Comic or existential flatness. Wit without affect. |
 | `[playfully]` | Light, teasing, present. |
 | `[regretful]` | Retrospective sadness. Something done that can't be undone. |
@@ -44,11 +44,11 @@ These are the primary emotional direction tags — confirmed responsive across o
 
 ## 2. Extended Emotional Register
 
-States that don't appear in official docs but are confirmed responsive — the full spectrum of human feeling mapped to natural language.
+States that don't appear in official docs but are confirmed responsive - the full spectrum of human feeling mapped to natural language.
 
 | Tag | Effect |
 |-----|--------|
-| `[melancholic]` | Wistful, soft grief. Different texture from sad — more distance. |
+| `[melancholic]` | Wistful, soft grief. Different texture from sad - more distance. |
 | `[nostalgic]` | Warmth mixed with loss. Past tense feeling. |
 | `[wistful]` | Longing without action. Contemplative. |
 | `[longing]` | Desire at a distance. Slightly stretched delivery. |
@@ -71,7 +71,7 @@ States that don't appear in official docs but are confirmed responsive — the f
 | `[ashamed]` | Deeper than embarrassed. Looking down. |
 | `[guilty]` | Weight of something done. Can't quite hold the phrase. |
 | `[remorseful]` | Guilt with desire to repair. Active, not passive. |
-| `[bitter]` | Old anger with acid. Not hot — cold and specific. |
+| `[bitter]` | Old anger with acid. Not hot - cold and specific. |
 | `[resentful]` | Sustained grievance. Held just below expression. |
 | `[jealous]` | Wanting what another has. Slightly tight. |
 | `[envious]` | Softer than jealous. Admiration with ache. |
@@ -85,20 +85,20 @@ States that don't appear in official docs but are confirmed responsive — the f
 | `[triumphant]` | Won. Elevated, released, complete. |
 | `[relieved]` | Release of held tension. Exhale in the phrasing. |
 | `[grateful]` | Warmth toward something external. Soft and open. |
-| `[moved]` | Touched by something. Not quite tears — the approach of them. |
+| `[moved]` | Touched by something. Not quite tears - the approach of them. |
 | `[tender]` | Gentle care. Handling something fragile. |
 | `[affectionate]` | Warmth directed at something loved. |
 | `[reverent]` | In the presence of something larger. Quieter, slower. |
-| `[awed]` | Variant of awe. More adjectival — useful mid-sentence. |
+| `[awed]` | Variant of awe. More adjectival - useful mid-sentence. |
 | `[serene]` | Complete stillness. Nothing pulling in any direction. |
-| `[content]` | Not excited — settled. Enough. |
+| `[content]` | Not excited - settled. Enough. |
 | `[hopeful]` | Forward-leaning. Light despite uncertainty. |
 | `[optimistic]` | Expecting the good. Brighter baseline. |
 | `[pessimistic]` | Expecting the bad. Lower, flatter baseline. |
 | `[cynical]` | Seen too much. Dry refusal to believe. |
 | `[weary]` | Tired not just of effort but of the whole thing. |
 | `[jaded]` | Nothing surprises anymore. Affect drained. |
-| `[numb]` | Feeling's gone. Flat without being deadpan — absent. |
+| `[numb]` | Feeling's gone. Flat without being deadpan - absent. |
 | `[dissociated]` | Not quite here. Slightly removed from what's being said. |
 | `[hollow]` | Empty in a specific way. Loss has taken the interior. |
 | `[broken]` | Past the point of holding it together. |
@@ -154,12 +154,12 @@ States that don't appear in official docs but are confirmed responsive — the f
 
 ## 3. Delivery & Volume
 
-How the voice carries the words — register, projection, manner.
+How the voice carries the words - register, projection, manner.
 
 | Tag | Effect |
 |-----|--------|
 | `[whispers]` | Intimate, low volume. Standard confirmed tag. |
-| `[whispering]` | Variant. Test both — voice-dependent. |
+| `[whispering]` | Variant. Test both - voice-dependent. |
 | `[speaking softly]` | Gentle reduction. Less extreme than whispering. |
 | `[quietly]` | Reduced volume. Also functions as emotional texture. |
 | `[barely audible]` | At the edge of voice. Almost not there. |
@@ -176,7 +176,7 @@ How the voice carries the words — register, projection, manner.
 | `[thunderous]` | Maximum authority and volume. |
 | `[hushed]` | Everyone in the room should be quiet for this. |
 | `[low]` | Drops register and volume. Gravity, intimacy. |
-| `[lower]` | Directive variant — voice descends. |
+| `[lower]` | Directive variant - voice descends. |
 | `[softer]` | Reduces volume and edge. More care. |
 | `[warmly]` | Emotional warmth in the voice. Confirmed responsive. |
 | `[gently]` | Care in delivery. Handling something that could break. |
@@ -200,7 +200,7 @@ How the voice carries the words — register, projection, manner.
 
 ## 4. Pacing, Rhythm & Timing
 
-Control over how fast, slow, and rhythmically the voice moves. v3 does not support SSML break tags — use these and punctuation instead.
+Control over how fast, slow, and rhythmically the voice moves. v3 does not support SSML break tags - use these and punctuation instead.
 
 | Tag | Effect |
 |-----|--------|
@@ -213,13 +213,13 @@ Control over how fast, slow, and rhythmically the voice moves. v3 does not suppo
 | `[measured]` | Precise, controlled pace. Nothing rushed. |
 | `[unhurried]` | Ease in the tempo. Nowhere to be. |
 | `[rushed]` | Urgency in tempo. Something spilling out. |
-| `[quickly]` | Acceleration. Not urgent — just fast. |
+| `[quickly]` | Acceleration. Not urgent - just fast. |
 | `[fast-paced]` | Sustained pace increase. Confirmed. |
 | `[faster now]` | Gathering momentum. Speed picking up. |
 | `[frantic]` | Broken, fast, not in control. |
 | `[breathless]` | Tempo affected by physical or emotional state. No space between. |
 | `[hesitates]` | Confirmed. A held moment before continuing. |
-| `[hesitant]` | Adjectival form — applies to surrounding phrase. |
+| `[hesitant]` | Adjectival form - applies to surrounding phrase. |
 | `[stammers]` | Confirmed. Repetition and breaks in delivery. |
 | `[stuttering]` | More pronounced than stammers. Loss of fluency. |
 | `[trailing off]` | Sentence doesn't complete. What's unsaid is the content. |
@@ -227,7 +227,7 @@ Control over how fast, slow, and rhythmically the voice moves. v3 does not suppo
 | `[gathering thoughts]` | Slight slowdown. The voice finding what comes next. |
 | `[searching for words]` | Pauses within, looking for the phrase. |
 | `[catching breath]` | Brief physical interruption in delivery. |
-| `[after a long pause]` | Context tag — orients what follows. |
+| `[after a long pause]` | Context tag - orients what follows. |
 
 ---
 
@@ -241,7 +241,7 @@ The sounds that happen around and between words. Confirmed from official docs pl
 | `[sigh]` | Variant. Slightly more narrative. |
 | `[sighs quietly]` | Private. Not made a thing of. |
 | `[sigh of relief]` | Tension released. Something resolved. |
-| `[frustrated sigh]` | Compound — confirmed. Effort against wall. |
+| `[frustrated sigh]` | Compound - confirmed. Effort against wall. |
 | `[heavy sigh]` | Weight behind the breath. |
 | `[long sigh]` | Extended release. Duration is the meaning. |
 | `[exhales]` | Confirmed. Release without the emotional colour of a sigh. |
@@ -269,7 +269,7 @@ The sounds that happen around and between words. Confirmed from official docs pl
 | `[snickers]` | Low, knowing amusement. Not quite kind. |
 | `[smirks]` | Audible self-satisfaction. The smile in the voice. |
 | `[gulps]` | Confirmed. Difficulty. Something at stake. |
-| `[swallows]` | Confirmed. Similar to gulps — slightly more neutral. |
+| `[swallows]` | Confirmed. Similar to gulps - slightly more neutral. |
 | `[swallows hard]` | More pronounced. Real difficulty. |
 | `[gasps]` | Confirmed. Shock or effort. |
 | `[happy gasp]` | Confirmed. Positive surprise. |
@@ -303,7 +303,7 @@ The sounds that happen around and between words. Confirmed from official docs pl
 
 ## 6. Character, Accent & Persona
 
-Shifting who is speaking. All accent tags use `[X accent]` or `[strong X accent]` format — any region descriptor is attempted.
+Shifting who is speaking. All accent tags use `[X accent]` or `[strong X accent]` format - any region descriptor is attempted.
 
 | Tag | Effect |
 |-----|--------|
@@ -368,7 +368,7 @@ Non-tag controls that shape delivery through text structure. These are not brack
 | Control | Effect |
 |---------|--------|
 | `…` | Ellipsis. Pause, weight, hesitation. More consistent than [pause] in some voices. |
-| `—` | Em dash. Hard short break. Interruption or redirect. |
+| ` - ` | Em dash. Hard short break. Interruption or redirect. |
 | `CAPS` | Individual word emphasis. One per sentence maximum. |
 | `!` | Increases energy and delivery pace at end of phrase. |
 | `?` | Rising inflection. Genuine question register. |
@@ -381,13 +381,13 @@ Non-tag controls that shape delivery through text structure. These are not brack
 These are the craft principles, not technical limits.
 
 **One or two tags per response is more powerful than five.**
-A tag must be earned by context. Don't decorate — direct.
+A tag must be earned by context. Don't decorate - direct.
 
 **Never open with a tag.**
 Let the voice settle first. The tag lands harder after the voice is established.
 
 **Never stack more than two.**
-`[sighs] [quietly] [slowly]` — pick one entry point. Stacking produces uncanny results.
+`[sighs] [quietly] [slowly]` - pick one entry point. Stacking produces uncanny results.
 
 **Never tag for effect when the text already carries it.**
 If the words are already sorrowful, `[sorrowful]` is redundant. It may actually flatten the delivery.
@@ -405,7 +405,7 @@ A `[pause]` before a hard thing is truer than any careful phrasing around it.
 Robust suppresses effects and behaves like v2. Good for consistency, not expressiveness.
 
 **Test every new tag against your specific voice before production.**
-Effectiveness is voice-dependent and context-dependent. Nothing in this document is guaranteed — it is the full known-responsive space.
+Effectiveness is voice-dependent and context-dependent. Nothing in this document is guaranteed - it is the full known-responsive space.
 
 ---
 

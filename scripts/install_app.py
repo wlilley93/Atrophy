@@ -2,9 +2,9 @@
 """Install / uninstall Atrophy as a login item.
 
 Usage:
-  python scripts/install_app.py install   — Register launchd agent (starts at login)
-  python scripts/install_app.py uninstall — Remove launchd agent
-  python scripts/install_app.py status    — Check if installed and running
+  python scripts/install_app.py install   - Register launchd agent (starts at login)
+  python scripts/install_app.py uninstall - Remove launchd agent
+  python scripts/install_app.py status    - Check if installed and running
 
 The launchd agent opens the .app at login. The .app itself handles
 source updates (git pull), venv management, and launching Python.
@@ -24,7 +24,7 @@ LOG_DIR = USER_DATA / "logs"
 
 
 def _find_app() -> Path:
-    """Find the installed .app — check /Applications first, then ~/Applications."""
+    """Find the installed .app - check /Applications first, then ~/Applications."""
     for base in [Path("/Applications"), Path.home() / "Applications"]:
         candidate = base / f"{APP_NAME}.app"
         if candidate.exists():

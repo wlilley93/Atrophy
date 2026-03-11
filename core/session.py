@@ -59,7 +59,7 @@ class Session:
         return self.minutes_elapsed() >= SESSION_SOFT_LIMIT_MINS
 
     def end(self, system_prompt: str):
-        """End the session — generate summary, close in DB."""
+        """End the session - generate summary, close in DB."""
         if not self.turn_history or len(self.turn_history) < 4:
             memory.end_session(self.session_id)
             return

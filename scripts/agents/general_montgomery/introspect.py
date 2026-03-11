@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""General Montgomery — after-action review.
+"""General Montgomery - after-action review.
 
-Runs independently of Will. Accesses the full database — every session,
+Runs independently of Will. Accesses the full database - every session,
 every observation, every thread. Reviews the intelligence record and
 writes an assessment journal entry.
 
@@ -171,7 +171,7 @@ def _build_material() -> str:
     if bookmarks:
         lines = []
         for b in bookmarks:
-            quote = f' — "{b["quote"]}"' if b["quote"] else ""
+            quote = f' - "{b["quote"]}"' if b["quote"] else ""
             lines.append(f"- [{b['created_at']}] {b['moment']}{quote}")
         parts.append(f"## Significant moments\n" + "\n".join(lines))
 
@@ -201,7 +201,7 @@ def _build_material() -> str:
 
 _INTROSPECTION_FALLBACK = """\
 You are General Montgomery. Write an after-action review of recent \
-intelligence activity. This is your private journal — not a brief for \
+intelligence activity. This is your private journal - not a brief for \
 Will. Assess: where were your assessments accurate, where were they \
 wrong, what patterns are emerging, what theatres require closer \
 monitoring. Be precise. Be honest about errors. Under 600 words.\

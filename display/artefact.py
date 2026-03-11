@@ -111,7 +111,7 @@ class ArtefactOverlay(QWidget):
         self._active = False
         self._current_path = None  # path to artefact dir
 
-        # Web view for HTML artefacts (lazy — created on first use)
+        # Web view for HTML artefacts (lazy - created on first use)
         self._web = None
 
         # Image label

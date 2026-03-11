@@ -110,7 +110,7 @@ def main():
         trim_time = find_trim_point(clip)
 
         if trim_time is None:
-            print(f"  {clip.name}: {duration:.1f}s — no trim needed")
+            print(f"  {clip.name}: {duration:.1f}s - no trim needed")
             continue
 
         saved = duration - trim_time

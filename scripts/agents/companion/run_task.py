@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generic task runner — executes a prompt-based task and delivers the result.
+"""Generic task runner - executes a prompt-based task and delivers the result.
 
 The companion agent can schedule this via manage_schedule to create
 arbitrary recurring tasks without writing Python code.

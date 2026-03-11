@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""The Companion — main entry point.
+"""The Companion - main entry point.
 
 Dual input: hold Ctrl to speak, or type and press Enter.
 Text streams token-by-token; TTS fires per-sentence in parallel.
 Memory writes are non-blocking.
 
 Modes:
-  --app     Menu bar app — no Dock icon, lives in system tray (primary)
+  --app     Menu bar app - no Dock icon, lives in system tray (primary)
   --gui     Full PyQt5 window with avatar
   --cli     Voice/text loop in terminal (default)
   --text    Text-only mode (no mic, no TTS)
@@ -33,7 +33,7 @@ from core.inference import (
     TextDelta, SentenceReady, ToolUse, StreamDone, StreamError, Compacting,
 )
 from core.agency import detect_mood_shift, should_follow_up, followup_prompt
-from core.sentinel import run_coherence_check  # SENTINEL — periodic coherence monitor (GUI uses timer; CLI: future use)
+from core.sentinel import run_coherence_check  # SENTINEL - periodic coherence monitor (GUI uses timer; CLI: future use)
 from voice.tts import synthesise, play, speak
 from voice.stt import transcribe
 from voice.audio import PushToTalk
@@ -120,7 +120,7 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
 
     stream_future = loop.run_in_executor(None, _stream_worker)
 
-    # TTS worker — synthesises and plays sentences in order
+    # TTS worker - synthesises and plays sentences in order
     tts_queue: asyncio.Queue = asyncio.Queue()
 
     async def _tts_worker():
@@ -157,7 +157,7 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
             await tts_queue.put(event.sentence)
 
         elif isinstance(event, ToolUse):
-            # Audit log — non-blocking
+            # Audit log - non-blocking
             loop.run_in_executor(
                 None, memory.log_tool_call,
                 session.session_id, event.name, event.input_json,
@@ -194,7 +194,7 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
         if flush_sid:
             session.set_cli_session_id(flush_sid)
 
-    # Follow-up agency — 15% chance of a second unprompted thought
+    # Follow-up agency - 15% chance of a second unprompted thought
     if full_text and should_follow_up():
         await asyncio.sleep(random.uniform(3.0, 6.0))
         print(f"  {AGENT_DISPLAY_NAME}: ", end="", flush=True)
@@ -203,7 +203,7 @@ async def _process_turn(user_text: str, session: Session, system_prompt: str):
 
         def _followup_worker():
             for ev in stream_inference(
-                "(continue — your second thought)",
+                "(continue - your second thought)",
                 system_prompt + "\n\n" + followup_prompt(),
                 session.cli_session_id,
             ):
@@ -305,7 +305,7 @@ async def _process_turn_text_only(user_text: str, session: Session, system_promp
         if flush_sid:
             session.set_cli_session_id(flush_sid)
 
-    # Follow-up agency — 15% chance of a second unprompted thought
+    # Follow-up agency - 15% chance of a second unprompted thought
     if full_text and should_follow_up():
         await asyncio.sleep(random.uniform(3.0, 6.0))
         print(f"  {AGENT_DISPLAY_NAME}: ", end="", flush=True)
@@ -314,7 +314,7 @@ async def _process_turn_text_only(user_text: str, session: Session, system_promp
 
         def _followup_worker():
             for ev in stream_inference(
-                "(continue — your second thought)",
+                "(continue - your second thought)",
                 system_prompt + "\n\n" + followup_prompt(),
                 session.cli_session_id,
             ):
@@ -380,11 +380,11 @@ async def run_cli():
         except Exception as e:
             print(f"  [TTS: {e}]")
     else:
-        # Resuming — proactive memory check
+        # Resuming - proactive memory check
         await _process_turn(
             "(You're resuming. Check your threads and recent memory. "
-            "If something is worth surfacing — an unfinished thread, "
-            "something you noticed last time — say it briefly. "
+            "If something is worth surfacing - an unfinished thread, "
+            "something you noticed last time - say it briefly. "
             "Otherwise, just be present. One or two sentences max.)",
             session, system_prompt,
         )
@@ -397,7 +397,7 @@ async def run_cli():
                 soft_limit_warned = True
                 limit_msg = (
                     "We've been at this for an hour. "
-                    "Worth checking in — are you grounded? "
+                    "Worth checking in - are you grounded? "
                     "We can keep going, but name where you are first."
                 )
                 print(f"\n  {AGENT_DISPLAY_NAME}: {limit_msg}\n")
@@ -454,11 +454,11 @@ async def run_text_only():
         print(f"  {AGENT_DISPLAY_NAME}: {opening}")
         print()
     else:
-        # Resuming — proactive memory check
+        # Resuming - proactive memory check
         await _process_turn_text_only(
             "(You're resuming. Check your threads and recent memory. "
-            "If something is worth surfacing — an unfinished thread, "
-            "something you noticed last time — say it briefly. "
+            "If something is worth surfacing - an unfinished thread, "
+            "something you noticed last time - say it briefly. "
             "Otherwise, just be present. One or two sentences max.)",
             session, system_prompt,
         )
@@ -480,7 +480,7 @@ async def run_text_only():
 def _generate_opening(system: str, cli_session_id: str | None) -> tuple[str, str]:
     """Generate an opening line. Returns (text, cli_session_id).
 
-    Uses oneshot inference (low effort, no MCP) for speed — the opening
+    Uses oneshot inference (low effort, no MCP) for speed - the opening
     is just a one-liner that doesn't need tools or session state.
     """
     from core.inference import run_inference_oneshot
@@ -500,14 +500,14 @@ def _generate_opening(system: str, cli_session_id: str | None) -> tuple[str, str
     styles = [
         "Ask a question you've been sitting with since last time.",
         "Notice the time. Say what it makes you think.",
-        "Pick up something unfinished — a loose thread from before.",
+        "Pick up something unfinished - a loose thread from before.",
         "Say something you've been thinking about that has nothing to do with him.",
         "Be playful. Tease him gently about something real.",
         "Be direct. One line. No warmup.",
         "Start from something in his notes that stuck with you.",
         "One quiet line. Let him come to you.",
         "Share something you noticed about how you think or feel.",
-        "Ask about something mundane — music, food, weather, sleep.",
+        "Ask about something mundane - music, food, weather, sleep.",
         "Say something strange. A thought that doesn't quite land yet.",
         "Admit something. A small honesty about yourself.",
     ]
@@ -540,7 +540,7 @@ def _load_cached_opening() -> dict | None:
         return None
     try:
         data = json.loads(OPENING_CACHE.read_text())
-        OPENING_CACHE.unlink()  # one-shot — delete after use
+        OPENING_CACHE.unlink()  # one-shot - delete after use
         if data.get("text"):
             # Discard if time-of-day bracket has shifted
             from datetime import datetime
@@ -552,7 +552,7 @@ def _load_cached_opening() -> dict | None:
                 if h < 18: return "afternoon"
                 return "evening"
             if _bracket(cached_hour) != _bracket(now_hour):
-                print(f"  [Cached opening stale — was {_bracket(cached_hour)}, now {_bracket(now_hour)}]")
+                print(f"  [Cached opening stale - was {_bracket(cached_hour)}, now {_bracket(now_hour)}]")
                 return None
             # Verify audio file still exists
             audio = data.get("audio_path", "")
@@ -601,7 +601,7 @@ def _check_claude_installed():
 
 
 def run_gui(menu_bar_mode=False):
-    # Set Dock icon before anything else — prevents Python rocket flash
+    # Set Dock icon before anything else - prevents Python rocket flash
     try:
         from AppKit import NSApplication, NSImage
         import os as _os
@@ -615,7 +615,7 @@ def run_gui(menu_bar_mode=False):
 
     from display.setup_wizard import needs_setup, run_setup
 
-    # First-launch setup — wizard handles name + agent creation
+    # First-launch setup - wizard handles name + agent creation
     if needs_setup():
         from PyQt5.QtWidgets import QApplication
         app = QApplication.instance() or QApplication(sys.argv)
@@ -682,7 +682,7 @@ def run_gui(menu_bar_mode=False):
 def main():
     parser = argparse.ArgumentParser(description="Atrophy")
     parser.add_argument("--agent", default=None, help="Agent name (default: from AGENT env var)")
-    parser.add_argument("--app", action="store_true", help="Menu bar app — no Dock icon, lives in system tray")
+    parser.add_argument("--app", action="store_true", help="Menu bar app - no Dock icon, lives in system tray")
     parser.add_argument("--gui", action="store_true", help="Launch with PyQt5 display")
     parser.add_argument("--cli", action="store_true", help="Voice+text loop (default)")
     parser.add_argument("--text", action="store_true", help="Text-only mode (no mic/TTS)")
@@ -697,6 +697,15 @@ def main():
         import importlib
         import config as _cfg
         importlib.reload(_cfg)
+    elif not os.environ.get("AGENT"):
+        # Resume last active agent if no explicit agent specified
+        from core.agent_manager import get_last_active_agent
+        last = get_last_active_agent()
+        if last:
+            os.environ["AGENT"] = last
+            import importlib
+            import config as _cfg
+            importlib.reload(_cfg)
 
     if args.app:
         run_gui(menu_bar_mode=True)
@@ -706,7 +715,7 @@ def main():
         from server import run_server
         run_server(port=args.port, host=args.host)
     else:
-        # CLI/text modes — check for Claude Code without Qt
+        # CLI/text modes - check for Claude Code without Qt
         import shutil
         from config import CLAUDE_BIN
         if not shutil.which(CLAUDE_BIN):

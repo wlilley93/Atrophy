@@ -1,4 +1,4 @@
-"""Inner Life — structured emotional state engine.
+"""Inner Life - structured emotional state engine.
 
 Replaces the simple mood string with a multi-dimensional emotional state
 that decays over time and is injected into the companion's context.
@@ -42,7 +42,7 @@ EMOTION_HALF_LIFE = {
     "playfulness": 4.0,
 }
 
-TRUST_HALF_LIFE = 8.0  # hours — trust decays slowly
+TRUST_HALF_LIFE = 8.0  # hours - trust decays slowly
 
 MAX_TRUST_DELTA = 0.05
 
@@ -128,7 +128,7 @@ def _decay_toward(current: float, baseline: float, hours_elapsed: float,
 
 
 def apply_decay(state: dict) -> dict:
-    """Apply temporal decay — emotions drift toward baseline since last update."""
+    """Apply temporal decay - emotions drift toward baseline since last update."""
     last = state.get("last_updated")
     if not last:
         return state

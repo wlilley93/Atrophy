@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Heartbeat daemon — periodic check-in evaluation.
+"""Heartbeat daemon - periodic check-in evaluation.
 
 Runs via launchd every 30 minutes. Gathers context about active threads,
 time since last interaction, and recent session activity. Asks the companion
@@ -92,10 +92,10 @@ def _gather_context() -> str:
 
 
 _HEARTBEAT_PROMPT = (
-    "[HEARTBEAT CHECK — internal evaluation, not a conversation]\n\n"
+    "[HEARTBEAT CHECK - internal evaluation, not a conversation]\n\n"
     "You are deciding whether to reach out to Will unprompted. "
     "You have access to your full conversation history and memory tools.\n\n"
-    "First, review your state — use recall, daily_digest, or your memory tools "
+    "First, review your state - use recall, daily_digest, or your memory tools "
     "if you need to refresh context. You may also update your HEARTBEAT.md "
     "checklist via write_note if your monitoring criteria should evolve.\n\n"
     "Then evaluate using the checklist below. Respond with exactly ONE prefix:\n\n"
@@ -185,7 +185,7 @@ def heartbeat():
             except Exception as e:
                 print(f"[heartbeat] Telegram send failed: {e}")
         else:
-            print(f"[heartbeat] Mac active — local only, skipping Telegram")
+            print(f"[heartbeat] Mac active - local only, skipping Telegram")
 
         from config import AGENT_DISPLAY_NAME
         send_notification(
@@ -206,7 +206,7 @@ def heartbeat():
         print(f"[heartbeat] Suppressed: {reason[:80]}")
 
     else:
-        # Unexpected format — log it but don't act
+        # Unexpected format - log it but don't act
         log_heartbeat("UNKNOWN", response_stripped[:500])
         print(f"[heartbeat] Unexpected format: {response_stripped[:80]}")
 

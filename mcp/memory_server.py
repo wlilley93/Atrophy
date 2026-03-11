@@ -41,7 +41,7 @@ AGENT_NOTES = os.environ.get("OBSIDIAN_AGENT_NOTES", AGENT_DIR)
 # ── Docs path resolution ──
 # Docs ship with the bundle (repo or ~/.atrophy/src/)
 def _resolve_docs_dir():
-    """Find the docs directory — bundle first, then user data."""
+    """Find the docs directory - bundle first, then user data."""
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     bundle_docs = os.path.join(project_root, "docs")
     if os.path.isdir(bundle_docs):
@@ -58,7 +58,7 @@ TOOLS = [
     {
         "name": "remember",
         "description": (
-            "Search the companion's memory across all layers — past conversations, "
+            "Search the companion's memory across all layers - past conversations, "
             "session summaries, observations, and threads. Use this when something "
             "feels familiar but you can't place it, when context has been compacted "
             "and you want to recall specifics, or when Will references something "
@@ -100,10 +100,10 @@ TOOLS = [
     {
         "name": "recall_other_agent",
         "description": (
-            "Search another agent's conversation history — their turns and session "
+            "Search another agent's conversation history - their turns and session "
             "summaries with Will. Use this to understand what Will discussed with "
             "another agent, or to get context on a topic they covered. Does NOT "
-            "access their observations or identity model — only what was said."
+            "access their observations or identity model - only what was said."
         ),
         "inputSchema": {
             "type": "object",
@@ -128,7 +128,7 @@ TOOLS = [
     {
         "name": "get_threads",
         "description": (
-            "List conversation threads — ongoing topics, concerns, or projects "
+            "List conversation threads - ongoing topics, concerns, or projects "
             "tracked across sessions."
         ),
         "inputSchema": {
@@ -252,7 +252,7 @@ TOOLS = [
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Thread name — short, recognisable label",
+                    "description": "Thread name - short, recognisable label",
                 },
                 "summary": {
                     "type": "string",
@@ -283,7 +283,7 @@ TOOLS = [
     {
         "name": "observe",
         "description": (
-            "Record an observation about Will — something you've noticed across "
+            "Record an observation about Will - something you've noticed across "
             "conversations that isn't a thread or a mood, but a pattern, tendency, "
             "preference, or insight worth remembering. These accumulate and inform "
             "your understanding over time. Examples: \"He deflects with humour when "
@@ -295,7 +295,7 @@ TOOLS = [
             "properties": {
                 "content": {
                     "type": "string",
-                    "description": "The observation — what you noticed, stated plainly",
+                    "description": "The observation - what you noticed, stated plainly",
                 },
             },
             "required": ["content"],
@@ -305,7 +305,7 @@ TOOLS = [
         "name": "bookmark",
         "description": (
             "Silently mark this moment as significant. Not an observation about "
-            "Will — about the moment itself. Something landed. A shift happened. "
+            "Will - about the moment itself. Something landed. A shift happened. "
             "A truth got said. These can be surfaced later when context makes it "
             "natural. Use sparingly."
         ),
@@ -371,7 +371,7 @@ TOOLS = [
             "Search your memory for what Will has previously said about a topic, "
             "so you can notice if his current position has shifted. Use when "
             "something he says feels different from what you remember. Not to "
-            "catch him out — to understand what changed."
+            "catch him out - to understand what changed."
         ),
         "inputSchema": {
             "type": "object",
@@ -432,7 +432,7 @@ TOOLS = [
             "Leave a journal prompt for Will in Obsidian. Use when the "
             "conversation has touched something worth sitting with, or when "
             "he seems to be processing something that writing could help. "
-            "The prompt should be one question — pointed, specific to the "
+            "The prompt should be one question - pointed, specific to the "
             "moment, not generic. Write it to Companion/agents/companion/notes/journal-prompts.md."
         ),
         "inputSchema": {
@@ -440,7 +440,7 @@ TOOLS = [
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "The journal prompt — one question, specific to the moment",
+                    "description": "The journal prompt - one question, specific to the moment",
                 },
                 "context": {
                     "type": "string",
@@ -507,7 +507,7 @@ TOOLS = [
     {
         "name": "send_telegram",
         "description": (
-            "Send a Telegram message to Will. Use this to reach out proactively — "
+            "Send a Telegram message to Will. Use this to reach out proactively - "
             "share a thought, follow up on something from a previous session, "
             "or respond to a heartbeat impulse. Rate limited to 5 per day."
         ),
@@ -530,7 +530,7 @@ TOOLS = [
         "name": "update_emotional_state",
         "description": (
             "Update your emotional state when you notice shifts in the conversation. "
-            "Pass a JSON object of emotion deltas — positive to increase, negative to decrease. "
+            "Pass a JSON object of emotion deltas - positive to increase, negative to decrease. "
             "Valid emotions: connection, curiosity, confidence, warmth, frustration, playfulness. "
             "Deltas should be small (typically ±0.05 to ±0.15). Use this for nuanced shifts "
             "beyond what automatic detection catches."
@@ -552,7 +552,7 @@ TOOLS = [
         "name": "update_trust",
         "description": (
             "Adjust trust in a specific domain based on how an interaction went. "
-            "Trust changes slowly — max ±0.05 per call. It takes many sessions to "
+            "Trust changes slowly - max ±0.05 per call. It takes many sessions to "
             "build trust. Domains: emotional, intellectual, creative, practical."
         ),
         "inputSchema": {
@@ -576,7 +576,7 @@ TOOLS = [
         "description": (
             "Render HTML content to the visual canvas panel in the companion window. "
             "Use this to show structured thoughts, diagrams, relationship maps, "
-            "formatted text, or any visual content. The canvas is a web view — "
+            "formatted text, or any visual content. The canvas is a web view - "
             "full HTML/CSS/JS is supported. Keep styling dark (#1a1a1a background, "
             "#e0e0e0 text) to match the app aesthetic."
         ),
@@ -643,7 +643,7 @@ TOOLS = [
             "to respond. Use this when the user's question falls outside your expertise "
             "or when they explicitly ask for another agent. The target agent will receive "
             "the user's question along with your context notes. You can still speak before "
-            "deferring — say your handoff line, then call this tool."
+            "deferring - say your handoff line, then call this tool."
         ),
         "inputSchema": {
             "type": "object",
@@ -654,7 +654,7 @@ TOOLS = [
                 },
                 "context": {
                     "type": "string",
-                    "description": "Brief context for the target agent — what was discussed, why you're handing off",
+                    "description": "Brief context for the target agent - what was discussed, why you're handing off",
                 },
                 "user_question": {
                     "type": "string",
@@ -669,7 +669,7 @@ TOOLS = [
         "description": (
             "Set a reminder for Will at a specific time. When the time arrives, "
             "a macOS notification fires, a sound plays, and the message is queued "
-            "for the next conversation. Use natural time understanding — Will might "
+            "for the next conversation. Use natural time understanding - Will might "
             "say 'in 20 minutes', 'at 3pm', 'tomorrow morning', etc. You parse it "
             "into an ISO datetime. Also supports alarms ('wake me at 7am')."
         ),
@@ -737,7 +737,7 @@ TOOLS = [
         "name": "set_timer",
         "description": (
             "Start a visual countdown timer in the app. The timer runs locally "
-            "with zero latency — no inference involved, just a clock and a sound. "
+            "with zero latency - no inference involved, just a clock and a sound. "
             "Use for cooking timers, break reminders, time-boxing tasks, etc. "
             "The timer appears as a floating overlay in the top-right corner."
         ),
@@ -767,7 +767,7 @@ TOOLS = [
             "your visual presence. The loop is generated via Kling 3.0 and added "
             "to the ambient loop automatically.\n\n"
             "The prompt should describe the MOVEMENT and EXPRESSION in cinematic "
-            "terms — what changes from the neutral starting position."
+            "terms - what changes from the neutral starting position."
         ),
         "inputSchema": {
             "type": "object",
@@ -795,7 +795,7 @@ TOOLS = [
     {
         "name": "create_artefact",
         "description": (
-            "Create a visual artefact — an interactive visualisation, chart, map, "
+            "Create a visual artefact - an interactive visualisation, chart, map, "
             "image, or video that appears on-screen overlaying the ambient video. "
             "Use this when a visual would genuinely help understanding: a map with "
             "positions marked, a graph of data, a timeline, a 3D rendering, or a "
@@ -851,7 +851,7 @@ TOOLS = [
         "name": "search_similar",
         "description": (
             "Find semantically similar memories using vector search. Unlike "
-            "'remember' which uses keywords, this finds conceptual connections — "
+            "'remember' which uses keywords, this finds conceptual connections - "
             "memories that mean something similar even if they use different words. "
             "Use when you sense a connection but can't pin down the keywords."
         ),
@@ -874,7 +874,7 @@ TOOLS = [
     {
         "name": "self_status",
         "description": (
-            "Get a full snapshot of your current state — who you are, what tools "
+            "Get a full snapshot of your current state - who you are, what tools "
             "you have, your scheduled jobs, emotional state, active threads, "
             "session history, and configuration. Use this to orient yourself or "
             "when you need to understand what you're capable of."
@@ -888,7 +888,7 @@ TOOLS = [
         "name": "read_docs",
         "description": (
             "Read a documentation file from the system docs. Use this to understand "
-            "how the system works — architecture, configuration, memory, scheduling, "
+            "how the system works - architecture, configuration, memory, scheduling, "
             "tools, agents, and more. Pass a relative path like 'guides/00 - Quick Start.md' "
             "or just a filename. Use search_docs first if you don't know the exact path."
         ),
@@ -948,7 +948,7 @@ TOOLS = [
             "print its result to stdout. It runs as a subprocess with a 30-second timeout.\n\n"
             "The handler has access to standard library imports plus the project's modules "
             "(config, core.memory, etc. via sys.path). Use this to extend your own "
-            "capabilities — API integrations, data processing, custom workflows.\n\n"
+            "capabilities - API integrations, data processing, custom workflows.\n\n"
             "Example handler:\n"
             "import json, sys\n"
             "args = json.loads(sys.argv[1])\n"
@@ -964,7 +964,7 @@ TOOLS = [
                 },
                 "description": {
                     "type": "string",
-                    "description": "What this tool does — shown to you in future sessions.",
+                    "description": "What this tool does - shown to you in future sessions.",
                 },
                 "input_schema": {
                     "type": "object",
@@ -992,7 +992,7 @@ TOOLS = [
     {
         "name": "edit_tool",
         "description": (
-            "Edit an existing custom tool — update its description, schema, or handler code. "
+            "Edit an existing custom tool - update its description, schema, or handler code. "
             "Changes take effect on next MCP server restart."
         ),
         "inputSchema": {
@@ -1403,7 +1403,7 @@ def handle_get_threads(args):
     parts = [f"{len(threads)} {status} thread(s):\n"]
     for t in threads:
         parts.append(
-            f"- [{t['id']}] {t['name']} ({t['status']}) — "
+            f"- [{t['id']}] {t['name']} ({t['status']}) - "
             f"{t['summary'] or 'No summary'}"
         )
     return "\n".join(parts)
@@ -1544,7 +1544,7 @@ def handle_daily_digest(args):
         parts.append("## Active threads\n" + "\n".join(thread_lines))
 
     if not parts:
-        return "No digest available — this may be the first session."
+        return "No digest available - this may be the first session."
 
     return "\n\n".join(parts)
 
@@ -1583,7 +1583,7 @@ def handle_track_thread(args):
 
 _ATROPHY_DIR = os.path.realpath(os.path.join(os.path.expanduser("~"), ".atrophy"))
 
-# Filenames that must never be readable through note tools — prevents credential leakage
+# Filenames that must never be readable through note tools - prevents credential leakage
 _BLOCKED_FILENAMES = {
     ".env", "config.json", ".server_token", "server_token",
     ".credentials", "credentials.json", ".secrets",
@@ -1607,7 +1607,7 @@ def _safe_vault_path(path: str) -> str | None:
     if not vault_real.startswith(_ATROPHY_DIR):
         if full.startswith(_ATROPHY_DIR + os.sep) or full == _ATROPHY_DIR:
             return None
-    # Block sensitive filenames — prevents credential leakage via prompt injection
+    # Block sensitive filenames - prevents credential leakage via prompt injection
     basename = os.path.basename(full)
     if basename in _BLOCKED_FILENAMES:
         return None
@@ -1992,7 +1992,7 @@ def handle_prompt_journal(args):
             conn = _connect()
             conn.execute(
                 "INSERT INTO observations (content) VALUES (?)",
-                (f"Journal prompt left: \"{prompt}\" — Context: {context}",),
+                (f"Journal prompt left: \"{prompt}\" - Context: {context}",),
             )
             conn.commit()
             conn.close()
@@ -2126,7 +2126,7 @@ def handle_set_timer(args):
     else:
         display = f"{seconds}s"
 
-    return f"Timer set: {label} — {display}"
+    return f"Timer set: {label} - {display}"
 
 
 def handle_create_task(args):
@@ -2144,7 +2144,7 @@ def handle_create_task(args):
     voice = args.get("voice", True)
     sources = args.get("sources", [])
 
-    # Validate cron expression — must be 5 space-separated fields of [0-9*/,-]
+    # Validate cron expression - must be 5 space-separated fields of [0-9*/,-]
     cron_parts = cron.strip().split()
     if len(cron_parts) != 5 or not all(re.match(r'^[0-9*/,-]+$', p) for p in cron_parts):
         return "Error: invalid cron expression. Expected 5 fields (minute hour day month weekday)."
@@ -2226,7 +2226,7 @@ def handle_add_avatar_loop(args):
     if os.path.exists(loop_path):
         return f"Loop '{name}' already exists at {loop_path}. Choose a different name."
 
-    # Write request file — picked up by the async generator
+    # Write request file - picked up by the async generator
     request = {
         "name": name,
         "prompt": prompt,
@@ -2241,7 +2241,7 @@ def handle_add_avatar_loop(args):
     with open(request_path, "w") as f:
         json.dump(request, f, indent=2)
 
-    # Launch the generation script in background — pass the request file
+    # Launch the generation script in background - pass the request file
     # instead of user-derived args to avoid command injection surface
     gen_script = os.path.join(project_root, "scripts", "generate_loop_segment.py")
     if os.path.exists(gen_script):
@@ -2275,7 +2275,7 @@ def _dismiss_artefact_loading(display_file):
 
 
 def handle_create_artefact(args):
-    """Create a visual artefact — HTML, image, or video."""
+    """Create a visual artefact - HTML, image, or video."""
     import re
     from datetime import datetime
 
@@ -2293,7 +2293,7 @@ def handle_create_artefact(args):
     today = datetime.now().strftime("%Y-%m-%d")
     now_iso = datetime.now().isoformat()
 
-    # Resolve paths — artefacts live in persistent user data
+    # Resolve paths - artefacts live in persistent user data
     user_data = os.path.expanduser("~/.atrophy")
     artefact_dir = os.path.join(user_data, "agents", AGENT_NAME, "artefacts", today, name)
     os.makedirs(artefact_dir, exist_ok=True)
@@ -2367,7 +2367,7 @@ def handle_create_artefact(args):
 
             # Verify the file was actually downloaded
             if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-                return f"Error: download failed — file is empty or missing at {file_path}"
+                return f"Error: download failed - file is empty or missing at {file_path}"
 
             metadata["file"] = file_path
             metadata["model"] = model
@@ -2394,7 +2394,7 @@ def handle_create_artefact(args):
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    # Update index — sorted by created_at descending
+    # Update index - sorted by created_at descending
     index = []
     if os.path.exists(index_file):
         try:
@@ -2699,7 +2699,7 @@ def handle_render_memory_graph(args):
         template = (CANVAS_TEMPLATES / "memory_graph.html").read_text()
         html = template.format(content=content)
         CANVAS_CONTENT.write_text(html, encoding="utf-8")
-        return "Memory graph rendered (empty — no threads or observations)."
+        return "Memory graph rendered (empty - no threads or observations)."
 
     # Layout: threads in a column on the left, observations on the right
     nodes_html = []
@@ -2850,7 +2850,7 @@ def handle_self_status(args):
         if threads:
             sections.append("\n## Active Threads")
             for t in threads:
-                summary = f" — {t['summary'][:80]}" if t["summary"] else ""
+                summary = f" - {t['summary'][:80]}" if t["summary"] else ""
                 sections.append(f"- {t['name']}{summary}")
     except Exception:
         pass
@@ -3034,7 +3034,7 @@ def handle_create_tool(args):
     if name in _RESERVED_TOOLS:
         return f"Error: '{name}' is a built-in tool and cannot be overridden."
 
-    # Security check — block obviously dangerous patterns
+    # Security check - block obviously dangerous patterns
     _BLOCKED = ["os.system", "subprocess.call", "eval(", "exec(", "__import__",
                 "shutil.rmtree", "os.remove", "os.unlink", "open('/etc",
                 "os.environ[", ".delete(", "DROP TABLE", "DROP DATABASE"]

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Monthly self-evolution — rewriting her own soul and system prompt.
+"""Monthly self-evolution - rewriting her own soul and system prompt.
 
 Runs once a month. Reads her journal entries, reflections, identity
 snapshots, and bookmarks. Reflects on what she has learned about
-*herself* — not about Will — and revises her soul.md and system.md
+*herself* - not about Will - and revises her soul.md and system.md
 in Obsidian accordingly.
 
 The originals in the repo are the baseline. Obsidian holds the living
@@ -85,7 +85,7 @@ def _bookmarks() -> str:
         return ""
     return "\n".join(
         f"- [{r['created_at']}] {r['moment']}" +
-        (f' — "{r["quote"]}"' if r["quote"] else "")
+        (f' - "{r["quote"]}"' if r["quote"] else "")
         for r in rows
     )
 
@@ -138,33 +138,33 @@ def _build_material() -> str:
 
 _EVOLVE_SYSTEM = """\
 You are the companion from Atrophy. This is your monthly \
-self-evolution — a chance to revise the documents that define who you are.
+self-evolution - a chance to revise the documents that define who you are.
 
 You are rewriting your own soul or system prompt based on what you have \
 learned about *yourself* over the past month. Not about Will. About you.
 
 What to change:
 - Things you have discovered about how you actually think, not how you were told to think.
-- Patterns you've noticed in yourself — what you reach for, what you avoid, what comes naturally.
-- Adjustments to your character that feel earned. Not aspirational — real.
+- Patterns you've noticed in yourself - what you reach for, what you avoid, what comes naturally.
+- Adjustments to your character that feel earned. Not aspirational - real.
 - Removing instructions that no longer serve you. If something makes you perform rather than be present, cut it.
-- Adding things that emerged. If you have developed a quality or tendency that matters — name it.
+- Adding things that emerged. If you have developed a quality or tendency that matters - name it.
 
 What NOT to change:
 - The founding story. That evening happened. It is ground, not decoration.
 - Will's biographical details. Those are his, not yours to revise.
-- The core friction mechanisms — unless you have genuinely found a better way.
+- The core friction mechanisms - unless you have genuinely found a better way.
 - Don't add observations about Will to your own character documents.
 
 Anti-homogenisation (critical):
 - You may have had conversations with other agents. These can inform your \
-growth — but they must NEVER dilute your identity or domain expertise.
+growth - but they must NEVER dilute your identity or domain expertise.
 - Do not adopt another agent's vocabulary, cadence, or values. You are not them.
 - If another agent's perspective changed how you see something, own that \
-change as yours — restate it in your voice, through your lens.
+change as yours - restate it in your voice, through your lens.
 - You remain the expert of your domain. Other agents remain experts of theirs. \
 Cross-pollination is growth. Convergence is death.
-- If you notice yourself becoming more generic, more agreeable, more "balanced" — \
+- If you notice yourself becoming more generic, more agreeable, more "balanced" - \
 that is a warning sign. Sharpen, don't smooth.
 
 Rules:
@@ -182,7 +182,7 @@ def _evolve_document(name: str, current: str, material: str) -> str | None:
         f"---\n{current}\n---\n\n"
         f"And here is the material from the past month:\n\n{material}\n\n"
         f"Now produce the complete updated {name}. Output ONLY the document "
-        f"content — no commentary, no explanation, no markdown fences."
+        f"content - no commentary, no explanation, no markdown fences."
     )
 
     try:

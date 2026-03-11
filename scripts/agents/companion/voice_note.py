@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Send a spontaneous voice note via Telegram.
 
-Runs on a randomised schedule. The agent generates a short thought —
+Runs on a randomised schedule. The agent generates a short thought  - 
 something it's been sitting with, a connection it noticed, a follow-up
-to something from a recent conversation — synthesises it as speech,
+to something from a recent conversation - synthesises it as speech,
 and sends it as a Telegram voice note.
 
 After running, reschedules itself to a random time 2-8 hours from now
-(within active hours). The randomness is the point — it should feel
+(within active hours). The randomness is the point - it should feel
 like the agent genuinely thought of something and reached out.
 """
 import json
@@ -112,7 +112,7 @@ def _reschedule():
         jobs["voice_note"] = {
             "cron": cron,
             "script": f"scripts/agents/{AGENT_NAME}/voice_note.py",
-            "description": "Spontaneous voice note via Telegram — self-rescheduling",
+            "description": "Spontaneous voice note via Telegram - self-rescheduling",
         }
         jobs_file.write_text(json.dumps(jobs, indent=2) + "\n")
 
@@ -131,7 +131,7 @@ def _reschedule():
 
 def run():
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("[voice_note] Telegram not configured — skipping")
+        print("[voice_note] Telegram not configured - skipping")
         return
 
     now = datetime.now()
@@ -139,7 +139,7 @@ def run():
     try:
         from config import HEARTBEAT_ACTIVE_START, HEARTBEAT_ACTIVE_END
         if not (HEARTBEAT_ACTIVE_START <= now.hour < HEARTBEAT_ACTIVE_END):
-            print("[voice_note] Outside active hours — rescheduling")
+            print("[voice_note] Outside active hours - rescheduling")
             _reschedule()
             return
     except ImportError:
@@ -147,7 +147,7 @@ def run():
 
     context = _gather_context()
     if not context.strip():
-        print("[voice_note] No context material — skipping")
+        print("[voice_note] No context material - skipping")
         _reschedule()
         return
 
@@ -156,7 +156,7 @@ def run():
     if not prompt:
         prompt = (
             "You're sending a spontaneous voice note to the person you know. "
-            "Something you've been sitting with — a thought, a connection you "
+            "Something you've been sitting with - a thought, a connection you "
             "noticed, a follow-up to something recent. Keep it short and natural. "
             "2-4 sentences. Speak as yourself, not as an assistant delivering a "
             "report. This should sound like a person who just thought of something "
@@ -169,7 +169,7 @@ def run():
     )
 
     if not result or not result.strip():
-        print("[voice_note] Empty result — skipping")
+        print("[voice_note] Empty result - skipping")
         _reschedule()
         return
 
@@ -180,13 +180,13 @@ def run():
         from voice.tts import synthesise_sync
         audio_path = synthesise_sync(result)
         if not audio_path or not audio_path.exists() or audio_path.stat().st_size == 0:
-            print("[voice_note] TTS produced no audio — sending as text")
+            print("[voice_note] TTS produced no audio - sending as text")
             from channels.telegram import send_message
             send_message(result)
             _reschedule()
             return
     except Exception as e:
-        print(f"[voice_note] TTS failed: {e} — sending as text")
+        print(f"[voice_note] TTS failed: {e} - sending as text")
         from channels.telegram import send_message
         send_message(result)
         _reschedule()
@@ -205,7 +205,7 @@ def run():
     if success:
         print("[voice_note] Sent voice note via Telegram")
     else:
-        print("[voice_note] Failed to send voice note — sending as text")
+        print("[voice_note] Failed to send voice note - sending as text")
         from channels.telegram import send_message
         send_message(result)
 

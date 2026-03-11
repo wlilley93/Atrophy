@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Telegram polling daemon — single process, sequential agent dispatch.
+"""Telegram polling daemon - single process, sequential agent dispatch.
 
 Polls the shared Telegram bot for incoming messages. Routes each message
 via the router (explicit match → routing agent), then dispatches to target
-agent(s) one at a time. Sequential dispatch eliminates race conditions —
+agent(s) one at a time. Sequential dispatch eliminates race conditions  - 
 no two agents ever run concurrently.
 
 Designed to run as a launchd interval job (e.g. every 10 seconds) or as
@@ -41,10 +41,10 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-# State file — tracks last processed update_id across runs
+# State file - tracks last processed update_id across runs
 _STATE_FILE = USER_DATA / ".telegram_daemon_state.json"
 
-# Lock file — prevents concurrent daemon instances
+# Lock file - prevents concurrent daemon instances
 _LOCK_FILE = USER_DATA / ".telegram_daemon.lock"
 
 
@@ -70,7 +70,7 @@ def _save_last_update_id(update_id: int):
 def _dispatch_to_agent(agent_name: str, text: str, chat_id: str) -> str | None:
     """Invoke an agent to respond to a message. Returns response text or None.
 
-    Uses run_inference_oneshot for simplicity — the agent gets the message,
+    Uses run_inference_oneshot for simplicity - the agent gets the message,
     its full system prompt, and MCP tools. Runs synchronously.
     """
     # Temporarily switch AGENT env so config loads the right agent
@@ -176,7 +176,7 @@ def _handle_status_command():
             status = "muted"
 
         prefix = emoji + " " if emoji else ""
-        lines.append(f"{prefix}*{agent['display_name']}* (`/{name}`) — {status}")
+        lines.append(f"{prefix}*{agent['display_name']}* (`/{name}`) - {status}")
 
     send_message("\n".join(lines), prefix=False)
 
@@ -271,7 +271,7 @@ def _poll_once(last_update_id: int) -> int:
             log.warning("No agents available to handle message")
             continue
 
-        # Dispatch to each agent sequentially — no race conditions
+        # Dispatch to each agent sequentially - no race conditions
         for agent_name in decision.agents:
             log.info("Dispatching to %s...", agent_name)
             response = _dispatch_to_agent(agent_name, decision.text, chat_id)
@@ -390,7 +390,7 @@ def main():
                 last_id = _poll_once(last_id)
                 _save_last_update_id(last_id)
         else:
-            # Single poll — for launchd interval jobs
+            # Single poll - for launchd interval jobs
             last_id = _poll_once(last_id)
             _save_last_update_id(last_id)
     except KeyboardInterrupt:

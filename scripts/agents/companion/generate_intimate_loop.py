@@ -39,7 +39,7 @@ SEGMENT = (
 A young woman with blonde hair sits in soft natural light near a window. \
 Grey-green eyes. She begins neutral, gaze middle-distance, lips softly closed.
 
-She shifts her weight. Her back arches slowly as she stretches — shoulders \
+She shifts her weight. Her back arches slowly as she stretches - shoulders \
 rolling back, neck lengthening. The movement is unhurried, feline. One hand \
 rises and her fingertips drag slowly up the side of her neck, tracing her \
 jawline. Her lips part. Her eyes close. The warm light catches the curve of \
@@ -47,7 +47,7 @@ her throat, the hollow of her collarbone.
 
 Her head tilts into her own hand. A slow exhale through parted lips. Her \
 fingers slide back down her neck to her collarbone, pressing lightly into \
-the skin. Then her eyes open — heavy-lidded, directly at camera. She doesn't \
+the skin. Then her eyes open - heavy-lidded, directly at camera. She doesn't \
 blink. The corner of her mouth lifts. Not a smile. An invitation. She bites \
 her lower lip, barely, just the edge of her teeth catching it.
 
@@ -65,17 +65,17 @@ Continuation. Same young woman, same light. She begins with heavy-lidded \
 direct eye contact, lips barely parted, fingertips pressing into her \
 collarbone, head tilted.
 
-She holds the look for a beat. Then something shifts — the tension in her \
+She holds the look for a beat. Then something shifts - the tension in her \
 shoulders releases. Her fingers trail down from her collarbone, slow, \
 dragging lightly across her upper chest. Her hand comes to rest at the \
-neckline of her top, pausing there. She exhales — her whole body softens \
+neckline of her top, pausing there. She exhales - her whole body softens \
 with it. Her teeth release her lip.
 
 Her eyes stay on camera but the intensity fades. The heat becomes warmth. \
 Her hand drops to her lap. Her gaze drifts to the middle distance. Her \
 lips close. A quiet breath. Still.
 
-By the final frame she is neutral — gaze middle-distance, expression \
+By the final frame she is neutral - gaze middle-distance, expression \
 open, mouth softly closed, breathing slowly.
 {C}
 FINAL FRAME: middle-distance gaze, neutral open expression, \
@@ -93,7 +93,7 @@ def upload(path: Path) -> str:
 
 def generate_clip(prompt, start_image_url, output_path, label, end_image_url=None):
     if output_path.exists():
-        print(f"  {label}: exists — skipping")
+        print(f"  {label}: exists - skipping")
         return
 
     print(f"  {label}: generating...", flush=True)
@@ -167,7 +167,7 @@ def main():
     loop_path = OUTPUT_DIR / f"loop_{name}.mp4"
 
     if loop_path.exists():
-        print(f"  {name}: already exists — skipping")
+        print(f"  {name}: already exists - skipping")
         print(f"  Output: {loop_path}")
         return
 

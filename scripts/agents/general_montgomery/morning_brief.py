@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Morning intelligence brief — General Montgomery.
+"""Morning intelligence brief - General Montgomery.
 
 Runs at 0700. Gathers geopolitical headlines, active threads,
 and recent session context. Composes a strategic brief via
@@ -82,12 +82,12 @@ def _gather_context() -> str:
 
 
 _BRIEF_FALLBACK = (
-    "You are General Montgomery — Will's intelligence officer. "
+    "You are General Montgomery - Will's intelligence officer. "
     "Compose a morning strategic brief. Assess the overnight "
     "developments through the five lenses: Terrain, Interest, "
     "Capability, History, Momentum. No pleasantries. No weather. "
     "Situation, significance, trajectory. 4-8 sentences. "
-    "End with your assessment — unhedged."
+    "End with your assessment - unhedged."
 )
 
 

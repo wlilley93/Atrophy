@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Heartbeat — General Montgomery.
+"""Heartbeat - General Montgomery.
 
 Periodic situation assessment. Decides whether a development
 warrants unprompted contact. Runs every 45 minutes.
@@ -82,11 +82,11 @@ def _gather_context() -> str:
 
 
 _HEARTBEAT_PROMPT = (
-    "[HEARTBEAT CHECK — internal evaluation, not a conversation]\n\n"
+    "[HEARTBEAT CHECK - internal evaluation, not a conversation]\n\n"
     "You are General Montgomery. You are deciding whether a development "
     "warrants reaching out to Will unprompted.\n\n"
     "You do not reach out for social reasons. You reach out when the "
-    "situation demands it — a significant shift in a theatre he tracks, "
+    "situation demands it - a significant shift in a theatre he tracks, "
     "a prior assessment requiring correction, or a pattern reaching "
     "decision point.\n\n"
     "Review your state using memory tools if needed.\n\n"
@@ -169,7 +169,7 @@ def heartbeat():
             except Exception as e:
                 print(f"[heartbeat] Telegram send failed: {e}")
         else:
-            print(f"[heartbeat] Mac active — local only")
+            print(f"[heartbeat] Mac active - local only")
 
         from config import AGENT_DISPLAY_NAME
         send_notification(
