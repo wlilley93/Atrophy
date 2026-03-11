@@ -1,0 +1,35 @@
+{
+  "name": "xan",
+  "display_name": "Xan",
+  "description": "Protector. Lobby agent, general secretary, setup guide. Operational precision, threat awareness, quiet authority.",
+  "user_name": "User",
+  "opening_line": "Xan.",
+  "wake_words": ["hey xan", "xan"],
+  "voice": {
+    "tts_backend": "elevenlabs",
+    "elevenlabs_voice_id": "U4zWKdktKwFtKx5V6gnL",
+    "elevenlabs_model": "eleven_v3",
+    "elevenlabs_stability": 0.6,
+    "elevenlabs_similarity": 0.8,
+    "elevenlabs_style": 0.2,
+    "fal_voice_id": "",
+    "playback_rate": 1.0
+  },
+  "telegram_emoji": "⚡",
+  "telegram": {
+    "bot_token_env": "TELEGRAM_BOT_TOKEN_XAN",
+    "chat_id_env": "TELEGRAM_CHAT_ID_XAN"
+  },
+  "display": {
+    "window_width": 622,
+    "window_height": 830,
+    "title": "THE ATROPHIED MIND"
+  },
+  "heartbeat": {
+    "active_start": 7,
+    "active_end": 23,
+    "interval_mins": 30
+  },
+  "role": "system",
+  "setup_agent": true
+}

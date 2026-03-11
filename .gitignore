@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-electron/
+out/
+
+# Environment
+.env
+*.local
+
+# Database & runtime state
+*.db
+*.db-wal
+*.db-shm
+
+# Avatar assets (large binaries)
+agents/*/avatar/
+agents/*/audio/
+
+# Models
+vendor/whisper.cpp/
+models/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Electron
+release/
+
+# Python
+__pycache__/
+*.pyc
