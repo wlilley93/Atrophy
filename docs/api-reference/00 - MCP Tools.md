@@ -6,7 +6,7 @@ Both servers communicate over JSON-RPC 2.0 via stdio. Memory tools are namespace
 
 Server info: `companion-memory` (version from `VERSION` file), protocol version `2024-11-05`.
 
-The memory server exposes **41 tools** across the following categories: Memory & Recall (4), Threads (2), Observations & Bookmarks (3), Analytical Tools (3), Obsidian Integration (5), Telegram (2), Inner State (3), Display (2), Avatar (1), Scheduling & Audit (2), Agent Management (2), Reminders & Timers (2), Tasks (1), Artefacts (1), System Documentation (3), and Custom Tool Building (4).
+The memory server exposes **41 tools** across the following categories: Memory & Recall (4), Threads (2), Observations & Bookmarks (4), Analytical Tools (3), Obsidian Integration (5), Telegram (2), Inner State (3), Display (2), Avatar (1), Scheduling & Audit (2), Agent Management (2), Reminders & Timers (2), Tasks (1), Artefacts (1), System Documentation (3), and Custom Tool Building (4).
 
 The Google server exposes **10 tools** across two categories: Gmail (4) and Google Calendar (6). The Google server is only loaded if `GOOGLE_CONFIGURED` is true (i.e. `~/.atrophy/.google/token.json` exists).
 

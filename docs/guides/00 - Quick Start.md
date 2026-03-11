@@ -164,7 +164,7 @@ Once setup is done:
 2. Starts a new session
 3. In `--gui` mode, generates an opening line with time-of-day context and randomised style. In `--app` mode, starts silent — no window until you activate it.
 
-Just start talking. Your agent uses Claude Code as its inference backend, with an MCP memory server that gives it access to 34 tools: memory search, threads, observations, Obsidian notes, Telegram, reminders, timers, task scheduling, artefact creation, agent management, and more.
+Just start talking. Your agent uses Claude Code as its inference backend, with an MCP memory server that gives it access to 41 tools: memory search, threads, observations, Obsidian notes, Telegram, reminders, timers, task scheduling, artefact creation, agent management, custom tool building, and more.
 
 On subsequent runs, it resumes its Claude CLI session and checks recent memory for anything worth surfacing.
 

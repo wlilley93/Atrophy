@@ -72,7 +72,7 @@ INPUT (Voice/Text/GUI)
 
 The system shells out to the `claude` CLI binary with `--output-format stream-json`. This routes through a Max subscription (no API cost). Persistent CLI sessions are maintained via `--resume`, meaning the Claude context window carries across companion restarts.
 
-MCP tools are exposed via two servers: `mcp/memory_server.py` (memory, agency, communication — 34 tools) and `mcp/google_server.py` (Gmail + Google Calendar — 10 tools). Both use JSON-RPC 2.0 over stdio. The Google server is only loaded when `GOOGLE_CONFIGURED` is true (OAuth credentials present at `~/.atrophy/.google/`). All Google API responses are treated as untrusted and wrapped with injection markers.
+MCP tools are exposed via two servers: `mcp/memory_server.py` (memory, agency, communication — 41 tools) and `mcp/google_server.py` (Gmail + Google Calendar — 10 tools). Both use JSON-RPC 2.0 over stdio. The Google server is only loaded when `GOOGLE_CONFIGURED` is true (OAuth credentials present at `~/.atrophy/.google/`). All Google API responses are treated as untrusted and wrapped with injection markers.
 
 The inference layer dynamically builds an agency context block on every turn, injecting time awareness, emotional state, behavioral signals, and thread summaries.
 
@@ -137,8 +137,9 @@ Notes created by the companion get YAML frontmatter (type, created, updated, age
 | `display/` | PyQt5 window, canvas overlay, setup wizard, artefact system, timer overlay |
 | `display/timer.py` | Countdown timer overlay — pure local, no inference |
 | `display/setup_wizard.py` | First-launch conversational setup with secure input for API keys |
-| `mcp/memory_server.py` | MCP tool server (34 tools, JSON-RPC over stdio) |
+| `mcp/memory_server.py` | MCP tool server (41 tools, JSON-RPC over stdio) |
 | `mcp/google_server.py` | Google MCP server (Gmail + Calendar, 10 tools, conditional on OAuth credentials) |
+| `mcp/puppeteer_proxy.py` | Puppeteer content proxy — wraps web content as untrusted, scans for injection |
 | `scripts/google_auth.py` | Google OAuth2 setup — credential placement and browser consent flow |
 | `server.py` | HTTP API server (Flask, bearer auth, SSE streaming) |
 | `channels/telegram.py` | Telegram Bot API client (send/receive) |
@@ -148,6 +149,7 @@ Notes created by the companion get YAML frontmatter (type, created, updated, age
 | `scripts/agents/<name>/run_task.py` | Generic prompt-based task runner |
 | `scripts/agents/<name>/check_reminders.py` | Reminder checker (fires notifications every minute) |
 | `scripts/agents/<name>/` | Per-agent daemon scripts and job definitions |
+| `scripts/build_app.py` | Build macOS .app bundle — thin launcher with auto-update from GitHub |
 | `scripts/install_app.py` | Install/uninstall as login menu bar app via launchd |
 | `scripts/register_telegram_commands.py` | Register `/agent` commands with Telegram BotFather API |
 | `db/schema.sql` | Database schema (three-layer memory) |

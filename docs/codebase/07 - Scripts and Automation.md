@@ -332,6 +332,39 @@ Scans all enabled agents via `discover_agents()` and registers one `/agent_name`
 
 ---
 
+## scripts/build_app.py -- macOS App Builder
+
+Builds a macOS `.app` bundle for distribution. The app is a thin launcher — code lives at `~/.atrophy/src/` and auto-updates from GitHub on each launch (via `curl` + `unzip` from the archive URL, no git required).
+
+```bash
+python scripts/build_app.py              # Build to build/
+python scripts/build_app.py --install    # Build and install to ~/Applications
+python scripts/build_app.py --open       # Build, install, and launch
+python scripts/build_app.py --dmg        # Build and create a DMG
+```
+
+The bundle includes a bootstrap source snapshot (offline fallback), a compiled Swift splash screen (shown during first-run setup), and `LSUIElement=true` so it runs as a menu bar app. On each launch, the launcher creates a Python venv if needed, checks for dependency changes via `requirements.txt` hash, and performs an atomic source swap on update.
+
+See [Building and Distribution](../guides/10%20-%20Building%20and%20Distribution.md) for full details.
+
+---
+
+## scripts/google_auth.py -- Google OAuth2 Setup
+
+Manages Google OAuth2 credentials for Gmail and Calendar access.
+
+```bash
+python scripts/google_auth.py              # Authorize (opens browser for consent)
+python scripts/google_auth.py --check      # Check if credentials are valid
+python scripts/google_auth.py --revoke     # Revoke tokens and delete local file
+```
+
+OAuth client credentials are bundled at `config/google_oauth.json` (safe to ship — Google treats desktop app client IDs as public). The user authorizes via a browser consent screen. Tokens are stored at `~/.atrophy/.google/token.json` (directory 700, file 600).
+
+Scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`, `calendar.readonly`, `calendar.events`.
+
+---
+
 ## scripts/install_app.py -- Login Item Installer
 
 Registers or removes The Atrophied Mind as a macOS login item via launchd.

@@ -260,12 +260,16 @@ Google tools (Gmail + Google Calendar) are enabled automatically when OAuth2 cre
 Run the standalone auth script, or let the first-launch setup wizard handle it:
 
 ```bash
-python scripts/google_auth.py
+python scripts/google_auth.py              # Authorize (opens browser for consent)
+python scripts/google_auth.py --check      # Check if existing credentials are valid
+python scripts/google_auth.py --revoke     # Revoke and delete tokens
 ```
 
-This will:
+The default (no flags) will:
 1. Open a browser for the Google OAuth consent flow (client credentials are bundled with the app at `config/google_oauth.json` — no Google Cloud Console setup needed)
 2. Save the resulting `token.json` to `~/.atrophy/.google/`
+
+Use `--check` to verify stored credentials without re-authorizing. Use `--revoke` to revoke the tokens with Google and delete the local `token.json`.
 
 The first-launch setup wizard offers the same flow — just say "yes" when prompted and a browser opens for authorization.
 

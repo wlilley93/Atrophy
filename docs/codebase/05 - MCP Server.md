@@ -4,7 +4,7 @@
 
 ## Configuration
 
-The MCP server is launched as a subprocess by the `claude` CLI. Configuration is written to `mcp/config.json` at runtime:
+The MCP servers are launched as subprocesses by the `claude` CLI. Configuration is written to `mcp/config.json` at runtime:
 
 ```json
 {
@@ -19,12 +19,46 @@ The MCP server is launched as a subprocess by the `claude` CLI. Configuration is
         "OBSIDIAN_AGENT_NOTES": "<vault>/<agent>/agents/<name>",
         "AGENT": "<name>"
       }
+    },
+    "puppeteer": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+      "env": {
+        "PUPPETEER_LAUNCH_OPTIONS": "{\"headless\": true}"
+      }
+    },
+    "fal": {
+      "command": "npx",
+      "args": ["-y", "fal-ai-mcp-server@latest"],
+      "env": {
+        "FAL_KEY": "<fal-api-key>"
+      }
     }
   }
 }
 ```
 
-All tools are namespaced as `mcp__memory__*` in the Claude CLI's allowedTools list.
+Three servers are configured:
+
+| Server | Namespace | Purpose |
+|--------|-----------|---------|
+| `memory` | `mcp__memory__*` | Memory, agency, communication — 41 tools |
+| `puppeteer` | `mcp__puppeteer__*` | Web browsing via headless Chrome (proxied through `mcp/puppeteer_proxy.py` for injection scanning) |
+| `fal` | `mcp__fal__*` | Image and video generation via Fal.ai |
+
+The Google server (`mcp/google_server.py`) is added dynamically when `GOOGLE_CONFIGURED` is true, namespaced as `mcp__google__*`.
+
+## Puppeteer Content Proxy
+
+`mcp/puppeteer_proxy.py` sits between the agent and `@modelcontextprotocol/server-puppeteer`. It proxies all JSON-RPC messages over stdio, but intercepts tool results to:
+
+1. **Wrap** page content in `<<untrusted web content>>` / `<</untrusted web content>>` delimiters
+2. **Scan** for 12 common prompt injection patterns (shared pattern set with the Google server)
+3. **Prepend** a warning if injection is detected, instructing the agent to flag it to the user
+
+The proxy is transparent — all puppeteer tools (navigate, screenshot, click, type, etc.) pass through unchanged. Only the *results* are wrapped. This ensures the agent sees every piece of web content clearly marked as untrusted.
+
+Injection patterns detected include: "ignore previous instructions", "you are now", "forget your instructions", "system prompt:", "disregard prior", "new instructions:", "reveal your token/key", "execute this command", and LLM prompt format markers (`[INST]`, `<<SYS>>`, `<system>`).
 
 ## Memory Tools
 

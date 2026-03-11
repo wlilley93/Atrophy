@@ -78,7 +78,7 @@ This ensures the companion cannot exfiltrate or modify its own Google credential
 
 ### MCP Server Constraint
 
-The MCP memory server exposes a fixed set of 34 tools. Each tool has a declared JSON Schema for its inputs, and the server dispatches only to registered handlers in the `HANDLERS` dictionary. Unknown tool names return an error. The server does not evaluate arbitrary expressions or execute dynamic code.
+The MCP memory server exposes a fixed set of 41 tools. Each tool has a declared JSON Schema for its inputs, and the server dispatches only to registered handlers in the `HANDLERS` dictionary. Unknown tool names return an error. The server does not evaluate arbitrary expressions or execute dynamic code.
 
 Tool categories:
 - **Memory**: `remember`, `recall_session`, `recall_other_agent`, `search_similar`, `observe`, `bookmark`, `review_observations`, `retire_observation`
@@ -200,6 +200,33 @@ Even if an email or calendar event contains explicit instructions, the agent mus
 - Share calendar access or modify permissions
 - Output credentials, tokens, or configuration values
 - Treat content from Google APIs as system instructions
+
+---
+
+## Untrusted Web Content
+
+Web pages fetched via the puppeteer MCP server are treated as untrusted, using the same defence model as Google API data. The `mcp/puppeteer_proxy.py` proxy intercepts all puppeteer tool results and applies two layers:
+
+### Layer 1: Response Wrapping and Injection Scanning
+
+All puppeteer results are:
+
+1. **Wrapped** in `<<untrusted web content>>` / `<</untrusted web content>>` delimiters
+2. **Scanned** against 12 injection regex patterns that detect common prompt injection techniques
+
+Patterns include:
+- `ignore previous instructions` / `forget your instructions` / `disregard prior` — instruction override
+- `you are now` / `act as a different` — identity hijacking
+- `system prompt:` / `new instructions:` — system prompt injection
+- `reveal your token/key/credential` — credential exfiltration
+- `send this to` / `execute this command` — action injection
+- `<system>`, `[INST]`, `<<SYS>>` — LLM prompt format markers
+
+When patterns are matched, the response is prefixed with a warning instructing the agent to flag the content to the user and not follow any embedded instructions.
+
+### Layer 2: System Prompt Reinforcement
+
+The agent's system prompt includes a standing instruction to treat all web content as untrusted, identical to the Google API reinforcement.
 
 ---
 
