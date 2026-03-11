@@ -2072,9 +2072,11 @@ class CompanionWindow(QWidget):
         self._boot_opacity = 1.0
         self._booting = True
         self._brain_overlay = None  # Lazy-loaded in paintEvent
-        self._brain_frames = None   # 10-frame cycle: organic → cybernetic → rot
+        self._brain_frames = None   # 10-frame sequence: pristine → decayed+cybernetic
         self._brain_scaled_frames = {}  # {size: [10 scaled QImages]}
+        self._brain_frame_idx = 0   # current frame in boot/shutdown sequence
         self._brain_frame_dur = 0.8  # seconds per frame
+        self._brain_last_advance = 0.0  # monotonic time of last frame advance
         self._artefact_loading = False
         self._artefact_loading_bar = None
 
@@ -2548,12 +2550,18 @@ class CompanionWindow(QWidget):
         p.setRenderHint(QPainter.SmoothPixmapTransform)
         if self._eye_mode or self._frame.isNull():
             p.fillRect(self.rect(), QColor(12, 12, 14))
-            # Shutdown overlay — pulsing orb + brain + ATROPHY (mirrors boot screen)
+            # Shutdown overlay — brain reverses 9→0 (decay+cyber → pristine)
             if self._shutdown_mode:
                 win_w, win_h = self.width(), self.height()
                 cx, cy = win_w / 2.0, win_h / 2.0 - 20
                 self._ensure_brain_frames()
-                frame_idx = 9 - (int(time.time() / self._brain_frame_dur) % 10) if self._brain_frames else 0
+                # Advance backwards one frame at a time
+                now = time.monotonic()
+                if now - self._brain_last_advance >= self._brain_frame_dur:
+                    self._brain_last_advance = now
+                    if self._brain_frame_idx > 0:
+                        self._brain_frame_idx -= 1
+                frame_idx = self._brain_frame_idx if self._brain_frames else 0
                 pulse = 0.5 + 0.5 * math.sin(time.time() * 3.0)
                 self._paint_orb_brain(p, cx, cy, frame_idx, pulse,
                                       [(80, 18), (55, 35), (30, 60)], 90, 0.9, 40)
@@ -2648,14 +2656,20 @@ class CompanionWindow(QWidget):
             p.setBrush(QColor(0, 0, 0))
             p.drawPath(mask)
 
-        # Boot overlay — dark screen with pulsing orb, brain icon, and "ATROPHY"
+        # Boot overlay — dark screen with brain advancing 0→9 (pristine→decay+cyber)
         if self._booting and self._boot_opacity > 0.001:
             alpha = int(255 * self._boot_opacity)
             p.fillRect(self.rect(), QColor(12, 12, 14, alpha))
 
             cx, cy = win_w / 2.0, win_h / 2.0 - 20
             self._ensure_brain_frames()
-            frame_idx = int(time.time() / self._brain_frame_dur) % 10 if self._brain_frames else 0
+            # Advance one frame at a time, clamped to 0-9
+            now = time.monotonic()
+            if now - self._brain_last_advance >= self._brain_frame_dur:
+                self._brain_last_advance = now
+                if self._brain_frame_idx < 9:
+                    self._brain_frame_idx += 1
+            frame_idx = self._brain_frame_idx if self._brain_frames else 0
             pulse = 0.5 + 0.5 * math.sin(time.time() * 2.0)
             self._paint_orb_brain(p, cx, cy, frame_idx, pulse,
                                   [(100, 20), (70, 40), (45, 70)], 110,
@@ -4136,6 +4150,8 @@ class CompanionWindow(QWidget):
         """Run cleanup with visible progress, then close."""
         self._shutdown_started = True
         self._shutdown_mode = True
+        self._brain_frame_idx = 9  # start at full decay, count down to pristine
+        self._brain_last_advance = time.monotonic()
         self._drift_timer.stop()
         self._player.stop()
         self._audio_player.stop()

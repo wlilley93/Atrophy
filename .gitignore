@@ -16,6 +16,13 @@ vendor/
 
 # Agent instances (personal — created by setup wizard or create_agent.py)
 agents/*/
+# Xan is the built-in agent — ships with the app
+!agents/xan/
+agents/xan/data/*.db
+agents/xan/data/.*
+# Avatar videos are large (~500MB) — bundled in build, not in git
+agents/xan/avatar/loops/
+agents/xan/avatar/candidates/
 
 # Embedding models (cached locally, ~80MB+)
 .models/
@@ -57,7 +64,7 @@ logs/
 voice/original.m4a
 
 # Legacy avatar dir (moved to agents/)
-avatar/
+/avatar/
 
 # Local schedule config
 scripts/jobs.json

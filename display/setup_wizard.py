@@ -20,8 +20,8 @@ import threading
 from pathlib import Path
 from textwrap import dedent
 
-from PyQt5.QtCore import Qt, QTimer, QEventLoop, pyqtSignal
-from PyQt5.QtGui import QColor, QPainter, QPainterPath, QFont, QImage, QLinearGradient, QPixmap
+from PyQt5.QtCore import Qt, QTimer, QEventLoop, QRectF, QUrl, pyqtSignal
+from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen, QFont, QImage, QLinearGradient, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QTextEdit, QStackedWidget, QScrollArea,
@@ -473,6 +473,83 @@ _AGENT_CREATION_SYSTEM = dedent("""\
 """)
 
 
+class _ScrimOverlay(QWidget):
+    """Semi-transparent dark overlay with optional video frame background."""
+
+    def __init__(self, parent=None, opacity=180, frame_source=None):
+        super().__init__(parent)
+        self._opacity = opacity
+        self._frame_source = frame_source  # callable returning QImage or None
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        # Draw video frame if available
+        if self._frame_source:
+            frame = self._frame_source()
+            if frame and not frame.isNull():
+                # Scale to fill, maintaining aspect ratio
+                scaled = frame.scaled(self.width(), self.height(),
+                                      Qt.KeepAspectRatioByExpanding,
+                                      Qt.SmoothTransformation)
+                x = (self.width() - scaled.width()) // 2
+                y = (self.height() - scaled.height()) // 2
+                p.drawImage(x, y, scaled)
+        # Dark scrim on top
+        p.fillRect(self.rect(), QColor(10, 10, 14, self._opacity))
+        p.end()
+
+
+class _ChatBar(QWidget):
+    """Rounded input bar with painted arrow — matches main window InputBar."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAutoFillBackground(False)
+
+    def resizeEvent(self, event):
+        """Keep the child QLineEdit sized to fill the bar."""
+        w = self.width()
+        h = self.height()
+        for child in self.findChildren(QLineEdit):
+            child.setFixedSize(w, h)
+        super().resizeEvent(event)
+
+    def showEvent(self, event):
+        """Ensure QLineEdit fills bar on first show."""
+        super().showEvent(event)
+        w = self.width()
+        h = self.height()
+        if w > 0 and h > 0:
+            for child in self.findChildren(QLineEdit):
+                child.setFixedSize(w, h)
+
+    def paintEvent(self, event):
+        w = self.width()
+        h = self.height()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        # Rounded background
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, w, h), 24, 24)
+        p.fillPath(path, QColor(20, 20, 22, 210))
+        p.setPen(QPen(QColor(255, 255, 255, 15), 1.0))
+        p.drawPath(path)
+        # Arrow circle + arrow
+        cx, cy = w - 24, h // 2
+        r = 14
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(255, 255, 255, 40))
+        p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+        p.setPen(QPen(QColor(255, 255, 255, 180), 1.8))
+        p.setBrush(Qt.NoBrush)
+        p.drawLine(cx, cy + 5, cx, cy - 5)
+        p.drawLine(cx, cy - 5, cx - 4, cy - 1)
+        p.drawLine(cx, cy - 5, cx + 4, cy - 1)
+        p.end()
+
+
 class SetupWizard(QWidget):
     """Multi-page first-launch wizard with conversational agent creation."""
 
@@ -553,6 +630,16 @@ class SetupWizard(QWidget):
         self._video_progress_ready.connect(self._on_video_progress)
         self._video_done_ready.connect(self._on_video_done)
 
+        # Brain frame animation — shared across pages
+        self._brain_pixmaps = []  # list of 10 QPixmaps (scaled)
+        self._brain_frame_idx = 0
+        self._brain_labels = []   # QLabels that show the animated brain
+        self._load_brain_frames()
+
+        # Timer to advance brain frame (shared across all animated labels)
+        self._brain_timer = QTimer(self)
+        self._brain_timer.timeout.connect(self._advance_brain_frame)
+
         self._build_ui()
 
         screen = QApplication.primaryScreen().geometry()
@@ -560,6 +647,87 @@ class SetupWizard(QWidget):
             (screen.width() - self.width()) // 2,
             (screen.height() - self.height()) // 2,
         )
+
+    def _load_brain_frames(self):
+        """Load AI-generated brain frames, falling back to static overlay."""
+        frames_dir = Path(__file__).parent / "icons" / "brain_frames"
+        frames = []
+        if frames_dir.is_dir():
+            for i in range(10):
+                fp = frames_dir / f"brain_{i:02d}.png"
+                if fp.exists():
+                    img = QImage(str(fp))
+                    if not img.isNull():
+                        frames.append(img)
+                    else:
+                        break
+                else:
+                    break
+        if len(frames) != 10:
+            # Fallback: use static brain_overlay for all 10 frames
+            bp = Path(__file__).parent / "icons" / "brain_overlay.png"
+            if bp.exists():
+                img = QImage(str(bp))
+                if not img.isNull():
+                    frames = [img] * 10
+        # Pre-scale to 80px for display
+        for img in frames:
+            scaled = img.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self._brain_pixmaps.append(QPixmap.fromImage(scaled))
+
+    def _advance_brain_frame(self):
+        """Advance brain frame index and update all registered labels."""
+        if not self._brain_pixmaps:
+            return
+        if self._brain_frame_idx < 9:
+            self._brain_frame_idx += 1
+        else:
+            self._brain_timer.stop()
+        for lbl in self._brain_labels:
+            if lbl and not lbl.isHidden():
+                lbl.setPixmap(self._brain_pixmaps[self._brain_frame_idx])
+
+    def _make_brain_label(self) -> QLabel:
+        """Create a QLabel showing the current brain frame, registered for animation."""
+        lbl = QLabel()
+        lbl.setAlignment(Qt.AlignCenter)
+        if self._brain_pixmaps:
+            lbl.setPixmap(self._brain_pixmaps[self._brain_frame_idx])
+        self._brain_labels.append(lbl)
+        return lbl
+
+    def _start_brain_animation(self, forward=True):
+        """Start the brain frame sequence. forward=True goes 0→9, False goes 9→0."""
+        self._brain_timer.stop()
+        if forward:
+            self._brain_frame_idx = 0
+        else:
+            self._brain_frame_idx = 9
+        # Update all labels to the starting frame
+        if self._brain_pixmaps:
+            for lbl in self._brain_labels:
+                if lbl:
+                    lbl.setPixmap(self._brain_pixmaps[self._brain_frame_idx])
+        # Reconnect with correct direction
+        try:
+            self._brain_timer.timeout.disconnect()
+        except Exception:
+            pass
+        if forward:
+            self._brain_timer.timeout.connect(self._advance_brain_frame)
+        else:
+            def _reverse():
+                if not self._brain_pixmaps:
+                    return
+                if self._brain_frame_idx > 0:
+                    self._brain_frame_idx -= 1
+                else:
+                    self._brain_timer.stop()
+                for lbl in self._brain_labels:
+                    if lbl and not lbl.isHidden():
+                        lbl.setPixmap(self._brain_pixmaps[self._brain_frame_idx])
+            self._brain_timer.timeout.connect(_reverse)
+        self._brain_timer.start(800)  # 0.8s per frame, matching window.py
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -629,6 +797,8 @@ class SetupWizard(QWidget):
         self._intro_timer.stop()
         self._intro_step = 0
         self._intro_timer.start(80)  # tick every 80ms for smooth fades
+        # Start brain frame animation (0→9 over the intro duration)
+        self._start_brain_animation(forward=True)
 
     def _intro_tick(self):
         # Timeline (in ticks of 80ms):
@@ -679,14 +849,8 @@ class SetupWizard(QWidget):
         lay.setContentsMargins(50, 0, 50, 40)
         lay.addStretch(3)
 
-        brain_path = Path(__file__).parent / "icons" / "brain_overlay.png"
-        if brain_path.exists():
-            icon_label = QLabel()
-            icon_label.setAlignment(Qt.AlignCenter)
-            img = QImage(str(brain_path))
-            if not img.isNull():
-                scaled = img.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                icon_label.setPixmap(QPixmap.fromImage(scaled))
+        if self._brain_pixmaps:
+            icon_label = self._make_brain_label()
             lay.addWidget(icon_label)
             lay.addSpacing(16)
 
@@ -734,42 +898,58 @@ class SetupWizard(QWidget):
 
     def _build_page_chat(self):
         page = QWidget()
-        lay = QVBoxLayout(page)
+        page.setStyleSheet("background: rgb(14, 14, 18);")
+
+        # ── Video background (local Xan ambient loop) ──
+        self._video_bg = None
+        self._local_player = None
+        self._local_surface = None
+        self._local_frame = None
+
+        local_loop = self._find_xan_loop()
+        if local_loop:
+            self._setup_local_video(page, local_loop)
+
+        # ── Chat overlay (on top of video) ──
+        if self._video_bg:
+            self._chat_overlay = _ScrimOverlay(
+                page, opacity=180,
+                frame_source=lambda: self._local_frame,
+            )
+        else:
+            self._chat_overlay = QWidget(page)
+            self._chat_overlay.setStyleSheet("background: rgb(14, 14, 18);")
+        lay = QVBoxLayout(self._chat_overlay)
         lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
 
-        # Header
-        header = QWidget()
-        header_lay = QHBoxLayout(header)
-        header_lay.setContentsMargins(20, 16, 20, 12)
-        header_lay.addWidget(_label("Xan", 16, 0.8, bold=True))
-        header_lay.addStretch()
-        lay.addWidget(header)
+        # Resize video + overlay to fill the page
+        page.installEventFilter(self)
 
-        # Separator
-        sep = QWidget()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet("background: rgba(255,255,255,0.06);")
-        lay.addWidget(sep)
-
-        # Message area
+        # Message area — matches main window transcript style
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self._scroll.setStyleSheet(
+            "QScrollArea { border: none; background: transparent; }"
+            "QScrollBar:vertical { width: 0px; }"
+        )
 
         self._msg_container = QWidget()
+        self._msg_container.setStyleSheet("background: transparent;")
         self._msg_layout = QVBoxLayout(self._msg_container)
         self._msg_layout.setContentsMargins(24, 16, 24, 16)
-        self._msg_layout.setSpacing(16)
+        self._msg_layout.setSpacing(6)
         self._msg_layout.addStretch()
         self._scroll.setWidget(self._msg_container)
         lay.addWidget(self._scroll, 1)
 
-        # ── Input area (contains both normal and secure modes) ──
+        # ── Input bar — matches main window InputBar style ──
         self._input_frame = QWidget()
-        self._input_frame.setStyleSheet("background: rgba(255,255,255,0.03);")
+        self._input_frame.setMinimumHeight(72)
+        self._input_frame.setStyleSheet("background: transparent;")
         input_outer = QVBoxLayout(self._input_frame)
-        input_outer.setContentsMargins(20, 0, 20, 16)
+        input_outer.setContentsMargins(24, 0, 24, 16)
         input_outer.setSpacing(0)
 
         # Secure input label (hidden by default)
@@ -781,34 +961,43 @@ class SetupWizard(QWidget):
         self._secure_label_widget.setVisible(False)
         input_outer.addWidget(self._secure_label_widget)
 
-        # Input row
-        input_row = QHBoxLayout()
-        input_row.setSpacing(8)
+        # Input container — rounded bar with painted arrow (matches InputBar)
+        self._chat_bar = _ChatBar()
+        self._chat_bar.setFixedHeight(48)
 
-        self._chat_input = QLineEdit()
-        self._chat_input.setPlaceholderText("Type your response...")
+        self._chat_input = QLineEdit(self._chat_bar)
+        self._chat_input.setPlaceholderText("Message...")
+        font_name = "Bricolage Grotesque"
+        test_font = QFont(font_name, 14)
+        if test_font.family().lower() != font_name.lower():
+            font_name = ""
+        if font_name:
+            self._chat_input.setFont(QFont(font_name, 14))
         self._chat_input_style_normal = (
-            "QLineEdit { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); "
-            "border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; "
-            "padding: 10px 14px; font-size: 14px; }"
-            "QLineEdit:focus { border: 1px solid rgba(100,140,255,0.4); }"
+            "QLineEdit { background: transparent; color: rgba(255,255,255,0.9); "
+            "border: none; padding-left: 20px; padding-right: 54px; font-size: 14px; "
+            "selection-background-color: rgba(255,255,255,0.2); }"
         )
         self._chat_input_style_secure = (
-            "QLineEdit { background: rgba(230,160,60,0.06); color: rgba(255,255,255,0.9); "
-            "border: 1px solid rgba(230,160,60,0.4); border-radius: 8px; "
-            "padding: 10px 14px; font-size: 14px; }"
-            "QLineEdit:focus { border: 1px solid rgba(230,160,60,0.6); }"
+            "QLineEdit { background: transparent; color: rgba(255,255,255,0.9); "
+            "border: none; padding-left: 20px; padding-right: 54px; font-size: 14px; "
+            "selection-background-color: rgba(230,160,60,0.2); }"
         )
         self._chat_input.setStyleSheet(self._chat_input_style_normal)
-        input_row.addWidget(self._chat_input, 1)
 
-        # Send button (normal mode)
-        self._send_btn = QPushButton("Send")
-        self._send_btn.setObjectName("sendBtn")
-        self._send_btn.setCursor(Qt.PointingHandCursor)
-        input_row.addWidget(self._send_btn)
+        input_outer.addWidget(self._chat_bar)
 
-        # Submit button (secure mode — hidden by default)
+        # Send button — invisible, triggered by pressing Enter
+        self._send_btn = QPushButton("")
+        self._send_btn.setFixedSize(0, 0)
+        self._send_btn.setVisible(False)
+
+        # Secure mode buttons (hidden by default)
+        secure_row = QHBoxLayout()
+        secure_row.setContentsMargins(0, 8, 0, 0)
+        secure_row.setSpacing(8)
+        secure_row.addStretch()
+
         self._submit_secure_btn = QPushButton("Submit")
         self._submit_secure_btn.setCursor(Qt.PointingHandCursor)
         self._submit_secure_btn.setStyleSheet(
@@ -818,9 +1007,8 @@ class SetupWizard(QWidget):
             "QPushButton:hover { background: rgba(230,160,60,0.45); }"
         )
         self._submit_secure_btn.setVisible(False)
-        input_row.addWidget(self._submit_secure_btn)
+        secure_row.addWidget(self._submit_secure_btn)
 
-        # Skip button (secure mode — hidden by default)
         self._skip_secure_btn = QPushButton("Skip")
         self._skip_secure_btn.setCursor(Qt.PointingHandCursor)
         self._skip_secure_btn.setStyleSheet(
@@ -830,9 +1018,10 @@ class SetupWizard(QWidget):
             "QPushButton:hover { color: rgba(230,160,60,0.9); border: 1px solid rgba(230,160,60,0.4); }"
         )
         self._skip_secure_btn.setVisible(False)
-        input_row.addWidget(self._skip_secure_btn)
+        secure_row.addWidget(self._skip_secure_btn)
+        secure_row.addStretch()
 
-        input_outer.addLayout(input_row)
+        input_outer.addLayout(secure_row)
         lay.addWidget(self._input_frame)
 
         # Connections
@@ -935,32 +1124,45 @@ class SetupWizard(QWidget):
     # ── Chat messages ──
 
     def _add_message(self, role: str, text: str):
-        """Add a message bubble to the chat area."""
-        bubble = QLabel(text)
-        bubble.setWordWrap(True)
-        bubble.setTextFormat(Qt.PlainText)
+        """Add a message to the chat area — matches main window transcript style."""
+        msg = QLabel(text)
+        msg.setWordWrap(True)
+        msg.setTextFormat(Qt.PlainText)
+
+        # Font
+        font_name = "Bricolage Grotesque"
+        test_font = QFont(font_name, 14)
+        if test_font.family().lower() != font_name.lower():
+            font_name = ""
+        if font_name:
+            msg.setFont(QFont(font_name, 14))
 
         if role == "assistant":
-            bubble.setStyleSheet(
-                "QLabel { background: rgba(100,140,255,0.1); color: rgba(255,255,255,0.88); "
-                "border: 1px solid rgba(100,140,255,0.15); border-radius: 12px; "
-                "padding: 12px 16px; font-size: 13px; }"
+            msg.setStyleSheet(
+                "QLabel { background: transparent; color: rgba(255, 255, 255, 0.86); "
+                "font-size: 14px; padding: 2px 0; }"
             )
         elif role == "system":
-            bubble.setStyleSheet(
-                "QLabel { background: rgba(230,160,60,0.08); color: rgba(230,160,60,0.7); "
-                "border: 1px solid rgba(230,160,60,0.15); border-radius: 12px; "
-                "padding: 8px 16px; font-size: 12px; font-style: italic; }"
+            msg.setStyleSheet(
+                "QLabel { background: transparent; color: rgba(230,160,60,0.6); "
+                "font-size: 12px; font-style: italic; padding: 2px 0; }"
             )
         else:
-            bubble.setStyleSheet(
-                "QLabel { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.8); "
-                "border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; "
-                "padding: 12px 16px; font-size: 13px; }"
+            msg.setStyleSheet(
+                "QLabel { background: transparent; color: rgba(180, 180, 180, 0.86); "
+                "font-size: 14px; padding: 2px 0; }"
             )
 
+        # Add spacing between message pairs
         count = self._msg_layout.count()
-        self._msg_layout.insertWidget(count - 1, bubble)
+        if count > 1 and role == "user":
+            spacer = QWidget()
+            spacer.setFixedHeight(16)
+            spacer.setStyleSheet("background: transparent;")
+            self._msg_layout.insertWidget(count - 1, spacer)
+            count += 1
+
+        self._msg_layout.insertWidget(count - 1, msg)
 
         QTimer.singleShot(50, lambda: self._scroll.verticalScrollBar().setValue(
             self._scroll.verticalScrollBar().maximum()
@@ -983,6 +1185,13 @@ class SetupWizard(QWidget):
 
     def _start_chat(self):
         self._chat_input.setFocus()
+        # Start video background
+        self._start_local_video()
+        # Seed the conversation history with the opening prompt
+        self._chat_messages.append({
+            "role": "user",
+            "content": "(Session starting. Ask your opening question.)",
+        })
         self._send_ai_message(first=True)
 
     def _speak(self, text: str):
@@ -1542,6 +1751,56 @@ class SetupWizard(QWidget):
             "content": f"(VIDEOS: complete — {total} clips generated)",
         })
 
+    # ── Video background helpers ──
+
+    def _find_xan_loop(self) -> Path | None:
+        """Find Xan's ambient loop — checks user data then bundle."""
+        # User data (full quality loops if available)
+        user_loop = Path.home() / ".atrophy" / "agents" / "xan" / "avatar" / "loops" / "blue" / "loop_bounce_playful.mp4"
+        if user_loop.exists():
+            return user_loop
+        # Bundled 20-min ambient video (compressed, ships with app)
+        bundle_ambient = Path(__file__).parent.parent / "agents" / "xan" / "avatar" / "xan_ambient.mp4"
+        if bundle_ambient.exists():
+            return bundle_ambient
+        # Individual clip fallback
+        bundle_loop = Path(__file__).parent.parent / "agents" / "xan" / "avatar" / "loops" / "blue" / "loop_bounce_playful.mp4"
+        if bundle_loop.exists():
+            return bundle_loop
+        return None
+
+    def _setup_local_video(self, parent: QWidget, loop_path: Path):
+        """Set up QMediaPlayer-based video background."""
+        from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+        from display.window import FrameGrabSurface
+
+        self._local_surface = FrameGrabSurface(self)
+        self._local_surface.frame_ready.connect(self._on_local_frame)
+        self._local_player = QMediaPlayer(self)
+        self._local_player.setVideoOutput(self._local_surface)
+        self._local_player.setMuted(True)
+        self._local_player.mediaStatusChanged.connect(self._on_local_media_status)
+        self._local_player.setMedia(QMediaContent(QUrl.fromLocalFile(str(loop_path))))
+        self._video_bg = True  # signal that we have video (for scrim logic)
+
+    def _on_local_frame(self, img: QImage):
+        """Receive a decoded video frame — store and request repaint."""
+        self._local_frame = img
+        if hasattr(self, '_chat_overlay'):
+            self._chat_overlay.update()
+
+    def _on_local_media_status(self, status):
+        """Loop the video when it ends."""
+        from PyQt5.QtMultimedia import QMediaPlayer
+        if status == QMediaPlayer.EndOfMedia and self._local_player:
+            self._local_player.setPosition(0)
+            self._local_player.play()
+
+    def _start_local_video(self):
+        """Start playback of local video (called when chat page becomes visible)."""
+        if self._local_player:
+            self._local_player.play()
+
     # ── Page 3: Creating ──
 
     def _build_page_creating(self):
@@ -1549,6 +1808,11 @@ class SetupWizard(QWidget):
         lay = QVBoxLayout(page)
         lay.setContentsMargins(50, 0, 50, 40)
         lay.addStretch(3)
+
+        if self._brain_pixmaps:
+            icon_label = self._make_brain_label()
+            lay.addWidget(icon_label)
+            lay.addSpacing(16)
 
         self._creating_label = _label("Building.", 18, 0.8, align=Qt.AlignCenter)
         lay.addWidget(self._creating_label)
@@ -1567,14 +1831,8 @@ class SetupWizard(QWidget):
         lay.setContentsMargins(50, 0, 50, 40)
         lay.addStretch(3)
 
-        brain_path = Path(__file__).parent / "icons" / "brain_overlay.png"
-        if brain_path.exists():
-            icon_label = QLabel()
-            icon_label.setAlignment(Qt.AlignCenter)
-            img = QImage(str(brain_path))
-            if not img.isNull():
-                scaled = img.scaled(60, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                icon_label.setPixmap(QPixmap.fromImage(scaled))
+        if self._brain_pixmaps:
+            icon_label = self._make_brain_label()
             lay.addWidget(icon_label)
             lay.addSpacing(16)
 
@@ -1621,6 +1879,7 @@ class SetupWizard(QWidget):
 
     def _do_create(self):
         self._pages.setCurrentIndex(3)
+        self._start_brain_animation(forward=True)  # animate brain during creation
         QTimer.singleShot(100, self._create_agent)
 
     def _create_agent(self):
@@ -1732,6 +1991,13 @@ class SetupWizard(QWidget):
         self.close()
 
     # ── Painting ──
+
+    def eventFilter(self, obj, event):
+        from PyQt5.QtCore import QEvent
+        if event.type() == QEvent.Resize and hasattr(self, '_chat_overlay'):
+            w, h = obj.width(), obj.height()
+            self._chat_overlay.setGeometry(0, 0, w, h)
+        return super().eventFilter(obj, event)
 
     def paintEvent(self, event):
         p = QPainter(self)

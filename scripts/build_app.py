@@ -46,7 +46,6 @@ INCLUDE = [
 EXCLUDE_PATTERNS = [
     "__pycache__", "*.pyc", "*.pyo", ".DS_Store",
     "agents/*/data/*.db", "agents/*/data/.*",
-    "agents/*/avatar/",
 ]
 
 
@@ -97,6 +96,41 @@ def build_icns():
     print(f"  Built {ICNS_PATH.name}")
 
 
+def _snapshot_ignore(directory, contents):
+    """Custom ignore function for shutil.copytree.
+
+    Handles EXCLUDE_PATTERNS plus selective Xan avatar bundling
+    (only blue loops + source, skip other colour directories).
+    """
+    import fnmatch
+    ignored = set()
+    # Standard pattern exclusions
+    for pattern in EXCLUDE_PATTERNS:
+        ignored.update(fnmatch.filter(contents, pattern))
+
+    # Agent-specific rules
+    try:
+        rel = Path(directory).relative_to(PROJECT_DIR)
+    except ValueError:
+        return ignored
+    parts = rel.parts
+
+    # agents/<not-xan>/ → skip avatar/ subdirectory
+    if len(parts) >= 2 and parts[0] == "agents" and parts[1] != "xan":
+        if "avatar" in contents:
+            ignored.add("avatar")
+
+    # agents/xan/avatar/ → skip loops/ and candidates/ (large, not needed for bundle)
+    # The compressed xan_ambient.mp4 (23MB) is kept for setup wizard background
+    if parts == ("agents", "xan", "avatar"):
+        if "loops" in contents:
+            ignored.add("loops")
+        if "candidates" in contents:
+            ignored.add("candidates")
+
+    return ignored
+
+
 def _copy_snapshot(dest: Path):
     """Copy a bootstrap snapshot of the source tree into dest/."""
     for item in INCLUDE:
@@ -105,7 +139,7 @@ def _copy_snapshot(dest: Path):
         if src.is_dir():
             shutil.copytree(
                 src, dst,
-                ignore=shutil.ignore_patterns(*EXCLUDE_PATTERNS),
+                ignore=_snapshot_ignore,
                 dirs_exist_ok=True,
             )
         elif src.is_file():
