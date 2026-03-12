@@ -116,7 +116,7 @@ function gatherMaterial(agentName: string): string {
       parts.push('Bookmarked moments:\n' + lines.join('\n'));
     }
 
-    // Recent Will turns (for texture)
+    // Recent user turns (for texture)
     const turns = db
       .prepare(
         "SELECT content, timestamp FROM turns WHERE role = 'will' " +
@@ -125,7 +125,7 @@ function gatherMaterial(agentName: string): string {
       .all() as TurnRow[];
     if (turns.length > 0) {
       parts.push(
-        'Recent things Will said:\n' +
+        'Recent things the user said:\n' +
         turns.map((t) => `- [${t.timestamp}] ${t.content.slice(0, 300)}`).join('\n'),
       );
     }
@@ -151,7 +151,7 @@ function gatherMaterial(agentName: string): string {
 // ---------------------------------------------------------------------------
 
 const GIFT_FALLBACK =
-  'You are the companion. Leave a short, specific note for Will. ' +
+  'You are the companion. Leave a short, specific note for the user. ' +
   '2-4 sentences. No greeting. No sign-off.';
 
 // ---------------------------------------------------------------------------

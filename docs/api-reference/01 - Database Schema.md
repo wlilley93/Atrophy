@@ -94,11 +94,11 @@ Junction table linking turns to threads they reference.
 
 ## Layer 3: Identity
 
-Persistent model of Will. Updated deliberately, not automatically.
+Persistent model of the user. Updated deliberately, not automatically.
 
 ### identity_snapshots
 
-Point-in-time snapshots of the companion's model of Will. Created by explicit identity-level events (e.g. monthly evolution).
+Point-in-time snapshots of the companion's model of the user. Created by explicit identity-level events (e.g. monthly evolution).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -109,7 +109,7 @@ Point-in-time snapshots of the companion's model of Will. Created by explicit id
 
 ### observations
 
-Individual observations about Will -- patterns, tendencies, preferences, and insights. These accumulate over time and can be retired when they no longer hold.
+Individual observations about the user -- patterns, tendencies, preferences, and insights. These accumulate over time and can be retired when they no longer hold.
 
 | Column | Type | Description |
 |--------|------|-------------|

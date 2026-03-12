@@ -6,7 +6,7 @@
  * runs up to 5 exchanges between them, stores the transcript in both
  * agents' Obsidian notes for journal/evolution material.
  *
- * The conversation is private - Will doesn't participate. Agents share
+ * The conversation is private - the user doesn't participate. Agents share
  * viewpoints from their respective domains but never homogenise.
  *
  * Dual-use: callable as a function from the main process, or runnable

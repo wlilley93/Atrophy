@@ -5,11 +5,13 @@
   import ThinkingIndicator from './ThinkingIndicator.svelte';
   import Transcript from './Transcript.svelte';
   import InputBar from './InputBar.svelte';
+  import ServiceCard from './ServiceCard.svelte';
   import Timer from './Timer.svelte';
   import Canvas from './Canvas.svelte';
   import Artefact from './Artefact.svelte';
   import Settings from './Settings.svelte';
   import SetupWizard from './SetupWizard.svelte';
+  import MirrorSetup from './MirrorSetup.svelte';
   import SplashScreen from './SplashScreen.svelte';
   import ShutdownScreen from './ShutdownScreen.svelte';
   import { session } from '../stores/session.svelte';
@@ -17,6 +19,7 @@
   import { agents } from '../stores/agents.svelte';
 
   import { addMessage, completeLast } from '../stores/transcript.svelte';
+  import { getArtifact } from '../stores/artifacts.svelte';
 
   const api = (window as any).atrophy;
 
@@ -29,6 +32,7 @@
   let showCanvas = $state(false);
   let showArtefact = $state(false);
   let needsSetup = $state(false);
+  let mirrorSetupVisible = $state(false);
 
   // Splash screen
   let splashVisible = $state(true);
@@ -48,6 +52,39 @@
   // Eye mode - hides transcript when active
   let eyeMode = $state(false);
 
+  // ---------------------------------------------------------------------------
+  // Setup flow state (runs in main chat, not static screens)
+  // ---------------------------------------------------------------------------
+
+  /** Which overlay phase the wizard is in ('hidden' = chat is active) */
+  let setupWizardPhase = $state<'welcome' | 'creating' | 'done' | 'hidden'>('hidden');
+  /** Whether the setup flow is active (services + agent creation in main chat) */
+  let setupActive = $state(false);
+  /** Current service step: 0-3 = showing card, 4+ = services complete */
+  let setupServiceStep = $state(0);
+  /** Whether the service card is currently visible */
+  let setupShowServiceCard = $state(false);
+  /** Services that were saved */
+  let setupServicesSaved: string[] = [];
+  /** Services that were skipped */
+  let setupServicesSkipped: string[] = [];
+  /** Telegram chat ID (saved via ServiceCard, committed in finishSetup) */
+  let setupTelegramChatId = $state('');
+  /** Created agent display name (for creating/done overlays) */
+  let setupCreatedAgentName = $state('');
+  /** User name from welcome screen */
+  let setupUserName = $state('');
+
+  // Pre-baked opening text (matches Python _OPENING_TEXT)
+  const SETUP_OPENING_TEXT =
+    "I'm Xan. I ship with the system - protector, first contact, always on.\n\n" +
+    "You already have me. But the real power is in creating something yours - " +
+    "a companion with its own edges, its own voice, someone shaped by you " +
+    "for a specific purpose.\n\n" +
+    "This is the last you'll hear of my voice until you've added your " +
+    "ElevenLabs API key, which I will ask you to do in a moment.\n\n" +
+    "First, we need to set up your system. Let's get started.";
+
   // Agent switch clip-path animation
   let agentSwitchActive = $state(false);
   let agentSwitchClip = $state('circle(0% at 50% 50%)');
@@ -57,11 +94,22 @@
   let deferralTarget = $state('');
   let deferralProgress = $state(0);
 
-  // Silence timer - prompts after 5 minutes idle
+  // Ask-user dialog (MCP ask_user -> GUI)
+  let askVisible = $state(false);
+  let askQuestion = $state('');
+  let askActionType = $state<'question' | 'confirmation' | 'permission' | 'secure_input'>('question');
+  let askRequestId = $state('');
+  let askReply = $state('');
+  let askInputType = $state<'password' | 'email' | 'url' | 'number' | 'text'>('password');
+  let askLabel = $state('');
+  let askDestination = $state('');
+
+  // Silence timer - prompts after configurable idle period
   let lastInputTime = $state(Date.now());
   let silencePromptVisible = $state(false);
   let silenceTimerId: ReturnType<typeof setTimeout> | null = null;
-  const SILENCE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  let silenceTimerEnabled = true;
+  let silenceTimeoutMs = 5 * 60 * 1000; // default 5 minutes
 
   // ---------------------------------------------------------------------------
   // Boot sequence
@@ -99,6 +147,12 @@
       agents.current = cfg.agentName || '';
       agents.displayName = cfg.agentDisplayName || cfg.agentName || '';
       agents.list = agentList || [];
+
+      // Apply config-driven defaults
+      if (cfg.eyeModeDefault) eyeMode = true;
+      if (cfg.muteByDefault) { isMuted = true; api?.setMuted?.(true); }
+      if (cfg.silenceTimerEnabled === false) silenceTimerEnabled = false;
+      if (cfg.silenceTimerMinutes) silenceTimeoutMs = cfg.silenceTimerMinutes * 60 * 1000;
     } catch {
       // continue with defaults
     }
@@ -110,8 +164,11 @@
       needsSetup = false;
     }
 
-    if (!needsSetup) {
-      // Fetch opening line
+    if (needsSetup) {
+      // Show welcome overlay (name input)
+      setupWizardPhase = 'welcome';
+    } else {
+      // Normal boot - fetch opening line
       try {
         const opening = await api.getOpeningLine();
         if (opening) {
@@ -123,6 +180,159 @@
       }
     }
     // Splash dismisses itself via onComplete when decay finishes + download done
+  }
+
+  // ---------------------------------------------------------------------------
+  // Setup flow - runs in the main chat (Transcript + InputBar)
+  // ---------------------------------------------------------------------------
+
+  async function onSetupNameEntered(name: string) {
+    setupUserName = name;
+    if (api) await api.updateConfig({ USER_NAME: name });
+
+    // Dismiss the welcome overlay - chat is now visible
+    setupWizardPhase = 'hidden';
+    setupActive = true;
+
+    // Play transition audio
+    api?.playAgentAudio?.('name.mp3');
+
+    // Show Xan's opening text in the main transcript
+    setTimeout(() => {
+      api?.playAgentAudio?.('opening.mp3');
+      addMessage('agent', SETUP_OPENING_TEXT);
+      completeLast();
+
+      // Start service cards after opening settles
+      setTimeout(() => {
+        setupServiceStep = 0;
+        setupShowServiceCard = true;
+      }, 2000);
+    }, 500);
+  }
+
+  function onSetupServiceSaved(key: string) {
+    setupServicesSaved.push(key);
+
+    // Play confirmation audio for ElevenLabs
+    if (key === 'ELEVENLABS_API_KEY') {
+      api?.playAgentAudio?.('elevenlabs_saved.mp3');
+    }
+
+    advanceSetupService();
+  }
+
+  function onSetupServiceSkipped(key: string) {
+    setupServicesSkipped.push(key);
+
+    // Play farewell if ElevenLabs was skipped (last chance for pre-baked audio)
+    if (key === 'ELEVENLABS_API_KEY') {
+      api?.playAgentAudio?.('voice_farewell.mp3');
+    }
+
+    advanceSetupService();
+  }
+
+  function advanceSetupService() {
+    setupServiceStep++;
+    setupShowServiceCard = setupServiceStep < 4;
+
+    if (setupServiceStep >= 4) {
+      // All services done - transition to AI agent creation in chat
+      api?.playAgentAudio?.('service_complete.mp3');
+      addMessage('agent', 'System configured. Now - who do you want to create?');
+      completeLast();
+    }
+  }
+
+  /** Submit handler passed to InputBar during setup - routes to wizard inference */
+  async function setupSubmit(text: string) {
+    addMessage('user', text);
+    completeLast();
+    session.inferenceState = 'thinking';
+
+    try {
+      const response = await api.wizardInference(text);
+
+      // Add agent response to the main transcript
+      addMessage('agent', response);
+      completeLast();
+
+      // Check if the response contains AGENT_CONFIG JSON
+      const configMatch = response.match(/```json\s*(\{[\s\S]*?"AGENT_CONFIG"[\s\S]*?\})\s*```/);
+      if (configMatch) {
+        try {
+          const parsed = JSON.parse(configMatch[1]);
+          const agentConfig = parsed.AGENT_CONFIG;
+          if (agentConfig && agentConfig.display_name) {
+            // Play farewell before switching (uses Xan's audio dir)
+            api?.playAgentAudio?.('voice_farewell.mp3');
+
+            // Show creating overlay
+            setupCreatedAgentName = agentConfig.display_name;
+            setupWizardPhase = 'creating';
+
+            const manifest = await api.createAgent(agentConfig);
+            if (manifest && manifest.name) {
+              await api.switchAgent(manifest.name as string);
+              agents.current = (manifest as Record<string, string>).name;
+              agents.displayName = agentConfig.display_name;
+            }
+
+            // Brief pause on creating screen, then done
+            setTimeout(() => {
+              setupWizardPhase = 'done';
+            }, 2500);
+          }
+        } catch {
+          // JSON parse failed - continue conversation
+        }
+      }
+    } catch {
+      addMessage('agent', 'Something went wrong. Try again.');
+      completeLast();
+    }
+
+    session.inferenceState = 'idle';
+  }
+
+  function skipAgentCreation() {
+    finishSetup();
+  }
+
+  async function finishSetup() {
+    setupActive = false;
+    setupWizardPhase = 'hidden';
+
+    if (api) {
+      const updates: Record<string, unknown> = {
+        USER_NAME: setupUserName,
+        setup_complete: true,
+      };
+      await api.updateConfig(updates);
+
+      // Reload config and agent list
+      try {
+        const [cfg, agentList] = await Promise.all([
+          api.getConfig(),
+          api.getAgents(),
+        ]);
+        agents.current = (cfg as Record<string, string>).agentName || '';
+        agents.displayName = (cfg as Record<string, string>).agentDisplayName || (cfg as Record<string, string>).agentName || '';
+        agents.list = (agentList as string[]) || [];
+
+        // Fetch opening line for the (possibly new) agent
+        const opening = await api.getOpeningLine();
+        if (opening) {
+          addMessage('agent', opening);
+          completeLast();
+        }
+      } catch { /* continue with defaults */ }
+    }
+  }
+
+  function onSetupWizardComplete() {
+    finishSetup();
   }
 
   function onSplashComplete() {
@@ -148,9 +358,10 @@
     silencePromptVisible = false;
 
     if (silenceTimerId) clearTimeout(silenceTimerId);
+    if (!silenceTimerEnabled || setupActive || needsSetup) return;
     silenceTimerId = setTimeout(() => {
       silencePromptVisible = true;
-    }, SILENCE_TIMEOUT_MS);
+    }, silenceTimeoutMs);
   }
 
   function dismissSilencePrompt() {
@@ -215,41 +426,117 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Ask-user handlers
+  // ---------------------------------------------------------------------------
+
+  // Inline artifact card clicked in transcript - open in Artefact overlay
+  function handleInlineArtifactClick(id: string) {
+    const art = getArtifact(id);
+    if (!art) return;
+    // Load into the Artefact overlay by dispatching an artefact:updated-style event
+    // The Artefact component listens on the 'artefact:updated' channel for content
+    showArtefact = true;
+    hasNewArtefacts = false;
+    // Emit directly to the Artefact component via the IPC bus
+    // The simplest approach: use the api.on listener that Artefact already has
+    if (api) {
+      // Synthesize an artefact:updated event via main process would be complex,
+      // so instead we use a custom event on the window
+      window.dispatchEvent(new CustomEvent('inline-artifact', {
+        detail: { type: art.type, content: art.content, title: art.title },
+      }));
+    }
+  }
+
+  function handleAskConfirm(approved: boolean) {
+    if (!askRequestId || !api) return;
+    api.respondToAsk(askRequestId, approved);
+    askVisible = false;
+    askRequestId = '';
+  }
+
+  function handleAskReply() {
+    if (!askRequestId || !api) return;
+    const text = askReply.trim();
+    if (!text) return;
+    api.respondToAsk(askRequestId, text);
+    askVisible = false;
+    askRequestId = '';
+    askReply = '';
+  }
+
+  function handleAskDismiss() {
+    if (!askRequestId || !api) return;
+    api.respondToAsk(askRequestId, null);
+    askVisible = false;
+    askRequestId = '';
+  }
+
+  // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 
   let agentSwitchCleanup: (() => void) | null = null;
+  const ipcCleanups: (() => void)[] = [];
 
   onMount(() => {
-    runBootSequence();
-    resetSilenceTimer();
+    runBootSequence().then(() => resetSilenceTimer());
 
     // Listen for deferral requests from main process
     if (api && typeof api.on === 'function') {
-      api.on('deferral:request', handleDeferralRequest);
+      ipcCleanups.push(api.on('deferral:request', handleDeferralRequest));
+
+      // Listen for ask-user requests from MCP
+      ipcCleanups.push(api.on('ask:request', (data: { question: string; action_type: string; request_id: string; input_type?: string; label?: string; destination?: string }) => {
+        askQuestion = data.question;
+        askActionType = (data.action_type || 'question') as typeof askActionType;
+        askRequestId = data.request_id;
+        askReply = '';
+        askInputType = (data.input_type as typeof askInputType) || 'password';
+        askLabel = data.label || '';
+        askDestination = data.destination || '';
+        askVisible = true;
+      }));
 
       // Auto-show canvas when content is written (even if Canvas not mounted yet)
-      api.on('canvas:updated', () => {
+      ipcCleanups.push(api.on('canvas:updated', () => {
         showCanvas = true;
-      });
+      }));
+
+      // Auto-show artefact overlay when MCP creates one
+      ipcCleanups.push(api.on('artefact:updated', () => {
+        showArtefact = true;
+        hasNewArtefacts = true;
+      }));
+
+      // Show badge when artefact is generating
+      ipcCleanups.push(api.on('artefact:loading', () => {
+        hasNewArtefacts = true;
+      }));
     }
 
     // Listen for shutdown signal from main process
-    api?.onShutdownRequested?.(() => {
+    const shutdownCleanup = api?.onShutdownRequested?.(() => {
       startShutdown();
     });
+    if (shutdownCleanup) ipcCleanups.push(shutdownCleanup);
   });
 
   onDestroy(() => {
     if (silenceTimerId) clearTimeout(silenceTimerId);
     if (agentSwitchCleanup) agentSwitchCleanup();
+    ipcCleanups.forEach((fn) => fn());
     // Clean up wake word audio
-    if (wakeProcessor) { wakeProcessor.disconnect(); wakeProcessor = null; }
-    if (wakeAudioCtx) { wakeAudioCtx.close(); wakeAudioCtx = null; }
+    try { wakeProcessor?.disconnect(); } catch { /* already disconnected */ }
+    wakeProcessor = null;
+    try { wakeAudioCtx?.close(); } catch { /* already closed */ }
+    wakeAudioCtx = null;
     if (wakeStream) { wakeStream.getTracks().forEach((t) => t.stop()); wakeStream = null; }
     // Clean up call audio
-    if (callProcessor) { callProcessor.disconnect(); callProcessor = null; }
-    if (callAudioCtx) { callAudioCtx.close(); callAudioCtx = null; }
+    try { callProcessor?.disconnect(); } catch { /* already disconnected */ }
+    callProcessor = null;
+    try { callAudioCtx?.close(); } catch { /* already closed */ }
+    callAudioCtx = null;
     if (callStream) { callStream.getTracks().forEach((t) => t.stop()); callStream = null; }
   });
 
@@ -268,6 +555,11 @@
       agents.current = result.agentName;
       agents.displayName = result.agentDisplayName;
       playAgentSwitchAnimation();
+
+      // Check if the new agent needs custom setup
+      if (result.customSetup === 'mirror') {
+        mirrorSetupVisible = true;
+      }
     }
   }
 
@@ -279,7 +571,7 @@
 
   function toggleMute() {
     isMuted = !isMuted;
-    // TODO: wire to TTS mute in main process
+    api?.setMuted?.(isMuted);
   }
 
   // Wake word audio capture state
@@ -514,6 +806,54 @@
     </div>
   {/if}
 
+  <!-- Ask-user dialog (MCP ask_user) -->
+  {#if askVisible}
+    <div class="ask-overlay" data-no-drag>
+      <div class="ask-dialog">
+        <div class="ask-icon">
+          {#if askActionType === 'secure_input'}&#x1f512;{:else if askActionType === 'question'}?{:else}&#x1f512;{/if}
+        </div>
+        <p class="ask-question">{askQuestion}</p>
+
+        {#if askActionType === 'confirmation' || askActionType === 'permission'}
+          <div class="ask-buttons">
+            <button class="ask-btn ask-btn-no" onclick={() => handleAskConfirm(false)}>No</button>
+            <button class="ask-btn ask-btn-yes" onclick={() => handleAskConfirm(true)}>Yes</button>
+          </div>
+        {:else if askActionType === 'secure_input'}
+          <div class="ask-input-row">
+            <input
+              type={askInputType}
+              class="ask-input"
+              placeholder={askLabel || 'Enter value...'}
+              bind:value={askReply}
+              onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleAskReply(); }}
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button class="ask-btn ask-btn-yes" onclick={handleAskReply}>Save</button>
+          </div>
+          {#if askDestination}
+            <p class="ask-destination-note">Value will be saved securely</p>
+          {/if}
+        {:else}
+          <div class="ask-input-row">
+            <input
+              type="text"
+              class="ask-input"
+              placeholder="Type your reply..."
+              bind:value={askReply}
+              onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleAskReply(); }}
+            />
+            <button class="ask-btn ask-btn-yes" onclick={handleAskReply}>Send</button>
+          </div>
+        {/if}
+
+        <button class="ask-dismiss" onclick={handleAskDismiss}>Dismiss</button>
+      </div>
+    </div>
+  {/if}
+
   <!-- Top bar: agent name + thinking indicator -->
   <div class="top-bar">
     <AgentName
@@ -664,11 +1004,31 @@
 
   <!-- Chat area - hidden in eye mode -->
   {#if !eyeMode}
-    <Transcript />
+    <Transcript onArtifactClick={handleInlineArtifactClick} />
+  {/if}
+
+  <!-- Service card (setup flow - appears between transcript and input bar) -->
+  {#if setupShowServiceCard}
+    <ServiceCard
+      step={setupServiceStep}
+      onSaved={onSetupServiceSaved}
+      onSkipped={onSetupServiceSkipped}
+    />
   {/if}
 
   <!-- Input bar -->
-  <InputBar />
+  <InputBar
+    onSubmit={setupActive && !setupShowServiceCard && setupServiceStep >= 4 ? setupSubmit : undefined}
+    disabled={setupShowServiceCard}
+    placeholder={setupShowServiceCard ? 'Complete the setup above...' : (setupActive && setupServiceStep >= 4 ? 'Describe who you want to create...' : undefined)}
+  />
+
+  <!-- Skip agent creation (visible during AI creation phase of setup) -->
+  {#if setupActive && !setupShowServiceCard && setupServiceStep >= 4}
+    <button class="skip-creation-btn" onclick={skipAgentCreation}>
+      Skip agent creation
+    </button>
+  {/if}
 
   <!-- Silence prompt - subtle nudge after 5 minutes idle -->
   {#if silencePromptVisible}
@@ -694,29 +1054,19 @@
     <Settings onClose={() => showSettings = false} />
   {/if}
 
-  <!-- Setup wizard (shown on first launch) -->
-  {#if needsSetup}
-    <SetupWizard onComplete={async () => {
-      needsSetup = false;
-      // Reload config and agent list after setup (agent may have been created/switched)
-      if (api) {
-        try {
-          const [cfg, agentList] = await Promise.all([
-            api.getConfig(),
-            api.getAgents(),
-          ]);
-          agents.current = cfg.agentName || '';
-          agents.displayName = cfg.agentDisplayName || cfg.agentName || '';
-          agents.list = agentList || [];
-          // Fetch opening line for the new agent
-          const opening = await api.getOpeningLine();
-          if (opening) {
-            addMessage('agent', opening);
-            completeLast();
-          }
-        } catch { /* continue with defaults */ }
-      }
-    }} />
+  <!-- Setup wizard overlays (welcome / creating / done) -->
+  {#if setupWizardPhase !== 'hidden'}
+    <SetupWizard
+      phase={setupWizardPhase}
+      createdAgentName={setupCreatedAgentName}
+      onNameEntered={onSetupNameEntered}
+      onComplete={onSetupWizardComplete}
+    />
+  {/if}
+
+  <!-- Mirror custom setup (shown when switching to Mirror for the first time) -->
+  {#if mirrorSetupVisible}
+    <MirrorSetup onComplete={() => { mirrorSetupVisible = false; }} />
   {/if}
 </div>
 
@@ -871,4 +1221,171 @@
     border-radius: 50%;
     background: rgba(100, 180, 255, 0.88);
   }
+
+  /* -- Skip agent creation (setup flow) -- */
+
+  .skip-creation-btn {
+    align-self: center;
+    padding: 6px 16px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    cursor: pointer;
+    margin-bottom: 8px;
+    transition: color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  .skip-creation-btn:hover {
+    color: var(--text-secondary);
+    border-color: var(--text-dim);
+  }
+
+  /* -- Ask-user dialog -- */
+
+  .ask-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    animation: askFadeIn 0.2s ease;
+  }
+
+  @keyframes askFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .ask-dialog {
+    background: rgba(20, 20, 24, 0.95);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 24px 20px;
+    max-width: 360px;
+    width: 90%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .ask-icon {
+    font-size: 28px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 50%;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+
+  .ask-question {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    text-align: center;
+    margin: 0;
+  }
+
+  .ask-buttons {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .ask-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .ask-btn-yes {
+    background: rgba(100, 180, 120, 0.2);
+    color: #8fd4a0;
+    border-color: rgba(100, 180, 120, 0.3);
+  }
+
+  .ask-btn-yes:hover {
+    background: rgba(100, 180, 120, 0.35);
+    border-color: rgba(100, 180, 120, 0.5);
+  }
+
+  .ask-btn-no {
+    background: rgba(200, 80, 80, 0.15);
+    color: #d08888;
+    border-color: rgba(200, 80, 80, 0.25);
+  }
+
+  .ask-btn-no:hover {
+    background: rgba(200, 80, 80, 0.3);
+    border-color: rgba(200, 80, 80, 0.45);
+  }
+
+  .ask-input-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .ask-input {
+    flex: 1;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .ask-input:focus {
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  .ask-input::placeholder {
+    color: var(--text-dim);
+  }
+
+  .ask-destination-note {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin: 4px 0 0;
+    font-style: italic;
+  }
+
+  .ask-dismiss {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: color 0.15s;
+  }
+
+  .ask-dismiss:hover {
+    color: var(--text-secondary);
+  }
 </style>
+

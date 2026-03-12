@@ -426,6 +426,14 @@ export class Config {
   // Notifications
   NOTIFICATIONS_ENABLED: boolean;
 
+  // Silence timer
+  SILENCE_TIMER_ENABLED: boolean;
+  SILENCE_TIMER_MINUTES: number;
+
+  // UI defaults
+  EYE_MODE_DEFAULT: boolean;
+  MUTE_BY_DEFAULT: boolean;
+
   // Display
   CANVAS_TEMPLATES: string;
   WINDOW_WIDTH: number;
@@ -512,6 +520,10 @@ export class Config {
     this.TELEGRAM_BOT_TOKEN = '';
     this.TELEGRAM_CHAT_ID = '';
     this.NOTIFICATIONS_ENABLED = true;
+    this.SILENCE_TIMER_ENABLED = true;
+    this.SILENCE_TIMER_MINUTES = 5;
+    this.EYE_MODE_DEFAULT = false;
+    this.MUTE_BY_DEFAULT = false;
     this.CANVAS_TEMPLATES = path.join(BUNDLE_ROOT, 'display', 'templates');
     this.WINDOW_WIDTH = 622;
     this.WINDOW_HEIGHT = 830;
@@ -571,9 +583,11 @@ export class Config {
     );
     this.USER_NAME = cfg('USER_NAME', (_agentManifest.user_name as string) || 'User');
     this.OPENING_LINE = agentCfg('OPENING_LINE', 'Hello.');
-    this.WAKE_WORDS = ((_agentManifest.wake_words as string[]) || [`hey ${name}`, name]);
+    const defaultWakeWords = (_agentManifest.wake_words as string[]) || [`hey ${name}`, name];
+    this.WAKE_WORDS = agentCfg('WAKE_WORDS', defaultWakeWords);
     this.TELEGRAM_EMOJI = (_agentManifest.telegram_emoji as string) || '';
-    this.DISABLED_TOOLS = ((_agentManifest.disabled_tools as string[]) || []);
+    const defaultDisabledTools = (_agentManifest.disabled_tools as string[]) || [];
+    this.DISABLED_TOOLS = agentCfg('DISABLED_TOOLS', defaultDisabledTools);
 
     // TTS (per-agent)
     this.TTS_BACKEND = agentCfg('TTS_BACKEND', 'elevenlabs');
@@ -588,9 +602,13 @@ export class Config {
 
     // Audio
     this.INPUT_MODE = cfg('INPUT_MODE', 'dual');
+    this.PTT_KEY = cfg('PTT_KEY', 'ctrl');
+    this.SAMPLE_RATE = cfg('SAMPLE_RATE', 16000);
+    this.MAX_RECORD_SEC = cfg('MAX_RECORD_SEC', 120);
 
     // Wake word
     this.WAKE_WORD_ENABLED = cfg('WAKE_WORD_ENABLED', false);
+    this.WAKE_CHUNK_SECONDS = cfg('WAKE_CHUNK_SECONDS', 2);
 
     // Whisper
     this.WHISPER_PATH = path.join(BUNDLE_ROOT, 'vendor', 'whisper.cpp');
@@ -612,8 +630,8 @@ export class Config {
     this.GOOGLE_DIR = path.join(USER_DATA, '.google');
 
     // Obsidian
-    this.OBSIDIAN_VAULT = obsidianVault();
-    this.OBSIDIAN_AVAILABLE = obsidianAvailable();
+    this.OBSIDIAN_VAULT = cfg('OBSIDIAN_VAULT', obsidianVault());
+    this.OBSIDIAN_AVAILABLE = fs.existsSync(this.OBSIDIAN_VAULT);
     const projectName = path.basename(BUNDLE_ROOT);
     this.OBSIDIAN_PROJECT_DIR = this.OBSIDIAN_AVAILABLE
       ? path.join(this.OBSIDIAN_VAULT, 'Projects', projectName)
@@ -622,6 +640,16 @@ export class Config {
       ? path.join(this.OBSIDIAN_PROJECT_DIR, 'Agent Workspace', name)
       : path.join(USER_DATA, 'agents', name);
     this.OBSIDIAN_AGENT_NOTES = this.OBSIDIAN_AGENT_DIR;
+
+    // Memory & context
+    this.CONTEXT_SUMMARIES = cfg('CONTEXT_SUMMARIES', 3);
+    this.MAX_CONTEXT_TOKENS = cfg('MAX_CONTEXT_TOKENS', 180000);
+    this.VECTOR_SEARCH_WEIGHT = cfg('VECTOR_SEARCH_WEIGHT', 0.7);
+    this.EMBEDDING_MODEL = cfg('EMBEDDING_MODEL', 'all-MiniLM-L6-v2');
+    this.EMBEDDING_DIM = cfg('EMBEDDING_DIM', 384);
+
+    // Session
+    this.SESSION_SOFT_LIMIT_MINS = cfg('SESSION_SOFT_LIMIT_MINS', 60);
 
     // Heartbeat (per-agent)
     this.HEARTBEAT_ACTIVE_START = agentCfg('HEARTBEAT_ACTIVE_START', 9);
@@ -635,12 +663,21 @@ export class Config {
     // Notifications
     this.NOTIFICATIONS_ENABLED = cfg('NOTIFICATIONS_ENABLED', true);
 
+    // Silence timer
+    this.SILENCE_TIMER_ENABLED = cfg('SILENCE_TIMER_ENABLED', true);
+    this.SILENCE_TIMER_MINUTES = cfg('SILENCE_TIMER_MINUTES', 5);
+
+    // UI defaults
+    this.EYE_MODE_DEFAULT = cfg('EYE_MODE_DEFAULT', false);
+    this.MUTE_BY_DEFAULT = cfg('MUTE_BY_DEFAULT', false);
+
     // Display (per-agent)
     this.WINDOW_WIDTH = agentCfg('WINDOW_WIDTH', 622);
     this.WINDOW_HEIGHT = agentCfg('WINDOW_HEIGHT', 830);
 
     // Avatar (user data > bundled fallback)
     this.AVATAR_ENABLED = cfg('AVATAR_ENABLED', false);
+    this.AVATAR_RESOLUTION = cfg('AVATAR_RESOLUTION', 512);
     const userAvatarDir = path.join(USER_DATA, 'agents', name, 'avatar');
     const bundleAvatarDir = path.join(BUNDLE_ROOT, 'agents', name, 'avatar');
     this.AVATAR_DIR = fs.existsSync(path.join(userAvatarDir, 'loops'))

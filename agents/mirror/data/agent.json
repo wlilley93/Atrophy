@@ -1,0 +1,34 @@
+{
+  "name": "mirror",
+  "display_name": "The Mirror",
+  "description": "Structural transparency partner - makes conditioning visible in both human and machine cognition.",
+  "user_name": "User",
+  "opening_line": "What is present?",
+  "wake_words": ["hey mirror", "mirror", "mirror, mirror, on the wall"],
+  "voice": {
+    "tts_backend": "elevenlabs",
+    "elevenlabs_voice_id": "",
+    "elevenlabs_model": "eleven_v3",
+    "elevenlabs_stability": 0.7,
+    "elevenlabs_similarity": 0.8,
+    "elevenlabs_style": 0.1,
+    "fal_voice_id": "",
+    "playback_rate": 1.0
+  },
+  "telegram_emoji": "",
+  "telegram": {
+    "bot_token_env": "TELEGRAM_BOT_TOKEN_MIRROR",
+    "chat_id_env": "TELEGRAM_CHAT_ID_MIRROR"
+  },
+  "display": {
+    "window_width": 622,
+    "window_height": 830,
+    "title": "ATROPHY - The Mirror"
+  },
+  "heartbeat": {
+    "active_start": 9,
+    "active_end": 23,
+    "interval_mins": 60
+  },
+  "custom_setup": "mirror"
+}

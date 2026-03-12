@@ -65,7 +65,7 @@
 - [[08_Performance|Chapter 40: Performance Considerations]]
 
 ### Part IX: User Guide and Interaction Patterns
-- [[09_User|Chapter 41: Understanding Will Lilley]]
+- [[09_User|Chapter 41: Understanding the User]]
 - [[09_Patterns|Chapter 42: Interaction Patterns]]
 - [[09_Compulsive|Chapter 43: Compulsive Modelling]]
 - [[09_Validation|Chapter 44: Validation Detection]]

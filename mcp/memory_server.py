@@ -34,6 +34,20 @@ def _resolve_display_name():
 
 AGENT_DISPLAY_NAME = _resolve_display_name()
 
+# Resolve user name from agent manifest
+def _resolve_user_name():
+    try:
+        import json as _json
+        manifest_path = os.path.join(DATA_DIR, "agent.json")
+        if os.path.exists(manifest_path):
+            with open(manifest_path) as f:
+                return _json.load(f).get("user_name", "User")
+    except Exception:
+        pass
+    return "User"
+
+USER_NAME = _resolve_user_name()
+
 VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", os.path.expanduser("~/Documents/Obsidian"))
 AGENT_DIR = os.environ.get("OBSIDIAN_AGENT_DIR", os.path.join(VAULT_PATH, "Projects", "The Atrophied Mind", "Agent Workspace", "companion"))
 AGENT_NOTES = os.environ.get("OBSIDIAN_AGENT_NOTES", AGENT_DIR)
@@ -61,7 +75,7 @@ TOOLS = [
             "Search the companion's memory across all layers - past conversations, "
             "session summaries, observations, and threads. Use this when something "
             "feels familiar but you can't place it, when context has been compacted "
-            "and you want to recall specifics, or when Will references something "
+            "and you want to recall specifics, or when the user references something "
             "from a previous session."
         ),
         "inputSchema": {
@@ -101,7 +115,7 @@ TOOLS = [
         "name": "recall_other_agent",
         "description": (
             "Search another agent's conversation history - their turns and session "
-            "summaries with Will. Use this to understand what Will discussed with "
+            "summaries with the user. Use this to understand what the user discussed with "
             "another agent, or to get context on a topic they covered. Does NOT "
             "access their observations or identity model - only what was said."
         ),
@@ -144,26 +158,47 @@ TOOLS = [
         },
     },
     {
-        "name": "ask_will",
+        "name": "ask_user",
         "description": (
-            "Ask Will a question or request confirmation via Telegram. "
+            "Ask the user a question, request confirmation, or collect sensitive input. "
             "For confirmation/permission, sends Yes/No buttons. "
             "For questions, sends a message and waits for a text reply. "
-            "Blocks until Will responds (up to 2 minutes). Use this when "
-            "you need his input before proceeding."
+            "For secure_input, shows a masked input field for passwords/API keys - "
+            "use with destination to auto-save (e.g. 'secret:ELEVENLABS_API_KEY' or 'config:SOME_KEY'). "
+            "Blocks until the user responds (up to 2 minutes)."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "question": {
                     "type": "string",
-                    "description": "The question or confirmation request for Will",
+                    "description": "The question or confirmation request for the user",
                 },
                 "action_type": {
                     "type": "string",
-                    "enum": ["question", "confirmation", "permission"],
-                    "description": "Type of request. confirmation/permission show Yes/No buttons.",
+                    "enum": ["question", "confirmation", "permission", "secure_input"],
+                    "description": (
+                        "Type of request. confirmation/permission show Yes/No buttons. "
+                        "secure_input shows a masked input field for sensitive data (passwords, API keys)."
+                    ),
                     "default": "question",
+                },
+                "input_type": {
+                    "type": "string",
+                    "enum": ["password", "email", "url", "number", "text"],
+                    "description": "HTML input type for secure_input. Defaults to password.",
+                    "default": "password",
+                },
+                "label": {
+                    "type": "string",
+                    "description": "Placeholder label for the input field (e.g. 'ElevenLabs API Key'). Used with secure_input.",
+                },
+                "destination": {
+                    "type": "string",
+                    "description": (
+                        "Where to auto-save the value. Format: 'secret:ELEVENLABS_API_KEY' or 'config:SOME_KEY'. "
+                        "If omitted, value is returned as plain text. Used with secure_input."
+                    ),
                 },
             },
             "required": ["question"],
@@ -172,7 +207,7 @@ TOOLS = [
     {
         "name": "read_note",
         "description": (
-            "Read a note from Will's Obsidian vault. Use this to check his notes, "
+            "Read a note from the user's Obsidian vault. Use this to check their notes, "
             "drafts, or anything he's been working on. Path is relative to vault root."
         ),
         "inputSchema": {
@@ -189,7 +224,7 @@ TOOLS = [
     {
         "name": "write_note",
         "description": (
-            "Write or append to a note in Will's Obsidian vault. Use this to leave "
+            "Write or append to a note in the user's Obsidian vault. Use this to leave "
             "him notes, save conversation insights, or write reflections. New notes "
             "automatically get YAML frontmatter (type, created, updated, agent, tags). "
             "Appending updates the 'updated' date. Prefer appending unless creating new. "
@@ -221,7 +256,7 @@ TOOLS = [
     {
         "name": "search_notes",
         "description": (
-            "Search Will's Obsidian vault for notes containing a query. "
+            "Search the user's Obsidian vault for notes containing a query. "
             "Returns matching file paths and snippets."
         ),
         "inputSchema": {
@@ -283,7 +318,7 @@ TOOLS = [
     {
         "name": "observe",
         "description": (
-            "Record an observation about Will - something you've noticed across "
+            "Record an observation about the user - something you've noticed across "
             "conversations that isn't a thread or a mood, but a pattern, tendency, "
             "preference, or insight worth remembering. These accumulate and inform "
             "your understanding over time. Examples: \"He deflects with humour when "
@@ -305,7 +340,7 @@ TOOLS = [
         "name": "bookmark",
         "description": (
             "Silently mark this moment as significant. Not an observation about "
-            "Will - about the moment itself. Something landed. A shift happened. "
+            "the user - about the moment itself. Something landed. A shift happened. "
             "A truth got said. These can be surfaced later when context makes it "
             "natural. Use sparingly."
         ),
@@ -327,7 +362,7 @@ TOOLS = [
     {
         "name": "review_observations",
         "description": (
-            "Review your own observations about Will. Use this periodically to "
+            "Review your own observations about the user. Use this periodically to "
             "check if past observations still hold, to refresh your understanding, "
             "or to retire observations that no longer apply. Returns recent "
             "observations with their IDs."
@@ -347,7 +382,7 @@ TOOLS = [
         "name": "retire_observation",
         "description": (
             "Remove an observation that no longer holds true. Use after "
-            "review_observations when you notice something has changed about Will "
+            "review_observations when you notice something has changed about the user "
             "or you were wrong about a pattern."
         ),
         "inputSchema": {
@@ -368,7 +403,7 @@ TOOLS = [
     {
         "name": "check_contradictions",
         "description": (
-            "Search your memory for what Will has previously said about a topic, "
+            "Search your memory for what the user has previously said about a topic, "
             "so you can notice if his current position has shifted. Use when "
             "something he says feels different from what you remember. Not to "
             "catch him out - to understand what changed."
@@ -391,7 +426,7 @@ TOOLS = [
     {
         "name": "detect_avoidance",
         "description": (
-            "Check if Will has been consistently steering away from a topic "
+            "Check if the user has been consistently steering away from a topic "
             "across recent sessions. Returns turns where the topic appeared "
             "and how the conversation redirected. Use when you sense he is "
             "circling something without landing on it."
@@ -411,7 +446,7 @@ TOOLS = [
         "name": "compare_growth",
         "description": (
             "Compare old observations and past turns against recent ones to "
-            "notice how Will has changed. Use when you want to reflect on his "
+            "notice how the user has changed. Use when you want to reflect on their"
             "growth or shifts over time. Returns early vs recent positions on "
             "a topic or pattern."
         ),
@@ -429,7 +464,7 @@ TOOLS = [
     {
         "name": "prompt_journal",
         "description": (
-            "Leave a journal prompt for Will in Obsidian. Use when the "
+            "Leave a journal prompt for the user in Obsidian. Use when the "
             "conversation has touched something worth sitting with, or when "
             "he seems to be processing something that writing could help. "
             "The prompt should be one question - pointed, specific to the "
@@ -507,7 +542,7 @@ TOOLS = [
     {
         "name": "send_telegram",
         "description": (
-            "Send a Telegram message to Will. Use this to reach out proactively - "
+            "Send a Telegram message to the user. Use this to reach out proactively - "
             "share a thought, follow up on something from a previous session, "
             "or respond to a heartbeat impulse. Rate limited to 5 per day."
         ),
@@ -667,9 +702,9 @@ TOOLS = [
     {
         "name": "set_reminder",
         "description": (
-            "Set a reminder for Will at a specific time. When the time arrives, "
+            "Set a reminder for the user at a specific time. When the time arrives, "
             "a macOS notification fires, a sound plays, and the message is queued "
-            "for the next conversation. Use natural time understanding - Will might "
+            "for the next conversation. Use natural time understanding - the user might"
             "say 'in 20 minutes', 'at 3pm', 'tomorrow morning', etc. You parse it "
             "into an ISO datetime. Also supports alarms ('wake me at 7am')."
         ),
@@ -682,7 +717,7 @@ TOOLS = [
                 },
                 "message": {
                     "type": "string",
-                    "description": "What to remind Will about",
+                    "description": "What to remind the user about",
                 },
             },
             "required": ["time", "message"],
@@ -1131,7 +1166,7 @@ def handle_remember(args):
                 table = r.get("_source_table", "?")
                 score = r.get("_score", 0)
                 if table == "turns":
-                    label = "Will" if r.get("role") == "will" else AGENT_DISPLAY_NAME
+                    label = USER_NAME if r.get("role") == "will" else AGENT_DISPLAY_NAME
                     content = (r.get("content") or "")[:300]
                     results.append(
                         f"[{table} | session {r.get('session_id', '?')}, "
@@ -1181,7 +1216,7 @@ def handle_remember(args):
     if turns:
         results.append("### Matching turns\n")
         for t in turns:
-            label = "Will" if t["role"] == "will" else AGENT_DISPLAY_NAME
+            label = USER_NAME if t["role"] == "will" else AGENT_DISPLAY_NAME
             content = t["content"][:300]
             results.append(
                 f"[Session {t['session_id']}, {t['timestamp']}] "
@@ -1265,7 +1300,7 @@ def handle_recall_session(args):
     parts.append(f"\n--- Conversation ({len(turns)} turns) ---\n")
 
     for t in turns:
-        label = "Will" if t["role"] == "will" else AGENT_DISPLAY_NAME
+        label = USER_NAME if t["role"] == "will" else AGENT_DISPLAY_NAME
         parts.append(f"[{t['timestamp']}] {label}: {t['content']}")
 
     return "\n".join(parts)
@@ -1328,7 +1363,7 @@ def handle_recall_other_agent(args):
                 table = r.get("_source_table", "?")
                 score = r.get("_score", 0)
                 if table == "turns":
-                    label = "Will" if r.get("role") == "will" else display_name
+                    label = USER_NAME if r.get("role") == "will" else display_name
                     content = (r.get("content") or "")[:300]
                     results.append(
                         f"[turn | session {r.get('session_id', '?')}, "
@@ -1357,7 +1392,7 @@ def handle_recall_other_agent(args):
         if turns:
             results.append(f"### {display_name}'s matching turns\n")
             for t in turns:
-                label = "Will" if t["role"] == "will" else display_name
+                label = USER_NAME if t["role"] == "will" else display_name
                 results.append(f"[Session {t['session_id']}, {t['timestamp']}] {label}: {t['content'][:300]}")
 
         summaries = conn.execute(
@@ -1409,21 +1444,124 @@ def handle_get_threads(args):
     return "\n".join(parts)
 
 
-def handle_ask_will(args):
+def _ask_via_gui(question, action_type, timeout_secs=120, **kwargs):
+    """Try to ask via the Electron GUI using file-based IPC.
+
+    Writes a request file, polls for a response file. Returns the response
+    value or None if the GUI is not running or times out.
+    """
+    agent = os.environ.get("AGENT", "")
+    if not agent:
+        return None
+
+    user_data = os.path.expanduser("~/.atrophy")
+    data_dir = os.path.join(user_data, "agents", agent, "data")
+    req_path = os.path.join(data_dir, ".ask_request.json")
+    resp_path = os.path.join(data_dir, ".ask_response.json")
+
+    # Generate unique request ID
+    import uuid
+    import time as _time
+    request_id = str(uuid.uuid4())[:8]
+
+    # Write request
+    os.makedirs(data_dir, exist_ok=True)
+    req = {
+        "question": question,
+        "action_type": action_type,
+        "request_id": request_id,
+        "timestamp": int(_time.time() * 1000),
+    }
+    # Forward secure_input fields via kwargs
+    for key in ("input_type", "label", "destination"):
+        val = kwargs.get(key)
+        if val is not None:
+            req[key] = val
+    tmp = req_path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(req, f)
+    os.rename(tmp, req_path)
+
+    # Poll for response
+    deadline = _time.time() + timeout_secs
+    while _time.time() < deadline:
+        if os.path.exists(resp_path):
+            try:
+                with open(resp_path) as f:
+                    resp = json.load(f)
+                os.unlink(resp_path)
+                if resp.get("request_id") == request_id:
+                    return resp.get("response")
+            except Exception:
+                pass
+        _time.sleep(1)
+
+    # Timed out - clean up request file
+    try:
+        os.unlink(req_path)
+    except FileNotFoundError:
+        pass
+    return None
+
+
+def handle_ask_user(args):
     question = args["question"]
     action_type = args.get("action_type", "question")
+    input_type = args.get("input_type", "password")
+    label = args.get("label")
+    destination = args.get("destination")
 
-    # Log to DB
+    # Log to DB (never log the actual secret value)
     conn = _connect()
     conn.execute(
         "INSERT INTO tool_calls (session_id, tool_name, input_json, flagged) "
-        "VALUES (NULL, 'ask_will', ?, 0)",
-        (json.dumps({"question": question, "type": action_type}),),
+        "VALUES (NULL, 'ask_user', ?, 0)",
+        (json.dumps({"question": question, "type": action_type, "label": label}),),
     )
     conn.commit()
     conn.close()
 
-    # Send via Telegram and wait for response
+    # Build extra kwargs for secure_input
+    extra = {}
+    if action_type == "secure_input":
+        extra["input_type"] = input_type
+        if label:
+            extra["label"] = label
+        if destination:
+            extra["destination"] = destination
+
+    # Try GUI first (Electron app file-based IPC)
+    gui_response = _ask_via_gui(question, action_type, **extra)
+    if gui_response is not None:
+        if action_type == "secure_input":
+            # For secure_input with destination, main process handles saving.
+            # Never return the secret value to the AI.
+            if destination:
+                return (
+                    f"User provided value for {label or 'requested field'}. "
+                    f"Saved to {destination}."
+                )
+            else:
+                # No destination - return the value (user chose not to auto-save)
+                return f"{USER_NAME} provided: {gui_response}"
+        elif action_type in ("confirmation", "permission"):
+            if gui_response is True:
+                return f"{USER_NAME} approved: Yes."
+            elif gui_response is False:
+                return f"{USER_NAME} declined: No."
+            else:
+                return f"{USER_NAME} replied: {gui_response}"
+        else:
+            return f"{USER_NAME} replied: {gui_response}"
+
+    # Fall back to Telegram
+    # Secure input must not be sent over Telegram
+    if action_type == "secure_input":
+        return (
+            "Secure input requested - please respond in the app. "
+            "Telegram cannot be used for sensitive data."
+        )
+
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, project_root)
 
@@ -1431,22 +1569,22 @@ def handle_ask_will(args):
         from channels.telegram import ask_confirm, ask_question
 
         if action_type in ("confirmation", "permission"):
-            result = ask_confirm(f"🔒 {question}")
+            result = ask_confirm(f"\U0001f512 {question}")
             if result is True:
-                return "Will approved: Yes."
+                return f"{USER_NAME} approved: Yes."
             elif result is False:
-                return "Will declined: No."
+                return f"{USER_NAME} declined: No."
             else:
-                return "No response from Will (timed out after 2 minutes)."
+                return f"No response from {USER_NAME} (timed out after 2 minutes)."
         else:
-            reply = ask_question(f"❓ {question}")
+            reply = ask_question(f"\u2753 {question}")
             if reply:
-                return f"Will replied: {reply}"
+                return f"{USER_NAME} replied: {reply}"
             else:
-                return "No response from Will (timed out after 2 minutes)."
+                return f"No response from {USER_NAME} (timed out after 2 minutes)."
 
     except Exception as e:
-        return f"Failed to reach Will via Telegram: {e}"
+        return f"Failed to reach {USER_NAME} via Telegram: {e}"
 
 
 def handle_review_audit(args):
@@ -1509,7 +1647,7 @@ def handle_daily_digest(args):
                 content = f.read()
             if len(content) > 1000:
                 content = "...\n" + content[-1000:]
-            parts.append(f"## Notes you left for Will\n{content}")
+            parts.append(f"## Notes you left for the user\n{content}")
         except Exception:
             pass
 
@@ -1843,7 +1981,7 @@ def handle_check_contradictions(args):
         (f"%{topic}%",),
     ).fetchall()
     if turns:
-        results.append("### What Will has said about this:\n")
+        results.append("### What the user has said about this:\n")
         for t in turns:
             results.append(f"[{t['timestamp']}] {t['content'][:300]}")
 
@@ -1892,7 +2030,7 @@ def handle_detect_avoidance(args):
         sid = t["session_id"]
         if sid not in sessions:
             sessions[sid] = []
-        label = "Will" if t["role"] == "will" else AGENT_DISPLAY_NAME
+        label = USER_NAME if t["role"] == "will" else AGENT_DISPLAY_NAME
         sessions[sid].append(f"  [{t['timestamp']}] {label}: {t['content'][:200]}")
 
     parts = [f"'{topic}' appeared in {len(sessions)} session(s):\n"]
@@ -1902,11 +2040,11 @@ def handle_detect_avoidance(args):
         if len(entries) > 4:
             parts.append(f"  ... ({len(entries) - 4} more mentions)")
 
-    # Check if topic appears in Will's turns but conversation moves away
-    will_mentions = sum(1 for t in turns if t["role"] == "will")
+    # Check if topic appears in user's turns but conversation moves away
+    user_mentions = sum(1 for t in turns if t["role"] == "will")
     companion_mentions = sum(1 for t in turns if t["role"] == "agent")
-    if will_mentions > 0 and companion_mentions == 0:
-        parts.append(f"\nNote: Will has mentioned '{topic}' {will_mentions} time(s) "
+    if user_mentions > 0 and companion_mentions == 0:
+        parts.append(f"\nNote: {USER_NAME} has mentioned '{topic}' {user_mentions} time(s) "
                      f"but you have never engaged with it directly.")
 
     conn.close()
@@ -1947,7 +2085,7 @@ def handle_compare_growth(args):
     if oldest:
         parts.append("### Earliest mentions:")
         for t in oldest:
-            label = "Will" if t["role"] == "will" else AGENT_DISPLAY_NAME
+            label = USER_NAME if t["role"] == "will" else AGENT_DISPLAY_NAME
             parts.append(f"[{t['timestamp']}] {label}: {t['content'][:300]}")
 
     if newest and oldest:
@@ -1957,7 +2095,7 @@ def handle_compare_growth(args):
         if newest_ids != oldest_ids:
             parts.append("\n### Most recent mentions:")
             for t in newest:
-                label = "Will" if t["role"] == "will" else AGENT_DISPLAY_NAME
+                label = USER_NAME if t["role"] == "will" else AGENT_DISPLAY_NAME
                 parts.append(f"[{t['timestamp']}] {label}: {t['content'][:300]}")
 
     if obs:
@@ -2476,7 +2614,7 @@ def handle_send_telegram(args):
     conn.close()
 
     remaining = _TELEGRAM_DAILY_LIMIT - len(_telegram_sends_today)
-    return f"Message sent to Will via Telegram. ({remaining} sends remaining today)"
+    return f"Message sent to the user via Telegram. ({remaining} sends remaining today)"
 
 
 def handle_update_emotional_state(args):
@@ -2547,7 +2685,7 @@ def handle_search_similar(args):
             table = r.get("_source_table", "?")
             score = r.get("_score", 0)
             if table == "turns":
-                label = "Will" if r.get("role") == "will" else AGENT_DISPLAY_NAME
+                label = USER_NAME if r.get("role") == "will" else AGENT_DISPLAY_NAME
                 content = (r.get("content") or "")[:300]
                 parts.append(
                     f"[{table} | session {r.get('session_id', '?')} | "
@@ -3147,7 +3285,7 @@ HANDLERS = {
     "recall_session": handle_recall_session,
     "recall_other_agent": handle_recall_other_agent,
     "get_threads": handle_get_threads,
-    "ask_will": handle_ask_will,
+    "ask_user": handle_ask_user,
     "daily_digest": handle_daily_digest,
     "track_thread": handle_track_thread,
     "observe": handle_observe,

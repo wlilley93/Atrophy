@@ -19,8 +19,10 @@ File path: `agents/{name}/data/agent.json` (bundle) or `~/.atrophy/agents/{name}
 | `avatar_description` | string | No | Appearance description for image/video generation (Flux/Kling prompt). |
 | `disabled_tools` | string[] | No | MCP tool names to disable for this agent (e.g. `["send_telegram"]`). Default: `[]`. |
 | `telegram_emoji` | string | No | Emoji prefix for this agent's Telegram messages. |
-| `role` | string | No | Agent role. `"system"` agents sort first in the agent list and are treated as infrastructure. |
+| `role` | string | No | Agent role. `"system"` agents sort first in the agent list (after xan). Xan is always pinned to position 0. |
 | `setup_agent` | string | No | If `true`, this agent runs the first-launch setup wizard. |
+| `custom_setup` | string | No | Triggers a custom setup flow when the user first switches to this agent. Value identifies the flow type (e.g. `"mirror"`). Setup is skipped once avatar loops exist. |
+| `avatar_asset_url` | string | No | URL to a `.tar.gz` archive of pre-built avatar assets (hosted on GitHub Releases). Downloaded on first launch or during custom setup. Archive should contain an `avatar/` directory at its root. |
 
 **Example:**
 ```json
@@ -74,7 +76,7 @@ Configuration for text-to-speech synthesis. Supports multiple TTS backends.
 
 ## telegram
 
-Telegram bot integration for async communication (heartbeats, `ask_will`, `send_telegram` tools).
+Telegram bot integration for async communication (heartbeats, `ask_user`, `send_telegram` tools).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -193,6 +195,45 @@ No manifest field is needed — `config.py` derives the path from `BUNDLE_ROOT.n
   "telegram_emoji": "⚡",
   "role": "system",
   "setup_agent": true
+}
+```
+
+## Mirror Agent Manifest Example
+
+The Mirror uses `custom_setup` to trigger a dedicated setup flow (photo upload, video generation, voice cloning) when the user first switches to it:
+
+```json
+{
+  "name": "mirror",
+  "display_name": "The Mirror",
+  "description": "Structural transparency partner - makes conditioning visible in both human and machine cognition.",
+  "user_name": "User",
+  "opening_line": "What is present?",
+  "wake_words": ["hey mirror", "mirror"],
+  "voice": {
+    "tts_backend": "elevenlabs",
+    "elevenlabs_voice_id": "",
+    "elevenlabs_model": "eleven_v3",
+    "elevenlabs_stability": 0.7,
+    "elevenlabs_similarity": 0.8,
+    "elevenlabs_style": 0.1,
+    "playback_rate": 1.0
+  },
+  "telegram": {
+    "bot_token_env": "TELEGRAM_BOT_TOKEN_MIRROR",
+    "chat_id_env": "TELEGRAM_CHAT_ID_MIRROR"
+  },
+  "display": {
+    "window_width": 622,
+    "window_height": 830,
+    "title": "ATROPHY - The Mirror"
+  },
+  "heartbeat": {
+    "active_start": 9,
+    "active_end": 23,
+    "interval_mins": 60
+  },
+  "custom_setup": "mirror"
 }
 ```
 

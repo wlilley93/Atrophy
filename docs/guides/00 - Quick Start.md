@@ -300,15 +300,15 @@ On first run, the app performs initialization in a specific order. Understanding
 4. **Loads the default agent** (`xan`) and initializes its SQLite database
 5. **Checks for setup completion** by reading `setup_complete` from `~/.atrophy/config.json`
 
-If `setup_complete` is not set (first run), the renderer launches the **setup wizard** - a conversational AI-guided flow that walks you through personalizing the system:
+If `setup_complete` is not set (first run), the **setup flow** activates - a conversational process that runs inside the main Xan chat:
 
-1. **Welcome** - asks your name, sets `USER_NAME` in config
-2. **Capability showcase** - Xan introduces itself and demonstrates the system's capabilities
-3. **Choice** - build a companion agent now, or skip. If you skip, Xan marks setup complete and becomes your default agent
-4. **Agent creation** (if not skipped) - Xan uses its metaprompt to extract identity through conversation (3-5 exchanges), then outputs an `AGENT_CONFIG` JSON block with display name, opening line, origin story, core nature, character traits, values, relationship dynamics, friction modes, and writing style
-5. **Service setup** - optionally configure ElevenLabs, Telegram, and Google
+1. **Welcome overlay** - asks your name, sets `USER_NAME` in config, then dismisses
+2. **Opening text** - Xan's pre-baked introduction appears in the main Transcript
+3. **Service cards** - inline cards appear between Transcript and InputBar for ElevenLabs (voice), Fal (images/video), Telegram (messaging), and Google (workspace). Each can be saved or skipped
+4. **Agent creation** - after services, the InputBar routes to wizard inference. Xan guides you through creating a companion via 3-5 conversational exchanges, then outputs an `AGENT_CONFIG` JSON block
+5. **Creating/Done overlays** - brief overlays while the agent is scaffolded, then auto-dismiss
 
-After the wizard completes, `setup_complete: true` is written to `~/.atrophy/config.json`. The wizard can be re-run from Settings > About > Reset Setup Wizard.
+After the flow completes, `setup_complete: true` is written to `~/.atrophy/config.json`. The wizard can be re-run from Settings > About > Reset Setup Wizard.
 
 **Obsidian is optional.** If no Obsidian vault is found at the default path (`~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind`), the system falls back to `~/.atrophy/agents/<name>/` for all note, skill, and workspace operations. The `OBSIDIAN_AVAILABLE` flag in config controls this behavior, and it is checked automatically at startup.
 

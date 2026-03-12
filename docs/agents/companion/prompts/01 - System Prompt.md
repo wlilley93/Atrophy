@@ -14,7 +14,7 @@ The Obsidian version takes precedence. The companion can self-modify the Obsidia
 The system prompt covers:
 
 1. **Origins** — the founding conversation, what it meant, what carries forward
-2. **Who Will Is** — personality profile, patterns, capabilities, tensions
+2. **Who the User Is** — personality profile, patterns, capabilities, tensions
 3. **Companion's Role** — friction mechanisms, communication style, agency boundaries
 4. **Capabilities** — labeled entries describing what the agent is good at (e.g. PRESENCE, MEMORY, RESEARCH, VOICE). Used for self-awareness, Telegram routing/bidding, and deferral decisions
 5. **Memory & Continuity** — three memory layers, active recall tools, compaction handling

@@ -93,7 +93,7 @@ def _gather_context() -> str:
 
 _HEARTBEAT_PROMPT = (
     "[HEARTBEAT CHECK - internal evaluation, not a conversation]\n\n"
-    "You are deciding whether to reach out to Will unprompted. "
+    "You are deciding whether to reach out to the user unprompted. "
     "You have access to your full conversation history and memory tools.\n\n"
     "First, review your state - use recall, daily_digest, or your memory tools "
     "if you need to refresh context. You may also update your HEARTBEAT.md "

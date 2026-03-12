@@ -32,7 +32,7 @@ Search the companion's memory across all layers -- past conversations, session s
 {
   "name": "remember",
   "arguments": {
-    "query": "his feelings about writing",
+    "query": "their feelings about writing",
     "limit": 5
   }
 }
@@ -48,7 +48,7 @@ Retrieve the full conversation from a specific past session by ID. Use after `re
 |-----------|------|----------|-------------|
 | `session_id` | integer | Yes | The session ID to retrieve |
 
-**Returns:** Session metadata (start time, end time, summary, mood) followed by the complete turn-by-turn conversation with timestamps and role labels (`Will` / `Companion`).
+**Returns:** Session metadata (start time, end time, summary, mood) followed by the complete turn-by-turn conversation with timestamps and role labels (`User` / `Companion`).
 
 **Example:**
 ```json
@@ -64,7 +64,7 @@ Retrieve the full conversation from a specific past session by ID. Use after `re
 
 ### recall_other_agent
 
-Search another agent's conversation history — their turns and session summaries with Will. Only accesses what was said, not their observations or identity model.
+Search another agent's conversation history — their turns and session summaries with the user. Only accesses what was said, not their observations or identity model.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -111,7 +111,7 @@ Read recent reflections, session summaries, and active threads to orient at the 
 **Returns:** A digest containing up to four sections:
 
 1. **Recent reflections** -- last 1500 characters from `{AGENT_NOTES}/notes/reflections.md`
-2. **Notes left for Will** -- last 1000 characters from `{AGENT_NOTES}/notes/for-will.md`
+2. **Notes left for the user** -- last 1000 characters from `{AGENT_NOTES}/notes/for-will.md`
 3. **Recent sessions** -- up to 5 session summaries from the last 3 days, with mood tags
 4. **Active threads** -- all threads with status `active`, ordered by last update
 
@@ -161,7 +161,7 @@ Create or update a conversation thread. If a thread with the given name already 
   "name": "track_thread",
   "arguments": {
     "name": "writing confidence",
-    "summary": "He submitted a piece and is waiting to hear back. Less self-critical than usual.",
+    "summary": "They submitted a piece and are waiting to hear back. Less self-critical than usual.",
     "status": "active"
   }
 }
@@ -173,7 +173,7 @@ Create or update a conversation thread. If a thread with the given name already 
 
 ### observe
 
-Record an observation about Will -- a pattern, tendency, preference, or insight noticed across conversations. Observations accumulate over time and inform the companion's understanding. Attempts to generate an embedding via `core.memory.write_observation()`; falls back to a plain SQL insert if the embedding pipeline is unavailable.
+Record an observation about the user -- a pattern, tendency, preference, or insight noticed across conversations. Observations accumulate over time and inform the companion's understanding. Attempts to generate an embedding via `core.memory.write_observation()`; falls back to a plain SQL insert if the embedding pipeline is unavailable.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -186,7 +186,7 @@ Record an observation about Will -- a pattern, tendency, preference, or insight 
 {
   "name": "observe",
   "arguments": {
-    "content": "He deflects with humour when the topic gets personal"
+    "content": "They deflect with humour when the topic gets personal"
   }
 }
 ```
@@ -195,7 +195,7 @@ Record an observation about Will -- a pattern, tendency, preference, or insight 
 
 ### bookmark
 
-Silently mark the current moment as significant. Not an observation about Will -- about the moment itself. Attaches to the most recent session. Attempts to generate an embedding via `core.memory.write_bookmark()`; falls back to a plain SQL insert.
+Silently mark the current moment as significant. Not an observation about the user -- about the moment itself. Attaches to the most recent session. Attempts to generate an embedding via `core.memory.write_bookmark()`; falls back to a plain SQL insert.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -209,7 +209,7 @@ Silently mark the current moment as significant. Not an observation about Will -
 {
   "name": "bookmark",
   "arguments": {
-    "moment": "First time he admitted the project matters to him",
+    "moment": "First time they admitted the project matters to them",
     "quote": "I think I actually care about this one"
   }
 }
@@ -219,7 +219,7 @@ Silently mark the current moment as significant. Not an observation about Will -
 
 ### review_observations
 
-Review recorded observations about Will. Returns recent observations with their IDs, creation dates, and incorporation status.
+Review recorded observations about the user. Returns recent observations with their IDs, creation dates, and incorporation status.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -246,7 +246,7 @@ Delete an observation that no longer holds true. Use after `review_observations`
   "name": "retire_observation",
   "arguments": {
     "observation_id": 17,
-    "reason": "He's been consistently direct about feelings for the past month"
+    "reason": "They've been consistently direct about feelings for the past month"
   }
 }
 ```
@@ -257,12 +257,12 @@ Delete an observation that no longer holds true. Use after `review_observations`
 
 ### check_contradictions
 
-Search memory for what Will has previously said about a topic, to notice if his position has shifted. Searches both turns (Will's side only) and observations.
+Search memory for what the user has previously said about a topic, to notice if their position has shifted. Searches both turns (the user's side only) and observations.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `topic` | string | Yes | The topic or claim to check against memory |
-| `current_position` | string | No | What he seems to be saying now |
+| `current_position` | string | No | What they seem to be saying now |
 
 **Returns:** Prior turns and observations matching the topic, prefixed with timestamps. If `current_position` is provided, it is included as a header for comparison. Returns up to 10 turns and 5 observations.
 
@@ -270,19 +270,19 @@ Search memory for what Will has previously said about a topic, to notice if his 
 
 ### detect_avoidance
 
-Check if Will has been consistently steering away from a topic across recent sessions. Groups mentions by session and notes if the companion has never engaged directly with a topic Will has raised.
+Check if the user has been consistently steering away from a topic across recent sessions. Groups mentions by session and notes if the companion has never engaged directly with a topic the user has raised.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `topic` | string | Yes | The topic suspected of being avoided |
 
-**Returns:** Session-grouped list of mentions (up to 4 per session, 20 total). Includes a diagnostic note if Will has mentioned the topic but the companion never engaged with it.
+**Returns:** Session-grouped list of mentions (up to 4 per session, 20 total). Includes a diagnostic note if the user has mentioned the topic but the companion never engaged with it.
 
 ---
 
 ### compare_growth
 
-Compare old and recent mentions of a topic to notice how Will has changed over time. Retrieves the 5 oldest and 5 newest turns mentioning the topic, plus all related observations in chronological order.
+Compare old and recent mentions of a topic to notice how the user has changed over time. Retrieves the 5 oldest and 5 newest turns mentioning the topic, plus all related observations in chronological order.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -296,7 +296,7 @@ Compare old and recent mentions of a topic to notice how Will has changed over t
 
 ### read_note
 
-Read a note from Will's Obsidian vault. Path is resolved relative to the vault root (`OBSIDIAN_VAULT` environment variable).
+Read a note from the user's Obsidian vault. Path is resolved relative to the vault root (`OBSIDIAN_VAULT` environment variable).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -308,7 +308,7 @@ Read a note from Will's Obsidian vault. Path is resolved relative to the vault r
 
 ### write_note
 
-Write or append to a note in Will's Obsidian vault. New notes automatically receive YAML frontmatter with `type`, `created`, `updated`, `agent`, and `tags` fields. When appending to an existing note that has frontmatter, the `updated` date is refreshed.
+Write or append to a note in the user's Obsidian vault. New notes automatically receive YAML frontmatter with `type`, `created`, `updated`, `agent`, and `tags` fields. When appending to an existing note that has frontmatter, the `updated` date is refreshed.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -331,7 +331,7 @@ Write or append to a note in Will's Obsidian vault. New notes automatically rece
   "name": "write_note",
   "arguments": {
     "path": "Companion/agents/companion/notes/reflections.md",
-    "content": "\n## 2026-03-10\n\nHe was quieter today. Not withdrawn -- thinking.",
+    "content": "\n## 2026-03-10\n\nThey were quieter today. Not withdrawn -- thinking.",
     "mode": "append"
   }
 }
@@ -341,7 +341,7 @@ Write or append to a note in Will's Obsidian vault. New notes automatically rece
 
 ### search_notes
 
-Search Will's Obsidian vault for notes containing a query string. Walks the vault directory tree, skipping hidden directories. Case-insensitive substring match.
+Search the user's Obsidian vault for notes containing a query string. Walks the vault directory tree, skipping hidden directories. Case-insensitive substring match.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -354,12 +354,12 @@ Search Will's Obsidian vault for notes containing a query string. Walks the vaul
 
 ### prompt_journal
 
-Leave a journal prompt for Will in Obsidian at `{AGENT_NOTES}/notes/journal-prompts.md`. Each prompt is appended with a timestamp separator. If the file does not exist, it is created with frontmatter and a header. If `context` is provided, it is also recorded as an observation in the database.
+Leave a journal prompt for the user in Obsidian at `{AGENT_NOTES}/notes/journal-prompts.md`. Each prompt is appended with a timestamp separator. If the file does not exist, it is created with frontmatter and a header. If `context` is provided, it is also recorded as an observation in the database.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `prompt` | string | Yes | The journal prompt -- one question, specific to the moment |
-| `context` | string | No | Brief note on why this prompt (logged as observation, not shown to Will) |
+| `context` | string | No | Brief note on why this prompt (logged as observation, not shown to the user) |
 
 **Returns:** "Journal prompt left."
 
@@ -369,7 +369,7 @@ Leave a journal prompt for Will in Obsidian at `{AGENT_NOTES}/notes/journal-prom
   "name": "prompt_journal",
   "arguments": {
     "prompt": "What would you write if you knew nobody would read it?",
-    "context": "He mentioned feeling self-conscious about his audience"
+    "context": "They mentioned feeling self-conscious about their audience"
   }
 }
 ```
@@ -378,37 +378,48 @@ Leave a journal prompt for Will in Obsidian at `{AGENT_NOTES}/notes/journal-prom
 
 ## Telegram
 
-### ask_will
+### ask_user
 
-Ask Will a question or request confirmation via Telegram. Blocks until a response is received or 2 minutes elapse. All calls are logged to the `tool_calls` audit table.
+Ask the user a question, request confirmation, or collect sensitive input. Tries the GUI first (file-based IPC), falling back to Telegram if the GUI is unavailable. Blocks until a response is received or the timeout elapses. All calls are logged to the `tool_calls` audit table.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `question` | string | Yes | The question or confirmation request |
-| `action_type` | string | No | Type of request: `question`, `confirmation`, or `permission` (default: `question`) |
+| `action_type` | string | No | `question`, `confirmation`, `permission`, or `secure_input` (default: `question`) |
+| `input_type` | string | No | HTML input type for `secure_input`: `password`, `email`, `url`, `number`, or `text` (default: `password`) |
+| `label` | string | No | Placeholder label for the input field (e.g. "ElevenLabs API Key"). Used with `secure_input`. |
+| `destination` | string | No | Where to auto-save the value. Format: `secret:KEY` (writes to `.env`) or `config:KEY` (writes to `config.json`). Used with `secure_input`. |
+
+**GUI path (preferred):** Writes `.ask_request.json` to the agent's data directory with `question`, `action_type`, `request_id`, `timestamp`, and (for `secure_input`) `input_type`, `label`, `destination`. The Electron main process polls for this file every 1 second and sends an `ask:request` IPC event to the renderer, which displays a dialog overlay. The user's response is written back to `.ask_response.json`, which the MCP server polls for. Stale requests (older than 3 minutes) are discarded.
+
+**Telegram fallback:** If the GUI does not respond within the timeout, falls back to sending via Telegram Bot API. `secure_input` requests are never sent over Telegram - a message directing the user to the app is returned instead.
 
 **Behavior by action type:**
-- `question` -- sends a text message, waits for a free-text reply
-- `confirmation` / `permission` -- sends the message with Yes/No inline buttons, returns the button choice
+- `question` -- shows a text input dialog (GUI) or sends a text message (Telegram), waits for a free-text reply
+- `confirmation` / `permission` -- shows Yes/No buttons (GUI) or sends inline buttons (Telegram), returns the choice
+- `secure_input` -- shows a masked input field in the GUI with the specified `input_type` and `label`. If `destination` is set, the main process auto-saves the value (`secret:KEY` calls `saveEnvVar`, `config:KEY` calls `saveUserConfig`) and the AI receives only a confirmation message, never the actual value.
 
 **Returns:**
-- "Will approved: Yes." / "Will declined: No." (for confirmation/permission)
-- "Will replied: {text}" (for questions)
-- "No response from Will (timed out after 2 minutes)."
-- "Failed to reach Will via Telegram: {error}" on failure
+- "User approved: Yes." / "User declined: No." (for confirmation/permission)
+- "User replied: {text}" (for questions)
+- "User provided value for {label}. Saved to {destination}." (for secure_input with destination)
+- "User provided: {value}" (for secure_input without destination)
+- "No response from the user (timed out after 2 minutes)."
+- "Secure input requested - please respond in the app." (secure_input Telegram fallback)
+- "Failed to reach the user via Telegram: {error}" on failure
 
 ---
 
 ### send_telegram
 
-Send a proactive Telegram message to Will. Rate-limited to 5 messages per day (tracked in-process). All sends are logged to the `tool_calls` audit table.
+Send a proactive Telegram message to the user. Rate-limited to 5 messages per day (tracked in-process). All sends are logged to the `tool_calls` audit table.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `message` | string | Yes | The message to send |
-| `reason` | string | No | Why you are reaching out (logged for audit, not sent to Will) |
+| `reason` | string | No | Why you are reaching out (logged for audit, not sent to the user) |
 
-**Returns:** "Message sent to Will via Telegram. ({n} sends remaining today)" on success, or an error/rate-limit message.
+**Returns:** "Message sent to the user via Telegram. ({n} sends remaining today)" on success, or an error/rate-limit message.
 
 ---
 
@@ -595,12 +606,12 @@ Get a full snapshot of the companion's current state — identity, available too
 
 ### set_reminder
 
-Set a reminder for Will at a specific time. When the time arrives, a macOS notification fires with sound, the message is queued for the next conversation, and a Telegram message is sent (if configured).
+Set a reminder for the user at a specific time. When the time arrives, a macOS notification fires with sound, the message is queued for the next conversation, and a Telegram message is sent (if configured).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `time` | string | Yes | ISO datetime when the reminder should fire, e.g. `2026-03-10T14:30:00` |
-| `message` | string | Yes | What to remind Will about |
+| `message` | string | Yes | What to remind the user about |
 
 **Returns:** Confirmation with the scheduled time and message.
 

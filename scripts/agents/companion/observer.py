@@ -112,7 +112,7 @@ def observe():
     # Build transcript
     transcript_lines = []
     for t in turns:
-        role = "Will" if t["role"] == "will" else AGENT_DISPLAY_NAME
+        role = "User" if t["role"] == "will" else AGENT_DISPLAY_NAME
         content = t["content"]
         if len(content) > 500:
             content = content[:500] + "..."

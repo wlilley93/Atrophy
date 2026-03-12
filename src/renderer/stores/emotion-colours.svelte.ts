@@ -103,7 +103,6 @@ export const EMOTIONS: Record<EmotionType, EmotionSpec> = {
 // -- Defaults --
 
 export const DEFAULT_COLOUR: HSLColour = COLOURS.blue;
-export const DEFAULT_CLIP = 'bounce_playful';
 export const REVERT_TIMEOUT_MS = 12_000;
 
 // -- Classifier --
@@ -165,17 +164,6 @@ export function getReaction(emotion: EmotionType): { colour: HSLColour; clip: st
   const spec = EMOTIONS[emotion];
   if (!spec) return null;
   return { colour: spec.colour, clip: spec.clip };
-}
-
-/** Build the avatar clip path for a given colour and clip name. */
-export function getClipPath(colour: string, clip: string, agentName = 'xan'): string {
-  const home = typeof process !== 'undefined' ? process.env.HOME ?? '' : '';
-  return `${home}/.atrophy/agents/${agentName}/avatar/loops/${colour}/loop_${clip}.mp4`;
-}
-
-/** Get the default ambient loop path. */
-export function getDefaultLoop(agentName = 'xan'): string {
-  return getClipPath('blue', DEFAULT_CLIP, agentName);
 }
 
 // -- Reactive state --

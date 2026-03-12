@@ -85,7 +85,7 @@ interface ConversationTexture {
   totalTurns: number;
   byRole: Record<string, number>;
   significantAgent: TurnRow[];
-  significantWill: TurnRow[];
+  significantUser: TurnRow[];
 }
 
 interface ToolUsage {
@@ -209,7 +209,7 @@ function getConversationTexture(): ConversationTexture {
        ORDER BY t.timestamp DESC LIMIT 10`,
     ).all() as TurnRow[];
 
-    const significantWill = db.prepare(
+    const significantUser = db.prepare(
       `SELECT t.content, t.timestamp, t.weight FROM turns t
        JOIN sessions s ON t.session_id = s.id
        WHERE (t.weight >= 3 OR s.notable = 1) AND t.role = 'will'
@@ -220,7 +220,7 @@ function getConversationTexture(): ConversationTexture {
       totalTurns: totalTurns.n,
       byRole: Object.fromEntries(byRole.map((r) => [r.role, r.n])),
       significantAgent,
-      significantWill,
+      significantUser,
     };
   } finally {
     db.close();
@@ -322,7 +322,7 @@ function readOwnReflections(): string {
   return content;
 }
 
-function readForWill(): string {
+function readForUser(): string {
   const filePath = path.join(notesDir(), 'for-will.md');
   if (!fs.existsSync(filePath)) return '';
 
@@ -452,12 +452,12 @@ function buildMaterial(): string {
       parts.push('## Your significant turns\n' + sigLines.join('\n'));
     }
 
-    if (texture.significantWill.length > 0) {
-      const sigLines = texture.significantWill.map((t) => {
+    if (texture.significantUser.length > 0) {
+      const sigLines = texture.significantUser.map((t) => {
         const c = t.content.length > 300 ? t.content.slice(0, 300) + '...' : t.content;
         return `- [${t.timestamp}] ${c}`;
       });
-      parts.push("## Will's significant turns\n" + sigLines.join('\n'));
+      parts.push("## User's significant turns\n" + sigLines.join('\n'));
     }
   }
 
@@ -477,10 +477,10 @@ function buildMaterial(): string {
     parts.push(`## Your reflections file\n${reflections}`);
   }
 
-  // For Will
-  const forWill = readForWill();
-  if (forWill) {
-    parts.push(`## Things you have left for Will\n${forWill}`);
+  // For the user
+  const forUser = readForUser();
+  if (forUser) {
+    parts.push(`## Things you have left for the user\n${forUser}`);
   }
 
   // Recent journal

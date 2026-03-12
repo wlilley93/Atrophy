@@ -166,7 +166,7 @@ def ask_identity() -> dict:
     data = {}
     data["display_name"] = _ask("What is this agent called?", required=True)
     data["name"] = _slugify(data["display_name"])
-    data["user_name"] = _ask("Who is their human? (your name)", "Will")
+    data["user_name"] = _ask("Who is their human? (your name)", "User")
 
     print("\n  Now the deeper stuff. Take your time.\n")
 
@@ -1059,7 +1059,7 @@ def generate_tools_md() -> str:
     - `detect_avoidance` - notice patterns of avoidance
     - `check_contradictions` - find contradictions in observations
     - `bookmark` - mark a moment as significant
-    - `ask_will` - ask a direct question (delivered as notification)
+    - `ask_user` - ask a direct question (delivered as notification)
 
     ## Autonomous Actions
 
@@ -1110,7 +1110,7 @@ def generate_tools_md() -> str:
     - Checking weather, stocks, sports scores
     - Reading any public webpage
 
-    You MUST ask Will for explicit permission before:
+    You MUST ask the user for explicit permission before:
     - **Posting** anything (social media, forums, comments, reviews)
     - **Purchasing** anything (even free signups that require payment details)
     - **Deleting** anything (accounts, posts, data)
@@ -1118,7 +1118,7 @@ def generate_tools_md() -> str:
     - **Submitting** forms that take real-world action (applications, registrations)
     - **Downloading** files or software
 
-    Use `ask_will` to request permission. Describe exactly what you want to do
+    Use `ask_user` to request permission. Describe exactly what you want to do
     and why. Wait for approval before proceeding. If in doubt, ask.
 
     ## Notes & Workspace
@@ -1796,7 +1796,7 @@ def scaffold_from_config(config: dict) -> str:
     {
         "identity": {
             "display_name": "Oracle",
-            "user_name": "Will",
+            "user_name": "User",
             "origin_story": "...",
             "core_nature": "...",
             "character_traits": "...",

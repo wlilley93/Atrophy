@@ -79,8 +79,11 @@ export function discoverAgents(): AgentInfo[] {
     }
   }
 
-  // System-role agents first, then alphabetical
+  // Xan always first, then system-role agents, then alphabetical
   agents.sort((a, b) => {
+    // Pin xan to position 0
+    if (a.name === 'xan') return -1;
+    if (b.name === 'xan') return 1;
     const aSystem = a.role === 'system' ? 0 : 1;
     const bSystem = b.role === 'system' ? 0 : 1;
     if (aSystem !== bSystem) return aSystem - bSystem;
@@ -294,4 +297,83 @@ export function validateDeferralRequest(target: string, currentAgent: string): b
 export function resetDeferralCounter(): void {
   deferralCount = 0;
   deferralWindowStart = Date.now();
+}
+
+// ---------------------------------------------------------------------------
+// Ask-user file-based communication (MCP ask_user <-> Electron GUI)
+// ---------------------------------------------------------------------------
+
+export interface AskRequest {
+  question: string;
+  action_type: 'question' | 'confirmation' | 'permission' | 'secure_input';
+  request_id: string;
+  timestamp: number;
+  input_type?: 'password' | 'email' | 'url' | 'number' | 'text';
+  label?: string;
+  destination?: string;
+}
+
+export interface AskResponse {
+  request_id: string;
+  response: string | boolean | null;
+  timestamp: number;
+}
+
+function askRequestPath(): string {
+  const config = getConfig();
+  return path.join(USER_DATA, 'agents', config.AGENT_NAME, 'data', '.ask_request.json');
+}
+
+function askResponsePath(): string {
+  const config = getConfig();
+  return path.join(USER_DATA, 'agents', config.AGENT_NAME, 'data', '.ask_response.json');
+}
+
+/** Check for pending ask_user requests (called periodically by main process). */
+export function checkAskRequest(): AskRequest | null {
+  const reqPath = askRequestPath();
+  if (!fs.existsSync(reqPath)) return null;
+  try {
+    const data = fs.readFileSync(reqPath, 'utf-8');
+    const request = JSON.parse(data) as AskRequest;
+    // Don't delete - MCP is still polling. Main process handles it by showing UI.
+    // Stale requests older than 3 minutes are ignored.
+    if (Date.now() - request.timestamp > 180_000) {
+      fs.unlinkSync(reqPath);
+      return null;
+    }
+    return request;
+  } catch {
+    return null;
+  }
+}
+
+/** Write the user's response for MCP to pick up. */
+export function writeAskResponse(requestId: string, response: string | boolean | null): void {
+  const respPath = askResponsePath();
+  const dir = path.dirname(respPath);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const data: AskResponse = {
+    request_id: requestId,
+    response,
+    timestamp: Date.now(),
+  };
+
+  // Atomic write via tmp + rename
+  const tmp = respPath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data));
+  fs.renameSync(tmp, respPath);
+
+  // Clean up request file
+  const reqPath = askRequestPath();
+  try { fs.unlinkSync(reqPath); } catch { /* already gone */ }
+  log.info(`ask_user response written for ${requestId}`);
+}
+
+/** Clean up stale ask files on startup. */
+export function cleanupAskFiles(): void {
+  for (const p of [askRequestPath(), askResponsePath()]) {
+    try { fs.unlinkSync(p); } catch { /* not found */ }
+  }
 }

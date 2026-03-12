@@ -135,6 +135,12 @@ The following properties are grouped by subsystem. Each group is loaded from the
 - `AVATAR_ENABLED: boolean` - `false`
 - `AVATAR_RESOLUTION: number` - `512`
 
+**UI defaults** - initial toggle states on app launch:
+- `SILENCE_TIMER_ENABLED: boolean` - `true`
+- `SILENCE_TIMER_MINUTES: number` - `5`
+- `EYE_MODE_DEFAULT: boolean` - `false`
+- `MUTE_BY_DEFAULT: boolean` - `false`
+
 **State files** - paths to JSON files that persist runtime state between sessions. All are under `DATA_DIR` (the agent's data directory) unless noted otherwise:
 - `EMOTIONAL_STATE_FILE` - `.emotional_state.json`
 - `USER_STATUS_FILE` - `.user_status.json`
@@ -755,7 +761,7 @@ export function runInferenceOneshot(
   effort: EffortLevel = 'low'
 ): Promise<string>;
 ```
-Non-streaming inference using `--print` and `--no-session-persistence`. Messages are formatted as `Will: <content>` / `<AgentName>: <content>`. 30-second timeout. Model validated against `ALLOWED_MODELS` whitelist. Logs usage on completion. This function is used for internal tasks like summary generation, routing decisions, and coherence re-anchoring - cases where streaming is unnecessary and a simple string response suffices.
+Non-streaming inference using `--print` and `--no-session-persistence`. Messages are formatted as `User: <content>` / `<AgentName>: <content>`. 30-second timeout. Model validated against `ALLOWED_MODELS` whitelist. Logs usage on completion. This function is used for internal tasks like summary generation, routing decisions, and coherence re-anchoring - cases where streaming is unnecessary and a simple string response suffices.
 
 ```typescript
 export function runMemoryFlush(
@@ -1950,7 +1956,7 @@ Internal `dispatchToAgent(agentName, text)` is the core of the daemon. It handle
 2. Initializes DB - ensures the target agent's database is open and migrated
 3. Loads system prompt - builds the full prompt for the target agent
 4. Gets last CLI session ID - for conversation continuity
-5. Runs streaming inference with `[Telegram message from Will]` prefix - the prefix helps the agent distinguish Telegram messages from direct GUI input
+5. Runs streaming inference with `[Telegram message from the user]` prefix - the prefix helps the agent distinguish Telegram messages from direct GUI input
 6. Restores original agent config - returns to the previously active agent's settings
 
 The daemon also handles utility commands that are not routed to any agent: `/status` (lists all agents with emoji and enabled/muted state) and `/mute` (toggles mute on a specified agent).

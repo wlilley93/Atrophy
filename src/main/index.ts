@@ -3,31 +3,36 @@
  * Port of main.py - two modes: menu bar (--app) and GUI (--gui).
  */
 
-import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, session as electronSession } from 'electron';
+import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, session as electronSession, powerSaveBlocker } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execFile, execSync, spawn } from 'child_process';
 import { ensureUserData, getConfig, saveUserConfig, saveAgentConfig, saveEnvVar, BUNDLE_ROOT, USER_DATA } from './config';
-import { initDb, closeAll as closeAllDbs } from './memory';
+import { initDb, closeAll as closeAllDbs, writeObservation } from './memory';
 import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
 import { Session } from './session';
 import { setActive } from './status';
 import { detectMoodShift } from './agency';
-import { synthesise, enqueueAudio, setPlaybackCallbacks, clearAudioQueue, playAudio, stopCurrentPlayback } from './tts';
+import { synthesise, enqueueAudio, setPlaybackCallbacks, clearAudioQueue, playAudio, stopCurrentPlayback, setMuted, isMuted } from './tts';
 import { registerAudioHandlers } from './audio';
 import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
-import { discoverAgents, cycleAgent, getAgentState, setAgentState, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, resetDeferralCounter, suspendAgentSession, resumeAgentSession } from './agent-manager';
+import { discoverAgents, cycleAgent, getAgentState, setAgentState, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, resetDeferralCounter, suspendAgentSession, resumeAgentSession, checkAskRequest, writeAskResponse, cleanupAskFiles } from './agent-manager';
 import { runCoherenceCheck } from './sentinel';
 import { drainQueue, drainAgentQueue, drainAllAgentQueues } from './queue';
 import { getAllAgentsUsage, getAllActivity } from './usage';
 import { startServer, stopServer } from './server';
-import { startDaemon, stopDaemon } from './telegram-daemon';
+import { startDaemon, stopDaemon, isDaemonRunning } from './telegram-daemon';
+import { registerBotCommands } from './telegram';
 import { listJobs, toggleCron } from './cron';
 import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
 import { getAppIcon, getTrayIcon, TrayState } from './icon';
 import { initAutoUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater';
 import { ensureAvatarAssets } from './avatar-downloader';
+import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSourcePhoto } from './jobs/generate-mirror-avatar';
+import type { MirrorAvatarProgress } from './jobs/generate-mirror-avatar';
+import { parseArtifacts } from './artifact-parser';
 import { createLogger } from './logger';
 
 const log = createLogger('main');
@@ -44,7 +49,12 @@ let systemPrompt: string | null = null;
 let sentinelTimer: ReturnType<typeof setInterval> | null = null;
 let queueTimer: ReturnType<typeof setInterval> | null = null;
 let deferralTimer: ReturnType<typeof setInterval> | null = null;
+let askUserTimer: ReturnType<typeof setInterval> | null = null;
+let pendingAskId: string | null = null; // track which ask is currently shown in UI
+let pendingAskDestination: string | null = null; // destination for secure_input auto-save
+let artefactTimer: ReturnType<typeof setInterval> | null = null;
 let currentAgentName: string | null = null;
+let keepAwakeBlockerId: number | null = null;
 
 // ---------------------------------------------------------------------------
 // Window creation
@@ -121,8 +131,72 @@ function createWindow(): BrowserWindow {
 }
 
 // ---------------------------------------------------------------------------
+// Keep Awake (prevent system sleep, like Amphetamine)
+// ---------------------------------------------------------------------------
+
+function isKeepAwakeActive(): boolean {
+  return keepAwakeBlockerId !== null && powerSaveBlocker.isStarted(keepAwakeBlockerId);
+}
+
+function enableKeepAwake(): void {
+  if (isKeepAwakeActive()) return;
+  // 'prevent-display-sleep' also prevents system sleep and keeps the display on
+  keepAwakeBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+  log.info(`Keep awake enabled (blocker id=${keepAwakeBlockerId})`);
+  rebuildTrayMenu();
+}
+
+function disableKeepAwake(): void {
+  if (keepAwakeBlockerId !== null) {
+    try { powerSaveBlocker.stop(keepAwakeBlockerId); } catch { /* already stopped */ }
+    log.info(`Keep awake disabled (blocker id=${keepAwakeBlockerId})`);
+    keepAwakeBlockerId = null;
+  }
+  rebuildTrayMenu();
+}
+
+function toggleKeepAwake(): void {
+  if (isKeepAwakeActive()) {
+    disableKeepAwake();
+  } else {
+    enableKeepAwake();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tray (menu bar mode)
 // ---------------------------------------------------------------------------
+
+function rebuildTrayMenu(): void {
+  if (!tray) return;
+
+  const awake = isKeepAwakeActive();
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: awake ? 'Keep Awake (on)' : 'Keep Awake (off)',
+      type: 'checkbox',
+      checked: awake,
+      click: () => toggleKeepAwake(),
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => app.quit(),
+    },
+  ]);
+  tray.setContextMenu(contextMenu);
+}
 
 function createTray(): void {
   // Prefer the hand-crafted menu bar brain icon (template image for macOS
@@ -145,24 +219,7 @@ function createTray(): void {
   }
 
   tray = new Tray(trayIcon);
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      },
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => app.quit(),
-    },
-  ]);
-  tray.setContextMenu(contextMenu);
+  rebuildTrayMenu();
 
   tray.on('click', () => {
     if (mainWindow) {
@@ -215,6 +272,7 @@ function registerIpcHandlers(): void {
       elevenlabsSimilarity: c.ELEVENLABS_SIMILARITY,
       elevenlabsStyle: c.ELEVENLABS_STYLE,
       ttsPlaybackRate: c.TTS_PLAYBACK_RATE,
+      falApiKey: process.env.FAL_KEY ? '***' : '',
       falVoiceId: c.FAL_VOICE_ID,
       // Input
       inputMode: c.INPUT_MODE,
@@ -243,8 +301,17 @@ function registerIpcHandlers(): void {
       // Telegram
       telegramBotToken: c.TELEGRAM_BOT_TOKEN ? '***' : '',
       telegramChatId: c.TELEGRAM_CHAT_ID,
+      telegramDaemonRunning: isDaemonRunning(),
+      // Keep Awake
+      keepAwakeActive: isKeepAwakeActive(),
       // Notifications
       notificationsEnabled: c.NOTIFICATIONS_ENABLED,
+      // Silence timer
+      silenceTimerEnabled: c.SILENCE_TIMER_ENABLED,
+      silenceTimerMinutes: c.SILENCE_TIMER_MINUTES,
+      // UI defaults
+      eyeModeDefault: c.EYE_MODE_DEFAULT,
+      muteByDefault: c.MUTE_BY_DEFAULT,
       // Window
       windowWidth: c.WINDOW_WIDTH,
       windowHeight: c.WINDOW_HEIGHT,
@@ -283,18 +350,22 @@ function registerIpcHandlers(): void {
       'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
       'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
       'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
-      'DISABLED_TOOLS',
+      'DISABLED_TOOLS', 'WAKE_WORDS',
     ]);
     const userKeys = new Set([
-      'USER_NAME', 'INPUT_MODE', 'PTT_KEY', 'WAKE_WORD_ENABLED', 'WAKE_WORDS',
+      'USER_NAME', 'INPUT_MODE', 'PTT_KEY', 'WAKE_WORD_ENABLED',
       'WAKE_CHUNK_SECONDS', 'SAMPLE_RATE', 'MAX_RECORD_SEC',
-      'CLAUDE_EFFORT', 'ADAPTIVE_EFFORT', 'CONTEXT_SUMMARIES',
+      'CLAUDE_BIN', 'CLAUDE_EFFORT', 'ADAPTIVE_EFFORT', 'CONTEXT_SUMMARIES',
       'MAX_CONTEXT_TOKENS', 'VECTOR_SEARCH_WEIGHT', 'EMBEDDING_MODEL',
-      'SESSION_SOFT_LIMIT_MINS', 'NOTIFICATIONS_ENABLED',
+      'EMBEDDING_DIM', 'SESSION_SOFT_LIMIT_MINS', 'NOTIFICATIONS_ENABLED',
+      'SILENCE_TIMER_ENABLED', 'SILENCE_TIMER_MINUTES',
+      'EYE_MODE_DEFAULT', 'MUTE_BY_DEFAULT',
       'AVATAR_ENABLED', 'AVATAR_RESOLUTION', 'OBSIDIAN_VAULT',
       'setup_complete',
     ]);
     const safeKeys = new Set([...agentKeys, ...userKeys]);
+
+    const previousUserName = c.USER_NAME;
 
     for (const [key, value] of Object.entries(updates)) {
       if (!safeKeys.has(key)) continue;
@@ -307,6 +378,20 @@ function registerIpcHandlers(): void {
         userUpdates[key] = value;
       }
     }
+    // When USER_NAME changes, also update agent.json user_name and record it
+    if ('USER_NAME' in userUpdates) {
+      const newName = String(userUpdates.USER_NAME);
+      agentUpdates['user_name'] = newName;
+      if (previousUserName && previousUserName !== newName) {
+        try {
+          writeObservation(
+            `[system] The user changed their name from "${previousUserName}" to "${newName}". ` +
+            `Address them as ${newName} going forward.`,
+          );
+        } catch { /* non-critical */ }
+      }
+    }
+
     if (Object.keys(userUpdates).length > 0) {
       saveUserConfig(userUpdates);
     }
@@ -643,11 +728,22 @@ Output EXACTLY this format - a single fenced JSON block:
           } else if (currentSession && evt.sessionId !== currentSession.cliSessionId) {
             currentSession.setCliSessionId(evt.sessionId);
           }
-          // Record agent turn
+          // Record agent turn (full text including artifact blocks for history)
           if (currentSession && fullText) {
             currentSession.addTurn('agent', fullText);
           }
-          mainWindow.webContents.send('inference:done', fullText);
+
+          // Parse inline artifacts from response
+          const { text: cleanedText, artifacts } = parseArtifacts(fullText);
+          if (artifacts.length > 0) {
+            for (const art of artifacts) {
+              mainWindow.webContents.send('inference:artifact', art);
+            }
+            // Send cleaned text (artifact blocks replaced with placeholders)
+            mainWindow.webContents.send('inference:done', cleanedText);
+          } else {
+            mainWindow.webContents.send('inference:done', fullText);
+          }
           break;
 
         case 'StreamError':
@@ -664,6 +760,7 @@ Output EXACTLY this format - a single fenced JSON block:
   // ── Agent switching (extended) ──
 
   ipcMain.handle('agent:switch', async (_event, name: string) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Invalid agent name');
     // End current session before switching
     if (currentSession && systemPrompt) {
       await currentSession.end(systemPrompt);
@@ -682,10 +779,79 @@ Output EXACTLY this format - a single fenced JSON block:
     currentAgentName = name;
     setLastActiveAgent(name);
 
+    // Check if agent needs custom setup (e.g. Mirror)
+    // Try user-data first, then bundled
+    let customSetup: string | null = null;
+    for (const base of [USER_DATA, BUNDLE_ROOT]) {
+      const jsonPath = path.join(base, 'agents', name, 'data', 'agent.json');
+      try {
+        if (!fs.existsSync(jsonPath)) continue;
+        const manifest = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+        if (manifest.custom_setup && !isMirrorSetupComplete(name)) {
+          customSetup = manifest.custom_setup;
+        }
+        break;
+      } catch { continue; }
+    }
+
     return {
       agentName: config.AGENT_NAME,
       agentDisplayName: config.AGENT_DISPLAY_NAME,
+      customSetup,
     };
+  });
+
+  // ── Mirror setup ──
+
+  ipcMain.handle('mirror:uploadPhoto', async (_event, photoData: ArrayBuffer, filename: string) => {
+    const c = getConfig();
+    const ext = path.extname(filename).toLowerCase() || '.jpg';
+    if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
+      throw new Error('Unsupported image format. Use PNG, JPG, or WebP.');
+    }
+    const saved = saveUserPhoto(c.AGENT_NAME, Buffer.from(photoData), ext);
+    return saved;
+  });
+
+  ipcMain.handle('mirror:generateAvatar', async () => {
+    const c = getConfig();
+    const clips = await generateMirrorAvatar(c.AGENT_NAME, (progress: MirrorAvatarProgress) => {
+      if (mainWindow) {
+        mainWindow.webContents.send('mirror:avatarProgress', progress);
+      }
+    });
+    return clips;
+  });
+
+  ipcMain.handle('mirror:saveVoiceId', async (_event, voiceId: string) => {
+    const c = getConfig();
+    saveAgentConfig(c.AGENT_NAME, { ELEVENLABS_VOICE_ID: voiceId });
+    c.ELEVENLABS_VOICE_ID = voiceId;
+  });
+
+  ipcMain.handle('mirror:checkSetup', () => {
+    const c = getConfig();
+    return {
+      hasPhoto: hasMirrorSourcePhoto(c.AGENT_NAME),
+      hasLoops: isMirrorSetupComplete(c.AGENT_NAME),
+    };
+  });
+
+  ipcMain.handle('mirror:openExternal', (_event, url: string) => {
+    // Only allow specific trusted URLs
+    const allowed = [
+      'https://elevenlabs.io',
+      'https://www.elevenlabs.io',
+    ];
+    if (allowed.some((prefix) => url.startsWith(prefix))) {
+      const { shell } = require('electron');
+      shell.openExternal(url);
+    }
+  });
+
+  ipcMain.handle('mirror:downloadAssets', async () => {
+    const c = getConfig();
+    await ensureAvatarAssets(c.AGENT_NAME, mainWindow);
   });
 
   // ── Cron ──
@@ -698,14 +864,29 @@ Output EXACTLY this format - a single fenced JSON block:
     toggleCron(enabled);
   });
 
+  // ── Keep Awake ──
+
+  ipcMain.handle('keepAwake:toggle', () => {
+    toggleKeepAwake();
+    return isKeepAwakeActive();
+  });
+
+  ipcMain.handle('keepAwake:isActive', () => {
+    return isKeepAwakeActive();
+  });
+
   // ── Telegram daemon ──
 
   ipcMain.handle('telegram:startDaemon', () => {
-    startDaemon();
+    return startDaemon();
   });
 
   ipcMain.handle('telegram:stopDaemon', () => {
     stopDaemon();
+  });
+
+  ipcMain.handle('telegram:isRunning', () => {
+    return isDaemonRunning();
   });
 
   // ── Server ──
@@ -733,16 +914,66 @@ Output EXACTLY this format - a single fenced JSON block:
     const cl = clip || 'bounce_playful';
     // Validate inputs to prevent path traversal
     if (!/^[a-zA-Z0-9_-]+$/.test(col) || !/^[a-zA-Z0-9_-]+$/.test(cl)) return null;
+
+    // Standard agent path: loops/{colour}/loop_{clip}.mp4
     const videoPath = path.join(loopsDir, col, `loop_${cl}.mp4`);
     if (fs.existsSync(videoPath)) {
       return videoPath;
     }
-    // Fallback to ambient_loop.mp4
+
+    // Mirror agent path: loops/ambient_loop_XX.mp4 (flat, numbered)
+    try {
+      const entries = fs.readdirSync(loopsDir);
+      const mirrorClips = entries
+        .filter((f) => /^ambient_loop_\d+\.mp4$/.test(f))
+        .sort();
+      if (mirrorClips.length > 0) {
+        return path.join(loopsDir, mirrorClips[0]);
+      }
+    } catch { /* loopsDir may not exist */ }
+
+    // Legacy fallback: loops/ambient_loop.mp4
     const ambient = path.join(loopsDir, 'ambient_loop.mp4');
     if (fs.existsSync(ambient)) {
       return ambient;
     }
     return null;
+  });
+
+  // List all available loop files for the current agent (for cycling)
+  ipcMain.handle('avatar:listLoops', () => {
+    const c = getConfig();
+    const loopsDir = path.join(c.AVATAR_DIR, 'loops');
+    const results: string[] = [];
+
+    if (!fs.existsSync(loopsDir)) return results;
+
+    try {
+      // Flat mirror-style clips: ambient_loop_XX.mp4
+      const topEntries = fs.readdirSync(loopsDir);
+      for (const f of topEntries) {
+        if (f.endsWith('.mp4')) {
+          results.push(path.join(loopsDir, f));
+        }
+      }
+
+      // Standard agent clips in colour subdirs: {colour}/loop_{clip}.mp4
+      for (const entry of topEntries) {
+        const subdir = path.join(loopsDir, entry);
+        try {
+          const stat = fs.statSync(subdir);
+          if (!stat.isDirectory()) continue;
+          const subEntries = fs.readdirSync(subdir);
+          for (const f of subEntries) {
+            if (f.endsWith('.mp4')) {
+              results.push(path.join(subdir, f));
+            }
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* loopsDir read failed */ }
+
+    return results;
   });
 
   // ── Intro audio ──
@@ -775,6 +1006,96 @@ Output EXACTLY this format - a single fenced JSON block:
     stopCurrentPlayback();
   });
 
+  ipcMain.handle('audio:setMuted', (_event, muted: boolean) => {
+    setMuted(muted);
+  });
+
+  ipcMain.handle('audio:isMuted', () => {
+    return isMuted();
+  });
+
+  // ── GitHub auth ──
+
+  function findGhBin(): string | null {
+    const paths = [
+      '/opt/homebrew/bin/gh',
+      '/usr/local/bin/gh',
+      '/usr/bin/gh',
+    ];
+    for (const p of paths) {
+      if (fs.existsSync(p)) return p;
+    }
+    try {
+      return execSync('which gh', { encoding: 'utf-8', timeout: 3000 }).trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  ipcMain.handle('github:authStatus', async () => {
+    const ghBin = findGhBin();
+    if (!ghBin) {
+      return { installed: false, authenticated: false, account: '' };
+    }
+    return new Promise<{ installed: boolean; authenticated: boolean; account: string }>((resolve) => {
+      execFile(ghBin, ['auth', 'status'], { timeout: 10_000 }, (_err, stdout, stderr) => {
+        const output = (stdout || '') + (stderr || '');
+        const authed = output.includes('Logged in');
+        const match = output.match(/account\s+(\S+)/);
+        resolve({ installed: true, authenticated: authed, account: match?.[1] || '' });
+      });
+    });
+  });
+
+  ipcMain.handle('github:authLogin', async () => {
+    const ghBin = findGhBin();
+    if (!ghBin) return { success: false, error: 'gh CLI not installed. Run: brew install gh' };
+
+    // gh auth login requires interactive stdin for prompts.
+    // Use --hostname and --git-protocol to skip interactive questions,
+    // then --web opens the browser for the actual OAuth flow.
+    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+      let resolved = false;
+      const done = (result: { success: boolean; error?: string }) => {
+        if (resolved) return;
+        resolved = true;
+        resolve(result);
+      };
+
+      const proc = spawn(ghBin, [
+        'auth', 'login',
+        '--hostname', 'github.com',
+        '--git-protocol', 'https',
+        '--web',
+      ], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      let output = '';
+      proc.stdout?.on('data', (d: Buffer) => { output += d.toString(); });
+      proc.stderr?.on('data', (d: Buffer) => { output += d.toString(); });
+
+      // gh may still prompt - pipe newlines to accept defaults
+      proc.stdin?.write('\n');
+      setTimeout(() => { try { proc.stdin?.write('\n'); } catch { /* closed */ } }, 1000);
+
+      proc.on('close', (code) => {
+        done(code === 0
+          ? { success: true }
+          : { success: false, error: output.slice(0, 500) || 'Auth failed' });
+      });
+      proc.on('error', (e) => {
+        done({ success: false, error: e.message });
+      });
+
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        try { proc.kill(); } catch { /* already dead */ }
+        done({ success: false, error: 'Timed out waiting for browser auth' });
+      }, 300_000);
+    });
+  });
+
   // ── Login item ──
 
   ipcMain.handle('install:isEnabled', () => {
@@ -802,6 +1123,7 @@ Output EXACTLY this format - a single fenced JSON block:
   // ── Agent deferral ──
 
   ipcMain.handle('deferral:complete', async (_event, data: { target: string; context: string; user_question: string }) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(data.target)) throw new Error('Invalid agent name');
     // Suspend current agent's session
     if (currentSession && currentSession.cliSessionId) {
       suspendAgentSession(currentAgentName!, currentSession.cliSessionId, currentSession.turnHistory);
@@ -844,6 +1166,55 @@ Output EXACTLY this format - a single fenced JSON block:
 
   ipcMain.handle('queue:drainAll', () => {
     return drainAllAgentQueues();
+  });
+
+  // ── Ask-user (MCP ask_user -> GUI dialog) ──
+
+  ipcMain.handle('ask:respond', (_event, requestId: string, response: string | boolean | null) => {
+    // If a destination was set (secure_input), route the value before writing the response
+    if (pendingAskDestination && typeof response === 'string' && response) {
+      const dest = pendingAskDestination;
+      if (dest.startsWith('secret:')) {
+        const key = dest.slice('secret:'.length);
+        saveEnvVar(key, response);
+      } else if (dest.startsWith('config:')) {
+        const key = dest.slice('config:'.length);
+        saveUserConfig({ [key]: response });
+      }
+    }
+    writeAskResponse(requestId, response);
+    pendingAskId = null;
+    pendingAskDestination = null;
+  });
+
+  // ── Artefacts ──
+
+  ipcMain.handle('artefact:getGallery', () => {
+    const config = getConfig();
+    const indexPath = config.ARTEFACT_INDEX_FILE;
+    if (!fs.existsSync(indexPath)) return [];
+    try {
+      return JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle('artefact:getContent', (_event, filePath: string) => {
+    // Security: only allow reading from artefacts directory
+    const config = getConfig();
+    const artefactsBase = path.join(path.dirname(config.DATA_DIR), 'artefacts');
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(artefactsBase)) {
+      log.warn(`artefact:getContent blocked path traversal: ${filePath}`);
+      return null;
+    }
+    if (!fs.existsSync(resolved)) return null;
+    try {
+      return fs.readFileSync(resolved, 'utf-8');
+    } catch {
+      return null;
+    }
   });
 }
 
@@ -902,6 +1273,15 @@ app.whenReady().then(() => {
     log.info(`resumed agent: ${config.AGENT_NAME}`);
   }
 
+  // Auto-start Telegram daemon if configured
+  if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID) {
+    const started = startDaemon();
+    if (started) {
+      log.info('Telegram daemon auto-started');
+      registerBotCommands().catch(() => { /* non-critical */ });
+    }
+  }
+
   // Sentinel timer - coherence check every 5 minutes
   sentinelTimer = setInterval(() => {
     if (currentSession?.cliSessionId && systemPrompt) {
@@ -940,6 +1320,78 @@ app.whenReady().then(() => {
       context: request.context,
       user_question: request.user_question,
     });
+  }, 2_000);
+
+  // Ask-user watcher - check for MCP ask_user requests every 1s
+  cleanupAskFiles();
+  askUserTimer = setInterval(() => {
+    if (!mainWindow) return;
+    if (pendingAskId) return; // already showing a dialog
+    const request = checkAskRequest();
+    if (!request) return;
+
+    pendingAskId = request.request_id;
+    pendingAskDestination = request.destination || null;
+    mainWindow.webContents.send('ask:request', {
+      question: request.question,
+      action_type: request.action_type,
+      request_id: request.request_id,
+      input_type: request.input_type,
+      label: request.label,
+      destination: request.destination,
+    });
+  }, 1_000);
+
+  // Artefact display watcher - check for MCP create_artefact output every 2s
+  artefactTimer = setInterval(() => {
+    if (!mainWindow) return;
+    const config = getConfig();
+    const displayFile = config.ARTEFACT_DISPLAY_FILE;
+    if (!displayFile || !fs.existsSync(displayFile)) return;
+
+    try {
+      const raw = fs.readFileSync(displayFile, 'utf-8');
+      const data = JSON.parse(raw) as {
+        status?: string;
+        type?: string;
+        name?: string;
+        path?: string;
+        file?: string;
+      };
+
+      // Loading state - just notify renderer
+      if (data.status === 'generating') {
+        mainWindow.webContents.send('artefact:loading', { name: data.name, type: data.type });
+        return; // don't delete - MCP will overwrite when done
+      }
+
+      // Final artefact ready
+      fs.unlinkSync(displayFile);
+
+      const artefactType = data.type || 'html';
+      let content = '';
+      let src = '';
+
+      if (artefactType === 'html' && data.file) {
+        // Read HTML content
+        try {
+          content = fs.readFileSync(data.file, 'utf-8');
+        } catch { /* file missing */ }
+      } else if ((artefactType === 'image' || artefactType === 'video') && data.file) {
+        // Convert to file:// URL for renderer
+        src = `file://${data.file}`;
+      }
+
+      mainWindow.webContents.send('artefact:updated', {
+        type: artefactType,
+        content,
+        src,
+        title: data.name || '',
+      });
+    } catch {
+      // Malformed file - remove it
+      try { fs.unlinkSync(displayFile); } catch { /* already gone */ }
+    }
   }, 2_000);
 
   // Server mode - no window
@@ -997,7 +1449,10 @@ app.on('will-quit', () => {
   if (sentinelTimer) clearInterval(sentinelTimer);
   if (queueTimer) clearInterval(queueTimer);
   if (deferralTimer) clearInterval(deferralTimer);
+  if (askUserTimer) clearInterval(askUserTimer);
+  if (artefactTimer) clearInterval(artefactTimer);
   stopWakeWordListener(() => mainWindow);
+  disableKeepAwake();
   stopDaemon();
   stopServer();
   closeAllDbs();

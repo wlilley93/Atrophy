@@ -94,7 +94,7 @@ All layers are stored in a single SQLite database per agent (`~/.atrophy/agents/
 2. A full-context reflection is sent to inference, asking the model to synthesise a current understanding of the user.
 3. The result is stored in `identity_snapshots` with a trigger description (what prompted the snapshot).
 
-**Injection**: The most recent identity snapshot is included in the memory context at session start, under the heading "Who Will Is (Current Understanding)".
+**Injection**: The most recent identity snapshot is included in the memory context at session start, under the heading "Who the User Is (Current Understanding)".
 
 ---
 

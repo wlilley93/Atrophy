@@ -14,7 +14,7 @@ The companion operates as a trusted but bounded agent. It has persistent memory,
 
 The user retains override authority through three mechanisms:
 
-- The `ask_will` tool, which blocks on user confirmation for sensitive actions. The companion calls this when it needs explicit permission, and the action does not proceed until the user responds.
+- The `ask_user` tool, which blocks on user confirmation for sensitive actions. The companion calls this when it needs explicit permission, and the action does not proceed until the user responds.
 - The `review_audit` tool, which exposes every tool call the companion has made. This gives the user visibility into the companion's behavior and allows them to verify that it is acting within expectations.
 - Session soft limits (60 minutes) that prompt the user to check in. These prevent indefinite unmonitored sessions where the companion might drift or accumulate small behavioral issues.
 
@@ -523,17 +523,30 @@ The inference module strips all `CLAUDE`-prefixed environment variables before s
 
 ---
 
-## Secure Input (Setup Wizard)
+## Secure Input
+
+There are two secure input mechanisms, both designed to prevent sensitive data from appearing in inference context, conversation history, or memory.
+
+### Setup Wizard
 
 The setup wizard (`src/renderer/components/SetupWizard.svelte`) collects API keys via a `SECURE_INPUT` tool mechanism that prevents the keys from ever appearing in the conversation context. When the AI requests a key during the setup flow, the chat input bar switches to a secure mode with distinct visual treatment.
-
-The secure input flow works as follows:
 
 - An orange border on the input bar indicates secure input is active, giving the user a clear visual signal
 - The value goes directly to `~/.atrophy/.env` via the `setup:saveSecret` IPC handler, bypassing the conversation entirely
 - `saveEnvVar()` in `config.ts` validates the key against the `ALLOWED_ENV_KEYS` whitelist before writing, preventing arbitrary key injection
 - The AI never sees the actual key value - only a confirmation of "saved" or "skipped"
 - The user can skip any key by clicking the skip button if they do not want to configure that service
+
+### MCP ask_user secure_input
+
+The `ask_user` MCP tool supports a `secure_input` action type that allows the agent to request sensitive data (passwords, API keys) at any time during conversation - not just during setup. This uses a masked input dialog in the GUI overlay.
+
+- The agent specifies `action_type: "secure_input"` with optional `input_type` (password/email/url/number/text), `label`, and `destination`
+- `destination` controls auto-save routing: `secret:KEY` writes to `.env` via `saveEnvVar()` (subject to `ALLOWED_ENV_KEYS` whitelist), `config:KEY` writes to `config.json` via `saveUserConfig()`
+- When a `destination` is set, the main process saves the value before writing the response file. The MCP handler returns only a confirmation message (e.g. "User provided value for ElevenLabs API Key. Saved to secret:ELEVENLABS_API_KEY.") - never the actual value
+- Without a `destination`, the value is returned to the AI as plain text (use only for non-secret data)
+- Secure input requests are never sent over Telegram - if the GUI is unavailable, the MCP handler returns a message directing the user to the app
+- The renderer shows a lock icon and "Value will be saved securely" note when a destination is present
 
 This design ensures API keys never appear in inference context, conversation history, or memory. Even if the companion's memory is later searched or exported, the keys will not be present.
 

@@ -63,13 +63,13 @@ def _gather_material() -> str:
             lines.append(f"- [{b['created_at']}] {b['moment']}{quote}")
         parts.append("Bookmarked moments:\n" + "\n".join(lines))
 
-    # Recent Will turns (for texture)
+    # Recent user turns (for texture)
     turns = conn.execute(
         "SELECT content, timestamp FROM turns WHERE role = 'will' "
         "ORDER BY timestamp DESC LIMIT 5"
     ).fetchall()
     if turns:
-        parts.append("Recent things Will said:\n" + "\n".join(
+        parts.append("Recent things the user said:\n" + "\n".join(
             f"- [{t['timestamp']}] {t['content'][:300]}" for t in turns
         ))
 
@@ -85,7 +85,7 @@ def _gather_material() -> str:
     return "\n\n".join(parts)
 
 
-_GIFT_FALLBACK = "You are the companion. Leave a short, specific note for Will. 2-4 sentences. No greeting. No sign-off."
+_GIFT_FALLBACK = "You are the companion. Leave a short, specific note for the user. 2-4 sentences. No greeting. No sign-off."
 
 
 def _reschedule():

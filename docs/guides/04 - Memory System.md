@@ -26,7 +26,7 @@ Summarised understanding, built from the raw turns.
 
 The companion's evolving model of you.
 
-- **Observations** -- discrete facts about the user. "Will prefers to work late." "Will is anxious about the deadline." Each observation has a confidence score, activation level, and bi-temporal timestamps (when it was learned, when it's valid from/to, when it expired).
+- **Observations** -- discrete facts about the user. "The user prefers to work late." "The user is anxious about the deadline." Each observation has a confidence score, activation level, and bi-temporal timestamps (when it was learned, when it's valid from/to, when it expired).
 - **Identity snapshots** -- periodic consolidated portraits of who the user is, synthesised from observations and experience. The most recent snapshot is injected into every session's context.
 
 ---
@@ -89,7 +89,7 @@ Each observation carries:
 
 Observations track two timelines: *when the fact was true* (`valid_from`/`valid_to`) and *when the companion knew about it* (`learned_at`/`expired_at`). This means:
 
-- The companion can record "Will started a new job in January" in March, with `valid_from` in January.
+- The companion can record "The user started a new job in January" in March, with `valid_from` in January.
 - If a fact changes, the old observation gets an `expired_at` timestamp but is never deleted. History is preserved.
 
 ---

@@ -1,6 +1,6 @@
 # Morning Brief
 
-The morning brief skill generates a greeting when Will opens the app in the morning.
+The morning brief skill generates a greeting when the user opens the app in the morning.
 
 ## Location
 

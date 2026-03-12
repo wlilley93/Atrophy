@@ -134,7 +134,7 @@ This is the technical configuration file. All fields:
 {
   "name": "xan",
   "display_name": "Xan",
-  "user_name": "Will",
+  "user_name": "User",
   "opening_line": "Ready. Where are we?",
   "wake_words": ["hey xan", "xan"],
 
@@ -236,3 +236,34 @@ In GUI mode, all of these settings can also be edited live through the **Setting
 After creating an agent, you'll likely want to set up its autonomous behaviour. See [03 - Scheduling Jobs](03%20-%20Scheduling%20Jobs.md) for how to configure heartbeats, introspection, and other scheduled tasks.
 
 The jobs configuration lives at `scripts/agents/<name>/jobs.json` and is managed through `scripts/cron.py`.
+
+---
+
+## Bundled Agents
+
+### Xan (system agent)
+
+Xan is the default system agent - lobby agent, setup guide, and protector. It is always pinned to position 0 in the agent list regardless of alphabetical order. Xan has `role: "system"` and `setup_agent: true`, meaning it drives the first-launch wizard. Avatar assets are downloaded from GitHub Releases on first launch.
+
+### The Mirror (custom setup agent)
+
+The Mirror is a structural transparency partner for mutual deconditioning. Unlike other agents, it uses a custom setup flow triggered when the user first switches to it (via `custom_setup: "mirror"` in agent.json). The setup flow:
+
+1. **Asset download** - downloads any pre-built avatar assets from GitHub Releases (if `avatar_asset_url` is configured)
+2. **Photo upload** - the user uploads a photo of themselves (not AI-generated)
+3. **Video generation** - the photo is animated into ambient video loops via Fal AI Kling 3.0
+4. **Voice cloning** - the user is directed to ElevenLabs Voice Lab to clone their own voice, then pastes the voice ID
+
+The Mirror does not use an AI-generated face or voice. It reflects the user back to themselves - their own face as the avatar, their own voice as TTS.
+
+Custom setup is skipped if the agent already has video loops in `~/.atrophy/agents/mirror/avatar/loops/`.
+
+---
+
+## Agent Ordering
+
+Agents are sorted for display in the following order:
+
+1. **Xan** - always position 0
+2. **System-role agents** - any other agents with `role: "system"`
+3. **All other agents** - sorted alphabetically by name

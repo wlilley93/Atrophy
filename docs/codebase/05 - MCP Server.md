@@ -409,14 +409,17 @@ Get a full snapshot of the agent's current state - identity, tools, scheduled jo
 
 These tools let the agent communicate with the user through Telegram, independent of the direct conversation interface. They enable both reactive communication (asking questions and waiting for answers) and proactive outreach (sending unsolicited messages).
 
-### ask_will
+### ask_user
 
-Send a question or confirmation request to the user via Telegram. This tool blocks until the user replies (up to 2 minutes), making it suitable for decisions that need user input before the agent can proceed. The blocking behavior means the agent's turn pauses until the reply arrives.
+Ask the user a question, request confirmation, or collect sensitive input. Tries the GUI first (file-based IPC), falling back to Telegram. Blocks until the user replies (up to 2 minutes). The `secure_input` action type provides a masked input for passwords and API keys with optional auto-save routing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `question` | string | yes | Question or request |
-| `action_type` | string | no | `question`, `confirmation`, or `permission` |
+| `action_type` | string | no | `question`, `confirmation`, `permission`, or `secure_input` |
+| `input_type` | string | no | HTML input type for `secure_input`: `password`, `email`, `url`, `number`, `text` |
+| `label` | string | no | Placeholder label for `secure_input` (e.g. "ElevenLabs API Key") |
+| `destination` | string | no | Auto-save target: `secret:KEY` or `config:KEY` |
 
 For `confirmation`/`permission`, sends Yes/No inline keyboard buttons for quick one-tap responses. For `question`, sends a message and waits for a free-text reply.
 
@@ -766,7 +769,7 @@ The following table provides a quick-reference index of all 41 tools exposed by 
 | 13 | `search_similar` | Memory | `text` (string, required), `limit` (int) |
 | 14 | `daily_digest` | Memory | (none) |
 | 15 | `self_status` | State | (none) |
-| 16 | `ask_will` | Communication | `question` (string, required), `action_type` (enum) |
+| 16 | `ask_user` | Communication | `question` (string, required), `action_type` (enum) |
 | 17 | `send_telegram` | Communication | `message` (string, required), `reason` (string) |
 | 18 | `read_note` | Obsidian | `path` (string, required) |
 | 19 | `write_note` | Obsidian | `path` (string, required), `content` (string, required), `mode` (enum) |

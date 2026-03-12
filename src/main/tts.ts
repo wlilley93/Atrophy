@@ -431,7 +431,19 @@ export function setPlaybackCallbacks(callbacks: {
   _onQueueEmpty = callbacks.onQueueEmpty || null;
 }
 
+let _muted = false;
+
+export function setMuted(muted: boolean): void {
+  _muted = muted;
+  if (muted) clearAudioQueue();
+}
+
+export function isMuted(): boolean {
+  return _muted;
+}
+
 export function enqueueAudio(audioPath: string, index: number): void {
+  if (_muted) return;
   _queue.push({ audioPath, index });
   if (!_playing) {
     processQueue();

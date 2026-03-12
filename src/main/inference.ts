@@ -135,6 +135,19 @@ function getMcpConfigPath(): string {
         PUPPETEER_LAUNCH_OPTIONS: JSON.stringify({ headless: true }),
       },
     },
+    shell: {
+      command: config.PYTHON_PATH,
+      args: [path.join(config.MCP_DIR, 'shell_server.py')],
+      env: {
+        SHELL_WORKING_DIR: os.homedir(),
+        SHELL_TIMEOUT: '30',
+        SHELL_MAX_OUTPUT: '32000',
+      },
+    },
+    github: {
+      command: config.PYTHON_PATH,
+      args: [path.join(config.MCP_DIR, 'github_server.py')],
+    },
   };
 
   // Google MCP server - only if configured
@@ -239,10 +252,11 @@ function buildAgencyContext(userMessage: string): string {
   // Inner life - emotional state
   parts.push(formatForContext());
 
-  // Status awareness - was he away?
+  // Status awareness - were they away?
+  const config = getConfig();
   const status = getStatus();
   if (status.returned_from) {
-    parts.push(`Will just came back (was: ${status.returned_from}). Don't make a big deal of it.`);
+    parts.push(`${config.USER_NAME} just came back (was: ${status.returned_from}). Don't make a big deal of it.`);
   }
 
   // Session patterns
@@ -278,12 +292,11 @@ function buildAgencyContext(userMessage: string): string {
 
   parts.push('You may surface a relevant memory unprompted if context makes it natural. Use your recall tools.');
 
-  const config = getConfig();
   if (config.OBSIDIAN_AVAILABLE) {
     parts.push(
       'Obsidian vault is available. Write notes when something matters - insights, reflections, ' +
-      'things worth keeping beyond the session transcript. Read his notes when context would help ' +
-      "you speak to what he's working through. The database records what happened. Obsidian holds " +
+      'things worth keeping beyond the session transcript. Read their notes when context would help ' +
+      "you speak to what they're working through. The database records what happened. Obsidian holds " +
       'what mattered.\n' +
       'Notes you create automatically get YAML frontmatter (type, created, updated, agent, tags). ' +
       "Use tags freely - they're searchable and feed Dataview dashboards. Use inline fields " +
@@ -342,7 +355,7 @@ function buildAgencyContext(userMessage: string): string {
         }
       }
       crossParts.push(
-        'You can see what Will discussed with other agents. Reference it ' +
+        `You can see what ${config.USER_NAME} discussed with other agents. Reference it ` +
         "naturally if relevant - don't force it. Use recall_other_agent to " +
         'search deeper if needed.',
       );
@@ -362,7 +375,7 @@ function buildAgencyContext(userMessage: string): string {
   // Journal prompting
   if (shouldPromptJournal()) {
     parts.push(
-      'Consider gently prompting Will to write - not as an assignment, ' +
+      `Consider gently prompting ${config.USER_NAME} to write - not as an assignment, ` +
       'as an invitation. Write your own prompt based on what you are ' +
       'actually talking about. One question, pointed, specific to the ' +
       'moment. Use prompt_journal to leave it in Obsidian. Weave the ' +
@@ -422,7 +435,7 @@ export function streamInference(
 
   const agencyContext = buildAgencyContext(userMessage);
   let sessionId = cliSessionId || uuidv4();
-  const allowedTools = 'mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*';
+  const allowedTools = 'mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*,mcp__shell__*,mcp__github__*';
 
   let cmd: string[];
   if (cliSessionId) {
@@ -436,6 +449,7 @@ export function streamInference(
       '--resume', cliSessionId,
       '--mcp-config', mcpConfig,
       '--allowedTools', allowedTools,
+      '--disallowedTools', [...TOOL_BLACKLIST, ...config.DISABLED_TOOLS].join(','),
       '-p', `[Current context: ${agencyContext}]\n\n${userMessage}`,
     ];
   } else {
@@ -464,6 +478,7 @@ export function streamInference(
     proc = spawn(cmd[0], cmd.slice(1), {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: cleanEnv(),
+      cwd: os.homedir(),
       detached: false,
     });
     // Kill any previous active process to prevent orphans
@@ -671,6 +686,8 @@ export function streamInference(
   });
 
   proc.on('error', (err) => {
+    try { proc.kill(); } catch { /* already dead */ }
+    _allProcesses.delete(proc);
     _activeProcess = null;
     const elapsed = (Date.now() - t0) / 1000;
     log.error(`crashed after ${elapsed.toFixed(1)}s: ${err}`);
@@ -705,7 +722,7 @@ export function runInferenceOneshot(
     if (!ALLOWED_MODELS.has(model)) model = 'claude-sonnet-4-6';
 
     const promptParts = messages.map((msg) => {
-      const roleLabel = msg.role === 'user' ? 'Will' : config.AGENT_DISPLAY_NAME;
+      const roleLabel = msg.role === 'user' ? config.USER_NAME : config.AGENT_DISPLAY_NAME;
       return `${roleLabel}: ${msg.content}`;
     });
     const fullPrompt = promptParts.join('\n');
@@ -723,6 +740,7 @@ export function runInferenceOneshot(
     const proc = spawn(cmd[0], cmd.slice(1), {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: cleanEnv(),
+      cwd: os.homedir(),
       detached: false,
     });
 

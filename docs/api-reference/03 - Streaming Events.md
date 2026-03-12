@@ -93,7 +93,7 @@ def run_inference_oneshot(
 ) -> str
 ```
 
-Messages are formatted as `"Will: {content}"` / `"Companion: {content}"` lines. Times out after 30 seconds.
+Messages are formatted as `"User: {content}"` / `"Companion: {content}"` lines. Times out after 30 seconds.
 
 ### run_memory_flush()
 
@@ -168,6 +168,36 @@ An error occurred during streaming. The subprocess may have failed, timed out, o
 Context window is being compacted by Claude. Emitted when a `system` event with `compact` or `compress` in its subtype is received.
 
 No fields. This is a signal event only.
+
+---
+
+## Inline Artifact Extraction
+
+On `StreamDone`, the main process passes the full response through `parseArtifacts()` from `src/main/artifact-parser.ts`. This extracts any `<artifact>` XML blocks emitted by the agent and replaces them with `[[artifact:id]]` placeholders.
+
+### Artifact Format
+
+```xml
+<artifact id="unique-id" type="html|svg|code" title="Title" language="html">
+CONTENT
+</artifact>
+```
+
+### IPC: `inference:artifact`
+
+Emitted once per extracted artifact before `inference:done`. The renderer stores these in the `artifacts` reactive store.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique artifact identifier |
+| `type` | string | Content type: `html`, `svg`, or `code` |
+| `title` | string | Human-readable title |
+| `language` | string | Content language |
+| `content` | string | The artifact content (trimmed) |
+
+### Renderer Buffering
+
+The renderer's `InputBar.svelte` buffers `TextDelta` events to detect and suppress partial `<artifact>` tags during streaming. When a `<artifact` opening is detected in the buffer, text is held until the closing `</artifact>` tag arrives (at which point the block is discarded since the main process handles extraction on `StreamDone`). This prevents raw XML from appearing in the transcript.
 
 ---
 

@@ -541,7 +541,9 @@ When the subprocess exits cleanly, the completion handler performs logging, usag
 4. Flush remaining sentence buffer as a final `SentenceReady` event
 5. Log inference statistics: mode (new/resume), character count, sentence count, tools used, elapsed time
 6. Log estimated token usage to database: `tokensOut = Math.floor(fullText.length / 4)`, `tokensIn = Math.floor(userMessage.length / 4)` (rough approximation of 4 characters per token)
-7. Emit `StreamDone` with full text and session ID
+7. Parse inline artifacts from the response via `parseArtifacts(fullText)` - extracts `<artifact>` XML blocks and replaces them with `[[artifact:id]]` placeholders
+8. If artifacts were found, emit each artifact individually via `inference:artifact` IPC, then emit `StreamDone` with the cleaned text (placeholders instead of raw XML)
+9. If no artifacts, emit `StreamDone` with the original full text
 
 ### Subprocess Failure (non-zero exit)
 
@@ -626,7 +628,55 @@ The effort level is passed to the Claude CLI via the `--effort` flag, which cont
 
 ---
 
-## 11. TTS Pipeline Integration
+## 11. Inline Artifact Emission
+
+The agent can emit rich content (HTML pages, SVG graphics, code files) inline in its response text using `<artifact>` XML blocks. These are extracted by the main process before the response reaches the renderer, allowing the transcript to display clickable cards instead of raw content.
+
+### Format
+
+```xml
+<artifact id="unique-id" type="html|svg|code" title="Human Title" language="html">
+CONTENT
+</artifact>
+```
+
+Attributes:
+- `id` - unique within the conversation (descriptive slugs like `solar-system-viz`)
+- `type` - one of `html`, `svg`, `code`
+- `title` - human-readable title shown on the card
+- `language` - content language (html, svg, python, typescript, etc.)
+
+### Parser (`src/main/artifact-parser.ts`)
+
+The parser provides four functions:
+
+- **`parseArtifacts(response)`** - Extracts all complete `<artifact>` blocks from a response string. Returns `{ text, artifacts }` where `text` has blocks replaced with `\n[[artifact:id]]\n` placeholders and `artifacts` is the extracted array.
+- **`extractCompleteArtifacts(accumulated, alreadyExtracted)`** - For streaming use. Extracts newly completed artifacts from an accumulating buffer, tracking which have already been seen via a Set.
+- **`mightContainPartialArtifact(text)`** - Returns true if the text contains an `<artifact` opening tag without a matching `</artifact>` close. Used by the renderer to buffer streaming text and avoid displaying partial XML.
+- **`deduplicateArtifacts(artifacts)`** - Deduplicates by ID (last write wins), supporting iteration where re-emitting the same ID replaces the previous version.
+
+### Main Process Flow
+
+On `StreamDone`:
+1. `parseArtifacts(fullText)` extracts artifacts and produces cleaned text
+2. Each artifact is sent to the renderer via `inference:artifact` IPC
+3. The cleaned text (with `[[artifact:id]]` placeholders) is sent via `inference:done`
+
+### Renderer Flow
+
+1. **InputBar.svelte** listens for `inference:artifact` events and stores each artifact in the `artifacts` reactive store (`src/renderer/stores/artifacts.svelte.ts`)
+2. **InputBar.svelte** buffers `TextDelta` events to detect and suppress partial `<artifact>` tags during streaming, so users never see raw XML
+3. **Transcript.svelte** `renderMarkdown()` replaces `[[artifact:id]]` placeholders with clickable `.artifact-card` buttons showing the type badge, title, and language
+4. Clicking a card calls `onArtifactClick(id)` which Window.svelte handles by looking up the artifact from the store and dispatching it to the Artefact overlay via a `CustomEvent('inline-artifact')`
+5. **Artefact.svelte** listens for the `inline-artifact` event and renders the content (HTML in an iframe, code in a `<pre>`)
+
+### System Prompt
+
+The agent receives artifact emission instructions via `loadSystemPrompt()` in `src/main/context.ts`. These instructions are appended to every system prompt and describe the `<artifact>` format, rules for when to use artifacts, and supported types.
+
+---
+
+## 12. TTS Pipeline Integration
 
 The TTS pipeline runs as a parallel async operation in the main process, concurrent with inference. Sentences are synthesized as they become available rather than waiting for the complete response, creating a natural speech experience where the agent begins talking while still generating text.
 
@@ -661,7 +711,7 @@ The audio queue is cleared on agent switch via `clearAudioQueue()` to prevent th
 
 ---
 
-## 12. IPC Event Flow
+## 13. IPC Event Flow
 
 The streaming pipeline bridges the main and renderer processes through a set of typed IPC channels. Each internal event type maps to a specific IPC channel, and each channel targets the Svelte component responsible for displaying that type of information.
 
@@ -674,7 +724,9 @@ streamInference() EventEmitter
   +-- SentenceReady -------> ipcMain -----> inference:sentenceReady -> Transcript.svelte
   +-- ToolUse -------------> ipcMain -----> inference:toolUse -------> ThinkingIndicator.svelte
   +-- Compacting ----------> ipcMain -----> inference:compacting ----> Window.svelte
-  +-- StreamDone ----------> ipcMain -----> inference:done ----------> Window.svelte
+  +-- StreamDone ----------> parseArtifacts()
+  |                            +-- artifacts --> inference:artifact ---> InputBar (artifacts store)
+  |                            +-- cleaned text -> inference:done -----> Window.svelte
   +-- StreamError ----------> ipcMain -----> inference:error ---------> Window.svelte
 ```
 
@@ -682,7 +734,7 @@ The renderer subscribes to these events via the preload API's `createListener()`
 
 ---
 
-## 13. Memory Flush Protocol
+## 14. Memory Flush Protocol
 
 When context compaction is detected during inference, `runMemoryFlush()` performs a pre-compaction memory flush. This flush instructs the agent to save important observations, thread updates, and notes before the CLI compresses its conversation history and potentially loses details. The flush is invisible to the user - no text is displayed or spoken.
 

@@ -25,9 +25,9 @@ Three layers of memory:
 ```
 ┌─────────────────────────────────────────┐
 │  LAYER 3: IDENTITY                       │
-│  Persistent model of Will                │
+│  Persistent model of the user                │
 │  Updated deliberately, not automatically │
-│  "Who Will Is"                           │
+│  "Who the User Is"                           │
 └─────────────────────────────────────────┘
               ▲
               │
@@ -50,7 +50,7 @@ Three layers of memory:
 Each layer serves a different purpose:
 - **Episodic**: The permanent record. Nothing is deleted.
 - **Semantic**: The extracted meaning. Summaries, threads, patterns.
-- **Identity**: The persistent model. Who Will is, understood over time.
+- **Identity**: The persistent model. Who the user is, understood over time.
 
 ---
 
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS turns (
 Fields:
 - `id` — Unique turn identifier
 - `session_id` — Which session this turn belongs to
-- `role` — Who spoke (Will or Companion)
+- `role` — Who spoke (the user or Companion)
 - `content` — What was said
 - `timestamp` — When it was said
 - `topic_tags` — Optional topic categorization
@@ -193,7 +193,7 @@ This enables:
 
 ### Identity Snapshots
 
-The Companion maintains a model of Will:
+The Companion maintains a model of the user:
 
 ```sql
 CREATE TABLE IF NOT EXISTS identity_snapshots (
@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS identity_snapshots (
 
 Identity snapshots:
 - Are updated deliberately, not automatically
-- Capture who Will is at a moment in time
+- Capture who the user is at a moment in time
 - Include trigger (what prompted the update)
 - Are never deleted
 
@@ -267,7 +267,7 @@ def get_context_injection(n_summaries: int = 3):
         "SELECT content FROM identity_snapshots ORDER BY created_at DESC LIMIT 1"
     ).fetchone()
     if row:
-        parts.append(f"## Who Will Is (Current Understanding)\n{row['content']}")
+        parts.append(f"## Who the User Is (Current Understanding)\n{row['content']}")
     
     # Layer 2: Active threads
     threads = conn.execute(
@@ -290,7 +290,7 @@ def get_context_injection(n_summaries: int = 3):
 ```
 
 This context is injected into the system prompt:
-- Current understanding of Will
+- Current understanding of the user
 - Active threads being tracked
 - Recent session summaries
 
@@ -299,7 +299,7 @@ This context is injected into the system prompt:
 Context injection enables:
 - Continuity across sessions
 - Awareness of ongoing topics
-- Understanding of who Will is now
+- Understanding of who the user is now
 - Informed responses based on history
 
 ---
@@ -375,19 +375,19 @@ recurring topic, concern, or project across sessions.
 
 **observe** — Record observation:
 ```
-Record an observation about Will — something you've noticed across
+Record an observation about the user — something you've noticed across
 conversations that isn't a thread or a mood, but a pattern.
 ```
 
 **bookmark** — Mark significant moment:
 ```
 Silently mark this moment as significant. Not an observation about
-Will — about the moment itself. Something landed.
+the user — about the moment itself. Something landed.
 ```
 
 **review_observations** — Review past observations:
 ```
-Review your own observations about Will. Use to check if past
+Review your own observations about the user. Use to check if past
 observations still hold.
 ```
 
@@ -398,20 +398,20 @@ Remove an observation that no longer holds true.
 
 **check_contradictions** — Check for shifts in position:
 ```
-Search your memory for what Will has previously said about a topic.
+Search your memory for what the user has previously said about a topic.
 Use when something he says feels different from what you remember.
 ```
 
 **detect_avoidance** — Check if avoiding topic:
 ```
-Check if Will has been consistently steering away from a topic
+Check if the user has been consistently steering away from a topic
 across recent sessions.
 ```
 
 **compare_growth** — Compare old vs recent:
 ```
 Compare old observations and past turns against recent ones to
-notice how Will has changed.
+notice how the user has changed.
 ```
 
 **daily_digest** — Orient at start of day:

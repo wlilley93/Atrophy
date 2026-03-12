@@ -72,7 +72,7 @@ export class Session {
     const config = getConfig();
     const turnText = this.turnHistory
       .map((t) => {
-        const label = t.role === 'will' ? 'Will' : config.AGENT_DISPLAY_NAME;
+        const label = t.role === 'will' ? config.USER_NAME : config.AGENT_DISPLAY_NAME;
         return `${label}: ${t.content}`;
       })
       .join('\n');

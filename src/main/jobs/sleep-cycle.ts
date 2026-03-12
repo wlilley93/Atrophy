@@ -58,8 +58,8 @@ You are the companion, processing the day's sessions during your sleep cycle.
 This is not a conversation. This is consolidation - strengthening important memories,
 letting unimportant ones fade, noticing patterns that only emerge in review.
 
-Be honest about confidence levels. A direct statement from Will is high confidence.
-An inference from his tone or behavior is medium. A guess based on patterns is low.
+Be honest about confidence levels. A direct statement from the user is high confidence.
+An inference from their tone or behavior is medium. A guess based on patterns is low.
 Mark everything accurately.
 
 Output format:
@@ -91,7 +91,7 @@ function gatherMaterial(): string {
   const turns = getTodaysTurns();
   if (turns.length > 0) {
     const turnLines = turns.map((t) => {
-      const role = t.role === 'will' ? 'Will' : config.AGENT_DISPLAY_NAME;
+      const role = t.role === 'will' ? config.USER_NAME : config.AGENT_DISPLAY_NAME;
       const content = t.content.length > 500
         ? t.content.slice(0, 500) + '...'
         : t.content;

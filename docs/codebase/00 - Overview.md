@@ -147,14 +147,15 @@ All IPC channels are registered in `src/main/index.ts` via `registerIpcHandlers(
 
 ### Configuration
 
-The configuration channels let the renderer read and update settings at runtime. The `config:update` handler classifies keys into agent-specific keys (voice, heartbeat, telegram, display, disabled tools) and user-level keys, routing each to the correct file.
+The configuration channels let the renderer read and update settings at runtime. The `config:update` handler classifies keys into agent-specific keys (voice, heartbeat, telegram, display, disabled tools, wake words) and user-level keys (identity, input, inference, memory, session, UI defaults, paths), routing each to the correct file.
 
 | Channel | Direction | Description |
 |---------|-----------|-------------|
-| `config:get` | invoke | Returns a flat object of all config values for the renderer |
-| `config:update` | invoke | Accepts key-value updates, routes to user config or agent config based on key |
+| `config:get` | invoke | Returns a flat object of all config values for the renderer, including UI defaults (`eyeModeDefault`, `muteByDefault`, `silenceTimerEnabled`, `silenceTimerMinutes`), masked secrets, and all other settings |
+| `config:update` | invoke | Accepts key-value updates, routes to user config or agent config based on an allowlist. Keys not in either allowlist are silently dropped |
+| `setup:saveSecret` | invoke | Saves API keys to `~/.atrophy/.env` with allowlist validation (`ELEVENLABS_API_KEY`, `FAL_KEY`, `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) |
 
-Agent-specific keys are saved to the agent's `agent.json`, while user-level keys go to the global `config.json`. This means voice settings travel with the agent but inference settings stay global.
+Agent-specific keys (12 keys: `AGENT_DISPLAY_NAME`, `OPENING_LINE`, TTS settings, `HEARTBEAT_*`, `WINDOW_WIDTH/HEIGHT`, `DISABLED_TOOLS`, `WAKE_WORDS`) are saved to the agent's `agent.json`. User-level keys (19 keys: `USER_NAME`, input/inference/memory settings, `SILENCE_TIMER_*`, `EYE_MODE_DEFAULT`, `MUTE_BY_DEFAULT`, `OBSIDIAN_VAULT`, etc.) go to the global `config.json`. This means voice settings travel with the agent but inference and UI preference settings stay global.
 
 ### Agent Management
 
@@ -181,7 +182,8 @@ The inference channels implement the core conversation loop. The `inference:send
 | `inference:sentenceReady` | send (main->renderer) | Complete sentence for display |
 | `inference:toolUse` | send (main->renderer) | Tool invocation notification |
 | `inference:compacting` | send (main->renderer) | Context window compression detected |
-| `inference:done` | send (main->renderer) | Full response text |
+| `inference:artifact` | send (main->renderer) | Inline artifact extracted from response (id, type, title, language, content) |
+| `inference:done` | send (main->renderer) | Full response text (with `[[artifact:id]]` placeholders if artifacts were extracted) |
 | `inference:error` | send (main->renderer) | Error message |
 
 ### TTS Playback
@@ -338,6 +340,29 @@ Background daemons (cron jobs, Telegram daemon) communicate with the GUI through
 | `queue:drainAll` | invoke | Drain pending messages for all agents |
 | `queue:message` | send (main->renderer) | Background job message (text, source) |
 
+### Ask-User (MCP to GUI)
+
+The ask-user system allows the agent's MCP `ask_user` tool to present questions, confirmations, and secure input requests directly in the GUI. The main process polls for `.ask_request.json` files every 1 second and forwards them to the renderer. User responses are written back via `.ask_response.json` for the MCP server to read.
+
+For `secure_input` requests, the main process tracks the `destination` field. When the user submits a response, the `ask:respond` handler auto-routes the value before writing the response file: `secret:KEY` calls `saveEnvVar()`, `config:KEY` calls `saveUserConfig()`. The AI never receives the secret value - only a confirmation.
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `ask:request` | send (main->renderer) | Ask-user request (question, action_type, request_id, and optionally input_type, label, destination for secure_input) |
+| `ask:respond` | invoke | Submit user's response to an ask request |
+
+### Artefacts
+
+Artefact channels handle both MCP-created artefacts (via `create_artefact` tool) and inline artifacts extracted from the agent's response text.
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `artefact:getGallery` | invoke | Load artefact gallery from `.artefact_index.json` |
+| `artefact:getContent` | invoke | Read HTML content from an artefact file (path-traversal protected) |
+| `artefact:updated` | send (main->renderer) | New artefact content available (type, content, src, title) |
+| `artefact:loading` | send (main->renderer) | Artefact generation in progress (name, type) |
+| `inference:artifact` | send (main->renderer) | Inline artifact extracted from response text |
+
 ---
 
 ## Preload API
@@ -423,7 +448,7 @@ The application supports three operational modes, selected at launch via command
 
 ## First Launch
 
-On first GUI/app launch, `SetupWizard.svelte` runs a conversational setup flow before the main window appears. The wizard is controlled by the `setup_complete` flag in `~/.atrophy/config.json` - once set to `true`, the wizard never runs again. The flow collects API keys (ElevenLabs for voice, Telegram for messaging), runs an AI-driven agent creation conversation using Xan's metaprompt, and optionally sets up Google OAuth for calendar and email integration. The result is a fully configured agent ready for conversation.
+On first GUI/app launch, the setup flow runs inside the main Xan chat rather than in static overlay screens. The flow is controlled by the `setup_complete` flag in `~/.atrophy/config.json` - once set to `true`, it never runs again. Three components coordinate: `SetupWizard.svelte` handles minimal overlays (welcome name input, creating spinner, done screen), `ServiceCard.svelte` renders inline service cards between the Transcript and InputBar, and `Window.svelte` orchestrates the entire flow. After the welcome overlay collects the user's name, all service configuration (ElevenLabs, Fal, Telegram, Google) and AI-driven agent creation happen conversationally in the real Transcript using the real InputBar - messages route to `wizardInference` instead of normal inference during this phase.
 
 ## Data Flow
 
@@ -539,6 +564,7 @@ The following table lists every significant source file in the project, organize
 | `src/main/index.ts` | Entry point. App/GUI/Server mode selection, IPC registration, tray, timers |
 | `src/main/config.ts` | Central configuration. Three-tier resolution (env - config.json - agent.json - defaults) |
 | `src/main/inference.ts` | Claude CLI subprocess, streaming JSON, MCP config, agency context |
+| `src/main/artifact-parser.ts` | Inline artifact extraction from agent response text |
 | `src/main/memory.ts` | SQLite data layer - sessions, turns, summaries, observations, entities |
 | `src/main/agent-manager.ts` | Multi-agent discovery, switching, state persistence, deferral |
 | `src/main/context.ts` | System prompt assembly with skill injection and agent roster |

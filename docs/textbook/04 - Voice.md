@@ -2,7 +2,7 @@
 
 ## The Voice Pipeline
 
-The Companion speaks. Not metaphorically — literally. Audio is generated, played through speakers, heard by Will.
+The Companion speaks. Not metaphorically — literally. Audio is generated, played through speakers, heard by the user.
 
 This chapter examines the voice pipeline: text-to-speech, speech-to-text, and the audio tag system that enables expressiveness.
 

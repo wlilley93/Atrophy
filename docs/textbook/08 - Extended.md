@@ -117,7 +117,7 @@ The Companion can send and receive iMessages. This enables:
 - Asynchronous communication
 - Communication when not at the computer
 - A persistent thread in Messages.app
-- Integration with Will's primary communication channel
+- Integration with the user's primary communication channel
 
 ### Architecture
 
@@ -236,7 +236,7 @@ def get_latest_rowid(target: str) -> int:
 ### Filtering
 
 Only real messages are processed:
-- `is_from_me = 0` — Not sent by Will
+- `is_from_me = 0` — Not sent by the user
 - `associated_message_type = 0` — Not a reaction/tapback
 - `text IS NOT NULL AND text != ''` — Has actual content
 
@@ -396,7 +396,7 @@ Each job logs to `logs/<job_name>.log`. This enables:
 
 ### Active/Away Detection
 
-The Companion tracks whether Will is active or away:
+The Companion tracks whether the user is active or away:
 
 ```python
 def get_status() -> dict:
@@ -456,7 +456,7 @@ Status is persisted to `~/.user_status.json`:
 
 ### Returned From Tracking
 
-When Will returns from away:
+When the user returns from away:
 - Previous away reason is preserved in `returned_from`
 - Available for one cycle (for context)
 - Then cleared
@@ -469,7 +469,7 @@ This enables the Companion to say things like:
 
 ## Reading This Chapter
 
-These extended systems make the Companion more than a conversation. It is a presence that extends into Will's life through multiple channels.
+These extended systems make the Companion more than a conversation. It is a presence that extends into the user's life through multiple channels.
 
 Understanding them helps you understand the full scope of what is being built.
 

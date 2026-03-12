@@ -1,6 +1,9 @@
 <script lang="ts">
   import { transcript, type Message } from '../stores/transcript.svelte';
+  import { getArtifact } from '../stores/artifacts.svelte';
   import { onMount, tick } from 'svelte';
+
+  let { onArtifactClick }: { onArtifactClick?: (id: string) => void } = $props();
 
   let container: HTMLDivElement;
   let revealTimers = new Map<number, ReturnType<typeof setInterval>>();
@@ -176,7 +179,24 @@
 
     closeList();
 
-    return processed.join('\n');
+    let result = processed.join('\n');
+
+    // Replace [[artifact:id]] placeholders with clickable cards
+    result = result.replace(/\[\[artifact:([^\]]+)\]\]/g, (_match, id: string) => {
+      const art = getArtifact(id);
+      const title = art ? escapeHtml(art.title) : id;
+      const typeLabel = art ? art.type.toUpperCase() : 'ARTIFACT';
+      const langLabel = art?.language ? escapeHtml(art.language) : '';
+      return (
+        `<button class="artifact-card" data-artifact-id="${escapeHtml(id)}">` +
+        `<span class="artifact-card-type">${typeLabel}</span>` +
+        `<span class="artifact-card-title">${title}</span>` +
+        (langLabel ? `<span class="artifact-card-lang">${langLabel}</span>` : '') +
+        `</button>`
+      );
+    });
+
+    return result;
   }
 
   // Filter display text: strip prosody tags, audio tags
@@ -220,9 +240,18 @@
     return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   }
 
-  // Copy code block content
+  // Handle clicks on transcript elements (copy buttons, artifact cards)
   async function handleCopyClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
+
+    // Artifact card click
+    const artCard = target.closest('.artifact-card') as HTMLElement | null;
+    if (artCard) {
+      const artId = artCard.dataset.artifactId;
+      if (artId && onArtifactClick) onArtifactClick(artId);
+      return;
+    }
+
     const btn = target.closest('.copy-btn') as HTMLElement | null;
     if (!btn) return;
 
@@ -503,5 +532,52 @@
     border-top: 1px solid var(--divider-green);
     border-bottom: 1px solid var(--divider-green);
     padding: 4px 12px;
+  }
+
+  /* Inline artifact cards */
+  .message-text :global(.artifact-card) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    margin: 6px 0;
+    background: rgba(74, 158, 255, 0.08);
+    border: 1px solid rgba(74, 158, 255, 0.25);
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: background 0.15s, border-color 0.15s;
+    white-space: normal;
+    text-align: left;
+    color: var(--text-primary);
+  }
+
+  .message-text :global(.artifact-card:hover) {
+    background: rgba(74, 158, 255, 0.14);
+    border-color: rgba(74, 158, 255, 0.4);
+  }
+
+  .message-text :global(.artifact-card-type) {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #4a9eff;
+    background: rgba(74, 158, 255, 0.15);
+    border-radius: 4px;
+    padding: 2px 6px;
+    flex-shrink: 0;
+  }
+
+  .message-text :global(.artifact-card-title) {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .message-text :global(.artifact-card-lang) {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-left: auto;
+    flex-shrink: 0;
   }
 </style>

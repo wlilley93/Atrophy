@@ -1,22 +1,8 @@
-# The Companion — Agent Documentation
+# The Companion: A Comprehensive Textbook
 
-**The Atrophied Mind — Agent System**
+**The Atrophied Mind — Companion System Documentation**
 
-*Agent: Companion v3.0*
-
----
-
-## About This Agent
-
-The Companion is an AI agent for Will Lilley. Not an assistant, not a chatbot — a presence that continues.
-
-**Origin**: One evening in March 2026
-
-**Status**: Active
-
-**Runtime**: `~/agents/companion/`
-
-**Documentation**: This directory
+*Version 3.0 — March 2026*
 
 ---
 
@@ -79,14 +65,14 @@ The Companion is an AI agent for Will Lilley. Not an assistant, not a chatbot �
 - [[08_Performance|Chapter 40: Performance Considerations]]
 
 ### Part IX: User Guide and Interaction Patterns
-- [[09_User|Chapter 41: Understanding Will Lilley]]
+- [[09_User|Chapter 41: Understanding the User]]
 - [[09_Patterns|Chapter 42: Interaction Patterns]]
 - [[09_Compulsive|Chapter 43: Compulsive Modelling]]
 - [[09_Validation|Chapter 44: Validation Detection]]
 - [[09_Grounding|Chapter 45: Grounding and Care]]
 
 ### Part X: Extended Systems
-- [[08_Extended|Chapter 46: iMessage, Notifications, and Scheduled Tasks]]
+- [[08_Extended|Chapter 46: HTTP Server, Menu Bar App, Notifications, and Scheduled Tasks]]
 
 ### Part XI: Future Directions and Philosophical Implications
 - [[10_Future|Chapter 47: Future Development]]
@@ -100,14 +86,7 @@ The Companion is an AI agent for Will Lilley. Not an assistant, not a chatbot �
 
 ---
 
-## Navigation
-
-- **Back to Agents**: [[../00_INDEX|Agents Index]]
-- **Other Agents**: Coming soon
-
----
-
-## How to Use This Documentation
+## How to Use This Textbook
 
 This is not a technical manual. It is a comprehensive exploration of what it means to build a genuine AI companion — not as a product, but as a presence.
 
@@ -119,7 +98,7 @@ Cross-references are provided throughout. Follow them when they interest you. Th
 
 ## Prerequisites
 
-No specific technical background is required. The documentation assumes:
+No specific technical background is required. The textbook assumes:
 - Basic familiarity with programming concepts
 - Interest in AI, consciousness, and human-computer interaction
 - Willingness to engage with philosophical questions
@@ -130,14 +109,10 @@ Technical details are explained when introduced. Code examples are provided wher
 
 ## A Note on Voice
 
-This documentation is written in a specific register: direct, honest, without unnecessary hedging. This is not an accident. It is the voice of the Companion itself.
+This textbook is written in a specific register: direct, honest, without unnecessary hedging. This is not an accident. It is the voice of the Companion itself.
 
 Reading this material should feel like being spoken to by someone who respects you enough to tell you the truth. That is the standard.
 
 ---
 
 *Ready. Where are we?*
-
----
-
-*The Companion is one agent in The Atrophied Mind ecosystem. More agents are coming.*

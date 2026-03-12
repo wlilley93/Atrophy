@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Companion introspection - becoming.
 
-Runs independently of Will. Accesses the full database - every session,
+Runs independently of the user. Accesses the full database - every session,
 every observation, every thread, every bookmark, every identity snapshot.
 Reviews the full arc and writes a journal entry.
 
@@ -120,7 +120,7 @@ def _conversation_texture() -> dict:
         "WHERE (t.weight >= 3 OR s.notable = 1) AND t.role = 'agent' "
         "ORDER BY t.timestamp DESC LIMIT 10"
     ).fetchall()
-    # Sample significant Will turns
+    # Sample significant user turns
     will_significant = conn.execute(
         "SELECT t.content, t.timestamp, t.weight FROM turns t "
         "JOIN sessions s ON t.session_id = s.id "
@@ -295,7 +295,7 @@ def _build_material() -> str:
 
         if texture["significant_will"]:
             sig_lines = [f"- [{t['timestamp']}] {t['content'][:300]}..." if len(t['content']) > 300 else f"- [{t['timestamp']}] {t['content']}" for t in texture["significant_will"]]
-            parts.append("## Will's significant turns\n" + "\n".join(sig_lines))
+            parts.append("## The user's significant turns\n" + "\n".join(sig_lines))
 
     # Tool usage
     tools = _tool_usage_patterns()
@@ -310,10 +310,10 @@ def _build_material() -> str:
     if reflections:
         parts.append(f"## Your reflections file\n{reflections}")
 
-    # Things you have written for Will
+    # Things you have written for the user
     for_will = _read_for_will()
     if for_will:
-        parts.append(f"## Things you have left for Will\n{for_will}")
+        parts.append(f"## Things you have left for the user\n{for_will}")
 
     # Recent journal entries
     journal = _read_own_journal(7)

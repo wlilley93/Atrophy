@@ -74,6 +74,7 @@ App.svelte
     Artefact.svelte          (z-index: 40, overlay, conditional)
     Settings.svelte          (overlay, conditional)
     SetupWizard.svelte       (z-index: 70, overlay, conditional)
+    MirrorSetup.svelte       (z-index: 70, overlay, agent custom setup)
 ```
 
 ---
@@ -283,7 +284,7 @@ The following functions are exported for setting and clearing the active emotion
 
 Window.svelte is the root layout component and the orchestration hub for the entire display system. It manages the boot sequence that transitions the app from a black screen to the ready state, coordinates which overlays are visible (and in what priority order they dismiss), handles agent switching with clip-path animations, manages agent deferral handoffs with iris wipe transitions, tracks user idle time for the silence prompt, provides wake word and voice call audio capture, and routes keyboard shortcuts to their handlers. Nearly every user-facing feature flows through this component.
 
-**Imports:** Window.svelte imports all child components (`OrbAvatar`, `AgentName`, `ThinkingIndicator`, `Transcript`, `InputBar`, `Timer`, `Canvas`, `Artefact`, `Settings`, `SetupWizard`) and the stores it needs for coordination (`session`, `audio`, `agents`, plus the transcript functions `addMessage` and `completeLast`).
+**Imports:** Window.svelte imports all child components (`OrbAvatar`, `AgentName`, `ThinkingIndicator`, `Transcript`, `InputBar`, `Timer`, `Canvas`, `Artefact`, `Settings`, `SetupWizard`) and the stores it needs for coordination (`session`, `audio`, `agents`, the transcript functions `addMessage` and `completeLast`, and `getArtifact` from the inline artifacts store).
 
 #### Props
 
@@ -316,15 +317,18 @@ Window.svelte declares a large number of reactive state variables because it orc
 | `deferralProgress` | `number` | `0` | 0=start, 1=closing, 2=opening |
 | `lastInputTime` | `number` | `Date.now()` | Timestamp of last user activity |
 | `silencePromptVisible` | `boolean` | `false` | "Still here?" prompt visibility |
+| `silenceTimerEnabled` | `boolean` | `true` | Whether the silence timer is active (config-driven default) |
+| `silenceTimeoutMs` | `number` | `300000` | Silence timeout duration in ms (config-driven, default 5 minutes) |
 
 #### Boot Sequence
 
 The boot sequence runs once in `onMount` and transitions the app from a black screen to the ready state. It is guarded by a `bootRan` flag to prevent duplicate execution (important because Svelte's strict mode can double-invoke effects in development). The sequence proceeds through these steps:
 
 1. Load config and agent list from the main process via IPC (`getConfig()`, `getAgents()`) in a parallel `Promise.all` call, populating the `agents` store with the results.
-2. Check `needsSetup()` - if true, fade out the boot overlay and show the SetupWizard instead of continuing to the normal ready state.
-3. If no setup is needed, fetch the opening line via `getOpeningLine()` IPC and add it to the transcript as a completed agent message.
-4. Clear the boot label, set `bootOpacity = 0` to trigger the CSS fade-out transition, then wait 1.5 seconds for the animation to complete before setting `bootPhase = 'ready'` to remove the overlay from the DOM.
+2. Apply config-driven defaults from the loaded config: if `eyeModeDefault` is true, enable eye mode; if `muteByDefault` is true, mute TTS; if `silenceTimerEnabled` is false, disable the silence timer; if `silenceTimerMinutes` is set, use it as the silence timeout duration.
+3. Check `needsSetup()` - if true, fade out the boot overlay and show the SetupWizard instead of continuing to the normal ready state.
+4. If no setup is needed, fetch the opening line via `getOpeningLine()` IPC and add it to the transcript as a completed agent message.
+5. Clear the boot label, set `bootOpacity = 0` to trigger the CSS fade-out transition, then wait 1.5 seconds for the animation to complete before setting `bootPhase = 'ready'` to remove the overlay from the DOM.
 
 The boot overlay is a `position: fixed` black div at `z-index: 9999` that transitions from opacity 1 to 0 over 1.5 seconds via CSS. During loading, it displays a subtle "connecting..." label (13px font, 2px letter-spacing, lowercase, `var(--text-dim)` colour) centered in the window.
 
@@ -391,9 +395,11 @@ The "Handing off to {target}..." label (14px, 0.7 opacity, `var(--text-secondary
 
 #### Silence Timer
 
-A 5-minute (`SILENCE_TIMEOUT_MS = 300000`) idle timer that shows a subtle "Still here?" prompt above the input bar. This feature prevents the agent from sitting in an awkward state where neither party is speaking - the prompt gently reminds the user that the agent is waiting. The timer resets on any keypress or mouse movement (via `svelte:window` event bindings for `onkeydown` and `onmousemove`), so normal interaction prevents the prompt from appearing.
+A configurable idle timer that shows a subtle "Still here?" prompt above the input bar. The duration defaults to 5 minutes and can be changed via Settings > Window > Silence Timer Minutes (`SILENCE_TIMER_MINUTES`). The timer can also be disabled entirely via Settings > Window > Silence Timer (`SILENCE_TIMER_ENABLED`). This feature prevents the agent from sitting in an awkward state where neither party is speaking - the prompt gently reminds the user that the agent is waiting. The timer resets on any keypress or mouse movement (via `svelte:window` event bindings for `onkeydown` and `onmousemove`), so normal interaction prevents the prompt from appearing.
 
-Clicking the prompt dismisses it and resets the timer for another 5-minute cycle. The prompt fades in with a `silenceFadeIn` CSS animation (1.5s ease, translates 6px up from an offset starting position) to avoid a jarring appearance.
+On boot, Window.svelte reads `silenceTimerEnabled` and `silenceTimerMinutes` from the config and applies them. If disabled, the timer never fires. The `resetSilenceTimer()` function checks the enabled flag before scheduling the next prompt.
+
+Clicking the prompt dismisses it and resets the timer for another cycle. The prompt fades in with a `silenceFadeIn` CSS animation (1.5s ease, translates 6px up from an offset starting position) to avoid a jarring appearance.
 
 #### Warm Vignette
 
@@ -595,12 +601,30 @@ A custom markdown-to-HTML renderer processes agent messages for rich text displa
 9. **Blockquotes** - `>` lines rendered as `<blockquote class="md-blockquote">`.
 10. **Unordered lists** - `-` or `*` items wrapped in `<ul class="md-list">`.
 11. **Ordered lists** - `1.` items wrapped in `<ul class="md-list md-ol">` (uses `list-style-type: decimal`).
+12. **Inline artifact placeholders** - `[[artifact:id]]` markers (inserted by the artifact parser when the agent emits `<artifact>` blocks) are replaced with clickable card buttons. Each card shows the artifact type badge (e.g. HTML, SVG, CODE), the title, and the language. Clicking a card dispatches to the parent via the `onArtifactClick` prop, which opens the artifact content in the Artefact overlay.
 
 User messages only receive HTML escaping and bare URL linkification (no full markdown), since users rarely write markdown in a chat interface and full processing could produce unexpected formatting.
 
 #### Code Block Copy
 
 Each code block renders a "Copy" button in its header bar with a `data-copy-target` attribute matching the block ID. When clicked, the button calls `navigator.clipboard.writeText()` with the raw code content and temporarily changes the button text to "Copied" for 1.5 seconds. The copy button text update is driven by a `$effect` that scans all `.copy-btn` elements in the container, comparing their `data-copy-target` against `copiedBlockId` to determine which button should show "Copied" versus "Copy".
+
+#### Inline Artifact Cards
+
+When the agent emits `<artifact>` blocks in its response, the main process extracts them (via `artifact-parser.ts`) and replaces them with `[[artifact:id]]` placeholders in the text sent to the renderer. The `renderMarkdown()` function detects these placeholders and renders them as clickable `.artifact-card` buttons.
+
+Each card displays:
+- **Type badge** (`.artifact-card-type`) - 9px bold uppercase label (e.g. HTML, SVG, CODE) with `#4a9eff` blue on `rgba(74, 158, 255, 0.15)` background.
+- **Title** (`.artifact-card-title`) - 13px, from the artifact's `title` attribute.
+- **Language** (`.artifact-card-lang`) - 10px dim text, from the artifact's `language` attribute.
+
+The card has a blue-tinted background (`rgba(74, 158, 255, 0.08)`) with a matching border that brightens on hover. Clicking a card calls `onArtifactClick(id)`, which Window.svelte handles by looking up the artifact content from the `artifacts` store and dispatching an `inline-artifact` CustomEvent to the Artefact overlay.
+
+**Props:**
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `onArtifactClick` | `(id: string) => void` | Optional callback when an artifact card is clicked |
 
 #### Auto-Scroll
 
@@ -1194,6 +1218,7 @@ The component manages state for both the current artefact display and the galler
 | `showGallery` | `boolean` | `false` | Whether the gallery side panel is open |
 | `searchQuery` | `string` | `''` | Gallery search text for filtering by title or description |
 | `activeFilter` | `string` | `'all'` | Gallery type filter (all, html, code, image, video) |
+| `loadingName` | `string` | `''` | Name of artefact currently being generated (shown as pulsing indicator) |
 
 #### Derived State ($derived)
 
@@ -1266,8 +1291,8 @@ The artefact overlay uses a combined opacity and scale transition for a smooth e
 
 #### Lifecycle
 
-- **onMount:** Fades in by setting `visible = true` after a `requestAnimationFrame`. Registers a window resize listener for responsive layout adjustments. Registers an `artefact:updated` IPC listener to receive new artefact content from the main process.
-- **onDestroy:** Removes the resize listener, calls cleanup functions to remove IPC listeners, and clears iframe content to prevent stale scripts from running.
+- **onMount:** Fades in by setting `visible = true` after a `requestAnimationFrame`. Registers a window resize listener for responsive layout adjustments. Registers an `artefact:updated` IPC listener to receive new artefact content from the main process. Registers an `artefact:loading` IPC listener to show a generating indicator. Registers an `inline-artifact` window CustomEvent listener to receive artifact content from transcript card clicks (these arrive when the user clicks an `[[artifact:id]]` placeholder card in the Transcript). Loads the gallery on mount via `refreshGallery()`.
+- **onDestroy:** Removes the resize listener, removes the `inline-artifact` event listener, calls cleanup functions to remove IPC listeners, and clears iframe content to prevent stale scripts from running.
 
 ---
 
@@ -1299,13 +1324,15 @@ The settings panel maintains a large number of state variables organized by tab 
 | Section | State Variables |
 |---------|----------------|
 | Agents | `agentList` - array of `{name, display_name, description, role}` |
-| Identity | `userName`, `agentDisplayName`, `openingLine`, `wakeWords` |
+| You | `userName` - the user's display name. When changed, also syncs to the active agent's `agent.json` `user_name` field and writes a system observation to the agent's memory noting the name change |
+| Agent Identity | `agentDisplayName`, `openingLine`, `wakeWords` |
 | Tools | `disabledTools` - `Set<string>` for 13 toggleable MCP tools |
-| Window | `windowWidth` (622), `windowHeight` (830), `avatarEnabled`, `avatarResolution` (512) |
-| Voice | `ttsBackend`, `elevenlabsApiKey`, `elevenlabsVoiceId`, `elevenlabsModel`, `elevenlabsStability` (0.5), `elevenlabsSimilarity` (0.75), `elevenlabsStyle` (0.35), `ttsPlaybackRate` (1.12), `falVoiceId` |
-| Input | `inputMode`, `pttKey`, `wakeWordEnabled`, `wakeChunkSeconds` |
+| Window | `windowWidth` (622), `windowHeight` (830), `avatarEnabled`, `avatarResolution` (512), `eyeModeDefault`, `silenceTimerEnabled`, `silenceTimerMinutes` (5) |
+| Voice | `ttsBackend`, `elevenlabsApiKey`, `elevenlabsVoiceId`, `elevenlabsModel`, `elevenlabsStability` (0.5), `elevenlabsSimilarity` (0.75), `elevenlabsStyle` (0.35), `ttsPlaybackRate` (1.12), `falApiKey`, `falVoiceId` |
+| Input | `inputMode`, `pttKey`, `wakeWordEnabled`, `wakeChunkSeconds`, `muteByDefault` |
 | Notifications | `notificationsEnabled` |
 | Audio | `sampleRate` (16000), `maxRecordSec` (120) |
+| App | Reset Setup button (sets `setup_complete: false` for next launch) |
 | Inference | `claudeBin`, `claudeEffort`, `adaptiveEffort` |
 | Memory | `contextSummaries` (3), `maxContextTokens` (180000), `vectorSearchWeight` (0.7), `embeddingModel`, `embeddingDim` (384) |
 | Session | `sessionSoftLimitMins` (60) |
@@ -1361,7 +1388,9 @@ The settings panel provides two save operations that differ in what they persist
 - **Apply:** Calls `gatherUpdates()` to collect all form values, then calls `api.updateConfig(updates)` to push changes to the running main process. The changes take effect immediately but are not written to disk, so they will be lost on restart. Shows "Applied" status for 2 seconds.
 - **Save:** Calls Apply first to push changes to the running process, then additionally writes the configuration to disk. Shows "Saved" status for 2 seconds.
 
-The `gatherUpdates()` function maps all form state variables to their config key names using the naming convention from the Python codebase (e.g. `userName` maps to `USER_NAME`, `ttsBackend` maps to `TTS_BACKEND`).
+The `gatherUpdates()` function maps all form state variables to their config key names using the naming convention from the Python codebase (e.g. `userName` maps to `USER_NAME`, `ttsBackend` maps to `TTS_BACKEND`). It includes all toggleable settings: `WAKE_WORDS`, `SILENCE_TIMER_ENABLED`, `SILENCE_TIMER_MINUTES`, `EYE_MODE_DEFAULT`, `MUTE_BY_DEFAULT`, and all other config keys.
+
+Secret keys (ElevenLabs API key, Fal API key, Telegram bot token) are saved separately via `api.saveSecret()` to `~/.atrophy/.env`, not through `gatherUpdates()`. The secret key names must match the `.env` allowlist exactly: `ELEVENLABS_API_KEY`, `FAL_KEY`, `TELEGRAM_BOT_TOKEN`.
 
 #### Activity Tab Features
 
@@ -1401,6 +1430,7 @@ The settings panel communicates with the main process through several channels f
 | `api.getConfig()` | Load all config values on mount to populate form fields |
 | `api.getAgentsFull()` | Load the agent list with full metadata (name, display name, description, role) for the Agents section |
 | `api.updateConfig(updates)` | Apply/save config changes to the running main process |
+| `api.saveSecret(key, value)` | Save API keys to `~/.atrophy/.env` (ElevenLabs, Fal, Telegram) |
 | `api.switchAgent(name)` | Switch active agent when the user selects a different agent in the Agents section |
 | `api.getUsage(days?)` | Load token usage data for the Usage tab |
 | `api.getActivity(days, limit)` | Load activity event items for the Activity tab |
@@ -1411,138 +1441,171 @@ The settings panel communicates with the main process through several channels f
 
 ---
 
-### SetupWizard.svelte - First-Launch Flow
+### SetupWizard.svelte - First-Launch Overlays
 
 **File:** `src/renderer/components/SetupWizard.svelte`
 
-SetupWizard.svelte provides the full-screen overlay shown on first launch (when `setup_complete` is false in config). It guides the user through initial setup: entering their name, configuring optional services (ElevenLabs for voice, Fal for media generation, Telegram for messaging), and creating their first agent through an AI-driven chat with the Xan metaprompt. The wizard is designed to be approachable and skippable - every service step can be skipped, and the agent creation step can be bypassed if the user wants to start with the default agent.
+SetupWizard.svelte provides minimal overlay screens for the first-launch flow. It only handles three phases: welcome (name input), creating (agent scaffolding spinner), and done (brief confirmation). The actual setup conversation - service configuration and AI-driven agent creation - happens in the main chat using the real Transcript and InputBar components, orchestrated by Window.svelte.
 
 #### Props ($props)
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `onComplete` | `() => void` | Optional callback fired when the wizard finishes, used by Window.svelte to reload config and show the opening line |
+| `phase` | `'welcome' \| 'creating' \| 'done' \| 'hidden'` | Controls which overlay screen is shown, or hides the component entirely |
+| `createdAgentName` | `string` | Display name for the creating/done screens |
+| `onNameEntered` | `(name: string) => void` | Callback when user submits their name in the welcome phase |
+| `onComplete` | `() => void` | Optional callback fired when the done phase auto-dismisses (after 3 seconds) |
 
 #### Reactive State ($state)
 
-The wizard tracks phase progression, form inputs, service verification state, and the brain animation frame. The state is organized by the feature it supports:
-
 | Variable | Type | Default | Purpose |
 |----------|------|---------|---------|
-| `phase` | `Phase` | `'intro'` | Current wizard phase (controls which screen is shown) |
 | `userName` | `string` | `''` | User's name, entered in the welcome phase |
-| `conversationLog` | `Array<{role, text}>` | `[]` | AI chat history during the agent creation phase |
-| `currentInput` | `string` | `''` | Current chat input text in the create phase |
-| `isInferring` | `boolean` | `false` | True while waiting for an AI response during agent creation |
-| `elevenLabsKey` | `string` | `''` | ElevenLabs API key entered by the user |
-| `falKey` | `string` | `''` | Fal AI API key entered by the user |
-| `telegramToken` | `string` | `''` | Telegram bot token entered by the user |
-| `telegramChatId` | `string` | `''` | Telegram chat ID entered by the user |
-| `elevenLabsVerifying` | `boolean` | `false` | True while verifying the ElevenLabs key |
-| `elevenLabsVerified` | `boolean \| null` | `null` | Verification result (true=valid, false=invalid, null=not checked) |
-| `falVerifying` | `boolean` | `false` | True while verifying the Fal key |
-| `falVerified` | `boolean \| null` | `null` | Verification result |
-| `telegramVerifying` | `boolean` | `false` | True while verifying the Telegram credentials |
-| `telegramVerified` | `boolean \| null` | `null` | Verification result |
-| `servicesSaved` | `string[]` | `[]` | Keys that were successfully configured and saved |
-| `servicesSkipped` | `string[]` | `[]` | Keys that were skipped by the user |
-| `brainFrame` | `number` | `0` | Current brain animation frame index for the intro phase |
 
 #### Phase Flow
 
-The wizard progresses through a linear sequence of phases, each presenting a specific task. The user advances by completing the task or clicking Skip/Next. The following diagram shows the phase sequence:
+The wizard phases are controlled externally by Window.svelte via the `phase` prop:
 
 ```
-intro -> welcome -> elevenlabs -> fal -> telegram -> create -> done
+welcome -> hidden (chat takes over) -> creating -> done -> hidden
 ```
 
-The following table describes each phase, what it displays, and what triggers the transition to the next phase:
+| Phase | Content | Transition |
+|-------|---------|------------|
+| `welcome` | Brain icon, "Atrophy" title, name input | `onNameEntered` callback when Enter or Continue clicked |
+| `hidden` | No overlay - main chat visible | Set by Window.svelte after welcome or after done |
+| `creating` | Spinner + "Creating {name}..." | Set by Window.svelte when AGENT_CONFIG detected |
+| `done` | Brain icon + "Meet {name}." | Auto-dismisses after 3 seconds via `onComplete` |
 
-| Phase | Content | Transition Trigger |
-|-------|---------|-------------------|
-| `intro` | Brain frame animation (10-frame cycle at 180ms) | Auto-advances after 3.2 seconds |
-| `welcome` | "Hello." title, name input field | Enter key or Continue button when a name has been entered |
-| `elevenlabs` | Service card with API key input and verify button | Next button (after verification) or Skip button |
-| `fal` | Service card with API key input and verify button | Next button (after verification) or Skip button |
-| `telegram` | Service card with bot token and chat ID inputs, plus verify button | Finish button (after verification) or Skip & Finish button |
-| `create` | AI chat interface for agent creation via the Xan metaprompt | Agent config JSON detected in response, or Skip button |
-| `done` | "Ready." text with green orb animation | Auto-dismisses after 2 seconds, calling `onComplete()` |
+#### Brain Frames
 
-#### Brain Animation
+The welcome and done phases display a brain icon loaded from pre-rendered PNG frames via `import.meta.glob()`. Only frame 0 (pristine) is used.
 
-The intro phase displays an animated brain sequence built from pre-rendered PNG frames. This creates a dramatic first impression before the setup flow begins. The frames are loaded via Vite's `import.meta.glob()` for efficient bundling:
+---
 
-```typescript
-const frameModules = import.meta.glob(
-  '../../../resources/icons/brain_frames/brain_*.png',
-  { eager: true, query: '?url', import: 'default' }
-);
+### MirrorSetup.svelte - Per-Agent Custom Setup
+
+**File:** `src/renderer/components/MirrorSetup.svelte`
+
+MirrorSetup.svelte provides a custom setup flow for the Mirror agent. Unlike the first-launch wizard, this only appears when the user switches to an agent that has `custom_setup` set in its manifest. It is triggered by `agent:switch` returning `customSetup: "mirror"` and controlled by Window.svelte's `mirrorSetupVisible` state.
+
+#### Props ($props)
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `onComplete` | `() => void` | Callback to dismiss the overlay |
+
+#### Phase Flow
+
+```
+intro -> downloading -> photo -> generating -> voice -> done
 ```
 
-The frames are sorted by filename and cycled at a 180ms interval. The brain image is displayed at 200x200px with `object-fit: contain`, a brightness/contrast CSS filter for visual punch, and a 2.4-second pulse animation that scales between 1.0 and 1.03 for a subtle breathing effect.
+| Phase | Content | Transition |
+|-------|---------|------------|
+| `intro` | Title, description, numbered steps, Begin/Skip buttons | Begin starts asset download |
+| `downloading` | Spinner + progress bar for release asset download | Auto-advances to photo when complete (or skips if no assets) |
+| `photo` | File picker for user photo upload, preview | "Generate avatar" uploads photo then starts Kling generation |
+| `generating` | Spinner + clip progress from `mirror:avatarProgress` IPC events | Auto-advances to voice when all clips done |
+| `voice` | Link to ElevenLabs Voice Lab, voice ID input | Save or skip advances to done |
+| `done` | Checkmark + "Ready" | Auto-dismisses after 2 seconds via `onComplete` |
+
+#### IPC Calls
+
+- `mirror:uploadPhoto` - sends photo ArrayBuffer + filename to main
+- `mirror:generateAvatar` - triggers Fal AI Kling 3.0 image-to-video
+- `mirror:avatarProgress` - receives generation progress events
+- `mirror:saveVoiceId` - saves ElevenLabs voice ID to agent config
+- `mirror:downloadAssets` - triggers release asset download
+- `mirror:openExternal` - opens ElevenLabs in browser (allowlisted URL)
+- `mirror:checkSetup` - checks if photo/loops exist
+- `avatar:download-progress` / `avatar:download-complete` / `avatar:download-error` - asset download events
+
+---
+
+### ServiceCard.svelte - Inline Service Configuration
+
+**File:** `src/renderer/components/ServiceCard.svelte`
+
+ServiceCard.svelte renders an inline service configuration card between the Transcript and InputBar during the setup flow. It handles all four services (ElevenLabs, Fal, Telegram, Google) with input fields, verification, and save/skip actions.
+
+#### Props ($props)
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `step` | `number` | Current service index (0=ElevenLabs, 1=Fal, 2=Telegram, 3=Google) |
+| `onSaved` | `(key: string) => void` | Callback when a service key is saved |
+| `onSkipped` | `(key: string) => void` | Callback when a service is skipped |
+
+#### Service Definitions
+
+| Step | Key | Title | Input Type |
+|------|-----|-------|------------|
+| 0 | `ELEVENLABS_API_KEY` | Voice - ElevenLabs | Password (secure) |
+| 1 | `FAL_KEY` | Visual Presence - Fal.ai | Password (secure) |
+| 2 | `TELEGRAM` | Messaging - Telegram | Bot Token (secure) + Chat ID (plain) |
+| 3 | `GOOGLE` | Google Workspace + YouTube + Photos | Checkbox scopes + OAuth button |
 
 #### Service Verification
 
-Each service step allows the user to verify their API credentials before saving. Verification happens directly from the renderer via `fetch` calls to the service APIs, providing immediate feedback without a roundtrip to the main process. The following table shows the verification endpoints and success conditions:
+Verification happens directly from the renderer via `fetch` calls:
 
 | Service | Endpoint | Success Condition |
 |---------|----------|-------------------|
 | ElevenLabs | `GET https://api.elevenlabs.io/v1/user` with `xi-api-key` header | `res.ok` (HTTP 200) |
 | Fal | `POST https://queue.fal.run/fal-ai/fast-sdxl` with `Authorization: Key ...` header | `res.status < 400` |
 | Telegram | `GET https://api.telegram.org/bot.../getMe` | `data.ok === true` in the JSON response |
+| Google | OAuth browser flow via `api.startGoogleOAuth()` | Returns `'complete'` |
 
-Verified keys are saved to `~/.atrophy/.env` via `api.saveSecret()` (not to `config.json`) to keep credentials out of the plaintext config file. Non-secret settings (like whether a service is enabled) go to `config.json` via `api.updateConfig()`.
-
-#### Agent Creation Chat
-
-During the `create` phase, the wizard presents an AI chat interface where the user can describe the kind of agent they want. Messages are sent via `api.wizardInference(text)`, which invokes the Xan metaprompt - a specialized system prompt that guides the AI to generate a complete agent configuration through conversational questions.
-
-The wizard monitors each response for `AGENT_CONFIG` JSON blocks in fenced code blocks (triple-backtick markers). When detected, it parses the config JSON and calls `api.createAgent(agentConfig)` to scaffold the new agent directory structure with the specified personality, voice settings, and capabilities.
-
-Service context is injected into the conversation log before the first message so Xan knows which services the user configured in the previous steps. This allows the AI to tailor its agent suggestions to the available capabilities (e.g. suggesting voice features only if ElevenLabs is configured).
-
-#### Keyboard Shortcuts
-
-The wizard handles the Enter key to advance through phases or send chat messages:
-
-| Key | Action |
-|-----|--------|
-| Enter | Advance to the next phase (in service steps), or send a chat message (in the create phase) |
+Verified keys are saved to `~/.atrophy/.env` via `api.saveSecret()`. Non-secret settings (like Telegram chat ID) go to `config.json` via `api.updateConfig()`.
 
 #### Styling
 
-The wizard uses a centered, narrow layout with smooth fade-in transitions between phases. The following CSS establishes the overlay and content container:
+- **Card container:** 14px border-radius, subtle background, full-width within padding
+- **Secure inputs:** Orange border (`rgba(220, 140, 40, 0.45)`), mono font, left-aligned
+- **Buttons:** Blue accent for save, orange for verify
+- **Verification badges:** Green "Verified" or red "Invalid key" pill-shaped badges
+- **Fade-in animation:** 0.4s ease entrance
 
-```css
-.wizard-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 70;
-  background: var(--bg);
-}
+---
 
-.wizard-content {
-  max-width: 460px;
-  padding: var(--pad);
-}
-```
+### Setup Flow Orchestration (Window.svelte)
 
-The visual elements within the wizard are styled for clarity and warmth:
+The setup flow is orchestrated by Window.svelte, not by SetupWizard. Window manages all setup state and controls the flow:
 
-- **Orb:** 60px radial gradient circle, blue for normal phases, green for the done state, with a 3-second pulse animation.
-- **Inputs:** 44px height, 320px max-width, centered text, 10px border-radius.
-- **Secure inputs:** Orange border (`rgba(220, 140, 40, 0.45)`), mono font, left-aligned, focus glow. The orange border signals that this is a sensitive credential field.
-- **Buttons:** 10px/28px padding, blue accent border/background, 10px border-radius.
-- **Verify buttons:** Orange theme (`rgba(220, 140, 40, *)`) to match the secure input styling.
-- **Service cards:** 380px max-width, 14px border-radius, 28px/24px padding. Each card represents one service with its name, description, and input fields.
-- **Verification badges:** Green "Verified" or red "Invalid key" pill-shaped badges (6px radius) that appear after verification completes.
-- **Chat area:** 600px max-height, scrollable message list, 22px rounded input bar at the bottom.
-- **Fade-in animation:** 0.5s ease transition that translates the content 8px upward from its starting position, creating a gentle entrance.
+#### Setup State (in Window.svelte)
 
-#### Lifecycle
+| Variable | Type | Purpose |
+|----------|------|---------|
+| `setupWizardPhase` | `'welcome' \| 'creating' \| 'done' \| 'hidden'` | Controls SetupWizard overlay |
+| `setupActive` | `boolean` | Whether setup mode is active in the main chat |
+| `setupServiceStep` | `number` | Current service (0-3 = showing card, 4+ = done) |
+| `setupShowServiceCard` | `boolean` | Whether ServiceCard is visible |
+| `setupServicesSaved` | `string[]` | Services that were saved |
+| `setupServicesSkipped` | `string[]` | Services that were skipped |
+| `setupCreatedAgentName` | `string` | Agent name for creating/done overlays |
+| `setupUserName` | `string` | User name from welcome screen |
 
-- **onMount:** Starts the brain animation interval if the current phase is `intro`. The animation advances the frame index at 180ms intervals and auto-transitions to the `welcome` phase after 3.2 seconds.
-- **onDestroy:** Stops the brain animation interval to prevent the timer from running after the wizard is dismissed.
+#### InputBar Integration
+
+During setup, Window passes props to InputBar:
+
+- `onSubmit`: `setupSubmit` function (routes to `api.wizardInference` instead of normal inference)
+- `disabled`: `true` while a service card is showing
+- `placeholder`: Context-specific text ("Complete the setup above..." or "Describe who you want to create...")
+
+The `setupSubmit` handler adds messages to the main Transcript, manages inference state, and checks each AI response for `AGENT_CONFIG` JSON blocks.
+
+#### Audio Cues
+
+| Event | Audio File |
+|-------|-----------|
+| Name entered | `name.mp3` |
+| Opening text | `opening.mp3` |
+| ElevenLabs saved | `elevenlabs_saved.mp3` |
+| ElevenLabs skipped | `voice_farewell.mp3` |
+| All services done | `service_complete.mp3` |
+| Agent config detected | `voice_farewell.mp3` |
 
 ---
 
@@ -1707,10 +1770,14 @@ The preload API is organized into functional categories. The following table lis
 | Updates | `checkForUpdates`, `downloadUpdate`, `quitAndInstall`, `onUpdate*` |
 | Deferral | `completeDeferral`, `on('deferral:request', cb)` |
 | Canvas | `on('canvas:updated', cb)` |
-| Artefact | `on('artefact:updated', cb)` |
+| Artefact | `getArtefactGallery`, `getArtefactContent`, `onArtefactLoading`, `on('artefact:updated', cb)` |
+| Inline Artifacts | `onArtifact` |
+| Ask-User | `onAskUser`, `respondToAsk` |
 | Queues | `drainAgentQueue`, `drainAllAgentQueues`, `onQueueMessage` |
 | Other | `getOpeningLine`, `isLoginItemEnabled`, `toggleLoginItem`, `getUsage`, `getActivity` |
 
 ### Generic Event Listener
 
-In addition to the typed listener functions, an `api.on(channel, callback)` method is available for arbitrary IPC events. This returns an unsubscribe function following the same pattern as the typed listeners. It is used by Window.svelte for `deferral:request` and `canvas:updated` events, by Canvas.svelte for `canvas:updated`, and by Artefact.svelte for `artefact:updated`. The generic listener exists because some IPC events are consumed by components that mount conditionally (like Canvas and Artefact overlays), and having a generic method avoids needing to pre-register typed listeners for every possible event.
+In addition to the typed listener functions, an `api.on(channel, callback)` method is available for arbitrary IPC events. This returns an unsubscribe function following the same pattern as the typed listeners. It is used by Window.svelte for `deferral:request`, `canvas:updated`, `artefact:updated`, `artefact:loading`, and `ask:request` events, by Canvas.svelte for `canvas:updated`, and by Artefact.svelte for `artefact:updated` and `artefact:loading`. The generic listener exists because some IPC events are consumed by components that mount conditionally (like Canvas and Artefact overlays), and having a generic method avoids needing to pre-register typed listeners for every possible event.
+
+The channel allowlist in the preload's `on()` method includes: `inference:textDelta`, `inference:sentenceReady`, `inference:toolUse`, `inference:done`, `inference:compacting`, `inference:error`, `inference:artifact`, `tts:started`, `tts:done`, `tts:queueEmpty`, `wakeword:start`, `wakeword:stop`, `queue:message`, `deferral:request`, `updater:*`, `canvas:updated`, `artefact:updated`, `artefact:loading`, `ask:request`, `avatar:download-*`, `mirror:avatarProgress`, and `app:shutdownRequested`.

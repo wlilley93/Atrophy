@@ -161,7 +161,7 @@ Full JSON config for `--config` mode or the `create_agent` MCP tool:
 {
   "identity": {
     "display_name": "Oracle",
-    "user_name": "Will",
+    "user_name": "User",
     "origin_story": "...",
     "core_nature": "...",
     "character_traits": "...",

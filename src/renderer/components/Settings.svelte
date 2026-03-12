@@ -50,6 +50,7 @@
   let avatarResolution = $state(512);
 
   // Voice
+  let falApiKey = $state('');
   let ttsBackend = $state('elevenlabs');
   let elevenlabsApiKey = $state('');
   let elevenlabsVoiceId = $state('');
@@ -65,6 +66,19 @@
   let pttKey = $state('ctrl');
   let wakeWordEnabled = $state(false);
   let wakeChunkSeconds = $state(2);
+
+  // Silence timer
+  let silenceTimerEnabled = $state(true);
+  let silenceTimerMinutes = $state(5);
+
+  // Eye mode
+  let eyeModeDefault = $state(false);
+
+  // Mute
+  let muteByDefault = $state(false);
+
+  // Keep Awake
+  let keepAwakeActive = $state(false);
 
   // Notifications
   let notificationsEnabled = $state(true);
@@ -105,6 +119,7 @@
   // Telegram
   let telegramBotToken = $state('');
   let telegramChatId = $state('');
+  let telegramDaemonRunning = $state(false);
 
   // About
   let version = $state('0.0.0');
@@ -162,6 +177,7 @@
       elevenlabsSimilarity = cfg.elevenlabsSimilarity ?? 0.75;
       elevenlabsStyle = cfg.elevenlabsStyle ?? 0.35;
       ttsPlaybackRate = cfg.ttsPlaybackRate ?? 1.12;
+      falApiKey = cfg.falApiKey || '';
       falVoiceId = cfg.falVoiceId || '';
 
       inputMode = cfg.inputMode || 'dual';
@@ -169,6 +185,12 @@
       wakeWordEnabled = cfg.wakeWordEnabled || false;
       wakeChunkSeconds = cfg.wakeChunkSeconds || 2;
 
+      silenceTimerEnabled = cfg.silenceTimerEnabled ?? true;
+      silenceTimerMinutes = cfg.silenceTimerMinutes ?? 5;
+      eyeModeDefault = cfg.eyeModeDefault ?? false;
+      muteByDefault = cfg.muteByDefault ?? false;
+
+      keepAwakeActive = cfg.keepAwakeActive ?? false;
       notificationsEnabled = cfg.notificationsEnabled ?? true;
 
       sampleRate = cfg.sampleRate || 16000;
@@ -198,6 +220,7 @@
 
       telegramBotToken = cfg.telegramBotToken || '';
       telegramChatId = cfg.telegramChatId || '';
+      telegramDaemonRunning = cfg.telegramDaemonRunning || false;
 
       version = cfg.version || '0.0.0';
       bundleRoot = cfg.bundleRoot || '';
@@ -221,6 +244,7 @@
       USER_NAME: userName,
       AGENT_DISPLAY_NAME: agentDisplayName,
       OPENING_LINE: openingLine,
+      WAKE_WORDS: wakeWords.split(',').map((w: string) => w.trim()).filter(Boolean),
       DISABLED_TOOLS: enabledToolsList,
       WINDOW_WIDTH: windowWidth,
       WINDOW_HEIGHT: windowHeight,
@@ -238,6 +262,10 @@
       PTT_KEY: pttKey,
       WAKE_WORD_ENABLED: wakeWordEnabled,
       WAKE_CHUNK_SECONDS: wakeChunkSeconds,
+      SILENCE_TIMER_ENABLED: silenceTimerEnabled,
+      SILENCE_TIMER_MINUTES: silenceTimerMinutes,
+      EYE_MODE_DEFAULT: eyeModeDefault,
+      MUTE_BY_DEFAULT: muteByDefault,
       NOTIFICATIONS_ENABLED: notificationsEnabled,
       SAMPLE_RATE: sampleRate,
       MAX_RECORD_SEC: maxRecordSec,
@@ -265,6 +293,9 @@
       // Save changed secrets to .env (not config.json)
       if (elevenlabsApiKey && elevenlabsApiKey !== '***') {
         await api.saveSecret('ELEVENLABS_API_KEY', elevenlabsApiKey);
+      }
+      if (falApiKey && falApiKey !== '***') {
+        await api.saveSecret('FAL_KEY', falApiKey);
       }
       if (telegramBotToken && telegramBotToken !== '***') {
         await api.saveSecret('TELEGRAM_BOT_TOKEN', telegramBotToken);
@@ -520,12 +551,31 @@
             <span class="field-label">Avatar Resolution</span>
             <input type="number" min="128" max="1024" bind:value={avatarResolution} class="field-input short" />
           </label>
+          <label class="checkbox-row">
+            <input type="checkbox" bind:checked={eyeModeDefault} />
+            <span>Eye Mode by default (hide transcript)</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" bind:checked={silenceTimerEnabled} />
+            <span>Silence timer ("Still here?" prompt)</span>
+          </label>
+          {#if silenceTimerEnabled}
+            <label class="field">
+              <span class="field-label">Silence Timeout</span>
+              <input type="number" min="1" max="60" bind:value={silenceTimerMinutes} class="field-input short" />
+              <span class="field-suffix">min</span>
+            </label>
+          {/if}
         </div>
 
         <!-- ─── VOICE & TTS ─── -->
         <div class="section">
           <div class="section-header">Voice & TTS</div>
           <div class="section-line"></div>
+          <label class="checkbox-row">
+            <input type="checkbox" bind:checked={muteByDefault} />
+            <span>Mute TTS by default</span>
+          </label>
           <label class="field">
             <span class="field-label">TTS Backend</span>
             <select bind:value={ttsBackend} class="field-select">
@@ -573,6 +623,10 @@
             <span class="field-value">{ttsPlaybackRate.toFixed(2)}x</span>
           </label>
           <label class="field">
+            <span class="field-label">Fal API Key</span>
+            <input type="password" bind:value={falApiKey} class="field-input" />
+          </label>
+          <label class="field">
             <span class="field-label">Fal Voice ID</span>
             <input type="text" bind:value={falVoiceId} class="field-input" />
           </label>
@@ -603,6 +657,30 @@
             <input type="number" min="1" max="10" bind:value={wakeChunkSeconds} class="field-input short" />
             <span class="field-suffix">sec</span>
           </label>
+        </div>
+
+        <!-- ─── KEEP AWAKE ─── -->
+        <div class="section">
+          <div class="section-header">Keep Awake</div>
+          <div class="section-line"></div>
+          <div class="field row">
+            <span class="field-label">Prevent Sleep</span>
+            <div class="daemon-control">
+              <span class="daemon-status" class:active={keepAwakeActive}>
+                {keepAwakeActive ? 'Active' : 'Off'}
+              </span>
+              <button
+                class="daemon-btn"
+                onclick={async () => {
+                  const result = await api?.toggleKeepAwake();
+                  keepAwakeActive = !!result;
+                }}
+              >
+                {keepAwakeActive ? 'Disable' : 'Enable'}
+              </button>
+            </div>
+          </div>
+          <div class="section-hint">Prevents display and system sleep while the app is running.</div>
         </div>
 
         <!-- ─── NOTIFICATIONS ─── -->
@@ -760,6 +838,28 @@
             <span class="field-label">Chat ID</span>
             <input type="text" bind:value={telegramChatId} class="field-input" />
           </label>
+          <div class="field row">
+            <span class="field-label">Polling Daemon</span>
+            <div class="daemon-control">
+              <span class="daemon-status" class:active={telegramDaemonRunning}>
+                {telegramDaemonRunning ? 'Running' : 'Stopped'}
+              </span>
+              <button
+                class="daemon-btn"
+                onclick={async () => {
+                  if (telegramDaemonRunning) {
+                    await api?.stopTelegramDaemon();
+                    telegramDaemonRunning = false;
+                  } else {
+                    const ok = await api?.startTelegramDaemon();
+                    telegramDaemonRunning = !!ok;
+                  }
+                }}
+              >
+                {telegramDaemonRunning ? 'Stop' : 'Start'}
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- ─── ABOUT ─── -->
@@ -773,6 +873,24 @@
           <div class="field">
             <span class="field-label">Install Path</span>
             <span class="field-info mono">{bundleRoot}</span>
+          </div>
+        </div>
+
+        <!-- ─── APP ─── -->
+        <div class="section">
+          <div class="section-header">App</div>
+          <div class="section-line"></div>
+          <div class="field row">
+            <span class="field-label">Reset Setup Wizard</span>
+            <button
+              class="small-btn danger-btn"
+              onclick={async () => {
+                if (!api) return;
+                await api.updateConfig({ setup_complete: false });
+                saveStatus = 'Setup will re-run on next launch';
+                setTimeout(() => saveStatus = '', 3000);
+              }}
+            >Reset Setup</button>
           </div>
         </div>
 
@@ -1032,6 +1150,12 @@
     margin-bottom: 10px;
   }
 
+  .section-hint {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.3);
+    margin-top: 2px;
+  }
+
   /* ── Agents ── */
 
   .agent-list {
@@ -1101,6 +1225,17 @@
     color: var(--text-primary);
   }
 
+  .danger-btn {
+    border-color: rgba(255, 80, 80, 0.3);
+    color: rgba(255, 80, 80, 0.7);
+  }
+
+  .danger-btn:hover {
+    border-color: rgba(255, 80, 80, 0.5);
+    color: rgba(255, 80, 80, 0.9);
+    background: rgba(255, 80, 80, 0.08);
+  }
+
   /* ── Fields ── */
 
   .field {
@@ -1132,6 +1267,42 @@
 
   .field-input:focus {
     border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  .field.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .daemon-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .daemon-status {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .daemon-status.active {
+    color: rgba(80, 200, 120, 0.9);
+  }
+
+  .daemon-btn {
+    padding: 4px 14px;
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 5px;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .daemon-btn:hover {
+    background: rgba(255, 255, 255, 0.14);
   }
 
   .field-input.short {

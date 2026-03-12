@@ -85,7 +85,11 @@ function sendJson(res: http.ServerResponse, data: unknown, status = 200): void {
 
 function checkAuth(req: http.IncomingMessage): boolean {
   const auth = req.headers.authorization || '';
-  return auth.startsWith('Bearer ') && auth.slice(7) === serverToken;
+  if (!auth.startsWith('Bearer ')) return false;
+  const provided = Buffer.from(auth.slice(7));
+  const expected = Buffer.from(serverToken);
+  if (provided.length !== expected.length) return false;
+  return crypto.timingSafeEqual(provided, expected);
 }
 
 function parseQuery(url: string): Record<string, string> {
@@ -235,11 +239,16 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
   const emitter = streamInference(message, systemPrompt, session.cliSessionId);
   let streamEnded = false;
 
+  function finalize() {
+    if (streamEnded) return;
+    streamEnded = true;
+    inferLock = false;
+  }
+
   // Clean up on client disconnect - release lock and stop inference
   res.on('close', () => {
     if (!streamEnded) {
-      streamEnded = true;
-      inferLock = false;
+      finalize();
       stopInference();
     }
   });
@@ -265,15 +274,13 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
           session!.addTurn('agent', fullText);
         }
 
-        streamEnded = true;
+        finalize();
         res.write(`data: ${JSON.stringify({ type: 'done', full_text: fullText })}\n\n`);
-        inferLock = false;
         res.end();
         break;
       case 'StreamError':
-        streamEnded = true;
+        finalize();
         res.write(`data: ${JSON.stringify({ type: 'error', message: evt.message })}\n\n`);
-        inferLock = false;
         res.end();
         break;
     }
@@ -371,6 +378,7 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
 }
 
 export async function stopServer(): Promise<void> {
+  stopInference();
   if (httpServer) {
     httpServer.close();
     httpServer = null;

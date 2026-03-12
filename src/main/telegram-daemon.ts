@@ -249,21 +249,16 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
   const originalAgent = config.AGENT_NAME;
 
   try {
-    // Temporarily switch config for this agent - capture needed values
-    // synchronously, then restore before the async inference call to
-    // minimize the window where global config is mutated.
+    // Switch config to target agent for the entire inference call.
+    // streamInference reads config at spawn time for CLI args, MCP paths,
+    // agency context, etc. - so it must run while the target agent is active.
     config.reloadForAgent(agentName);
     memory.initDb();
 
     const system = loadSystemPrompt();
     const cliSessionId = memory.getLastCliSessionId();
 
-    // Restore config now - inference reads config internally but only
-    // at spawn time, and we've already captured what we need.
-    config.reloadForAgent(originalAgent);
-    memory.initDb();
-
-    const prompt = `[Telegram message from Will]\n\n${text}`;
+    const prompt = `[Telegram message from ${config.USER_NAME}]\n\n${text}`;
     let fullText = '';
     const toolsUsed: string[] = [];
 
@@ -295,14 +290,15 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
     return fullText.trim() || null;
   } catch (e) {
     log.error(`[${agentName}] dispatch failed: ${e}`);
-    // Always restore original agent on failure
+    return null;
+  } finally {
+    // Always restore original agent
     config.reloadForAgent(originalAgent);
     memory.initDb();
-    return null;
   }
 }
 
-function sendAgentResponse(agentName: string, text: string): void {
+async function sendAgentResponse(agentName: string, text: string): Promise<void> {
   // Load agent manifest for emoji prefix
   for (const base of [
     path.join(USER_DATA, 'agents', agentName),
@@ -322,14 +318,14 @@ function sendAgentResponse(agentName: string, text: string): void {
     }
   }
 
-  sendMessage(text, '', false);
+  await sendMessage(text, '', false);
 }
 
 // ---------------------------------------------------------------------------
 // Utility commands
 // ---------------------------------------------------------------------------
 
-function handleStatusCommand(): void {
+async function handleStatusCommand(): Promise<void> {
   const lines = ['*Active agents:*\n'];
 
   for (const agent of discoverAgents()) {
@@ -360,17 +356,17 @@ function handleStatusCommand(): void {
     lines.push(`${prefix}*${agent.display_name}* (\`/${name}\`) - ${status}`);
   }
 
-  sendMessage(lines.join('\n'), '', false);
+  await sendMessage(lines.join('\n'), '', false);
 }
 
-function handleMuteCommand(text: string): void {
+async function handleMuteCommand(text: string): Promise<void> {
   const parts = text.trim().split(/\s+/);
   const agents = discoverAgents();
 
   let targetName: string;
   if (parts.length < 2) {
     if (!agents.length) {
-      sendMessage('No agents available.', '', false);
+      await sendMessage('No agents available.', '', false);
       return;
     }
     targetName = agents[0].name;
@@ -382,7 +378,7 @@ function handleMuteCommand(text: string): void {
     (a) => a.name === targetName || a.display_name.toLowerCase() === targetName,
   );
   if (!found) {
-    sendMessage(`Unknown agent: \`${targetName}\``, '', false);
+    await sendMessage(`Unknown agent: \`${targetName}\``, '', false);
     return;
   }
 
@@ -391,7 +387,7 @@ function handleMuteCommand(text: string): void {
   setAgentState(found.name, { muted: newMuted });
 
   const verb = newMuted ? 'muted' : 'unmuted';
-  sendMessage(`*${found.display_name}* ${verb}.`, '', false);
+  await sendMessage(`*${found.display_name}* ${verb}.`, '', false);
 }
 
 // ---------------------------------------------------------------------------
@@ -438,11 +434,11 @@ async function pollOnce(): Promise<void> {
 
     // Utility commands
     if (text.toLowerCase() === '/status') {
-      handleStatusCommand();
+      await handleStatusCommand();
       continue;
     }
     if (text.toLowerCase().startsWith('/mute')) {
-      handleMuteCommand(text);
+      await handleMuteCommand(text);
       continue;
     }
 
@@ -460,7 +456,7 @@ async function pollOnce(): Promise<void> {
       log.info(`Dispatching to ${agentName}...`);
       const response = await dispatchToAgent(agentName, decision.text);
       if (response) {
-        sendAgentResponse(agentName, response);
+        await sendAgentResponse(agentName, response);
         log.info(`[${agentName}] responded (${response.length} chars)`);
       } else {
         log.debug(`[${agentName}] no response`);

@@ -854,7 +854,7 @@ The morning brief uses the default model (no explicit override) and loads its sy
 
 - Model: default (not specified - uses `runInferenceOneshot` default)
 - System prompt: `loadPrompt('morning-brief', BRIEF_FALLBACK)`
-- Fallback: "You are the companion. Write a short natural morning message for Will. 3-6 sentences. Warm but not performative."
+- Fallback: "You are the companion. Write a short natural morning message for the user. 3-6 sentences. Warm but not performative."
 
 ### TTS Pre-Synthesis
 
@@ -977,7 +977,7 @@ In addition to database queries, introspection reads several Obsidian files to i
 | Own journal | `<OBSIDIAN_AGENT_NOTES>/notes/journal/YYYY-MM-DD.md` | 1200 chars per entry, last 7 days |
 | Agent conversations | `<OBSIDIAN_AGENT_NOTES>/notes/conversations/*.md` | 1500 chars per entry, last 30 days, max 3 files |
 | Reflections | `<OBSIDIAN_AGENT_NOTES>/notes/reflections.md` | Last 3000 chars |
-| For Will | `<OBSIDIAN_AGENT_NOTES>/notes/for-will.md` | Last 1500 chars |
+| For the user | `<OBSIDIAN_AGENT_NOTES>/notes/for-will.md` | Last 1500 chars |
 
 ### Material Assembly
 
@@ -993,7 +993,7 @@ The `buildMaterial()` function assembles all data into a single string that give
 - Conversation texture (total turns, by role, significant turns from both sides)
 - Tool usage patterns (with flagged count)
 - Own reflections
-- Things left for Will
+- Things left for the user
 - Recent journal entries
 - Recent inter-agent conversations
 
@@ -1104,7 +1104,7 @@ The system prompt contains detailed instructions organised into four sections.
 
 **What to change:** Things discovered about how the agent thinks, patterns noticed, adjustments that feel earned, removing instructions that cause performance, adding emergent qualities.
 
-**What NOT to change:** The founding story, Will's biographical details, core friction mechanisms (unless genuinely improved), observations about Will.
+**What NOT to change:** The founding story, the user's biographical details, core friction mechanisms (unless genuinely improved), observations about the user.
 
 **Anti-homogenisation guard (critical):** Inter-agent conversations can inform growth but must NEVER dilute identity or domain expertise. Do not adopt another agent's vocabulary, cadence, or values. Restate any borrowed perspective in your own voice. Cross-pollination is growth; convergence is death.
 
@@ -1315,8 +1315,8 @@ ORDER BY created_at DESC LIMIT 10
 SELECT moment, quote, created_at FROM bookmarks
 ORDER BY created_at DESC LIMIT 5
 
--- Recent Will turns (last 5)
-SELECT content, timestamp FROM turns WHERE role = 'will'
+-- Recent user turns (last 5)
+SELECT content, timestamp FROM turns WHERE role = 'user'
 ORDER BY timestamp DESC LIMIT 5
 ```
 
@@ -1332,7 +1332,7 @@ The gift uses the default model with a loaded prompt, falling back to a simple h
 
 - Model: default
 - System prompt: `loadPrompt('gift', GIFT_FALLBACK)`
-- Fallback: "You are the companion. Leave a short, specific note for Will. 2-4 sentences. No greeting. No sign-off."
+- Fallback: "You are the companion. Leave a short, specific note for the user. 2-4 sentences. No greeting. No sign-off."
 
 ### Gift Writing to Obsidian
 

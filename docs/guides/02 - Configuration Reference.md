@@ -70,7 +70,7 @@ These variables can be set in your shell before launching the app, or placed in 
 | `AGENT` | `xan` | `cfg()` | Active agent name. Determines which `agents/<name>/` directory is loaded |
 | `ATROPHY_DATA` | `~/.atrophy` | Direct | Root user data directory. Exported as `USER_DATA` constant |
 | `INPUT_MODE` | `dual` | `cfg()` | Input mode: `voice`, `text`, or `dual` |
-| `OBSIDIAN_VAULT` | `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind` | Direct | Path to the Obsidian vault root |
+| `OBSIDIAN_VAULT` | `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind` | `cfg()` | Path to the Obsidian vault root |
 | `AVATAR_ENABLED` | `false` | `cfg()` | Enable animated avatar in GUI mode |
 | `TTS_BACKEND` | `elevenlabs` | `agentCfg()` | TTS engine: `elevenlabs`, `fal`, `macos`, `off` |
 | `ELEVENLABS_API_KEY` | `''` | `cfg()` | ElevenLabs API key (shared across agents) |
@@ -91,6 +91,10 @@ These variables can be set in your shell before launching the app, or placed in 
 | `TELEGRAM_BOT_TOKEN` | `''` | `agentCfg()` | Telegram bot token |
 | `TELEGRAM_CHAT_ID` | `''` | `agentCfg()` | Telegram chat ID |
 | `NOTIFICATIONS_ENABLED` | `true` | `cfg()` | Enable macOS native notifications |
+| `SILENCE_TIMER_ENABLED` | `true` | `cfg()` | Enable the idle silence timer prompt |
+| `SILENCE_TIMER_MINUTES` | `5` | `cfg()` | Minutes before the "Still here?" prompt appears |
+| `EYE_MODE_DEFAULT` | `false` | `cfg()` | Start with eye mode (transcript hidden) on launch |
+| `MUTE_BY_DEFAULT` | `false` | `cfg()` | Start with TTS muted on launch |
 | `PYTHON_PATH` | auto-detected | Direct | Python 3 binary path for MCP servers |
 
 ---
@@ -132,7 +136,7 @@ The following example shows a typical `config.json` after the setup wizard compl
   "INPUT_MODE": "voice",
   "WAKE_WORD_ENABLED": true,
   "setup_complete": true,
-  "USER_NAME": "Will"
+  "USER_NAME": "User"
 }
 ```
 
@@ -155,7 +159,7 @@ These keys have special meaning beyond the normal configuration resolution. They
 | Key | Type | Description |
 |-----|------|-------------|
 | `setup_complete` | boolean | Set to `true` after the first-launch setup wizard completes. Reset to `false` (or remove) to re-run the wizard |
-| `USER_NAME` | string | The user's name, set during setup. Used in prompts and turn labeling |
+| `USER_NAME` | string | The user's name, set during setup or changed in Settings (under the "You" section). Used in prompts and turn labeling. When changed, also updates the active agent's `agent.json` `user_name` field and writes a system observation to the agent's memory so agents adapt to the new name |
 
 ---
 
@@ -188,17 +192,17 @@ These properties are read directly from the manifest object, not through the `cf
 |--------------|----------------|------|---------|
 | `display_name` | `AGENT_DISPLAY_NAME` | string | Agent name, title-cased |
 | `user_name` | `USER_NAME` | string | `'User'` |
-| `wake_words` | `WAKE_WORDS` | string[] | `['hey <name>', '<name>']` |
 | `telegram_emoji` | `TELEGRAM_EMOJI` | string | `''` |
-| `disabled_tools` | `DISABLED_TOOLS` | string[] | `[]` |
 
 ### Properties Using `agentCfg()` (Manifest-First)
 
-These are resolved with the agent manifest taking priority over environment variables and user config. They represent settings that should be customizable per agent - each agent can have its own voice, its own heartbeat schedule, and its own window dimensions:
+These are resolved with the agent manifest taking priority over environment variables and user config. They represent settings that should be customizable per agent - each agent can have its own voice, its own heartbeat schedule, its own window dimensions, and its own wake words and disabled tools:
 
 | Manifest Key | Config Property | Type | Default |
 |--------------|----------------|------|---------|
 | `OPENING_LINE` | `OPENING_LINE` | string | `'Hello.'` |
+| `WAKE_WORDS` | `WAKE_WORDS` | string[] | `['hey <name>', '<name>']` |
+| `DISABLED_TOOLS` | `DISABLED_TOOLS` | string[] | `[]` |
 | `TTS_BACKEND` | `TTS_BACKEND` | string | `'elevenlabs'` |
 | `ELEVENLABS_VOICE_ID` | `ELEVENLABS_VOICE_ID` | string | `''` |
 | `ELEVENLABS_MODEL` | `ELEVENLABS_MODEL` | string | `'eleven_v3'` |
@@ -230,9 +234,12 @@ Shallow-merges updates into `~/.atrophy/agents/<name>/data/agent.json`. Creates 
 When the renderer calls `config:update`, the IPC handler in `src/main/index.ts` classifies each key to determine which file it should be saved to. This routing ensures that agent-specific settings stay with the agent and user-level settings stay in the global config.
 
 **Agent-specific keys** (saved to `agent.json`):
-`AGENT_DISPLAY_NAME`, `OPENING_LINE`, `TTS_BACKEND`, `TTS_PLAYBACK_RATE`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`, `ELEVENLABS_STABILITY`, `ELEVENLABS_SIMILARITY`, `ELEVENLABS_STYLE`, `FAL_VOICE_ID`, `HEARTBEAT_ACTIVE_START`, `HEARTBEAT_ACTIVE_END`, `HEARTBEAT_INTERVAL_MINS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `WINDOW_WIDTH`, `WINDOW_HEIGHT`, `DISABLED_TOOLS`
+`AGENT_DISPLAY_NAME`, `OPENING_LINE`, `TTS_BACKEND`, `TTS_PLAYBACK_RATE`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`, `ELEVENLABS_STABILITY`, `ELEVENLABS_SIMILARITY`, `ELEVENLABS_STYLE`, `FAL_VOICE_ID`, `HEARTBEAT_ACTIVE_START`, `HEARTBEAT_ACTIVE_END`, `HEARTBEAT_INTERVAL_MINS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `WINDOW_WIDTH`, `WINDOW_HEIGHT`, `DISABLED_TOOLS`, `WAKE_WORDS`
 
-**User-level keys** (saved to `config.json`): everything else.
+**User-level keys** (saved to `config.json`):
+`USER_NAME`, `INPUT_MODE`, `PTT_KEY`, `WAKE_WORD_ENABLED`, `WAKE_CHUNK_SECONDS`, `SAMPLE_RATE`, `MAX_RECORD_SEC`, `CLAUDE_BIN`, `CLAUDE_EFFORT`, `ADAPTIVE_EFFORT`, `NOTIFICATIONS_ENABLED`, `CONTEXT_SUMMARIES`, `MAX_CONTEXT_TOKENS`, `VECTOR_SEARCH_WEIGHT`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `SESSION_SOFT_LIMIT_MINS`, `OBSIDIAN_VAULT`, `AVATAR_ENABLED`, `AVATAR_RESOLUTION`, `SILENCE_TIMER_ENABLED`, `SILENCE_TIMER_MINUTES`, `EYE_MODE_DEFAULT`, `MUTE_BY_DEFAULT`
+
+Keys not in either list are silently dropped by the `config:update` handler.
 
 ---
 
@@ -318,49 +325,58 @@ For each agent in `<BUNDLE_ROOT>/agents/`:
 
 ---
 
-## Constants
+## Configurable Defaults
 
-These are hardcoded in the `Config` class constructor and not configurable through environment variables. They represent values that are either dictated by external requirements (whisper expects 16kHz audio) or are considered stable enough that runtime configuration is unnecessary.
+These properties have hardcoded defaults in the `Config` class constructor but can be overridden via the Settings panel, `config.json`, or environment variables through the standard `cfg()` resolution chain.
 
 ### Voice Input
 
 Audio capture settings are tuned for whisper.cpp compatibility. The sample rate and channel count must match what the whisper model expects, and the push-to-talk key and recording limits control the user interaction pattern.
 
-| Property | Value | Type | Description |
-|----------|-------|------|-------------|
-| `PTT_KEY` | `'ctrl'` | string | Push-to-talk key |
-| `SAMPLE_RATE` | `16000` | number | Audio capture rate in Hz (whisper expects 16kHz) |
-| `CHANNELS` | `1` | number | Mono audio |
-| `MAX_RECORD_SEC` | `120` | number | Max recording duration in seconds |
-| `WAKE_CHUNK_SECONDS` | `2` | number | Wake word audio chunk duration |
+| Property | Default | Type | Resolution | Description |
+|----------|---------|------|------------|-------------|
+| `PTT_KEY` | `'ctrl'` | string | `cfg()` | Push-to-talk key |
+| `SAMPLE_RATE` | `16000` | number | `cfg()` | Audio capture rate in Hz (whisper expects 16kHz) |
+| `CHANNELS` | `1` | number | Constructor | Mono audio (not configurable) |
+| `MAX_RECORD_SEC` | `120` | number | `cfg()` | Max recording duration in seconds |
+| `WAKE_CHUNK_SECONDS` | `2` | number | `cfg()` | Wake word audio chunk duration |
 
 ### Memory and Context
 
-These constants control how much context the agent can draw on during inference. The context summaries count determines how many recent session summaries are injected, while the max context tokens sets the hard ceiling for the Claude CLI context window. The vector search weight balances semantic similarity against keyword matching when searching memory.
+These settings control how much context the agent can draw on during inference. All are adjustable in Settings > Memory & Context.
 
-| Property | Value | Type | Description |
-|----------|-------|------|-------------|
-| `CONTEXT_SUMMARIES` | `3` | number | Recent session summaries injected into context |
-| `MAX_CONTEXT_TOKENS` | `180000` | number | Maximum context window size |
-| `VECTOR_SEARCH_WEIGHT` | `0.7` | number | Semantic vs keyword search balance (0.0-1.0) |
-| `EMBEDDING_MODEL` | `'all-MiniLM-L6-v2'` | string | Sentence transformer model |
-| `EMBEDDING_DIM` | `384` | number | Embedding vector dimensionality |
+| Property | Default | Type | Resolution | Description |
+|----------|---------|------|------------|-------------|
+| `CONTEXT_SUMMARIES` | `3` | number | `cfg()` | Recent session summaries injected into context |
+| `MAX_CONTEXT_TOKENS` | `180000` | number | `cfg()` | Maximum context window size |
+| `VECTOR_SEARCH_WEIGHT` | `0.7` | number | `cfg()` | Semantic vs keyword search balance (0.0-1.0) |
+| `EMBEDDING_MODEL` | `'all-MiniLM-L6-v2'` | string | `cfg()` | Sentence transformer model |
+| `EMBEDDING_DIM` | `384` | number | `cfg()` | Embedding vector dimensionality |
 
 ### Session
 
 The session soft limit triggers a check-in prompt after extended conversation. It does not end the session - the user can continue, but the agent will acknowledge the elapsed time.
 
-| Property | Value | Type | Description |
-|----------|-------|------|-------------|
-| `SESSION_SOFT_LIMIT_MINS` | `60` | number | Soft limit before check-in prompt |
+| Property | Default | Type | Resolution | Description |
+|----------|---------|------|------------|-------------|
+| `SESSION_SOFT_LIMIT_MINS` | `60` | number | `cfg()` | Soft limit before check-in prompt |
 
 ### Display
 
-The avatar resolution controls the default size of procedural avatar rendering. Higher values produce sharper avatars but require more GPU work per frame.
+| Property | Default | Type | Resolution | Description |
+|----------|---------|------|------------|-------------|
+| `AVATAR_RESOLUTION` | `512` | number | `cfg()` | Default avatar render resolution in pixels |
 
-| Property | Value | Type | Description |
-|----------|-------|------|-------------|
-| `AVATAR_RESOLUTION` | `512` | number | Default avatar render resolution in pixels |
+### UI Defaults
+
+These settings control the initial state of UI toggles on app launch. They are user-level settings (saved to `config.json`), not per-agent.
+
+| Property | Default | Type | Resolution | Description |
+|----------|---------|------|------------|-------------|
+| `SILENCE_TIMER_ENABLED` | `true` | boolean | `cfg()` | Enable the idle "Still here?" prompt |
+| `SILENCE_TIMER_MINUTES` | `5` | number | `cfg()` | Minutes before the silence prompt appears |
+| `EYE_MODE_DEFAULT` | `false` | boolean | `cfg()` | Start with transcript hidden on launch |
+| `MUTE_BY_DEFAULT` | `false` | boolean | `cfg()` | Start with TTS muted on launch |
 
 ---
 
@@ -373,11 +389,13 @@ The panel is organised into sections, each grouping related settings. Sections a
 | Section | Settings |
 |---------|----------|
 | **Agents** | List of all discovered agents with Switch/Muted/Enabled controls, plus **+ New Agent** |
-| **Agent Identity** | Display name, user name, opening line, wake words, Obsidian subdirectory |
-| **Tools** | Per-agent checkboxes to enable/disable specific MCP tools |
-| **Window** | Width, height, window title, avatar enabled, avatar resolution |
-| **Voice & TTS** | TTS backend, ElevenLabs API key, voice ID, model, stability, similarity, style, playback rate, Fal voice ID |
-| **Input** | Input mode, push-to-talk key, wake word detection, wake chunk duration |
+| **You** | User name (editable - changing it also updates the agent's `user_name` in `agent.json` and writes a memory observation so agents adapt) |
+| **Agent Identity** | Display name, opening line, wake words |
+| **Tools** | Per-agent checkboxes to enable/disable 13 MCP tools |
+| **Window** | Width, height, avatar enabled, avatar resolution, eye mode default, silence timer enable/disable, silence timer duration |
+| **Voice & TTS** | TTS backend, ElevenLabs API key, voice ID, model, stability, similarity, style, playback rate, Fal API key, Fal voice ID |
+| **Input** | Input mode, push-to-talk key, wake word detection, wake chunk duration, mute by default |
+| **Keep Awake** | Prevent sleep daemon toggle |
 | **Notifications** | Notifications enabled toggle |
 | **Audio Capture** | Sample rate, max record duration |
 | **Inference** | Claude binary path, effort level, adaptive effort toggle |
@@ -385,8 +403,10 @@ The panel is organised into sections, each grouping related settings. Sections a
 | **Session** | Soft time limit |
 | **Heartbeat** | Active start/end hours, check interval |
 | **Paths** | Obsidian vault path, database path (read-only), whisper binary path (read-only) |
-| **Telegram** | Bot token, chat ID |
-| **About** | Version, install path, Check for Updates / Update Now, Reset Setup Wizard |
+| **Google** | Auth status, Connect/Disconnect button |
+| **Telegram** | Bot token, chat ID, daemon start/stop |
+| **App** | Reset Setup button (re-runs first-launch wizard on next launch) |
+| **About** | Version, install path |
 
 Two actions at the bottom of the panel control how changes are persisted:
 

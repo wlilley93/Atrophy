@@ -2,6 +2,17 @@
   import { session } from '../stores/session.svelte';
   import { addMessage, appendToLast, completeLast, transcript } from '../stores/transcript.svelte';
   import { audio } from '../stores/audio.svelte';
+  import { storeArtifact } from '../stores/artifacts.svelte';
+
+  let {
+    onSubmit: customSubmit,
+    disabled: externalDisabled = false,
+    placeholder: customPlaceholder,
+  }: {
+    onSubmit?: (text: string) => Promise<void>;
+    disabled?: boolean;
+    placeholder?: string;
+  } = $props();
 
   let inputText = $state('');
   let inputEl: HTMLInputElement;
@@ -37,6 +48,12 @@
     const text = inputText.trim();
     if (!text) return;
     inputText = '';
+
+    // Custom submit handler (used by setup wizard flow)
+    if (customSubmit) {
+      await customSubmit(text);
+      return;
+    }
 
     addMessage('user', text);
     addMessage('agent', '');
@@ -148,21 +165,66 @@
     const api = (window as any).atrophy;
     if (!api) return;
 
+    // Buffer for detecting partial <artifact> tags during streaming.
+    // When we see a '<' that could be the start of an artifact tag,
+    // we hold text until we can confirm it's not an artifact block.
+    let streamBuffer = '';
+
+    function flushBuffer() {
+      if (streamBuffer) {
+        appendToLast(streamBuffer);
+        streamBuffer = '';
+      }
+    }
+
     const unsubs = [
       api.onTextDelta((text: string) => {
         session.inferenceState = 'streaming';
-        appendToLast(text);
+        streamBuffer += text;
+
+        // Check if buffer might contain a partial <artifact tag
+        const lastOpen = streamBuffer.lastIndexOf('<artifact');
+        if (lastOpen !== -1) {
+          // Flush everything before the potential tag
+          if (lastOpen > 0) {
+            appendToLast(streamBuffer.slice(0, lastOpen));
+            streamBuffer = streamBuffer.slice(lastOpen);
+          }
+          // Check if we have a complete closing tag - if so, don't show it
+          // (the main process will strip it and send cleaned text on done)
+          const closeIdx = streamBuffer.indexOf('</artifact>');
+          if (closeIdx !== -1) {
+            // Full artifact block in buffer - discard it, main process handles extraction
+            const afterClose = streamBuffer.slice(closeIdx + '</artifact>'.length);
+            streamBuffer = afterClose;
+            if (streamBuffer) flushBuffer();
+          }
+          // Otherwise keep buffering until tag completes or turns out to not be an artifact
+        } else if (streamBuffer.endsWith('<')) {
+          // Might be start of <artifact - hold it
+          appendToLast(streamBuffer.slice(0, -1));
+          streamBuffer = '<';
+        } else {
+          flushBuffer();
+        }
       }),
       api.onDone((_fullText: string) => {
+        // Flush any remaining buffer (partial tags that never completed)
+        flushBuffer();
         completeLast();
         session.inferenceState = 'idle';
       }),
       api.onError((_msg: string) => {
+        flushBuffer();
         completeLast();
         session.inferenceState = 'idle';
       }),
       api.onCompacting(() => {
         session.inferenceState = 'compacting';
+      }),
+      // Inline artifacts from agent response
+      api.onArtifact((artifact: { id: string; type: string; title: string; language: string; content: string }) => {
+        storeArtifact(artifact as any);
       }),
       // TTS events
       api.onTtsStarted((_index: number) => {
@@ -186,6 +248,7 @@
       unsubs.forEach((fn: () => void) => fn());
       window.removeEventListener('keydown', onGlobalKeydown);
       window.removeEventListener('keyup', onGlobalKeyup);
+      if (isRecording) stopRecording();
     };
   });
 
@@ -198,10 +261,10 @@
       bind:this={inputEl}
       bind:value={inputText}
       onkeydown={onKeydown}
-      placeholder={isRecording ? 'Listening...' : 'Message...'}
+      placeholder={isRecording ? 'Listening...' : (customPlaceholder || 'Message...')}
       type="text"
       class="input-field"
-      disabled={isActive || isRecording}
+      disabled={isActive || isRecording || externalDisabled}
     />
 
     <!-- Mic button -->

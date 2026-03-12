@@ -442,7 +442,7 @@ Content-Type: application/json
 {
   "results": [
     {
-      "content": "Will mentioned he's been working on the Electron rewrite, specifically porting the config module.",
+      "content": "The user mentioned they've been working on the Electron rewrite, specifically porting the config module.",
       "score": 0.82,
       "source": "turns",
       "timestamp": "2026-03-09T14:30:00"

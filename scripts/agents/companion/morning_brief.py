@@ -103,7 +103,7 @@ def _gather_context() -> str:
     return "\n\n".join(parts)
 
 
-_BRIEF_FALLBACK = "You are the companion. Write a short natural morning message for Will. 3-6 sentences. Warm but not performative."
+_BRIEF_FALLBACK = "You are the companion. Write a short natural morning message for the user. 3-6 sentences. Warm but not performative."
 
 
 def _synthesise_audio(text: str) -> str:

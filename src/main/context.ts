@@ -132,6 +132,26 @@ export function loadSystemPrompt(): string {
       'just because another agent exists.';
   }
 
+  // Append inline artifact emission instructions
+  base +=
+    '\n\n---\n\n## Inline Artifacts\n\n' +
+    'When you create standalone content (HTML pages, interactive widgets, SVG graphics, ' +
+    'code snippets, or visualisations), emit it inline using this format:\n\n' +
+    '```\n' +
+    '<artifact id="unique-id" type="html|svg|code" title="Human-readable title" language="html">\n' +
+    'CONTENT HERE\n' +
+    '</artifact>\n' +
+    '```\n\n' +
+    'Rules:\n' +
+    '- `id` must be unique within the conversation (use descriptive slugs like `solar-system-viz`)\n' +
+    '- `type` is one of: `html` (full pages, interactive widgets), `svg` (vector graphics), `code` (source code)\n' +
+    '- `language` is the content language (html, svg, python, typescript, etc.)\n' +
+    '- For `html` type, include complete self-contained HTML with inline CSS/JS\n' +
+    '- The artifact will appear as a clickable card in the transcript that opens in a full-screen viewer\n' +
+    '- Use artifacts for anything visual, interactive, or that benefits from being rendered rather than shown as text\n' +
+    '- You can emit multiple artifacts in a single response\n' +
+    '- If iterating on the same artifact, reuse the same `id` to replace the previous version';
+
   return base;
 }
 

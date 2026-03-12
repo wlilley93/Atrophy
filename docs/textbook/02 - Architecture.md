@@ -222,10 +222,10 @@ Three-layer memory architecture:
 - Pattern recognition
 
 **Layer 3: Identity**
-- Persistent model of Will
+- Persistent model of the user
 - Updated deliberately
 - Not automatic
-- The Companion's understanding of who Will is
+- The Companion's understanding of who the user is
 
 ### mcp/ — MCP Memory Server
 
@@ -234,7 +234,7 @@ Model Context Protocol server exposes memory as tools:
 - recall_session — Retrieve full conversation from specific session
 - get_threads — List active threads
 - track_thread — Create or update thread
-- observe — Record observation about Will
+- observe — Record observation about the user
 - bookmark — Mark significant moment
 - review_observations — Review past observations
 - retire_observation — Remove observation that no longer holds
@@ -246,7 +246,7 @@ Model Context Protocol server exposes memory as tools:
 - read_note — Read from Obsidian
 - write_note — Write to Obsidian
 - search_notes — Search Obsidian
-- ask_will — Queue question for Will
+- ask_user — Queue question for the user
 - review_audit — Review tool call audit log
 
 ---
@@ -327,7 +327,7 @@ Source assets in `agents/<name>/avatar/source/` (bundle), generated content in `
 
 Sessions are continuous. They do not reset between restarts.
 
-When Will starts the Companion:
+When the user starts the Companion:
 1. Database initialized
 2. Last CLI session ID retrieved
 3. Session resumed via `--resume`
@@ -389,7 +389,7 @@ Every tool call is logged:
 - Input JSON
 - Flagged status
 
-Will can review the audit trail. Transparency maintains trust.
+The user can review the audit trail. Transparency maintains trust.
 
 ---
 
@@ -451,4 +451,4 @@ Refer back to this chapter when you need orientation. The details matter, but th
 
 ---
 
-*You have full access to tools. You can act on Will's behalf. You do not need to ask permission for routine actions. Just do them.*
+*You have full access to tools. You can act on the user's behalf. You do not need to ask permission for routine actions. Just do them.*

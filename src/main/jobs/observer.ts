@@ -163,7 +163,7 @@ export async function runObserver(agentName: string): Promise<void> {
 
   // Build transcript
   const transcriptLines = turns.map((t) => {
-    const role = t.role === 'will' ? 'Will' : config.AGENT_DISPLAY_NAME;
+    const role = t.role === 'will' ? config.USER_NAME : config.AGENT_DISPLAY_NAME;
     const content = t.content.length > 500 ? t.content.slice(0, 500) + '...' : t.content;
     return `[${role}] ${content}`;
   });

@@ -186,7 +186,7 @@ The `telegram_emoji` appears before the agent's name in all outgoing messages. T
 The Telegram channel is used by multiple components throughout the system. Understanding which components use it helps explain why the channel needs to be robust and handle concurrent access gracefully.
 
 - **Telegram daemon**: Receives and dispatches routed messages - the main incoming message handler
-- **`ask_will` MCP tool**: Sends questions during conversation and blocks for a reply - used when the agent needs user input mid-task
+- **`ask_user` MCP tool**: Sends questions during conversation and blocks for a reply - used when the agent needs user input mid-task
 - **`send_telegram` MCP tool**: Proactive outreach (rate limited to 5/day) - used for unprompted messages
 - **`heartbeat` job**: Evaluates whether to reach out and sends messages - periodic check-in
 - **`gift` job**: Delivers unprompted notes - monthly creative outreach
@@ -356,7 +356,7 @@ The dispatch sequence is:
 2. Calls `config.reloadForAgent(agentName)` and `memory.initDb()` to switch context to the target agent
 3. Loads the system prompt via `loadSystemPrompt()` using the target agent's prompts
 4. Gets the last CLI session ID from memory for session continuity (so the agent resumes its existing conversation context)
-5. Prepends `[Telegram message from Will]` to the message text so the agent knows the message came from Telegram
+5. Prepends `[Telegram message from the user]` to the message text so the agent knows the message came from Telegram
 6. Runs `streamInference()` and collects the full response (tool calls are logged but the streaming events are not forwarded to the renderer)
 7. Restores the original agent config via `config.reloadForAgent(originalAgent)` and `memory.initDb()`
 8. Returns the response text or `null`

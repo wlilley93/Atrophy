@@ -2,24 +2,37 @@
   import { onMount } from 'svelte';
   import { session } from '../stores/session.svelte';
   import { emotionalState } from '../stores/emotional-state.svelte';
-  import { activeEmotion } from '../stores/emotion-colours.svelte';
+  import { activeEmotion, EMOTIONS } from '../stores/emotion-colours.svelte';
+  import { agents } from '../stores/agents.svelte';
 
   const api = (window as any).atrophy;
 
-  let videoEl = $state<HTMLVideoElement>(null!);
+  let videoEl = $state<HTMLVideoElement | null>(null);
   let videoSrc = $state('');
   let videoReady = $state(false);
   let videoError = $state(false);
+
+  // All available loops for the current agent (for cycling)
+  let allLoops = $state<string[]>([]);
+  let currentLoopIndex = 0;
+
+  // Track which agent + emotion the video is showing
+  let loadedAgent = '';
+  let loadedEmotion: string | null = null;
+
+  // Monotonic counter to discard stale async results
+  let loadGeneration = 0;
 
   // Avatar download state
   let downloading = $state(false);
   let downloadPercent = $state(0);
 
   // Fallback canvas
-  let canvas = $state<HTMLCanvasElement>(null!);
+  let canvas = $state<HTMLCanvasElement | null>(null);
   let ctx: CanvasRenderingContext2D | null = null;
   let time = 0;
   let animFrame = 0;
+  let canvasRunning = false;
 
   // Blend factor for smooth transition to/from emotion colours
   let blendFactor = 0;
@@ -29,32 +42,90 @@
   // Video loading
   // ---------------------------------------------------------------------------
 
-  async function loadVideo(colour = 'blue', clip = 'bounce_playful') {
+  async function loadVideo(generation: number, colour = 'blue', clip = 'bounce_playful') {
     if (!api) return;
     try {
       const filePath = await api.getAvatarVideoPath(colour, clip);
+      if (generation !== loadGeneration) return; // stale - agent switched during await
       if (filePath) {
-        videoSrc = `file://${filePath}`;
+        const newSrc = `file://${filePath}`;
+        if (newSrc !== videoSrc) {
+          videoSrc = newSrc;
+          videoReady = false;
+        }
         videoError = false;
+      } else {
+        videoError = true;
       }
     } catch {
+      if (generation !== loadGeneration) return;
       videoError = true;
     }
+  }
+
+  /** Fetch all available loops and load the first one. */
+  async function loadAllLoops(generation: number) {
+    if (!api?.listAvatarLoops) return;
+    try {
+      const loops: string[] = await api.listAvatarLoops();
+      if (generation !== loadGeneration) return; // stale
+      allLoops = loops;
+      currentLoopIndex = 0;
+      if (loops.length > 0) {
+        const newSrc = `file://${loops[0]}`;
+        if (newSrc !== videoSrc) {
+          videoSrc = newSrc;
+          videoReady = false;
+        }
+        videoError = false;
+      }
+    } catch { /* fall through to single-clip load */ }
+  }
+
+  /** Cycle to the next loop when the current one ends. */
+  function onVideoEnded() {
+    if (allLoops.length <= 1) {
+      // Single loop - just replay
+      videoEl?.play().catch(() => {});
+      return;
+    }
+    currentLoopIndex = (currentLoopIndex + 1) % allLoops.length;
+    videoSrc = `file://${allLoops[currentLoopIndex]}`;
+    videoReady = false;
   }
 
   function onVideoCanPlay() {
     videoReady = true;
     downloading = false;
+    stopCanvas();
     videoEl?.play().catch(() => {});
   }
 
   function onVideoError() {
     videoError = true;
+    startCanvas();
   }
 
   // ---------------------------------------------------------------------------
   // Canvas fallback (procedural orb)
   // ---------------------------------------------------------------------------
+
+  function startCanvas() {
+    if (canvasRunning || !canvas) return;
+    ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx?.scale(dpr, dpr);
+    canvasRunning = true;
+    draw();
+  }
+
+  function stopCanvas() {
+    canvasRunning = false;
+    cancelAnimationFrame(animFrame);
+  }
 
   function orbColor(): { h: number; s: number; l: number } {
     const conn = emotionalState.connection;
@@ -86,7 +157,7 @@
   }
 
   function draw() {
-    if (!ctx || !canvas) return;
+    if (!canvasRunning || !ctx || !canvas) return;
     const w = canvas.width;
     const h = canvas.height;
     const cx = w / 2;
@@ -157,52 +228,106 @@
     animFrame = requestAnimationFrame(draw);
   }
 
-  function initCanvas() {
-    if (!canvas) return;
-    ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx?.scale(dpr, dpr);
-    draw();
-  }
+  // ---------------------------------------------------------------------------
+  // Reactivity: reload video on agent switch
+  // ---------------------------------------------------------------------------
+
+  $effect(() => {
+    const agent = agents.current;
+    if (!agent || agent === loadedAgent) return;
+    loadedAgent = agent;
+    loadedEmotion = null;
+
+    // Bump generation so in-flight loads from the previous agent are discarded
+    const gen = ++loadGeneration;
+
+    // Reset state for new agent
+    videoSrc = '';
+    videoReady = false;
+    videoError = false;
+    allLoops = [];
+
+    // Try to load all loops first, fall back to single-clip load
+    loadAllLoops(gen).then(() => {
+      if (gen !== loadGeneration) return;
+      if (allLoops.length === 0) {
+        loadVideo(gen);
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Reactivity: switch video clip on emotion change
+  // ---------------------------------------------------------------------------
+
+  $effect(() => {
+    const emotion = activeEmotion.type;
+    if (emotion === loadedEmotion) return;
+    loadedEmotion = emotion;
+
+    // Don't switch clips for mirror-style agents (flat ambient loops)
+    if (allLoops.length > 0 && allLoops.some((l) => l.includes('ambient_loop'))) return;
+
+    if (emotion) {
+      const spec = EMOTIONS[emotion];
+      if (spec) {
+        // Map emotion colour name to directory name
+        const colourName = Object.entries({
+          blue: { h: 220 }, dark_blue: { h: 230 }, red: { h: 0 },
+          green: { h: 140 }, orange: { h: 30 }, purple: { h: 270 },
+        }).find(([, v]) => v.h === spec.colour.h)?.[0] || 'blue';
+        loadVideo(loadGeneration, colourName, spec.clip);
+      }
+    } else {
+      // Revert to default
+      loadVideo(loadGeneration);
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 
   onMount(() => {
-    loadVideo();
+    const cleanups: (() => void)[] = [];
 
     // Listen for avatar download events - retry video load when complete
     if (api) {
-      api.onAvatarDownloadStart?.(() => {
+      const c1 = api.onAvatarDownloadStart?.(() => {
         downloading = true;
         downloadPercent = 0;
       });
-      api.onAvatarDownloadProgress?.((data: { percent: number }) => {
+      if (c1) cleanups.push(c1);
+      const c2 = api.onAvatarDownloadProgress?.((data: { percent: number }) => {
         downloadPercent = data.percent;
       });
-      api.onAvatarDownloadComplete?.(() => {
+      if (c2) cleanups.push(c2);
+      const c3 = api.onAvatarDownloadComplete?.(() => {
         downloading = false;
         downloadPercent = 100;
         // Retry loading the video now that files are available
         videoError = false;
-        loadVideo();
+        const gen = loadGeneration;
+        loadAllLoops(gen).then(() => {
+          if (gen !== loadGeneration) return;
+          if (allLoops.length === 0) loadVideo(gen);
+        });
       });
-      api.onAvatarDownloadError?.(() => {
+      if (c3) cleanups.push(c3);
+      const c4 = api.onAvatarDownloadError?.(() => {
         downloading = false;
       });
+      if (c4) cleanups.push(c4);
     }
 
     // Start canvas fallback immediately (hidden if video loads)
     if (!videoReady) {
-      initCanvas();
+      startCanvas();
     }
 
     return () => {
-      cancelAnimationFrame(animFrame);
+      stopCanvas();
+      cleanups.forEach((fn) => fn());
     };
   });
 </script>
@@ -216,7 +341,8 @@
     src={videoSrc}
     oncanplay={onVideoCanPlay}
     onerror={onVideoError}
-    loop
+    onended={onVideoEnded}
+    loop={allLoops.length <= 1}
     muted
     playsinline
     preload="auto"

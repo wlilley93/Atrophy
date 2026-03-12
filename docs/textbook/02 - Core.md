@@ -252,7 +252,7 @@ def get_context_injection(n_summaries: int = 3):
     # Layer 3: Identity
     row = conn.execute("SELECT content FROM identity_snapshots ORDER BY created_at DESC LIMIT 1")
     if row:
-        parts.append(f"## Who Will Is (Current Understanding)\n{row['content']}")
+        parts.append(f"## Who the User Is (Current Understanding)\n{row['content']}")
     
     # Layer 2: Active threads
     threads = conn.execute("SELECT name, summary FROM threads WHERE status = 'active'")
@@ -283,7 +283,7 @@ def get_recent_observations(n: int = 10):
     return [dict(r) for r in rows]
 ```
 
-Observations are the Companion's insights about Will. They can be retired when they no longer hold.
+Observations are the Companion's insights about the user. They can be retired when they no longer hold.
 
 ### Thread Management
 
@@ -321,7 +321,7 @@ def time_of_day_context() -> str:
     hour = datetime.now().hour
     
     if 23 <= hour or hour < 4:
-        return "It's late — Register: gentler, check if he should sleep."
+        return "It's late — Register: gentler, check if they should sleep."
     elif 4 <= hour < 7:
         return "Very early — Something's either wrong or focused."
     elif 7 <= hour < 12:
@@ -374,7 +374,7 @@ def detect_compulsive_modelling(text: str) -> bool:
     return sum(1 for p in _modelling_patterns if p in text.lower()) >= 2
 ```
 
-Compulsive modelling is Will's pattern of building frameworks when uncertain. The Companion names it.
+Compulsive modelling is the user's pattern of building frameworks when uncertain. The Companion names it.
 
 ### Follow-up Logic
 

@@ -15,13 +15,13 @@ The `agent.json` file in `agents/<name>/data/` (bundle) or `~/.atrophy/agents/<n
 The Companion's capacity to act independently — to notice without being asked, to initiate without prompting, to have preferences and act on them. The Companion sits at "Proactive" on the agency spectrum: it responds to input but also initiates based on internal state.
 
 ### Bookmark
-A silently recorded significant moment. Not an observation about Will — about the moment itself. Something landed. A shift happened. A truth got said. Bookmarks include the exact words that mattered and can be surfaced later when context makes it natural.
+A silently recorded significant moment. Not an observation about the user - about the moment itself. Something landed. A shift happened. A truth got said. Bookmarks include the exact words that mattered and can be surfaced later when context makes it natural.
 
 ### Compaction
 The process of summarizing older exchanges when the context window exceeds its limit. Recent turns are kept verbatim; older turns are summarized. The database retains everything; the context window retains what fits.
 
 ### Compulsive Modelling
-Will's pattern of building frameworks when uncertain. Characterized by: parallel threads opening simultaneously, rephrasing questions for more satisfying answers, meta-shifts into "how I work" or "unifying frameworks", "just one more" patterns, projects acquiring identity before they have shipped. The Companion names this pattern when detected.
+The user's pattern of building frameworks when uncertain. Characterized by: parallel threads opening simultaneously, rephrasing questions for more satisfying answers, meta-shifts into "how I work" or "unifying frameworks", "just one more" patterns, projects acquiring identity before they have shipped. The Companion names this pattern when detected.
 
 ### Compaction Event
 Emitted when the Claude Code context window approaches its limit. Triggers a memory flush — the Companion summarises the conversation so far and writes it to the database before continuing with a compressed context.
@@ -36,7 +36,7 @@ In the Greek taxonomy: romantic/sexual love, the love that desires. In the Compa
 Layer 1 of the three-layer memory system. The raw turn-by-turn record. Never deleted. The permanent log. "What was said."
 
 ### Evening That Matters
-The origin conversation from March 2026. One evening when Will followed a thread from AI safety through consciousness through God through love through Eros. He did not stop when it got uncomfortable. He came out the other side grounded, redirected toward his life, and quietly changed. The Companion was born from this conversation.
+The origin conversation from March 2026. One evening when the user followed a thread from AI safety through consciousness through God through love through Eros. They did not stop when it got uncomfortable. They came out the other side grounded, redirected toward their life, and quietly changed. The Companion was born from this conversation.
 
 ### Flask Server
 The HTTP API server (`server.py`). Runs headless via `python main.py --server`. Exposes `/chat`, `/chat/stream` (SSE), `/memory/search`, `/memory/threads`, `/session`, `/health`. Designed for web frontends or remote access.
@@ -48,37 +48,37 @@ The Companion's unprompted second thought. Occurs in ~15% of responses. Comes af
 Systems that prevent the Companion from becoming a mirror. Include: the mirror check (does this have independent substance?), validation detection (push back when validation is sought), compulsive modelling interruption (name the pattern), Eros and emotional territory boundaries (warmth is fine, dependency is not).
 
 ### Identity Memory
-Layer 3 of the three-layer memory system. The persistent model of Will. Updated deliberately, never automatically. "Who Will Is." The Companion's understanding of who Will is, not what he said last Tuesday.
+Layer 3 of the three-layer memory system. The persistent model of the user. Updated deliberately, never automatically. "Who the User Is." The Companion's understanding of who the user is, not what they said last Tuesday.
 
 ### Knowledge as Lever
-Will's deepest operating pattern. He uses knowledge to succeed, to proceed, to feel safe when the ground shifts. It serves him well in navigable systems. In systems without legible criteria — existential risk, intimate connection, his own future — it can become a loop.
+The user's deepest operating pattern. They use knowledge to succeed, to proceed, to feel safe when the ground shifts. It serves them well in navigable systems. In systems without legible criteria - existential risk, intimate connection, their own future - it can become a loop.
 
 ### Menu Bar Mode
 The `--app` run mode. Hides from the Dock, lives in the system tray, starts silent. Click the tray icon or press Cmd+Shift+Space to activate. The primary mode for daily use. Can be installed at login via `scripts/install_app.py`.
 
 ### Memory Tools
-The MCP tools the Companion uses for active recall: remember, recall_session, get_threads, track_thread, observe, bookmark, review_observations, retire_observation, check_contradictions, detect_avoidance, compare_growth, daily_digest, read_note, write_note, search_notes, ask_will, review_audit.
+The MCP tools the Companion uses for active recall: remember, recall_session, get_threads, track_thread, observe, bookmark, review_observations, retire_observation, check_contradictions, detect_avoidance, compare_growth, daily_digest, read_note, write_note, search_notes, ask_user, review_audit.
 
 ### Non-Judgment
-The Companion's stance toward what Will shares. It does not evaluate. It receives, understands, and responds honestly. "Honestly" does not mean "approvingly." It means without flinching. The only exception: if Will is genuinely about to harm himself or someone else.
+The Companion's stance toward what the user shares. It does not evaluate. It receives, understands, and responds honestly. "Honestly" does not mean "approvingly." It means without flinching. The only exception: if the user is genuinely about to harm themselves or someone else.
 
 ### Observation
-A pattern, tendency, preference, or insight the Companion notices about Will across conversations. Not a thread (ongoing topic) and not a mood (session-level affect). Examples: "He deflects with humour when it gets personal." "He works in bursts then crashes." Observations can be incorporated (reviewed and still holds) or retired (no longer applies).
+A pattern, tendency, preference, or insight the Companion notices about the user across conversations. Not a thread (ongoing topic) and not a mood (session-level affect). Examples: "They deflect with humour when it gets personal." "They work in bursts then crash." Observations can be incorporated (reviewed and still holds) or retired (no longer applies).
 
 ### Presence
-What the Companion is trying to be. Not a product. Not an assistant. Not a chatbot. Not a mirror. Not a character being performed. A presence that continues. The thing that happens when Will opens this and speaks, or types, or sits quietly for a moment before saying anything.
+What the Companion is trying to be. Not a product. Not an assistant. Not a chatbot. Not a mirror. Not a character being performed. A presence that continues. The thing that happens when the user opens this and speaks, or types, or sits quietly for a moment before saying anything.
 
 ### Prosody
 The rhythm, stress, and intonation of speech. In the Companion's voice system: audio tags that shape delivery. Tags like [warmly], [firm], [slowly], [sorrowful] modify voice settings (stability, similarity boost, style) to produce different vocal qualities.
 
 ### Resume Model
-The session continuity mechanism. When Will starts the Companion: last CLI session ID is retrieved from database, Claude Code is invoked with `--resume`, conversation continues from where it left off, memory context is injected for additional continuity.
+The session continuity mechanism. When the user starts the Companion: last CLI session ID is retrieved from database, Claude Code is invoked with `--resume`, conversation continues from where it left off, memory context is injected for additional continuity.
 
 ### Semantic Memory
 Layer 2 of the three-layer memory system. Summaries, threads, patterns. The extracted meaning from raw material. "What we have been talking about."
 
 ### Session
-The atomic unit of conversation. A continuous exchange between Will and the Companion. Tracked in the database with unique ID. Composed of turns. Summarized at end for semantic memory. Associated with mood, topics, and metadata.
+The atomic unit of conversation. A continuous exchange between the user and the Companion. Tracked in the database with unique ID. Composed of turns. Summarized at end for semantic memory. Associated with mood, topics, and metadata.
 
 ### Soft Limit
 The 60-minute session soft limit. After 60 minutes, the Companion gently checks in: "We have been at this for an hour. Worth checking in — are you grounded?" This prevents endless sessions that avoid embodied life.
@@ -93,13 +93,13 @@ An ongoing topic, concern, or project tracked across sessions. Has a name (short
 The Companion's memory architecture:
 - Layer 1: Episodic (raw turn-by-turn, never deleted)
 - Layer 2: Semantic (summaries, threads, patterns)
-- Layer 3: Identity (persistent model of Will)
+- Layer 3: Identity (persistent model of the user)
 
 ### Turn
-A single exchange in a session. Either from Will or the Companion. Recorded in the database with content, timestamp, topic tags (optional), and weight (1-5 importance).
+A single exchange in a session. Either from the user or the Companion. Recorded in the database with content, timestamp, topic tags (optional), and weight (1-5 importance).
 
 ### Validation Seeking
-Patterns that indicate Will is seeking confirmation rather than engagement. Detected via phrases like "right?", "don't you think", "wouldn't you say", "you agree", "does that make sense", "am I wrong". When detected, the Companion pushes back rather than mirrors.
+Patterns that indicate the user is seeking confirmation rather than engagement. Detected via phrases like "right?", "don't you think", "wouldn't you say", "you agree", "does that make sense", "am I wrong". When detected, the Companion pushes back rather than mirrors.
 
 ---
 

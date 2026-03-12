@@ -31,7 +31,7 @@ export interface AtrophyAPI {
   sendWakeWordChunk: (buffer: ArrayBuffer) => void;
 
   // Agents
-  switchAgent: (name: string) => Promise<{ agentName: string; agentDisplayName: string }>;
+  switchAgent: (name: string) => Promise<{ agentName: string; agentDisplayName: string; customSetup: string | null }>;
   getAgents: () => Promise<string[]>;
   getAgentsFull: () => Promise<{ name: string; display_name: string; description: string; role: string }[]>;
 
@@ -73,6 +73,7 @@ export interface AtrophyAPI {
 
   // Avatar
   getAvatarVideoPath: (colour?: string, clip?: string) => Promise<string | null>;
+  listAvatarLoops: () => Promise<string[]>;
   onAvatarDownloadStart: (cb: () => void) => () => void;
   onAvatarDownloadProgress: (cb: (data: { percent: number; transferred: number; total: number }) => void) => () => void;
   onAvatarDownloadComplete: (cb: () => void) => () => void;
@@ -82,6 +83,12 @@ export interface AtrophyAPI {
   playIntroAudio: () => Promise<void>;
   playAgentAudio: (filename: string) => Promise<void>;
   stopPlayback: () => Promise<void>;
+  setMuted: (muted: boolean) => Promise<void>;
+  isMuted: () => Promise<boolean>;
+
+  // GitHub auth
+  githubAuthStatus: () => Promise<{ installed: boolean; authenticated: boolean; account: string }>;
+  githubAuthLogin: () => Promise<{ success: boolean; error?: string }>;
 
   // Shutdown
   requestShutdown: () => Promise<void>;
@@ -94,6 +101,36 @@ export interface AtrophyAPI {
   // Agent deferral
   completeDeferral: (data: { target: string; context: string; user_question: string }) => Promise<{ agentName: string; agentDisplayName: string }>;
   onDeferralRequest: (cb: (data: { target: string; context: string; user_question: string }) => void) => () => void;
+
+  // Ask-user (agent asks user a question via MCP)
+  onAskUser: (cb: (data: { question: string; action_type: string; request_id: string; input_type?: string; label?: string; destination?: string }) => void) => () => void;
+  respondToAsk: (requestId: string, response: string | boolean | null) => Promise<void>;
+
+  // Artefacts
+  getArtefactGallery: () => Promise<unknown[]>;
+  getArtefactContent: (filePath: string) => Promise<string | null>;
+  onArtefactLoading: (cb: (data: { name: string; type: string }) => void) => () => void;
+
+  // Inline artifacts (emitted from agent response text)
+  onArtifact: (cb: (artifact: { id: string; type: string; title: string; language: string; content: string }) => void) => () => void;
+
+  // Keep Awake
+  toggleKeepAwake: () => Promise<boolean>;
+  isKeepAwakeActive: () => Promise<boolean>;
+
+  // Telegram daemon
+  startTelegramDaemon: () => Promise<boolean>;
+  stopTelegramDaemon: () => Promise<void>;
+  isTelegramDaemonRunning: () => Promise<boolean>;
+
+  // Mirror setup
+  mirrorUploadPhoto: (photoData: ArrayBuffer, filename: string) => Promise<string>;
+  mirrorGenerateAvatar: () => Promise<string[]>;
+  mirrorSaveVoiceId: (voiceId: string) => Promise<void>;
+  mirrorCheckSetup: () => Promise<{ hasPhoto: boolean; hasLoops: boolean }>;
+  mirrorOpenExternal: (url: string) => Promise<void>;
+  mirrorDownloadAssets: () => Promise<void>;
+  onMirrorAvatarProgress: (cb: (progress: { phase: string; clipIndex?: number; totalClips?: number; message?: string }) => void) => () => void;
 
   // Agent message queues
   drainAgentQueue: (agentName: string) => Promise<unknown[]>;
@@ -180,6 +217,7 @@ const api: AtrophyAPI = {
 
   // Avatar
   getAvatarVideoPath: (colour, clip) => ipcRenderer.invoke('avatar:getVideoPath', colour, clip),
+  listAvatarLoops: () => ipcRenderer.invoke('avatar:listLoops'),
   onAvatarDownloadStart: createListener('avatar:download-start') as AtrophyAPI['onAvatarDownloadStart'],
   onAvatarDownloadProgress: createListener('avatar:download-progress') as AtrophyAPI['onAvatarDownloadProgress'],
   onAvatarDownloadComplete: createListener('avatar:download-complete') as AtrophyAPI['onAvatarDownloadComplete'],
@@ -189,6 +227,12 @@ const api: AtrophyAPI = {
   playIntroAudio: () => ipcRenderer.invoke('audio:playIntro'),
   playAgentAudio: (filename) => ipcRenderer.invoke('audio:playAgentAudio', filename),
   stopPlayback: () => ipcRenderer.invoke('audio:stopPlayback'),
+  setMuted: (muted) => ipcRenderer.invoke('audio:setMuted', muted),
+  isMuted: () => ipcRenderer.invoke('audio:isMuted'),
+
+  // GitHub auth
+  githubAuthStatus: () => ipcRenderer.invoke('github:authStatus'),
+  githubAuthLogin: () => ipcRenderer.invoke('github:authLogin'),
 
   // Shutdown
   requestShutdown: () => ipcRenderer.invoke('app:shutdown'),
@@ -201,6 +245,36 @@ const api: AtrophyAPI = {
   // Agent deferral
   completeDeferral: (data) => ipcRenderer.invoke('deferral:complete', data),
   onDeferralRequest: createListener('deferral:request') as AtrophyAPI['onDeferralRequest'],
+
+  // Ask-user
+  onAskUser: createListener('ask:request') as AtrophyAPI['onAskUser'],
+  respondToAsk: (requestId, response) => ipcRenderer.invoke('ask:respond', requestId, response),
+
+  // Artefacts
+  getArtefactGallery: () => ipcRenderer.invoke('artefact:getGallery'),
+  getArtefactContent: (filePath) => ipcRenderer.invoke('artefact:getContent', filePath),
+  onArtefactLoading: createListener('artefact:loading') as AtrophyAPI['onArtefactLoading'],
+
+  // Inline artifacts
+  onArtifact: createListener('inference:artifact') as AtrophyAPI['onArtifact'],
+
+  // Keep Awake
+  toggleKeepAwake: () => ipcRenderer.invoke('keepAwake:toggle'),
+  isKeepAwakeActive: () => ipcRenderer.invoke('keepAwake:isActive'),
+
+  // Telegram daemon
+  startTelegramDaemon: () => ipcRenderer.invoke('telegram:startDaemon'),
+  stopTelegramDaemon: () => ipcRenderer.invoke('telegram:stopDaemon'),
+  isTelegramDaemonRunning: () => ipcRenderer.invoke('telegram:isRunning'),
+
+  // Mirror setup
+  mirrorUploadPhoto: (photoData, filename) => ipcRenderer.invoke('mirror:uploadPhoto', photoData, filename),
+  mirrorGenerateAvatar: () => ipcRenderer.invoke('mirror:generateAvatar'),
+  mirrorSaveVoiceId: (voiceId) => ipcRenderer.invoke('mirror:saveVoiceId', voiceId),
+  mirrorCheckSetup: () => ipcRenderer.invoke('mirror:checkSetup'),
+  mirrorOpenExternal: (url) => ipcRenderer.invoke('mirror:openExternal', url),
+  mirrorDownloadAssets: () => ipcRenderer.invoke('mirror:downloadAssets'),
+  onMirrorAvatarProgress: createListener('mirror:avatarProgress') as AtrophyAPI['onMirrorAvatarProgress'],
 
   // Agent message queues
   drainAgentQueue: (agentName: string) => ipcRenderer.invoke('queue:drainAgent', agentName),
@@ -216,9 +290,11 @@ const api: AtrophyAPI = {
       'queue:message', 'deferral:request',
       'updater:available', 'updater:not-available', 'updater:progress',
       'updater:downloaded', 'updater:error',
-      'canvas:updated', 'artefact:updated',
+      'canvas:updated', 'artefact:updated', 'artefact:loading', 'ask:request',
+      'inference:artifact',
       'avatar:download-start', 'avatar:download-progress',
       'avatar:download-complete', 'avatar:download-error',
+      'mirror:avatarProgress',
       'app:shutdownRequested',
     ]);
     if (!ALLOWED_CHANNELS.has(channel)) {

@@ -13,7 +13,7 @@ This chapter examines session lifecycle in detail.
 ### Definition
 
 A session is:
-- A continuous conversation between Will and the Companion
+- A continuous conversation between the user and the Companion
 - Tracked in the database with unique ID
 - Composed of turns (exchanges)
 - Summarised at end for semantic memory
@@ -102,8 +102,8 @@ def _generate_opening(system: str, cli_session_id: str | None):
         "Ask a question you've been sitting with since last time.",
         "Notice the time. Say what it makes you think.",
         "Pick up something unfinished — a loose thread from before.",
-        "Say something you've been thinking about that has nothing to do with him.",
-        "Be playful. Tease him gently about something real.",
+        "Say something you've been thinking about that has nothing to do with them.",
+        "Be playful. Tease them gently about something real.",
         # ... more styles
     ]
     style = random.choice(styles)
@@ -197,7 +197,7 @@ def end(self, system_prompt: str):
         return
     
     turn_text = "\n".join(
-        f"{'Will' if t['role'] == 'will' else 'Companion'}: {t['content']}"
+        f"{'User' if t['role'] == 'user' else 'Companion'}: {t['content']}"
         for t in self.turn_history
     )
     
@@ -292,7 +292,7 @@ def get_context_injection(n_summaries: int = 3):
 ```
 
 This injects context at session start:
-- Current understanding of Will
+- Current understanding of the user
 - Active threads being tracked
 - Recent session summaries
 
@@ -326,7 +326,7 @@ def session_pattern_note(session_db_path: str) -> str | None:
 This pattern awareness shapes the Companion's register:
 - Evening sessions: reflective
 - Morning sessions: direct, practical
-- Late night sessions: gentler, check if should sleep
+- Late night sessions: gentler, check if the user should sleep
 
 ### Gap Awareness
 
@@ -338,7 +338,7 @@ def time_gap_note(last_session_time: str | None) -> str | None:
     days = gap.days
     
     if days >= 14:
-        return "It has been {days} days since he was last here. That is a long gap. Acknowledge it naturally."
+        return "It has been {days} days since they were last here. That is a long gap. Acknowledge it naturally."
     elif days >= 7:
         return "About a week since the last session. Something may have shifted. Check in without assuming."
     elif days >= 3:

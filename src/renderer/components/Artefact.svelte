@@ -16,18 +16,22 @@
   let visible = $state(false);
 
   // Gallery state
-  let gallery = $state<{
-    id: number;
-    title: string;
+  interface GalleryItem {
+    name: string;
+    title?: string;
     type: string;
     description?: string;
     path?: string;
     file?: string;
     created_at?: string;
-  }[]>([]);
+  }
+  let gallery = $state<GalleryItem[]>([]);
   let showGallery = $state(false);
   let searchQuery = $state('');
   let activeFilter = $state('all');
+
+  // Loading state
+  let loadingName = $state('');
 
   // Webview/iframe ref for memory cleanup
   let iframeRef = $state<HTMLIFrameElement | null>(null);
@@ -51,7 +55,7 @@
     // Handle window resize
     window.addEventListener('resize', handleResize);
 
-    // Listen for artefact updates
+    // Listen for artefact updates (from main process polling .artefact_display.json)
     if (api && typeof api.on === 'function') {
       const cleanup = api.on('artefact:updated', (data: {
         type: string;
@@ -60,10 +64,33 @@
         title?: string;
         description?: string;
       }) => {
+        loadingName = '';
         loadArtefact(data);
+        // Refresh gallery after new artefact
+        refreshGallery();
       });
       cleanups.push(cleanup);
+
+      // Listen for loading state
+      const loadingCleanup = api.on('artefact:loading', (data: { name: string; type: string }) => {
+        loadingName = data.name || 'artefact';
+      });
+      cleanups.push(loadingCleanup);
     }
+
+    // Listen for inline artifact clicks (from transcript card clicks)
+    const handleInlineArtifact = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        loadingName = '';
+        loadArtefact(detail);
+      }
+    };
+    window.addEventListener('inline-artifact', handleInlineArtifact);
+    cleanups.push(() => window.removeEventListener('inline-artifact', handleInlineArtifact));
+
+    // Load gallery on mount
+    refreshGallery();
   });
 
   let cleanups: (() => void)[] = [];
@@ -71,7 +98,6 @@
   onDestroy(() => {
     window.removeEventListener('resize', handleResize);
     cleanups.forEach(fn => fn());
-    if (artefactCleanup) artefactCleanup();
     // Memory cleanup - clear any iframe/webview content
     clearContent();
   });
@@ -110,19 +136,32 @@
     }, 300);
   }
 
-  let artefactCleanup: (() => void) | null = null;
+  async function refreshGallery() {
+    if (!api?.getArtefactGallery) return;
+    try {
+      const items = await api.getArtefactGallery();
+      gallery = (items as GalleryItem[]).map((item, i) => ({
+        ...item,
+        title: item.title || item.name || `Artefact ${i + 1}`,
+      }));
+    } catch { /* gallery unavailable */ }
+  }
 
-  function selectGalleryItem(item: typeof gallery[0]) {
-    if (item.path && api) {
-      // Clean up previous listener before registering a new one
-      if (artefactCleanup) artefactCleanup();
-      artefactCleanup = api.on('artefact:updated', (data: any) => {
-        loadArtefact(data);
-      });
-    }
-    // For items with inline data
-    contentType = (item.type || 'html') as typeof contentType;
+  async function selectGalleryItem(item: GalleryItem) {
     showGallery = false;
+
+    const aType = (item.type || 'html') as typeof contentType;
+    contentType = aType;
+
+    if (aType === 'html' && item.file && api?.getArtefactContent) {
+      // Load HTML content from file
+      const html = await api.getArtefactContent(item.file);
+      content = html || '';
+      contentSrc = '';
+    } else if ((aType === 'image' || aType === 'video') && item.file) {
+      content = '';
+      contentSrc = `file://${item.file}`;
+    }
   }
 
   // Filtered + searched gallery items
@@ -215,6 +254,13 @@
       {:else}
         <pre class="artefact-code">{content}</pre>
       {/if}
+    {:else if loadingName}
+      <div class="artefact-empty">
+        <div class="loading-indicator">
+          <span class="loading-dot"></span>
+          <span>Generating {loadingName}...</span>
+        </div>
+      </div>
     {:else}
       <div class="artefact-empty">
         <p>No artefact to display</p>
@@ -253,7 +299,7 @@
 
       <!-- Artefact cards -->
       <div class="gallery-list">
-        {#each filteredGallery as item (item.id)}
+        {#each filteredGallery as item (item.file || item.name)}
           <button class="gallery-card" onclick={() => selectGalleryItem(item)}>
             <div class="card-top">
               <span
@@ -266,7 +312,7 @@
                 <span class="card-date">{formatDate(item.created_at)}</span>
               {/if}
             </div>
-            <span class="card-title">{formatTitle(item.title)}</span>
+            <span class="card-title">{formatTitle(item.title || item.name)}</span>
             {#if item.description}
               <span class="card-desc">
                 {item.description.length > 60
@@ -357,9 +403,13 @@
   }
 
   .artefact-video {
-    max-width: 100%;
-    max-height: 100%;
+    /* Never exceed original video dimensions - like watching a vertical
+       short on a widescreen. The video stays at its natural size, centered
+       in the dark overlay, and only shrinks if the window is smaller. */
+    max-width: min(100%, 480px);
+    max-height: min(100%, 854px);
     border-radius: 8px;
+    object-fit: contain;
   }
 
   .artefact-code {
@@ -535,5 +585,29 @@
     font-size: 12px;
     text-align: center;
     padding: 20px 0;
+  }
+
+  /* Loading indicator */
+
+  .loading-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+  }
+
+  .loading-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4a9eff;
+    animation: loadingPulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes loadingPulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
   }
 </style>
