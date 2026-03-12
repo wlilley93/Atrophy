@@ -4,7 +4,7 @@
 
 export interface Message {
   id: number;
-  role: 'user' | 'agent' | 'divider';
+  role: 'user' | 'agent' | 'system' | 'divider';
   content: string;
   timestamp: number;
   revealed: number; // chars revealed so far (for animation)
@@ -24,8 +24,8 @@ export function addMessage(role: Message['role'], content: string): Message {
     role,
     content,
     timestamp: Date.now(),
-    revealed: role === 'user' ? content.length : 0,
-    complete: role === 'user' || role === 'divider',
+    revealed: role === 'agent' ? 0 : content.length,
+    complete: role !== 'agent',
   };
   transcript.messages.push(msg);
   return msg;

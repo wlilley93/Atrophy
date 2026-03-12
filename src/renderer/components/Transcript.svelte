@@ -347,17 +347,23 @@
   }
 
   .message {
-    margin-bottom: 14px;
+    margin-bottom: 0;
     position: relative;
   }
 
-  .message + .message:not(.divider) {
-    margin-top: 0;
+  /* Within a pair (user -> agent): tight 14px gap */
+  .message + .message {
+    margin-top: 14px;
   }
 
-  .message.user + .message.agent,
+  /* Between pairs (agent -> next user): larger 24px gap */
   .message.agent + .message.user {
     margin-top: 24px;
+  }
+
+  /* System messages stay tight with their neighbours */
+  .message.system + .message {
+    margin-top: 14px;
   }
 
   .message-text {
@@ -375,6 +381,12 @@
 
   .message.agent .message-text {
     color: var(--text-companion);
+  }
+
+  .message.system .message-text {
+    color: var(--text-dim);
+    font-size: 12px;
+    font-style: italic;
   }
 
   /* Timestamp */
@@ -526,8 +538,8 @@
   }
 
   .thinking-row {
-    margin-bottom: 14px;
-    margin-top: 8px;
+    margin-bottom: 0;
+    margin-top: 14px;
   }
 
   .divider {
