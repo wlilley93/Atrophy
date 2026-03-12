@@ -116,7 +116,7 @@ export async function checkReminders(): Promise<void> {
     sendNotification(`Reminder - ${config.AGENT_DISPLAY_NAME}`, msg);
 
     // Queue for next app interaction
-    queueMessage(`Reminder: ${msg}`, 'reminder');
+    await queueMessage(`Reminder: ${msg}`, 'reminder');
 
     // Send via Telegram if configured
     try {

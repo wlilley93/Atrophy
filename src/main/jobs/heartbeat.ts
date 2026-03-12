@@ -207,7 +207,7 @@ async function handleResponse(response: string): Promise<string> {
     }
 
     sendNotification(config.AGENT_DISPLAY_NAME, message.slice(0, 200));
-    queueMessage(message, 'heartbeat');
+    await queueMessage(message, 'heartbeat');
 
     return `REACH_OUT: ${message.slice(0, 80)}`;
   }

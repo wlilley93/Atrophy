@@ -58,6 +58,13 @@ let artefactTimer: ReturnType<typeof setInterval> | null = null;
 let currentAgentName: string | null = null;
 let keepAwakeBlockerId: number | null = null;
 
+// Journal nudge - silence-based, once per session
+let journalNudgeTimer: ReturnType<typeof setTimeout> | null = null;
+let journalNudgeSent = false;
+let lastUserInputTime = Date.now();
+const JOURNAL_NUDGE_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+const JOURNAL_NUDGE_PROBABILITY = 0.10; // 10% chance
+
 // ---------------------------------------------------------------------------
 // Window creation
 // ---------------------------------------------------------------------------
@@ -246,6 +253,25 @@ export function updateTrayState(state: TrayState): void {
   // If using template image (hand-crafted brain), skip procedural updates
   if (current.isTemplateImage()) return;
   tray.setImage(getTrayIcon(state));
+}
+
+// ---------------------------------------------------------------------------
+// Journal nudge - after 5+ minutes of silence, 10% chance, once per session
+// ---------------------------------------------------------------------------
+
+function resetJournalNudgeTimer(): void {
+  lastUserInputTime = Date.now();
+  if (journalNudgeTimer) clearTimeout(journalNudgeTimer);
+  if (journalNudgeSent) return;
+
+  journalNudgeTimer = setTimeout(() => {
+    if (journalNudgeSent) return;
+    if (Math.random() > JOURNAL_NUDGE_PROBABILITY) return;
+    journalNudgeSent = true;
+    if (mainWindow) {
+      mainWindow.webContents.send('journal:nudge');
+    }
+  }, JOURNAL_NUDGE_DELAY_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -714,8 +740,9 @@ Output EXACTLY this format - a single fenced JSON block:
   ipcMain.handle('inference:send', (_event, text: string) => {
     if (!mainWindow) return;
 
-    // Mark user active
+    // Mark user active and reset journal nudge timer
     setActive();
+    resetJournalNudgeTimer();
 
     // Ensure session exists
     if (!currentSession) {
@@ -1502,6 +1529,9 @@ app.whenReady().then(() => {
 
   // Create window
   mainWindow = createWindow();
+
+  // Start journal nudge timer (silence-based, once per session)
+  resetJournalNudgeTimer();
 
   // Initialise auto-updater
   if (mainWindow) {

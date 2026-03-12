@@ -231,7 +231,7 @@ export async function morningBrief(): Promise<void> {
   sendNotification('Morning Brief', brief.slice(0, 200));
 
   // Queue for next app launch
-  queueMessage(brief, 'morning_brief', audio);
+  await queueMessage(brief, 'morning_brief', audio);
   log.info('Queued for next launch.');
 }
 

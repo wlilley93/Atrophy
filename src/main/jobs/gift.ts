@@ -258,7 +258,7 @@ export async function runGift(agentName: string): Promise<void> {
   log.debug(`Written to ${giftsPath}`);
 
   // Queue notification so the user discovers it
-  queueMessage(gift, 'gift');
+  await queueMessage(gift, 'gift');
   sendNotification(config.AGENT_DISPLAY_NAME, gift.slice(0, 200), 'gift');
 
   // Reschedule to random future time

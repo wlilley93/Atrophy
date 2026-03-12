@@ -241,7 +241,7 @@ async function deliver(
   }
 
   if (deliverMethod === 'message_queue') {
-    queueMessage(text, taskName, audioPath);
+    await queueMessage(text, taskName, audioPath);
     log.info('Queued for next interaction.');
   } else if (deliverMethod === 'telegram' || deliverMethod === 'telegram_voice') {
     try {
@@ -258,13 +258,13 @@ async function deliver(
       log.error(`Telegram failed: ${e}`);
     }
     // Also queue for app
-    queueMessage(text, taskName, audioPath);
+    await queueMessage(text, taskName, audioPath);
   } else if (deliverMethod === 'notification') {
     // Truncate for notification (macOS has limits)
     const body = text.length > 200 ? text.slice(0, 200) + '...' : text;
     sendNotification(config.AGENT_DISPLAY_NAME, body, taskName);
     // Also queue full text
-    queueMessage(text, taskName, audioPath);
+    await queueMessage(text, taskName, audioPath);
   } else if (deliverMethod === 'obsidian') {
     const notePath = path.join(config.OBSIDIAN_AGENT_DIR, 'notes', 'tasks', `${taskName}.md`);
     fs.mkdirSync(path.dirname(notePath), { recursive: true });
@@ -277,7 +277,7 @@ async function deliver(
     log.debug(`Written to Obsidian: ${notePath}`);
   } else {
     log.warn(`Unknown delivery method: ${deliverMethod}`);
-    queueMessage(text, taskName, audioPath);
+    await queueMessage(text, taskName, audioPath);
   }
 }
 
