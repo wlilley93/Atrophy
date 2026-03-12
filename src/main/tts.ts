@@ -12,6 +12,9 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { getConfig } from './config';
+import { createLogger } from './logger';
+
+const log = createLogger('tts');
 
 // ---------------------------------------------------------------------------
 // Temp file management
@@ -313,7 +316,7 @@ export async function synthesise(text: string): Promise<string | null> {
     try {
       return await synthesiseElevenLabsStream(text);
     } catch (e) {
-      console.log(`[TTS] ElevenLabs failed (${e}), trying Fal...`);
+      log.warn(`ElevenLabs failed (${e}), trying Fal...`);
     }
   }
 
@@ -322,7 +325,7 @@ export async function synthesise(text: string): Promise<string | null> {
     try {
       return await synthesiseFal(text);
     } catch (e) {
-      console.log(`[TTS] Fal failed (${e}), trying macOS say...`);
+      log.warn(`Fal failed (${e}), trying macOS say...`);
     }
   }
 
@@ -330,10 +333,10 @@ export async function synthesise(text: string): Promise<string | null> {
   try {
     return await synthesiseMacOS(text);
   } catch (e) {
-    console.log(`[TTS] macOS say failed (${e})`);
+    log.warn(`macOS say failed (${e})`);
   }
 
-  console.log('[TTS] No voice available - skipping audio');
+  log.warn('No voice available - skipping audio');
   return null;
 }
 
@@ -427,7 +430,7 @@ async function processQueue(): Promise<void> {
     try {
       await playAudio(item.audioPath);
     } catch (e) {
-      console.log(`[TTS] Playback error: ${e}`);
+      log.error(`Playback error: ${e}`);
     }
 
     _onDone?.(item.index);

@@ -12,6 +12,9 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { transcribe } from './stt';
 import { getConfig } from './config';
+import { createLogger } from './logger';
+
+const log = createLogger('audio');
 
 // ---------------------------------------------------------------------------
 // State
@@ -30,13 +33,13 @@ export function registerAudioHandlers(getWindow: () => BrowserWindow | null): vo
     _chunks = [];
     _recording = true;
     _startTime = Date.now();
-    console.log('[audio] recording started');
+    log.info('recording started');
   });
 
   ipcMain.handle('audio:stop', async () => {
     _recording = false;
     const elapsed = (Date.now() - _startTime) / 1000;
-    console.log(`[audio] recording stopped (${elapsed.toFixed(1)}s)`);
+    log.info(`recording stopped (${elapsed.toFixed(1)}s)`);
 
     if (_chunks.length === 0) {
       return '';
@@ -56,22 +59,22 @@ export function registerAudioHandlers(getWindow: () => BrowserWindow | null): vo
 
     // Skip if too short (< 300ms)
     if (audio.length < config.SAMPLE_RATE * 0.3) {
-      console.log('[audio] too short, skipping');
+      log.debug('too short, skipping');
       return '';
     }
 
     // Skip if too long
     if (elapsed > config.MAX_RECORD_SEC) {
-      console.log('[audio] exceeded max recording time');
+      log.warn('exceeded max recording time');
     }
 
     // Transcribe
     try {
       const text = await transcribe(audio);
-      console.log(`[audio] transcribed: "${text.slice(0, 80)}"`);
+      log.debug(`transcribed: "${text.slice(0, 80)}"`);
       return text;
     } catch (e) {
-      console.log(`[audio] transcription failed: ${e}`);
+      log.error(`transcription failed: ${e}`);
       return '';
     }
   });

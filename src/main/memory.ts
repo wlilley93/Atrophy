@@ -8,6 +8,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig, USER_DATA } from './config';
 import { embed, vectorToBlob as embVectorToBlob } from './embeddings';
+import { createLogger } from './logger';
+
+const log = createLogger('memory');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -151,7 +154,7 @@ function embedAsync(table: string, rowId: number, text: string, dbPath?: string)
       db.prepare(`UPDATE ${table} SET embedding = ? WHERE id = ?`).run(blob, rowId);
     })
     .catch((err) => {
-      console.error(`[embed-async] Failed to embed ${table}:${rowId}:`, err);
+      log.error(`embed-async failed for ${table}:${rowId}:`, err);
     });
 }
 
@@ -236,7 +239,7 @@ function migrate(db: Database.Database): void {
       .get() as { cnt: number };
     if (legacyRows.cnt > 0) {
       db.prepare("UPDATE turns SET role = 'agent' WHERE role = 'companion'").run();
-      console.log(`[migrate] renamed ${legacyRows.cnt} turns from role 'companion' to 'agent'`);
+      log.info(`renamed ${legacyRows.cnt} turns from role 'companion' to 'agent'`);
     }
   }
 

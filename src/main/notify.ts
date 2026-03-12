@@ -8,6 +8,9 @@
 
 import { execSync } from 'child_process';
 import { getConfig } from './config';
+import { createLogger } from './logger';
+
+const log = createLogger('notify');
 
 export function sendNotification(
   title: string,
@@ -35,6 +38,6 @@ export function sendNotification(
   try {
     execSync(`osascript -e '${script}'`, { timeout: 5000, stdio: 'pipe' });
   } catch (e) {
-    console.log(`[notify] failed: ${e}`);
+    log.error(`failed: ${e}`);
   }
 }

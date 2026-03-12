@@ -17,6 +17,9 @@
 
 import * as fs from 'fs';
 import { getConfig } from '../config';
+import { createLogger } from '../logger';
+
+const log = createLogger('sleep');
 import { runInferenceOneshot } from '../inference';
 import {
   initDb,
@@ -219,7 +222,7 @@ function storeFacts(facts: ParsedFact[]): void {
     writeObservation(content, undefined, fact.confidence);
   }
   if (facts.length > 0) {
-    console.log(`  [sleep] Stored ${facts.length} fact(s)`);
+    log.info(`Stored ${facts.length} fact(s)`);
   }
 }
 
@@ -230,11 +233,11 @@ function storeThreadUpdates(threadUpdates: ParsedThread[]): void {
       updateThreadSummary(t.name, t.summary);
       updated++;
     } catch (e) {
-      console.log(`  [sleep] Failed to update thread '${t.name}': ${e}`);
+      log.error(`Failed to update thread '${t.name}': ${e}`);
     }
   }
   if (updated > 0) {
-    console.log(`  [sleep] Updated ${updated} thread summary(ies)`);
+    log.info(`Updated ${updated} thread summary(ies)`);
   }
 }
 
@@ -244,7 +247,7 @@ function storePatterns(patterns: string[]): void {
     writeObservation(content);
   }
   if (patterns.length > 0) {
-    console.log(`  [sleep] Stored ${patterns.length} pattern(s)`);
+    log.info(`Stored ${patterns.length} pattern(s)`);
   }
 }
 
@@ -276,7 +279,7 @@ function storeIdentityFlags(flags: string[]): void {
   }
 
   fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2));
-  console.log(`  [sleep] Flagged ${flags.length} item(s) for identity review`);
+  log.info(`Flagged ${flags.length} item(s) for identity review`);
 }
 
 // ---------------------------------------------------------------------------
@@ -287,12 +290,12 @@ function scoreExistingMemories(): void {
   // Mark stale observations (>30 days, never incorporated)
   const staleCount = markObservationsStale(30);
   if (staleCount > 0) {
-    console.log(`  [sleep] Marked ${staleCount} observation(s) as stale`);
+    log.info(`Marked ${staleCount} observation(s) as stale`);
   }
 
   // Decay activation scores - half-life 30 days
   decayActivations(30);
-  console.log('  [sleep] Decayed activation scores');
+  log.debug('Decayed activation scores');
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +331,7 @@ function restoreEmotionalBaselines(): void {
       session_tone: null, // Reset session tone on wake
     };
     saveState(updated);
-    console.log('  [sleep] Emotional baselines restored');
+    log.info('Emotional baselines restored');
   }
 }
 
@@ -342,14 +345,14 @@ export async function sleepCycle(): Promise<void> {
 
   const material = gatherMaterial();
   if (!material.trim()) {
-    console.log('[sleep] No material from today. Nothing to consolidate.');
+    log.info('No material from today. Nothing to consolidate.');
     // Still do maintenance even with no new material
     scoreExistingMemories();
     restoreEmotionalBaselines();
     return;
   }
 
-  console.log('[sleep] Starting nightly reconciliation...');
+  log.info('Starting nightly reconciliation...');
 
   const prompt =
     "Here is today's material. Process it - extract facts, update threads, " +
@@ -365,7 +368,7 @@ export async function sleepCycle(): Promise<void> {
       'low',
     );
   } catch (e) {
-    console.log(`[sleep] Inference failed: ${e}`);
+    log.error(`Inference failed: ${e}`);
     // Still do maintenance
     scoreExistingMemories();
     restoreEmotionalBaselines();
@@ -373,13 +376,13 @@ export async function sleepCycle(): Promise<void> {
   }
 
   if (!response || !response.trim()) {
-    console.log('[sleep] Empty response. Skipping parse.');
+    log.info('Empty response. Skipping parse.');
     scoreExistingMemories();
     restoreEmotionalBaselines();
     return;
   }
 
-  console.log(`[sleep] Got response (${response.length} chars). Parsing...`);
+  log.info(`Got response (${response.length} chars). Parsing...`);
 
   // Parse sections
   const factsSection = parseSection(response, 'FACTS');
@@ -406,7 +409,7 @@ export async function sleepCycle(): Promise<void> {
   // Restore emotional baselines (sleep resets emotional extremes)
   restoreEmotionalBaselines();
 
-  console.log('[sleep] Nightly reconciliation complete.');
+  log.info('Nightly reconciliation complete.');
 }
 
 // ---------------------------------------------------------------------------
@@ -417,7 +420,7 @@ if (require.main === module) {
   sleepCycle()
     .then(() => process.exit(0))
     .catch((e) => {
-      console.error(`[sleep] Fatal: ${e}`);
+      log.error(`Fatal: ${e}`);
       process.exit(1);
     });
 }

@@ -12,6 +12,9 @@ import * as path from 'path';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
 import { discoverAgents, getAgentState } from './agent-manager';
 import { runInferenceOneshot } from './inference';
+import { createLogger } from './logger';
+
+const log = createLogger('router');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -163,12 +166,12 @@ async function routeViaAgent(text: string, agents: AgentInfo[]): Promise<string[
       const names = JSON.parse(match[0]) as string[];
       const valid = names.filter((n) => validSlugs.includes(n));
       if (valid.length) {
-        console.log(`[router] Routing agent chose: ${valid.join(', ')}`);
+        log.info(`Routing agent chose: ${valid.join(', ')}`);
         return valid;
       }
     }
   } catch (e) {
-    console.log(`[router] Routing agent failed: ${e}`);
+    log.error(`Routing agent failed: ${e}`);
   }
 
   return agents.length ? [agents[0].name] : [];

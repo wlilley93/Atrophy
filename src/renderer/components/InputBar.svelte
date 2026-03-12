@@ -98,7 +98,7 @@
       await api.startRecording();
       isRecording = true;
     } catch (err) {
-      console.log('[audio] mic access failed:', err);
+      console.error('[audio] mic access failed:', err);
     }
   }
 

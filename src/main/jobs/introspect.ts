@@ -20,6 +20,9 @@ import { getConfig, USER_DATA } from '../config';
 import { runInferenceOneshot } from '../inference';
 import { loadPrompt } from '../prompts';
 import { editJobSchedule } from '../cron';
+import { createLogger } from '../logger';
+
+const log = createLogger('introspect');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -520,7 +523,7 @@ function writeJournalEntry(reflection: string): string {
   if (fs.existsSync(journalPath)) {
     const existing = fs.readFileSync(journalPath, 'utf-8');
     fs.writeFileSync(journalPath, existing + '\n---\n\n' + entry);
-    console.log(`[introspect] Appended to ${journalPath}`);
+    log.debug(`Appended to ${journalPath}`);
   } else {
     const frontmatter =
       '---\n' +
@@ -530,7 +533,7 @@ function writeJournalEntry(reflection: string): string {
       `tags: [${config.AGENT_NAME}, journal, introspection]\n` +
       '---\n\n';
     fs.writeFileSync(journalPath, frontmatter + entry);
-    console.log(`[introspect] Written to ${journalPath}`);
+    log.debug(`Written to ${journalPath}`);
   }
 
   return journalPath;
@@ -551,11 +554,11 @@ function reschedule(): void {
   try {
     editJobSchedule('introspect', newCron);
     const pad = (n: number): string => String(n).padStart(2, '0');
-    console.log(
-      `[introspect] Rescheduled to ${target.toISOString().slice(0, 10)} at ${pad(hour)}:${pad(minute)}`,
+    log.info(
+      `Rescheduled to ${target.toISOString().slice(0, 10)} at ${pad(hour)}:${pad(minute)}`,
     );
   } catch (err) {
-    console.error('[introspect] Failed to reschedule:', err);
+    log.error('Failed to reschedule:', err);
   }
 }
 
@@ -574,7 +577,7 @@ export async function introspect(opts: IntrospectOptions = {}): Promise<string |
   const material = buildMaterial();
 
   if (!material.trim()) {
-    console.log('[introspect] No material to reflect on. Skipping.');
+    log.info('No material to reflect on. Skipping.');
     return null;
   }
 
@@ -583,7 +586,7 @@ export async function introspect(opts: IntrospectOptions = {}): Promise<string |
     "Write today's journal entry.\n\n" +
     material;
 
-  console.log('[introspect] Generating reflection...');
+  log.info('Generating reflection...');
 
   let reflection: string;
   try {
@@ -593,12 +596,12 @@ export async function introspect(opts: IntrospectOptions = {}): Promise<string |
       system,
     );
   } catch (err) {
-    console.error('[introspect] Inference failed:', err);
+    log.error('Inference failed:', err);
     return null;
   }
 
   if (!reflection?.trim()) {
-    console.log('[introspect] Empty reflection. Skipping.');
+    log.info('Empty reflection. Skipping.');
     return null;
   }
 
@@ -608,7 +611,7 @@ export async function introspect(opts: IntrospectOptions = {}): Promise<string |
     reschedule();
   }
 
-  console.log('[introspect] Done.');
+  log.info('Done.');
   return journalPath;
 }
 
@@ -628,7 +631,7 @@ export async function main(): Promise<void> {
   try {
     await introspect();
   } catch (err) {
-    console.error('[introspect] Fatal error:', err);
+    log.error('Fatal error:', err);
     process.exit(1);
   }
 }

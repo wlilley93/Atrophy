@@ -13,6 +13,9 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import { transcribeFast } from './stt';
 import { getConfig } from './config';
+import { createLogger } from './logger';
+
+const log = createLogger('wakeword');
 
 // ---------------------------------------------------------------------------
 // State
@@ -47,11 +50,11 @@ export function startWakeWordListener(
   // Pre-flight checks
   if (!config.WAKE_WORD_ENABLED) return;
   if (!fs.existsSync(config.WHISPER_BIN)) {
-    console.log(`[wake word] whisper binary not found at ${config.WHISPER_BIN}`);
+    log.warn(`whisper binary not found at ${config.WHISPER_BIN}`);
     return;
   }
   if (!fs.existsSync(config.WHISPER_MODEL)) {
-    console.log(`[wake word] whisper model not found at ${config.WHISPER_MODEL}`);
+    log.warn(`whisper model not found at ${config.WHISPER_MODEL}`);
     return;
   }
 
@@ -65,7 +68,7 @@ export function startWakeWordListener(
     win.webContents.send('wakeword:start', config.WAKE_CHUNK_SECONDS);
   }
 
-  console.log(`[wake word] listener started (words: ${config.WAKE_WORDS.join(', ')})`);
+  log.info(`listener started (words: ${config.WAKE_WORDS.join(', ')})`);
 }
 
 export function stopWakeWordListener(getWindow: () => BrowserWindow | null): void {
@@ -77,7 +80,7 @@ export function stopWakeWordListener(getWindow: () => BrowserWindow | null): voi
     win.webContents.send('wakeword:stop');
   }
 
-  console.log('[wake word] listener stopped');
+  log.info('listener stopped');
 }
 
 export function pauseWakeWord(): void {
@@ -117,12 +120,12 @@ export function registerWakeWordHandlers(): void {
       // Check for wake word match
       const matched = wakeWords.some((w) => textLower.includes(w));
       if (matched) {
-        console.log(`[wake word] detected: "${textLower}"`);
+        log.info(`detected: "${textLower}"`);
         _paused = true; // auto-pause until explicitly resumed
         _onDetected?.();
       }
     } catch (e) {
-      console.log(`[wake word] transcription error: ${e}`);
+      log.error(`transcription error: ${e}`);
     }
   });
 }

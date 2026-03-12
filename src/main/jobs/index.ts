@@ -11,6 +11,9 @@
  */
 
 import { getConfig } from '../config';
+import { createLogger } from '../logger';
+
+const log = createLogger('jobs');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -91,14 +94,14 @@ export async function runJob(name: string, agent?: string): Promise<JobResult> {
     };
   }
 
-  console.log(`[job:${name}] Starting...`);
+  log.info(`[job:${name}] Starting...`);
 
   // Gate checks
   for (const gate of def.gates) {
     const reason = gate();
     if (reason) {
       const elapsed = Date.now() - t0;
-      console.log(`[job:${name}] Gated: ${reason}`);
+      log.info(`[job:${name}] Gated: ${reason}`);
       return {
         job: name,
         ran: false,
@@ -112,7 +115,7 @@ export async function runJob(name: string, agent?: string): Promise<JobResult> {
   try {
     const outcome = await def.run();
     const elapsed = Date.now() - t0;
-    console.log(`[job:${name}] Done (${elapsed}ms): ${outcome.slice(0, 120)}`);
+    log.info(`[job:${name}] Done (${elapsed}ms): ${outcome.slice(0, 120)}`);
     return {
       job: name,
       ran: true,
@@ -122,7 +125,7 @@ export async function runJob(name: string, agent?: string): Promise<JobResult> {
   } catch (e) {
     const elapsed = Date.now() - t0;
     const errMsg = e instanceof Error ? e.message : String(e);
-    console.error(`[job:${name}] Error (${elapsed}ms): ${errMsg}`);
+    log.error(`[job:${name}] Error (${elapsed}ms): ${errMsg}`);
     return {
       job: name,
       ran: true,
@@ -149,7 +152,7 @@ export async function runJobFromCli(argv: string[]): Promise<void> {
   }
 
   if (!jobName) {
-    console.error('Usage: --job=<name> [--agent=<agent>]');
+    log.error('Usage: --job=<name> [--agent=<agent>]');
     process.exit(1);
   }
 
@@ -158,7 +161,7 @@ export async function runJobFromCli(argv: string[]): Promise<void> {
   }
 
   const result = await runJob(jobName, agent);
-  console.log(JSON.stringify(result, null, 2));
+  log.info(JSON.stringify(result, null, 2));
   process.exit(result.error ? 1 : 0);
 }
 

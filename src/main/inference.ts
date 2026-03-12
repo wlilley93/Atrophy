@@ -31,6 +31,9 @@ import {
 import { formatForContext, updateEmotions, updateTrust, loadState } from './inner-life';
 import { getStatus } from './status';
 import * as memory from './memory';
+import { createLogger } from './logger';
+
+const log = createLogger('inference');
 
 // ---------------------------------------------------------------------------
 // Tool blacklist
@@ -400,7 +403,7 @@ export function streamInference(
   if (config.ADAPTIVE_EFFORT && config.CLAUDE_EFFORT === 'medium') {
     const recentTurns = memory.getRecentCompanionTurns();
     effort = classifyEffort(userMessage, recentTurns);
-    console.log(`  [effort: ${effort}]`);
+    log.debug(`effort: ${effort}`);
   }
 
   // Validate effort
@@ -456,7 +459,7 @@ export function streamInference(
     });
     _activeProcess = proc;
   } catch (e) {
-    console.log(`  [inference] failed to start: ${e}`);
+    log.error(`failed to start: ${e}`);
     setImmediate(() => emitter.emit('event', { type: 'StreamError', message: String(e) } as StreamErrorEvent));
     return emitter;
   }
@@ -610,7 +613,7 @@ export function streamInference(
     // Check for failure
     if (code && code !== 0) {
       const errMsg = stderrChunks.trim().slice(0, 300) || `claude exited with code ${code}`;
-      console.log(`  [inference] error (exit ${code}): ${errMsg.slice(0, 120)}`);
+      log.error(`error (exit ${code}): ${errMsg.slice(0, 120)}`);
       emitter.emit('event', { type: 'StreamError', message: errMsg } as StreamErrorEvent);
       return;
     }
@@ -618,7 +621,7 @@ export function streamInference(
     // No output at all
     if (!gotAnyOutput && !fullText) {
       const errMsg = stderrChunks.trim().slice(0, 300) || 'No response from claude';
-      console.log('  [inference] no output');
+      log.error('no output');
       emitter.emit('event', { type: 'StreamError', message: errMsg } as StreamErrorEvent);
       return;
     }
@@ -636,7 +639,7 @@ export function streamInference(
     // Log
     const nSentences = sentenceIndex + (remainder ? 1 : 0);
     const toolsStr = toolCalls.length > 0 ? ` | tools: ${toolCalls.join(', ')}` : '';
-    console.log(`  [inference] ${mode} | ${fullText.length} chars, ${nSentences} sentences${toolsStr} | ${elapsed.toFixed(1)}s`);
+    log.info(`${mode} | ${fullText.length} chars, ${nSentences} sentences${toolsStr} | ${elapsed.toFixed(1)}s`);
 
     // Log usage (estimated)
     try {
@@ -655,7 +658,7 @@ export function streamInference(
   proc.on('error', (err) => {
     _activeProcess = null;
     const elapsed = (Date.now() - t0) / 1000;
-    console.log(`  [inference] crashed after ${elapsed.toFixed(1)}s: ${err}`);
+    log.error(`crashed after ${elapsed.toFixed(1)}s: ${err}`);
     emitter.emit('event', { type: 'StreamError', message: String(err) } as StreamErrorEvent);
   });
 
@@ -773,7 +776,7 @@ export function runMemoryFlush(
   system: string,
 ): Promise<string | null> {
   return new Promise((resolve) => {
-    console.log('  [memory flush: starting...]');
+    log.info('memory flush: starting...');
     const t0 = Date.now();
     let newSessionId: string | null = null;
     const toolsUsed: string[] = [];
@@ -784,7 +787,7 @@ export function runMemoryFlush(
       switch (event.type) {
         case 'ToolUse':
           toolsUsed.push(event.name);
-          console.log(`  [memory flush: tool -> ${event.name}]`);
+          log.debug(`memory flush: tool -> ${event.name}`);
           break;
         case 'StreamDone':
           if (event.sessionId && event.sessionId !== cliSessionId) {
@@ -795,12 +798,12 @@ export function runMemoryFlush(
             const toolsStr = toolsUsed.length > 0
               ? ` | tools: ${toolsUsed.join(', ')}`
               : ' | no tools called';
-            console.log(`  [memory flush: done${toolsStr} | ${elapsed.toFixed(1)}s]`);
+            log.info(`memory flush: done${toolsStr} | ${elapsed.toFixed(1)}s`);
           }
           resolve(newSessionId);
           break;
         case 'StreamError':
-          console.log(`  [memory flush: error - ${event.message.slice(0, 120)}]`);
+          log.error(`memory flush: error - ${event.message.slice(0, 120)}`);
           resolve(null);
           break;
         // TextDelta, SentenceReady, Compacting - silently ignored

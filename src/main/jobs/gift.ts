@@ -19,6 +19,9 @@ import { loadPrompt } from '../prompts';
 import { queueMessage } from '../queue';
 import { sendNotification } from '../notify';
 import { editJobSchedule } from '../cron';
+import { createLogger } from '../logger';
+
+const log = createLogger('gift');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -170,12 +173,12 @@ function reschedule(): void {
 
   try {
     editJobSchedule('gift', newCron);
-    console.log(
-      `[gift] Rescheduled to ${target.toISOString().split('T')[0]} ` +
+    log.info(
+      `Rescheduled to ${target.toISOString().split('T')[0]} ` +
       `at ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
     );
   } catch (e) {
-    console.log(`[gift] Failed to reschedule: ${e}`);
+    log.error(`Failed to reschedule: ${e}`);
   }
 }
 
@@ -226,12 +229,12 @@ export async function runGift(agentName: string): Promise<void> {
 
   const material = gatherMaterial(agentName);
   if (!material.trim()) {
-    console.log('[gift] No material. Rescheduling.');
+    log.info('No material. Rescheduling.');
     reschedule();
     return;
   }
 
-  console.log('[gift] Generating gift...');
+  log.info('Generating gift...');
 
   let gift: string;
   try {
@@ -240,20 +243,20 @@ export async function runGift(agentName: string): Promise<void> {
       loadPrompt('gift', GIFT_FALLBACK),
     );
   } catch (e) {
-    console.log(`[gift] Inference failed: ${e}`);
+    log.error(`Inference failed: ${e}`);
     reschedule();
     return;
   }
 
   if (!gift || !gift.trim()) {
-    console.log('[gift] Nothing to say. Rescheduling.');
+    log.info('Nothing to say. Rescheduling.');
     reschedule();
     return;
   }
 
   // Write artefact to Obsidian
   const giftsPath = writeGiftToObsidian(gift, agentName);
-  console.log(`[gift] Written to ${giftsPath}`);
+  log.debug(`Written to ${giftsPath}`);
 
   // Queue notification so the user discovers it
   queueMessage(gift, 'gift');
@@ -261,5 +264,5 @@ export async function runGift(agentName: string): Promise<void> {
 
   // Reschedule to random future time
   reschedule();
-  console.log('[gift] Done.');
+  log.info('Done.');
 }

@@ -24,6 +24,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig } from '../config';
+import { createLogger } from '../logger';
+
+const log = createLogger('reminder');
 import { sendNotification } from '../notify';
 import { queueMessage } from '../queue';
 import { sendMessage as telegramSend } from '../telegram';
@@ -103,7 +106,7 @@ export async function checkReminders(): Promise<void> {
   // Fire due reminders
   for (const r of due) {
     const msg = r.message || 'Reminder';
-    console.log(`[reminder] Firing: ${msg}`);
+    log.info(`Firing: ${msg}`);
 
     // macOS notification with sound
     sendNotification(`Reminder - ${config.AGENT_DISPLAY_NAME}`, msg);
@@ -121,7 +124,7 @@ export async function checkReminders(): Promise<void> {
 
   // Save remaining
   saveReminders(remaining);
-  console.log(`[reminder] Fired ${due.length}, ${remaining.length} remaining.`);
+  log.info(`Fired ${due.length}, ${remaining.length} remaining.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +133,7 @@ export async function checkReminders(): Promise<void> {
 
 if (require.main === module) {
   checkReminders().catch((e) => {
-    console.error(`[reminder] Fatal: ${e}`);
+    log.error(`Fatal: ${e}`);
     process.exit(1);
   });
 }

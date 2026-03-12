@@ -18,6 +18,9 @@ import Database from 'better-sqlite3';
 import { getConfig, USER_DATA } from '../config';
 import { runInferenceOneshot } from '../inference';
 import { writeObservation, extractAndStoreEntities } from '../memory';
+import { createLogger } from '../logger';
+
+const log = createLogger('observer');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,7 +160,7 @@ export async function runObserver(agentName: string): Promise<void> {
     return;
   }
 
-  console.log(`[observer] ${turns.length} new turn(s) since ID ${lastId}`);
+  log.info(`${turns.length} new turn(s) since ID ${lastId}`);
 
   // Build transcript
   const transcriptLines = turns.map((t) => {
@@ -181,12 +184,12 @@ export async function runObserver(agentName: string): Promise<void> {
       'low',
     );
   } catch (e) {
-    console.log(`[observer] Inference failed: ${e}`);
+    log.error(`Inference failed: ${e}`);
     return;
   }
 
   if (!response || !response.trim()) {
-    console.log('[observer] Empty response.');
+    log.info('Empty response.');
     return;
   }
 
@@ -197,14 +200,14 @@ export async function runObserver(agentName: string): Promise<void> {
 
   // Check for nothing new
   if (response.trim().includes('NOTHING_NEW')) {
-    console.log('[observer] Nothing worth extracting.');
+    log.info('Nothing worth extracting.');
     return;
   }
 
   // Parse and store observations
   const observations = parseObservations(response);
   if (observations.length === 0) {
-    console.log('[observer] No observations parsed.');
+    log.info('No observations parsed.');
     return;
   }
 
@@ -213,7 +216,7 @@ export async function runObserver(agentName: string): Promise<void> {
     writeObservation(content, undefined, obs.confidence);
   }
 
-  console.log(`[observer] Stored ${observations.length} observation(s)`);
+  log.info(`Stored ${observations.length} observation(s)`);
 
   // Entity extraction from the transcript (silent - enriches the entity graph)
   try {

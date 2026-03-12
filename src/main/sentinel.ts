@@ -13,6 +13,9 @@
 
 import * as memory from './memory';
 import { streamInference, InferenceEvent } from './inference';
+import { createLogger } from './logger';
+
+const log = createLogger('sentinel');
 
 // ---------------------------------------------------------------------------
 // N-gram helpers
@@ -199,7 +202,7 @@ export function runCoherenceCheck(
     const recent = memory.getRecentCompanionTurns(5).reverse(); // DESC -> chronological
 
     if (recent.length < 3) {
-      console.log('  [sentinel] skipped - fewer than 3 turns');
+      log.debug('skipped - fewer than 3 turns');
       resolve(null);
       return;
     }
@@ -217,8 +220,8 @@ export function runCoherenceCheck(
     );
 
     const signalStr = result.signals.length > 0 ? result.signals.join('; ') : 'clean';
-    console.log(
-      `  [sentinel] score=${result.score.toFixed(2)} ` +
+    log.info(
+      `score=${result.score.toFixed(2)} ` +
       `degraded=${result.degraded} | ${signalStr} | ${checkMs}ms`,
     );
 
@@ -229,7 +232,7 @@ export function runCoherenceCheck(
 
     // Fire re-anchoring turn - silent, no UI output
     const reanchorPrompt = formatReanchorPrompt(result.signals);
-    console.log('  [sentinel] firing re-anchor turn...');
+    log.info('firing re-anchor turn...');
 
     let newSessionId: string | null = null;
     const toolsUsed: string[] = [];
@@ -247,12 +250,12 @@ export function runCoherenceCheck(
           }
           {
             const toolsStr = toolsUsed.length > 0 ? ` | tools: ${toolsUsed.join(', ')}` : '';
-            console.log(`  [sentinel] reanchor complete${toolsStr}`);
+            log.info(`reanchor complete${toolsStr}`);
           }
           resolve(newSessionId);
           break;
         case 'StreamError':
-          console.log(`  [sentinel] reanchor error: ${event.message.slice(0, 120)}`);
+          log.error(`reanchor error: ${event.message.slice(0, 120)}`);
           resolve(null);
           break;
       }

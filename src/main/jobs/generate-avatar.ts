@@ -13,6 +13,9 @@ import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig, USER_DATA } from '../config';
+import { createLogger } from '../logger';
+
+const log = createLogger('avatar');
 
 // ---------------------------------------------------------------------------
 // Fal AI configuration
@@ -216,10 +219,10 @@ export async function generateFace(
 
   if (refs.length === 0) {
     // No reference images - generate without IP adapter
-    console.log('[avatar] No reference images found - generating without IP adapter');
+    log.info('No reference images found - generating without IP adapter');
 
     for (let i = 0; i < perRef; i++) {
-      console.log(`[avatar] Generating candidate ${i + 1}/${perRef}...`);
+      log.info(`Generating candidate ${i + 1}/${perRef}...`);
       try {
         const result = await falGenerate(falKey, {
           prompt,
@@ -232,39 +235,39 @@ export async function generateFace(
 
         const images = result.images || [];
         if (images.length === 0) {
-          console.log('[avatar] No images in response');
+          log.warn('No images in response');
           continue;
         }
 
         const outPath = path.join(outDir, `candidate_${String(i + 1).padStart(2, '0')}.png`);
         await downloadImage(images[0].url, outPath);
         generated.push(outPath);
-        console.log(`[avatar] Saved: ${path.basename(outPath)}`);
+        log.debug(`Saved: ${path.basename(outPath)}`);
       } catch (e) {
-        console.log(`[avatar] Generation failed: ${e}`);
+        log.error(`Generation failed: ${e}`);
       }
     }
   } else {
     // Reference images available - use IP adapter
-    console.log(`[avatar] ${refs.length} reference image(s) found`);
+    log.info(`${refs.length} reference image(s) found`);
 
     for (let refIdx = 0; refIdx < refs.length; refIdx++) {
       const refPath = refs[refIdx];
       const refName = path.parse(refPath).name;
-      console.log(`[avatar] Reference ${refIdx + 1}/${refs.length}: ${path.basename(refPath)}`);
+      log.info(`Reference ${refIdx + 1}/${refs.length}: ${path.basename(refPath)}`);
 
       let refUrl: string;
       try {
         refUrl = await uploadToFal(refPath);
       } catch (e) {
-        console.log(`[avatar] Upload failed: ${e}`);
+        log.error(`Upload failed: ${e}`);
         continue;
       }
 
       for (let j = 0; j < perRef; j++) {
         const num = refIdx * perRef + j + 1;
         const total = refs.length * perRef;
-        console.log(`[avatar] [${String(num).padStart(2, '0')}/${String(total).padStart(2, '0')}] Generating...`);
+        log.info(`[${String(num).padStart(2, '0')}/${String(total).padStart(2, '0')}] Generating...`);
 
         try {
           const result = await falGenerate(falKey, {
@@ -287,7 +290,7 @@ export async function generateFace(
 
           const images = result.images || [];
           if (images.length === 0) {
-            console.log('[avatar] No images in response');
+            log.warn('No images in response');
             continue;
           }
 
@@ -297,15 +300,15 @@ export async function generateFace(
           );
           await downloadImage(images[0].url, outPath);
           generated.push(outPath);
-          console.log(`[avatar] Saved: ${path.basename(outPath)}`);
+          log.debug(`Saved: ${path.basename(outPath)}`);
         } catch (e) {
-          console.log(`[avatar] Generation failed: ${e}`);
+          log.error(`Generation failed: ${e}`);
         }
       }
     }
   }
 
-  console.log(`[avatar] Generated ${generated.length} candidate(s) in ${outDir}`);
+  log.info(`Generated ${generated.length} candidate(s) in ${outDir}`);
   return generated;
 }
 
@@ -403,7 +406,7 @@ export async function generateAmbientLoop(agentName: string): Promise<string | n
   config.reloadForAgent(agentName);
 
   if (!config.ELEVENLABS_API_KEY || !config.ELEVENLABS_VOICE_ID) {
-    console.log('[avatar] ElevenLabs not configured - skipping ambient loop');
+    log.info('ElevenLabs not configured - skipping ambient loop');
     return null;
   }
 
@@ -421,7 +424,7 @@ export async function generateAmbientLoop(agentName: string): Promise<string | n
     `/${config.ELEVENLABS_VOICE_ID}/stream` +
     `?output_format=mp3_44100_128`;
 
-  console.log('[avatar] Generating ambient loop via ElevenLabs...');
+  log.info('Generating ambient loop via ElevenLabs...');
 
   try {
     const resp = await fetch(url, {
@@ -448,14 +451,14 @@ export async function generateAmbientLoop(agentName: string): Promise<string | n
 
     const buffer = Buffer.from(await resp.arrayBuffer());
     fs.writeFileSync(outPath, buffer);
-    console.log(`[avatar] Ambient loop saved: ${outPath}`);
+    log.info(`Ambient loop saved: ${outPath}`);
 
     // Trim trailing silence if ffprobe is available
     await trimStaticTails(outPath);
 
     return outPath;
   } catch (e) {
-    console.log(`[avatar] Ambient loop generation failed: ${e}`);
+    log.error(`Ambient loop generation failed: ${e}`);
     return null;
   }
 }
@@ -478,7 +481,7 @@ export async function trimStaticTails(audioPath: string): Promise<void> {
   try {
     execSync('which ffprobe', { stdio: 'pipe' });
   } catch {
-    console.log('[avatar] ffprobe not found - skipping silence trim');
+    log.warn('ffprobe not found - skipping silence trim');
     return;
   }
 
@@ -520,13 +523,13 @@ export async function trimStaticTails(audioPath: string): Promise<void> {
 
     if (trimResult.status === 0 && fs.existsSync(trimmedPath)) {
       fs.renameSync(trimmedPath, audioPath);
-      console.log(`[avatar] Trimmed trailing silence at ${trimPoint.toFixed(1)}s`);
+      log.debug(`Trimmed trailing silence at ${trimPoint.toFixed(1)}s`);
     } else {
       // Clean up failed attempt
       try { fs.unlinkSync(trimmedPath); } catch { /* noop */ }
     }
   } catch (e) {
-    console.log(`[avatar] Silence trim failed: ${e}`);
+    log.warn(`Silence trim failed: ${e}`);
   }
 }
 
@@ -547,34 +550,34 @@ export async function runFullAvatarPipeline(agentName: string): Promise<void> {
   const config = getConfig();
   config.reloadForAgent(agentName);
 
-  console.log(`[avatar] Starting full pipeline for agent: ${agentName}`);
-  console.log(`[avatar] Avatar dir: ${avatarDir(agentName)}`);
+  log.info(`Starting full pipeline for agent: ${agentName}`);
+  log.debug(`Avatar dir: ${avatarDir(agentName)}`);
 
   // Step 1: Generate face candidates
-  console.log('\n[avatar] Step 1/2: Generating face candidates...');
+  log.info('Step 1/2: Generating face candidates...');
   let candidates: string[] = [];
   try {
     candidates = await generateFace(agentName);
   } catch (e) {
-    console.log(`[avatar] Face generation failed: ${e}`);
+    log.error(`Face generation failed: ${e}`);
   }
 
   // Step 2: Generate ambient audio loop
-  console.log('\n[avatar] Step 2/2: Generating ambient audio loop...');
+  log.info('Step 2/2: Generating ambient audio loop...');
   let ambientPath: string | null = null;
   try {
     ambientPath = await generateAmbientLoop(agentName);
   } catch (e) {
-    console.log(`[avatar] Ambient loop failed: ${e}`);
+    log.error(`Ambient loop failed: ${e}`);
   }
 
   // Summary
-  console.log('\n[avatar] Pipeline complete.');
-  console.log(`[avatar] Face candidates: ${candidates.length}`);
-  console.log(`[avatar] Ambient loop: ${ambientPath || 'not generated'}`);
+  log.info('Pipeline complete.');
+  log.info(`Face candidates: ${candidates.length}`);
+  log.info(`Ambient loop: ${ambientPath || 'not generated'}`);
 
   if (candidates.length > 0) {
-    console.log(`[avatar] Review candidates in: ${candidatesDir(agentName)}`);
-    console.log(`[avatar] Copy chosen face to: ${path.join(avatarDir(agentName), 'source', 'face.png')}`);
+    log.info(`Review candidates in: ${candidatesDir(agentName)}`);
+    log.info(`Copy chosen face to: ${path.join(avatarDir(agentName), 'source', 'face.png')}`);
   }
 }

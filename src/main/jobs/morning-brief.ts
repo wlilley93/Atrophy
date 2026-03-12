@@ -17,6 +17,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig } from '../config';
+import { createLogger } from '../logger';
+
+const log = createLogger('brief');
 import { runInferenceOneshot } from '../inference';
 import { loadPrompt } from '../prompts';
 import { queueMessage } from '../queue';
@@ -46,7 +49,7 @@ async function fetchWeather(location = 'Leeds'): Promise<string> {
     if (!resp.ok) return '';
     return (await resp.text()).trim();
   } catch (e) {
-    console.log(`[brief] weather fetch failed: ${e}`);
+    log.warn(`weather fetch failed: ${e}`);
     return '';
   }
 }
@@ -82,7 +85,7 @@ async function fetchHeadlines(): Promise<string> {
 
     return items.join('\n');
   } catch (e) {
-    console.log(`[brief] headlines fetch failed: ${e}`);
+    log.warn(`headlines fetch failed: ${e}`);
     return '';
   }
 }
@@ -163,7 +166,7 @@ async function synthesiseAudio(text: string): Promise<string> {
       if (stat.size > 100) return audioPath;
     }
   } catch (e) {
-    console.log(`[brief] TTS failed: ${e}`);
+    log.warn(`TTS failed: ${e}`);
   }
   return '';
 }
@@ -186,11 +189,11 @@ export async function morningBrief(): Promise<void> {
 
   const context = await gatherContext();
   if (!context.trim()) {
-    console.log('[brief] No context gathered. Skipping.');
+    log.info('No context gathered. Skipping.');
     return;
   }
 
-  console.log('[brief] Generating morning brief...');
+  log.info('Generating morning brief...');
 
   let brief: string;
   try {
@@ -199,29 +202,29 @@ export async function morningBrief(): Promise<void> {
       loadPrompt('morning-brief', BRIEF_FALLBACK),
     );
   } catch (e) {
-    console.log(`[brief] Inference failed: ${e}`);
+    log.error(`Inference failed: ${e}`);
     return;
   }
 
   if (!brief || !brief.trim()) {
-    console.log('[brief] Empty response. Skipping.');
+    log.info('Empty response. Skipping.');
     return;
   }
 
-  console.log(`[brief] Generated: ${brief.slice(0, 100)}...`);
+  log.info(`Generated: ${brief.slice(0, 100)}...`);
 
   // Pre-synthesise TTS
   const audio = await synthesiseAudio(brief);
   if (audio) {
-    console.log(`[brief] Audio cached: ${audio}`);
+    log.debug(`Audio cached: ${audio}`);
   }
 
   // Send via Telegram
   try {
     await sendTelegram(brief);
-    console.log('[brief] Sent via Telegram.');
+    log.info('Sent via Telegram.');
   } catch (e) {
-    console.log(`[brief] Telegram send failed: ${e}`);
+    log.warn(`Telegram send failed: ${e}`);
   }
 
   // Send notification
@@ -229,7 +232,7 @@ export async function morningBrief(): Promise<void> {
 
   // Queue for next app launch
   queueMessage(brief, 'morning_brief', audio);
-  console.log('[brief] Queued for next launch.');
+  log.info('Queued for next launch.');
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +243,7 @@ if (require.main === module) {
   morningBrief()
     .then(() => process.exit(0))
     .catch((e) => {
-      console.error(`[brief] Fatal: ${e}`);
+      log.error(`Fatal: ${e}`);
       process.exit(1);
     });
 }

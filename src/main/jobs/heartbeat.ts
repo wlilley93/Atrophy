@@ -37,6 +37,9 @@ import { sendNotification } from '../notify';
 import { queueMessage } from '../queue';
 import { sendMessage as sendTelegram } from '../telegram';
 import { registerJob, activeHoursGate } from './index';
+import { createLogger } from '../logger';
+
+const log = createLogger('heartbeat');
 
 // ---------------------------------------------------------------------------
 // Heartbeat prompt
@@ -159,7 +162,7 @@ function runHeartbeatInference(
           break;
         case 'ToolUse':
           toolsUsed.push((event as ToolUseEvent).name);
-          console.log(`  [heartbeat: tool -> ${(event as ToolUseEvent).name}]`);
+          log.debug(`tool -> ${(event as ToolUseEvent).name}`);
           break;
         case 'StreamDone':
           fullText = (event as StreamDoneEvent).fullText;
@@ -174,7 +177,7 @@ function runHeartbeatInference(
 
     emitter.on('done', () => {
       if (toolsUsed.length > 0) {
-        console.log(`  [heartbeat: used tools: ${toolsUsed.join(', ')}]`);
+        log.debug(`used tools: ${toolsUsed.join(', ')}`);
       }
       resolve(fullText);
     });
@@ -182,7 +185,7 @@ function runHeartbeatInference(
     // If no explicit 'done' event, resolve when the emitter ends
     emitter.on('end', () => {
       if (toolsUsed.length > 0) {
-        console.log(`  [heartbeat: used tools: ${toolsUsed.join(', ')}]`);
+        log.debug(`used tools: ${toolsUsed.join(', ')}`);
       }
       resolve(fullText);
     });
@@ -206,12 +209,12 @@ async function handleResponse(response: string): Promise<string> {
     if (isMacIdle()) {
       try {
         await sendTelegram(message);
-        console.log('[heartbeat] Sent via Telegram (Mac idle)');
+        log.info('Sent via Telegram (Mac idle)');
       } catch (e) {
-        console.log(`[heartbeat] Telegram send failed: ${e}`);
+        log.error(`Telegram send failed: ${e}`);
       }
     } else {
-      console.log('[heartbeat] Mac active - local only, skipping Telegram');
+      log.info('Mac active - local only, skipping Telegram');
     }
 
     sendNotification(config.AGENT_DISPLAY_NAME, message.slice(0, 200));
@@ -264,7 +267,7 @@ export async function runHeartbeat(agentName: string): Promise<string> {
     `${HEARTBEAT_PROMPT}\n\n---\n\n${checklist}\n\n---\n\n## Current Context\n\n${context}`;
 
   const mode = cliSessionId ? 'resume' : 'cold';
-  console.log(`[heartbeat] Running evaluation (${mode})...`);
+  log.info(`Running evaluation (${mode})...`);
 
   let response: string;
   try {
@@ -280,7 +283,7 @@ export async function runHeartbeat(agentName: string): Promise<string> {
     return 'Error: empty response';
   }
 
-  console.log(`[heartbeat] Response: ${response.slice(0, 120)}...`);
+  log.debug(`Response: ${response.slice(0, 120)}...`);
   return handleResponse(response);
 }
 

@@ -10,6 +10,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig } from './config';
 import { discoverAgents } from './agent-manager';
+import { createLogger } from './logger';
+
+const log = createLogger('telegram');
 
 // Track last processed update to avoid re-reading old ones
 let _lastUpdateId = 0;
@@ -26,7 +29,7 @@ function apiUrl(method: string): string {
 async function post(method: string, payload: Record<string, unknown>): Promise<unknown | null> {
   const config = getConfig();
   if (!config.TELEGRAM_BOT_TOKEN) {
-    console.log('[telegram] TELEGRAM_BOT_TOKEN not configured');
+    log.warn('TELEGRAM_BOT_TOKEN not configured');
     return null;
   }
 
@@ -41,10 +44,10 @@ async function post(method: string, payload: Record<string, unknown>): Promise<u
     const result = await resp.json() as { ok: boolean; result?: unknown };
     if (result.ok) return result.result;
 
-    console.log(`[telegram] API error: ${JSON.stringify(result)}`);
+    log.error(`API error: ${JSON.stringify(result)}`);
     return null;
   } catch (e) {
-    console.log(`[telegram] error: ${e}`);
+    log.error(`error: ${e}`);
     return null;
   }
 }
@@ -61,7 +64,7 @@ export async function sendMessage(
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
   if (!target) {
-    console.log('[telegram] TELEGRAM_CHAT_ID not configured');
+    log.warn('TELEGRAM_CHAT_ID not configured');
     return false;
   }
 
@@ -76,7 +79,7 @@ export async function sendMessage(
   });
 
   if (result) {
-    console.log(`[telegram] Sent message (${text.length} chars)`);
+    log.debug(`Sent message (${text.length} chars)`);
     return true;
   }
   return false;
@@ -91,7 +94,7 @@ export async function sendButtons(
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
   if (!target) {
-    console.log('[telegram] TELEGRAM_CHAT_ID not configured');
+    log.warn('TELEGRAM_CHAT_ID not configured');
     return null;
   }
 
@@ -107,7 +110,7 @@ export async function sendButtons(
   }) as { message_id?: number } | null;
 
   if (result) {
-    console.log(`[telegram] Sent buttons (${text.length} chars)`);
+    log.debug(`Sent buttons (${text.length} chars)`);
     return result.message_id ?? null;
   }
   return null;
@@ -122,7 +125,7 @@ export async function sendVoiceNote(
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
   if (!target) {
-    console.log('[telegram] TELEGRAM_CHAT_ID not configured');
+    log.warn('TELEGRAM_CHAT_ID not configured');
     return false;
   }
 
@@ -169,13 +172,13 @@ export async function sendVoiceNote(
 
     const result = await resp.json() as { ok: boolean };
     if (result.ok) {
-      console.log(`[telegram] Sent voice note (${fileData.length} bytes)`);
+      log.debug(`Sent voice note (${fileData.length} bytes)`);
       return true;
     }
-    console.log(`[telegram] Voice note error: ${JSON.stringify(result)}`);
+    log.error(`Voice note error: ${JSON.stringify(result)}`);
     return false;
   } catch (e) {
-    console.log(`[telegram] Voice note error: ${e}`);
+    log.error(`Voice note error: ${e}`);
     return false;
   }
 }
@@ -333,20 +336,20 @@ function buildCommands(): BotCommand[] {
 export async function registerBotCommands(): Promise<boolean> {
   const config = getConfig();
   if (!config.TELEGRAM_BOT_TOKEN) {
-    console.log('[telegram] Cannot register commands - TELEGRAM_BOT_TOKEN not configured');
+    log.warn('Cannot register commands - TELEGRAM_BOT_TOKEN not configured');
     return false;
   }
 
   const commands = buildCommands();
-  console.log(`[telegram] Registering ${commands.length} bot commands`);
+  log.info(`Registering ${commands.length} bot commands`);
 
   const result = await post('setMyCommands', { commands });
   if (result !== null) {
-    console.log('[telegram] Bot commands registered successfully');
+    log.info('Bot commands registered successfully');
     return true;
   }
 
-  console.log('[telegram] Failed to register bot commands');
+  log.error('Failed to register bot commands');
   return false;
 }
 
@@ -358,17 +361,17 @@ export async function registerBotCommands(): Promise<boolean> {
 export async function clearBotCommands(): Promise<boolean> {
   const config = getConfig();
   if (!config.TELEGRAM_BOT_TOKEN) {
-    console.log('[telegram] Cannot clear commands - TELEGRAM_BOT_TOKEN not configured');
+    log.warn('Cannot clear commands - TELEGRAM_BOT_TOKEN not configured');
     return false;
   }
 
   const result = await post('deleteMyCommands', {});
   if (result !== null) {
-    console.log('[telegram] Bot commands cleared');
+    log.info('Bot commands cleared');
     return true;
   }
 
-  console.log('[telegram] Failed to clear bot commands');
+  log.error('Failed to clear bot commands');
   return false;
 }
 

@@ -18,6 +18,9 @@ import { getConfig } from '../config';
 import { getDb } from '../memory';
 import { runInferenceOneshot } from '../inference';
 import { registerJob } from './index';
+import { createLogger } from '../logger';
+
+const log = createLogger('evolve');
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -241,7 +244,7 @@ async function evolveDocument(
       return result.trim();
     }
   } catch (e) {
-    console.log(`[evolve] Inference failed for ${name}: ${e}`);
+    log.error(`Inference failed for ${name}: ${e}`);
   }
   return null;
 }
@@ -278,7 +281,7 @@ export async function runEvolution(agentName: string): Promise<string> {
   const soulPath = path.join(skills, 'soul.md');
   if (fs.existsSync(soulPath)) {
     const currentSoul = fs.readFileSync(soulPath, 'utf-8');
-    console.log('[evolve] Evolving soul.md...');
+    log.info('Evolving soul.md...');
     const newSoul = await evolveDocument('soul', currentSoul, material);
     if (newSoul && newSoul !== currentSoul) {
       archiveDocument(archiveDir, 'soul', currentSoul);
@@ -295,7 +298,7 @@ export async function runEvolution(agentName: string): Promise<string> {
   const systemPath = path.join(skills, 'system.md');
   if (fs.existsSync(systemPath)) {
     const currentSystem = fs.readFileSync(systemPath, 'utf-8');
-    console.log('[evolve] Evolving system.md...');
+    log.info('Evolving system.md...');
     const newSystem = await evolveDocument('system prompt', currentSystem, material);
     if (newSystem && newSystem !== currentSystem) {
       archiveDocument(archiveDir, 'system', currentSystem);
@@ -309,7 +312,7 @@ export async function runEvolution(agentName: string): Promise<string> {
   }
 
   const summary = results.join('; ');
-  console.log(`[evolve] Done: ${summary}`);
+  log.info(`Done: ${summary}`);
   return summary;
 }
 

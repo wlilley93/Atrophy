@@ -10,6 +10,9 @@
 import { getConfig } from './config';
 import { getDb, initDb } from './memory';
 import { embed, vectorToBlob } from './embeddings';
+import { createLogger } from './logger';
+
+const log = createLogger('reindex');
 
 // ---------------------------------------------------------------------------
 // Searchable table definitions - mirrors vector_search.py SEARCHABLE_TABLES
@@ -55,14 +58,14 @@ async function reindexTable(
     .all() as { id: number; [key: string]: unknown }[];
 
   if (rows.length === 0) {
-    console.log(`[reindex] ${table}: no rows need embedding`);
+    log.info(`${table}: no rows need embedding`);
     if (onProgress) {
       onProgress({ table, total: 0, completed: 0, done: true });
     }
     return 0;
   }
 
-  console.log(`[reindex] ${table}: embedding ${rows.length} rows...`);
+  log.info(`${table}: embedding ${rows.length} rows...`);
 
   const updateStmt = db.prepare(`UPDATE ${table} SET embedding = ? WHERE id = ?`);
   let embedded = 0;
@@ -79,7 +82,7 @@ async function reindexTable(
       updateStmt.run(blob, row.id);
       embedded++;
     } catch (err) {
-      console.error(`[reindex] Failed to embed ${table}:${row.id}:`, err);
+      log.error(`Failed to embed ${table}:${row.id}: ${err}`);
     }
 
     if (onProgress) {
@@ -91,7 +94,7 @@ async function reindexTable(
     onProgress({ table, total: rows.length, completed: embedded, done: true });
   }
 
-  console.log(`[reindex] ${table}: done (${embedded} rows embedded)`);
+  log.info(`${table}: done (${embedded} rows embedded)`);
   return embedded;
 }
 
@@ -133,7 +136,7 @@ export async function reindexEmbeddings(
     );
   }
 
-  console.log(`[reindex] Starting reindex for: ${tablesToIndex.join(', ')}`);
+  log.info(`Starting reindex for: ${tablesToIndex.join(', ')}`);
   const t0 = Date.now();
 
   const result: Record<string, number> = {};
@@ -147,7 +150,7 @@ export async function reindexEmbeddings(
   }
 
   const elapsedMs = Date.now() - t0;
-  console.log(`[reindex] Complete - ${totalEmbedded} rows in ${(elapsedMs / 1000).toFixed(1)}s`);
+  log.info(`Complete - ${totalEmbedded} rows in ${(elapsedMs / 1000).toFixed(1)}s`);
 
   return {
     tables: result,

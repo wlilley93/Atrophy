@@ -37,6 +37,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig } from '../config';
+import { createLogger } from '../logger';
+
+const log = createLogger('task');
 import { runInferenceOneshot } from '../inference';
 import { queueMessage } from '../queue';
 import { sendNotification } from '../notify';
@@ -233,13 +236,13 @@ async function deliver(
         audioPath = result;
       }
     } catch (e) {
-      console.log(`[task] TTS failed: ${e}`);
+      log.warn(`TTS failed: ${e}`);
     }
   }
 
   if (deliverMethod === 'message_queue') {
     queueMessage(text, taskName, audioPath);
-    console.log('[task] Queued for next interaction.');
+    log.info('Queued for next interaction.');
   } else if (deliverMethod === 'telegram' || deliverMethod === 'telegram_voice') {
     try {
       if (deliverMethod === 'telegram_voice' && audioPath) {
@@ -250,9 +253,9 @@ async function deliver(
       } else {
         await telegramSend(text);
       }
-      console.log('[task] Sent via Telegram.');
+      log.info('Sent via Telegram.');
     } catch (e) {
-      console.log(`[task] Telegram failed: ${e}`);
+      log.error(`Telegram failed: ${e}`);
     }
     // Also queue for app
     queueMessage(text, taskName, audioPath);
@@ -271,9 +274,9 @@ async function deliver(
     const entry = `\n---\n**${timestamp}**\n\n${text}\n`;
 
     fs.appendFileSync(notePath, entry);
-    console.log(`[task] Written to Obsidian: ${notePath}`);
+    log.debug(`Written to Obsidian: ${notePath}`);
   } else {
-    console.log(`[task] Unknown delivery method: ${deliverMethod}`);
+    log.warn(`Unknown delivery method: ${deliverMethod}`);
     queueMessage(text, taskName, audioPath);
   }
 }
@@ -286,14 +289,14 @@ export async function runTask(taskName: string): Promise<void> {
   const config = getConfig();
   const { meta, prompt } = loadTask(taskName);
 
-  console.log(`[task] Running: ${taskName}`);
-  console.log(`[task] Deliver via: ${meta.deliver || 'message_queue'}`);
+  log.info(`Running: ${taskName}`);
+  log.debug(`Deliver via: ${meta.deliver || 'message_queue'}`);
 
   // Gather sources if specified
   const sources = meta.sources || [];
   let context = '';
   if (sources.length > 0) {
-    console.log(`[task] Fetching sources: ${sources.join(', ')}`);
+    log.debug(`Fetching sources: ${sources.join(', ')}`);
     context = await gatherSources(sources);
   }
 
@@ -310,16 +313,16 @@ export async function runTask(taskName: string): Promise<void> {
       `You are ${config.AGENT_DISPLAY_NAME}. Complete this task naturally, as yourself.`,
     );
   } catch (e) {
-    console.log(`[task] Inference failed: ${e}`);
+    log.error(`Inference failed: ${e}`);
     return;
   }
 
   if (!result || !result.trim()) {
-    console.log('[task] Empty response. Skipping delivery.');
+    log.info('Empty response. Skipping delivery.');
     return;
   }
 
-  console.log(`[task] Result: ${result.slice(0, 100)}...`);
+  log.debug(`Result: ${result.slice(0, 100)}...`);
   await deliver(result, meta, taskName);
 }
 
@@ -330,12 +333,12 @@ export async function runTask(taskName: string): Promise<void> {
 if (require.main === module) {
   const taskName = process.argv[2];
   if (!taskName) {
-    console.error(`Usage: node run-task.js <task_name>`);
-    console.error(`Tasks dir: ${tasksDir()}`);
+    log.error(`Usage: node run-task.js <task_name>`);
+    log.error(`Tasks dir: ${tasksDir()}`);
     process.exit(1);
   }
   runTask(taskName).catch((e) => {
-    console.error(`[task] Fatal: ${e}`);
+    log.error(`Fatal: ${e}`);
     process.exit(1);
   });
 }

@@ -18,6 +18,9 @@ import * as path from 'path';
 import { getConfig, BUNDLE_ROOT, USER_DATA } from '../config';
 import { runInferenceOneshot } from '../inference';
 import { editJobSchedule } from '../cron';
+import { createLogger } from '../logger';
+
+const log = createLogger('converse');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -265,7 +268,7 @@ function saveConversation(
     fs.writeFileSync(filePath, content);
   }
 
-  console.log(`  Saved to ${filePath}`);
+  log.debug(`Saved to ${filePath}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -283,9 +286,9 @@ function reschedule(): void {
   try {
     editJobSchedule('converse', newCron);
     const dateStr = target.toISOString().split('T')[0];
-    console.log(`[converse] Rescheduled to ${dateStr} at ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+    log.info(`Rescheduled to ${dateStr} at ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
   } catch (e) {
-    console.log(`[converse] Reschedule failed: ${e}`);
+    log.error(`Reschedule failed: ${e}`);
   }
 }
 
@@ -298,7 +301,7 @@ export async function converse(): Promise<void> {
   const others = discoverOtherAgents();
 
   if (others.length === 0) {
-    console.log('[converse] No other enabled agents found. Skipping.');
+    log.info('No other enabled agents found. Skipping.');
     reschedule();
     return;
   }
@@ -315,7 +318,7 @@ export async function converse(): Promise<void> {
   const partnerSoul = loadAgentSoul(partner.name);
 
   if (!ourSoul && !partnerSoul) {
-    console.log('[converse] No soul files found for either agent. Skipping.');
+    log.info('No soul files found for either agent. Skipping.');
     reschedule();
     return;
   }
@@ -329,7 +332,7 @@ export async function converse(): Promise<void> {
 
   // Run the conversation
   const transcript: TranscriptTurn[] = [];
-  console.log(`[converse] ${ourDisplay} - ${partner.displayName} - ${MAX_EXCHANGES} exchanges`);
+  log.info(`${ourDisplay} - ${partner.displayName} - ${MAX_EXCHANGES} exchanges`);
 
   // Initiator opens
   const opening = openingPrompt(partner.displayName, past);
@@ -340,19 +343,19 @@ export async function converse(): Promise<void> {
       ourSystem,
     );
   } catch (e) {
-    console.log(`[converse] Opening inference failed: ${e}`);
+    log.error(`Opening inference failed: ${e}`);
     reschedule();
     return;
   }
 
   if (!response || !response.trim()) {
-    console.log('[converse] Empty opening. Skipping.');
+    log.info('Empty opening. Skipping.');
     reschedule();
     return;
   }
 
   transcript.push({ speaker: ourDisplay, content: response.trim() });
-  console.log(`  ${ourDisplay}: ${response.trim().slice(0, 100)}...`);
+  log.debug(`${ourDisplay}: ${response.trim().slice(0, 100)}...`);
 
   // Alternating exchanges
   for (let i = 0; i < MAX_EXCHANGES - 1; i++) {
@@ -376,21 +379,21 @@ export async function converse(): Promise<void> {
     try {
       turnResponse = await runInferenceOneshot(messages, speakerSystem);
     } catch (e) {
-      console.log(`[converse] Inference failed on exchange ${i + 1}: ${e}`);
+      log.error(`Inference failed on exchange ${i + 1}: ${e}`);
       break;
     }
 
     if (!turnResponse || !turnResponse.trim()) {
-      console.log(`[converse] Empty response on exchange ${i + 1}. Ending.`);
+      log.info(`Empty response on exchange ${i + 1}. Ending.`);
       break;
     }
 
     transcript.push({ speaker: speakerDisplay, content: turnResponse.trim() });
-    console.log(`  ${speakerDisplay}: ${turnResponse.trim().slice(0, 100)}...`);
+    log.debug(`${speakerDisplay}: ${turnResponse.trim().slice(0, 100)}...`);
   }
 
   if (transcript.length < 2) {
-    console.log('[converse] Conversation too short. Skipping save.');
+    log.info('Conversation too short. Skipping save.');
     reschedule();
     return;
   }
@@ -403,7 +406,7 @@ export async function converse(): Promise<void> {
   saveConversation(config.AGENT_NAME, today, partner.name, formatted);
   saveConversation(partner.name, today, config.AGENT_NAME, formatted);
 
-  console.log(`[converse] Done - ${transcript.length} turns saved to both agents.`);
+  log.info(`Done - ${transcript.length} turns saved to both agents.`);
   reschedule();
 }
 
@@ -413,7 +416,7 @@ export async function converse(): Promise<void> {
 
 if (require.main === module) {
   converse().catch((e) => {
-    console.error(`[converse] Fatal: ${e}`);
+    log.error(`Fatal: ${e}`);
     process.exit(1);
   });
 }

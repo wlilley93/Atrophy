@@ -16,6 +16,9 @@ import { transcribe } from './stt';
 import { synthesise, playAudio } from './tts';
 import { streamInference, InferenceEvent } from './inference';
 import { getConfig } from './config';
+import { createLogger } from './logger';
+
+const log = createLogger('call');
 
 // ---------------------------------------------------------------------------
 // Audio capture parameters
@@ -73,7 +76,7 @@ export function startCall(
 
   _setStatus('listening');
   _runLoop().catch((err) => {
-    console.log(`[call] loop error: ${err}`);
+    log.error(`loop error: ${err}`);
     _emitter.emit('error', String(err));
     _cleanup();
   });

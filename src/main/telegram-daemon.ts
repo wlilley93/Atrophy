@@ -22,6 +22,9 @@ import { discoverAgents, getAgentState, setAgentState } from './agent-manager';
 import { streamInference, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
 import * as memory from './memory';
+import { createLogger } from './logger';
+
+const log = createLogger('telegram-daemon');
 
 // ---------------------------------------------------------------------------
 // State persistence
@@ -214,7 +217,7 @@ export function installLaunchd(electronBin: string): void {
 
   fs.writeFileSync(PLIST_PATH, buildDaemonPlist(electronBin, true));
   spawnSync('launchctl', ['load', PLIST_PATH], { stdio: 'pipe' });
-  console.log(`[telegram-daemon] Installed launchd agent: ${PLIST_PATH}`);
+  log.info(`Installed launchd agent: ${PLIST_PATH}`);
 }
 
 /**
@@ -224,9 +227,9 @@ export function uninstallLaunchd(): void {
   if (fs.existsSync(PLIST_PATH)) {
     spawnSync('launchctl', ['unload', PLIST_PATH], { stdio: 'pipe' });
     fs.unlinkSync(PLIST_PATH);
-    console.log(`[telegram-daemon] Uninstalled launchd agent: ${PLIST_PATH}`);
+    log.info(`Uninstalled launchd agent: ${PLIST_PATH}`);
   } else {
-    console.log('[telegram-daemon] launchd agent not installed');
+    log.info('launchd agent not installed');
   }
 }
 
@@ -263,14 +266,14 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
         switch (evt.type) {
           case 'ToolUse':
             toolsUsed.push(evt.name);
-            console.log(`  [${agentName}] tool -> ${evt.name}`);
+            log.debug(`[${agentName}] tool -> ${evt.name}`);
             break;
           case 'StreamDone':
             fullText = evt.fullText;
             resolve();
             break;
           case 'StreamError':
-            console.log(`  [${agentName}] inference error: ${evt.message}`);
+            log.error(`[${agentName}] inference error: ${evt.message}`);
             resolve();
             break;
         }
@@ -278,7 +281,7 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
     });
 
     if (toolsUsed.length) {
-      console.log(`  [${agentName}] used tools: ${toolsUsed.join(', ')}`);
+      log.debug(`[${agentName}] used tools: ${toolsUsed.join(', ')}`);
     }
 
     // Restore original agent
@@ -287,7 +290,7 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
 
     return fullText.trim() || null;
   } catch (e) {
-    console.log(`  [${agentName}] dispatch failed: ${e}`);
+    log.error(`[${agentName}] dispatch failed: ${e}`);
     return null;
   }
 }
@@ -393,7 +396,7 @@ let _lastUpdateId = 0;
 async function pollOnce(): Promise<void> {
   const config = getConfig();
   if (!config.TELEGRAM_BOT_TOKEN) {
-    console.log('[telegram-daemon] TELEGRAM_BOT_TOKEN not configured');
+    log.warn('TELEGRAM_BOT_TOKEN not configured');
     return;
   }
 
@@ -424,7 +427,7 @@ async function pollOnce(): Promise<void> {
     const text = msg.text.trim();
     if (!text) continue;
 
-    console.log(`[telegram-daemon] Received: ${text.slice(0, 80)}`);
+    log.info(`Received: ${text.slice(0, 80)}`);
 
     // Utility commands
     if (text.toLowerCase() === '/status') {
@@ -438,22 +441,22 @@ async function pollOnce(): Promise<void> {
 
     // Route the message
     const decision = await routeMessage(text);
-    console.log(`[telegram-daemon] Routed: agents=${decision.agents.join(',')} tier=${decision.tier}`);
+    log.debug(`Routed: agents=${decision.agents.join(',')} tier=${decision.tier}`);
 
     if (!decision.agents.length) {
-      console.log('[telegram-daemon] No agents available to handle message');
+      log.warn('No agents available to handle message');
       continue;
     }
 
     // Dispatch to each agent sequentially
     for (const agentName of decision.agents) {
-      console.log(`[telegram-daemon] Dispatching to ${agentName}...`);
+      log.info(`Dispatching to ${agentName}...`);
       const response = await dispatchToAgent(agentName, decision.text);
       if (response) {
         sendAgentResponse(agentName, response);
-        console.log(`  [${agentName}] responded (${response.length} chars)`);
+        log.info(`[${agentName}] responded (${response.length} chars)`);
       } else {
-        console.log(`  [${agentName}] no response`);
+        log.debug(`[${agentName}] no response`);
       }
     }
   }
@@ -476,7 +479,7 @@ export function startDaemon(intervalMs = 10_000): boolean {
   if (_running) return true;
 
   if (!acquireLock()) {
-    console.log('[telegram-daemon] Another instance is running - exiting');
+    log.warn('Another instance is running - exiting');
     return false;
   }
 
@@ -484,14 +487,14 @@ export function startDaemon(intervalMs = 10_000): boolean {
   _lastUpdateId = loadLastUpdateId();
   setLastUpdateId(_lastUpdateId);
 
-  console.log(`[telegram-daemon] Starting (last_update_id=${_lastUpdateId}, interval=${intervalMs}ms)`);
+  log.info(`Starting (last_update_id=${_lastUpdateId}, interval=${intervalMs}ms)`);
 
   // Initial poll
-  pollOnce().catch((e) => console.log(`[telegram-daemon] Poll error: ${e}`));
+  pollOnce().catch((e) => log.error(`Poll error: ${e}`));
 
   // Recurring polls
   _pollTimer = setInterval(() => {
-    pollOnce().catch((e) => console.log(`[telegram-daemon] Poll error: ${e}`));
+    pollOnce().catch((e) => log.error(`Poll error: ${e}`));
   }, intervalMs);
 
   return true;
@@ -507,7 +510,7 @@ export function stopDaemon(): void {
   }
   _running = false;
   releaseLock();
-  console.log('[telegram-daemon] Stopped');
+  log.info('Stopped');
 }
 
 export function isDaemonRunning(): boolean {

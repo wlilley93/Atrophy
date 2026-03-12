@@ -16,6 +16,9 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 
 import { getConfig } from '../config';
+import { createLogger } from '../logger';
+
+const log = createLogger('voice-note');
 import {
   getDb,
   getActiveThreads,
@@ -141,12 +144,12 @@ function reschedule(): void {
   try {
     editJobSchedule('voice_note', cron);
   } catch (e) {
-    console.log(`[voice_note] Failed to reschedule: ${e}`);
+    log.error(`Failed to reschedule: ${e}`);
     return;
   }
 
-  console.log(
-    `[voice_note] Rescheduled to ${nextRun.toISOString().slice(0, 16).replace('T', ' ')}`,
+  log.info(
+    `Rescheduled to ${nextRun.toISOString().slice(0, 16).replace('T', ' ')}`,
   );
 }
 
@@ -215,7 +218,7 @@ export async function run(): Promise<void> {
   const config = getConfig();
 
   if (!config.TELEGRAM_BOT_TOKEN || !config.TELEGRAM_CHAT_ID) {
-    console.log('[voice_note] Telegram not configured - skipping');
+    log.info('Telegram not configured - skipping');
     return;
   }
 
@@ -224,14 +227,14 @@ export async function run(): Promise<void> {
 
   // Check active hours
   if (hour < config.HEARTBEAT_ACTIVE_START || hour >= config.HEARTBEAT_ACTIVE_END) {
-    console.log('[voice_note] Outside active hours - rescheduling');
+    log.info('Outside active hours - rescheduling');
     reschedule();
     return;
   }
 
   const context = gatherContext();
   if (!context.trim()) {
-    console.log('[voice_note] No context material - skipping');
+    log.info('No context material - skipping');
     reschedule();
     return;
   }
@@ -255,18 +258,18 @@ export async function run(): Promise<void> {
       `You are ${config.AGENT_DISPLAY_NAME}. Generate a short, natural voice note.`,
     );
   } catch (e) {
-    console.log(`[voice_note] Inference failed: ${e}`);
+    log.error(`Inference failed: ${e}`);
     reschedule();
     return;
   }
 
   if (!result || !result.trim()) {
-    console.log('[voice_note] Empty result - skipping');
+    log.info('Empty result - skipping');
     reschedule();
     return;
   }
 
-  console.log(`[voice_note] Generated: ${result.slice(0, 100)}...`);
+  log.info(`Generated: ${result.slice(0, 100)}...`);
 
   // Enrich with sentiment/intent
   const enrichment = await enrichVoiceNote(result);
@@ -276,14 +279,14 @@ export async function run(): Promise<void> {
   try {
     audioPath = await synthesise(result);
     if (!audioPath || !fs.existsSync(audioPath) || fs.statSync(audioPath).size === 0) {
-      console.log('[voice_note] TTS produced no audio - sending as text');
+      log.warn('TTS produced no audio - sending as text');
       await sendMessage(result);
       storeObservation(result, enrichment);
       reschedule();
       return;
     }
   } catch (e) {
-    console.log(`[voice_note] TTS failed: ${e} - sending as text`);
+    log.warn(`TTS failed: ${e} - sending as text`);
     await sendMessage(result);
     storeObservation(result, enrichment);
     reschedule();
@@ -298,9 +301,9 @@ export async function run(): Promise<void> {
   const success = await sendVoiceNote(sendPath);
 
   if (success) {
-    console.log('[voice_note] Sent voice note via Telegram');
+    log.info('Sent voice note via Telegram');
   } else {
-    console.log('[voice_note] Failed to send voice note - sending as text');
+    log.warn('Failed to send voice note - sending as text');
     await sendMessage(result);
   }
 
@@ -336,6 +339,6 @@ function storeObservation(text: string, enrichment: VoiceNoteEnrichment): void {
       0.6,        // moderate confidence for self-generated content
     );
   } catch (e) {
-    console.log(`[voice_note] Failed to store observation: ${e}`);
+    log.error(`Failed to store observation: ${e}`);
   }
 }

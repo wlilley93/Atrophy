@@ -11,6 +11,9 @@ import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig, BUNDLE_ROOT, USER_DATA } from './config';
+import { createLogger } from './logger';
+
+const log = createLogger('cron');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -210,7 +213,7 @@ function installJob(name: string, job: Job): void {
 
   fs.writeFileSync(pp, plistToXml(plist));
   spawnSync('launchctl', ['load', pp], { stdio: 'pipe' });
-  console.log(`[cron] Installed ${name} -> ${pp}`);
+  log.info(`Installed ${name} -> ${pp}`);
 }
 
 function uninstallJob(name: string): void {
@@ -218,7 +221,7 @@ function uninstallJob(name: string): void {
   if (fs.existsSync(pp)) {
     spawnSync('launchctl', ['unload', pp], { stdio: 'pipe' });
     fs.unlinkSync(pp);
-    console.log(`[cron] Uninstalled ${name}`);
+    log.info(`Uninstalled ${name}`);
   }
 }
 
@@ -249,26 +252,26 @@ export function addJob(
   const jobs = loadJobs();
   jobs[name] = { cron: cronStr, script, description };
   saveJobs(jobs);
-  console.log(`[cron] Added job '${name}': ${cronStr} -> ${script}`);
+  log.info(`Added job '${name}': ${cronStr} -> ${script}`);
   if (install) installJob(name, jobs[name]);
 }
 
 export function removeJob(name: string): void {
   const jobs = loadJobs();
   if (!(name in jobs)) {
-    console.log(`[cron] Job '${name}' not found`);
+    log.warn(`Job '${name}' not found`);
     return;
   }
   uninstallJob(name);
   delete jobs[name];
   saveJobs(jobs);
-  console.log(`[cron] Removed job '${name}'`);
+  log.info(`Removed job '${name}'`);
 }
 
 export function editJobSchedule(name: string, cronStr: string): void {
   const jobs = loadJobs();
   if (!(name in jobs)) {
-    console.log(`[cron] Job '${name}' not found`);
+    log.warn(`Job '${name}' not found`);
     return;
   }
   parseCron(cronStr);
@@ -285,7 +288,7 @@ export function editJobSchedule(name: string, cronStr: string): void {
 export function runJobNow(name: string): number {
   const jobs = loadJobs();
   if (!(name in jobs)) {
-    console.log(`[cron] Job '${name}' not found`);
+    log.warn(`Job '${name}' not found`);
     return 1;
   }
 
@@ -306,13 +309,13 @@ export function runJobNow(name: string): number {
 export function installAllJobs(): void {
   const jobs = loadJobs();
   if (!Object.keys(jobs).length) {
-    console.log('[cron] No jobs to install');
+    log.info('No jobs to install');
     return;
   }
   for (const [name, job] of Object.entries(jobs)) {
     installJob(name, job);
   }
-  console.log(`[cron] Installed ${Object.keys(jobs).length} job(s)`);
+  log.info(`Installed ${Object.keys(jobs).length} job(s)`);
 }
 
 export function uninstallAllJobs(): void {
@@ -320,7 +323,7 @@ export function uninstallAllJobs(): void {
   for (const name of Object.keys(jobs)) {
     uninstallJob(name);
   }
-  console.log(`[cron] Uninstalled ${Object.keys(jobs).length} job(s)`);
+  log.info(`Uninstalled ${Object.keys(jobs).length} job(s)`);
 }
 
 export function toggleCron(enabled: boolean): void {

@@ -11,6 +11,9 @@
 
 import * as path from 'path';
 import { getConfig } from './config';
+import { createLogger } from './logger';
+
+const log = createLogger('embeddings');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -34,7 +37,7 @@ async function loadPipeline(): Promise<unknown> {
     const modelName = config.EMBEDDING_MODEL;
     const cacheDir = path.join(config.MODELS_DIR, modelName);
 
-    console.log(`[embeddings] Loading ${modelName} via Transformers.js...`);
+    log.info(`Loading ${modelName} via Transformers.js...`);
 
     // Dynamic import - @xenova/transformers is ESM
     const { pipeline, env } = await import('@xenova/transformers');
@@ -45,7 +48,7 @@ async function loadPipeline(): Promise<unknown> {
       quantized: true,
     });
 
-    console.log(`[embeddings] Model loaded (${EMBEDDING_DIM}-dim, WASM)`);
+    log.info(`Model loaded (${EMBEDDING_DIM}-dim, WASM)`);
     return _pipeline;
   })();
 

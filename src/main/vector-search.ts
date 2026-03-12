@@ -11,6 +11,9 @@ import Database from 'better-sqlite3';
 import { getConfig } from './config';
 import { embed, cosineSimilarity, blobToVector, vectorToBlob, EMBEDDING_DIM, embedBatch } from './embeddings';
 import { getDb } from './memory';
+import { createLogger } from './logger';
+
+const log = createLogger('vector');
 
 // ---------------------------------------------------------------------------
 // Searchable tables
@@ -310,7 +313,7 @@ export async function reindex(table?: string, db?: Database.Database): Promise<v
 
   for (const tbl of tablesToIndex) {
     if (!(tbl in SEARCHABLE_TABLES)) {
-      console.log(`[reindex] Unknown table: ${tbl}, skipping`);
+      log.warn(`Unknown table: ${tbl}, skipping`);
       continue;
     }
 
@@ -322,16 +325,16 @@ export async function reindex(table?: string, db?: Database.Database): Promise<v
         `SELECT id, ${contentCol} FROM ${tbl} WHERE ${contentCol} IS NOT NULL`,
       ).all() as { id: number; [key: string]: unknown }[];
     } catch {
-      console.log(`[reindex] ${tbl}: table not found or error`);
+      log.warn(`${tbl}: table not found or error`);
       continue;
     }
 
     if (!rows.length) {
-      console.log(`[reindex] ${tbl}: no rows to embed`);
+      log.info(`${tbl}: no rows to embed`);
       continue;
     }
 
-    console.log(`[reindex] ${tbl}: embedding ${rows.length} rows...`);
+    log.info(`${tbl}: embedding ${rows.length} rows...`);
 
     const texts = rows.map((r) => String(r[contentCol] || ''));
     const ids = rows.map((r) => r.id);
@@ -350,6 +353,6 @@ export async function reindex(table?: string, db?: Database.Database): Promise<v
       embedded += chunkTexts.length;
     }
 
-    console.log(`[reindex] ${tbl}: done (${embedded} rows embedded)`);
+    log.info(`${tbl}: done (${embedded} rows embedded)`);
   }
 }
