@@ -11,6 +11,10 @@
   let videoReady = $state(false);
   let videoError = $state(false);
 
+  // Avatar download state
+  let downloading = $state(false);
+  let downloadPercent = $state(0);
+
   // Fallback canvas
   let canvas = $state<HTMLCanvasElement>(null!);
   let ctx: CanvasRenderingContext2D | null = null;
@@ -31,6 +35,7 @@
       const filePath = await api.getAvatarVideoPath(colour, clip);
       if (filePath) {
         videoSrc = `file://${filePath}`;
+        videoError = false;
       }
     } catch {
       videoError = true;
@@ -39,6 +44,7 @@
 
   function onVideoCanPlay() {
     videoReady = true;
+    downloading = false;
     videoEl?.play().catch(() => {});
   }
 
@@ -169,6 +175,27 @@
   onMount(() => {
     loadVideo();
 
+    // Listen for avatar download events - retry video load when complete
+    if (api) {
+      api.onAvatarDownloadStart?.(() => {
+        downloading = true;
+        downloadPercent = 0;
+      });
+      api.onAvatarDownloadProgress?.((data: { percent: number }) => {
+        downloadPercent = data.percent;
+      });
+      api.onAvatarDownloadComplete?.(() => {
+        downloading = false;
+        downloadPercent = 100;
+        // Retry loading the video now that files are available
+        videoError = false;
+        loadVideo();
+      });
+      api.onAvatarDownloadError?.(() => {
+        downloading = false;
+      });
+    }
+
     // Start canvas fallback immediately (hidden if video loads)
     if (!videoReady) {
       initCanvas();
@@ -204,6 +231,17 @@
   ></canvas>
 {/if}
 
+<!-- Download progress overlay -->
+{#if downloading}
+  <div class="download-overlay">
+    <div class="download-label">downloading avatar</div>
+    <div class="download-bar">
+      <div class="download-fill" style="width: {downloadPercent}%"></div>
+    </div>
+    <div class="download-percent">{downloadPercent}%</div>
+  </div>
+{/if}
+
 <style>
   .avatar-video {
     position: absolute;
@@ -228,5 +266,46 @@
     height: 100%;
     z-index: 0;
     pointer-events: none;
+  }
+
+  .download-overlay {
+    position: absolute;
+    bottom: 120px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .download-label {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    text-transform: lowercase;
+  }
+
+  .download-bar {
+    width: 160px;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .download-fill {
+    height: 100%;
+    background: rgba(100, 140, 255, 0.5);
+    transition: width 0.4s ease;
+  }
+
+  .download-percent {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-dim);
   }
 </style>

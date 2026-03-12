@@ -10,6 +10,7 @@
   import Artefact from './Artefact.svelte';
   import Settings from './Settings.svelte';
   import SetupWizard from './SetupWizard.svelte';
+  import SplashScreen from './SplashScreen.svelte';
   import { session } from '../stores/session.svelte';
   import { audio } from '../stores/audio.svelte';
   import { agents } from '../stores/agents.svelte';
@@ -28,10 +29,11 @@
   let showArtefact = $state(false);
   let needsSetup = $state(false);
 
-  // Boot sequence
-  let bootPhase = $state<'boot' | 'ready'>('boot');
-  let bootOpacity = $state(1.0);
-  let bootLabel = $state('connecting...');
+  // Splash screen
+  let splashPhase = $state<'boot' | 'downloading' | 'ready' | 'shutdown'>('boot');
+  let splashDownloadPercent = $state(0);
+  let splashStatus = $state('');
+  let splashVisible = $state(true);
 
   // Mode toggles
   let avatarVisible = $state(true);
@@ -46,10 +48,6 @@
   // Agent switch clip-path animation
   let agentSwitchActive = $state(false);
   let agentSwitchClip = $state('circle(0% at 50% 50%)');
-
-  // Avatar download progress
-  let avatarDownloading = $state(false);
-  let avatarDownloadPercent = $state(0);
 
   // Agent deferral (codec-style handoff)
   let deferralActive = $state(false);
@@ -73,9 +71,30 @@
     bootRan = true;
 
     if (!api) {
-      bootPhase = 'ready';
+      splashPhase = 'ready';
+      splashVisible = false;
       return;
     }
+
+    // Listen for avatar download events
+    api.onAvatarDownloadStart?.(() => {
+      splashPhase = 'downloading';
+      splashDownloadPercent = 0;
+      splashStatus = 'downloading avatar...';
+    });
+    api.onAvatarDownloadProgress?.((data: { percent: number }) => {
+      splashDownloadPercent = data.percent;
+    });
+    api.onAvatarDownloadComplete?.(() => {
+      // Download done - transition back to boot completion
+      splashPhase = 'boot';
+      splashStatus = '';
+    });
+    api.onAvatarDownloadError?.(() => {
+      // Download failed - continue without avatar
+      splashPhase = 'boot';
+      splashStatus = '';
+    });
 
     // Load config and agent list
     try {
@@ -98,15 +117,12 @@
     }
 
     if (needsSetup) {
-      // Fade out boot overlay to reveal setup wizard
-      bootOpacity = 0;
-      await new Promise(r => setTimeout(r, 500));
-      bootPhase = 'ready';
+      // Let splash animation finish then show wizard
+      splashPhase = 'ready';
       return;
     }
 
     // Fetch opening line
-    bootLabel = '';
     try {
       const opening = await api.getOpeningLine();
       if (opening) {
@@ -117,11 +133,20 @@
       // use default
     }
 
-    // Fade out boot overlay
-    bootLabel = '';
-    bootOpacity = 0;
-    await new Promise(r => setTimeout(r, 1500));
-    bootPhase = 'ready';
+    // If avatar is downloading, wait for it to finish before dismissing splash
+    if (splashPhase === 'downloading') {
+      // The download complete/error handlers above will set phase back to 'boot',
+      // and the splash will auto-dismiss via onComplete
+      return;
+    }
+
+    // Boot animation plays, then splash dismisses itself via onComplete
+    splashPhase = 'boot';
+  }
+
+  function onSplashComplete() {
+    splashVisible = false;
+    splashPhase = 'ready';
   }
 
   // ---------------------------------------------------------------------------
@@ -208,14 +233,6 @@
   onMount(() => {
     runBootSequence();
     resetSilenceTimer();
-
-    // Listen for avatar download progress
-    if (api) {
-      api.onAvatarDownloadStart?.(() => { avatarDownloading = true; avatarDownloadPercent = 0; });
-      api.onAvatarDownloadProgress?.((data: { percent: number }) => { avatarDownloadPercent = data.percent; });
-      api.onAvatarDownloadComplete?.(() => { avatarDownloading = false; });
-      api.onAvatarDownloadError?.(() => { avatarDownloading = false; });
-    }
 
     // Listen for deferral requests from main process
     if (api && typeof api.on === 'function') {
@@ -463,13 +480,14 @@
     style="opacity: {audio.vignetteOpacity}"
   ></div>
 
-  <!-- Boot overlay - black div that fades from opacity 1 to 0 over 1.5s -->
-  {#if bootPhase === 'boot'}
-    <div class="boot-overlay" style="opacity: {bootOpacity}">
-      {#if bootLabel}
-        <span class="boot-label">{bootLabel}</span>
-      {/if}
-    </div>
+  <!-- Splash screen - brain decay animation with progress -->
+  {#if splashVisible}
+    <SplashScreen
+      phase={splashPhase}
+      downloadPercent={splashDownloadPercent}
+      statusText={splashStatus}
+      onComplete={onSplashComplete}
+    />
   {/if}
 
   <!-- Agent switch clip-path reveal animation -->
@@ -494,13 +512,6 @@
       {#if deferralProgress === 1}
         <span class="deferral-label">Handing off to {deferralTarget}...</span>
       {/if}
-    </div>
-  {/if}
-
-  <!-- Avatar download progress bar -->
-  {#if avatarDownloading}
-    <div class="avatar-dl-bar">
-      <div class="avatar-dl-fill" style="width: {avatarDownloadPercent}%"></div>
     </div>
   {/if}
 
@@ -734,28 +745,6 @@
     transition: opacity 0.8s ease;
   }
 
-  /* -- Boot overlay -- */
-
-  .boot-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    background: #000000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: opacity 1.5s ease;
-    pointer-events: none;
-  }
-
-  .boot-label {
-    font-family: var(--font-sans);
-    font-size: 13px;
-    letter-spacing: 2px;
-    color: var(--text-dim);
-    text-transform: lowercase;
-  }
-
   /* -- Agent switch clip-path overlay -- */
 
   .agent-switch-overlay {
@@ -871,24 +860,6 @@
   .mode-btn.wake-active {
     color: rgba(120, 255, 140, 0.9);
     background: rgba(30, 80, 40, 0.82);
-  }
-
-  /* -- Avatar download progress bar -- */
-
-  .avatar-dl-bar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    z-index: 100;
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  .avatar-dl-fill {
-    height: 100%;
-    background: rgba(100, 140, 255, 0.6);
-    transition: width 0.4s ease;
   }
 
   /* Artefact badge */
