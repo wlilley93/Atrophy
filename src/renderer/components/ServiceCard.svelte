@@ -167,14 +167,7 @@
       githubAuthed = status.authenticated;
       githubAccount = status.account;
       if (!status.installed) {
-        githubError = 'gh CLI not found. Installing via Homebrew...';
-        // Try installing gh via brew
-        try {
-          await api.listAvatarLoops; // just checking api exists
-          // Use the shell to install - but we don't have direct shell access from renderer
-          // Instead, tell the user
-          githubError = 'gh CLI not installed. Run "brew install gh" in your terminal, then try again.';
-        } catch { /* ignore */ }
+        githubError = 'gh CLI not installed. Run "brew install gh" in your terminal, then try again.';
       }
     } catch {
       githubError = 'Could not check GitHub status';
@@ -191,15 +184,18 @@
       if (result.success) {
         githubAuthed = true;
         // Refresh account info
-        const status = await api.githubAuthStatus();
-        githubAccount = status.account;
+        try {
+          const status = await api.githubAuthStatus();
+          githubAccount = status.account;
+        } catch { /* account display is non-critical */ }
       } else {
         githubError = result.error || 'Authentication failed';
       }
     } catch {
-      githubError = 'Authentication failed';
+      githubError = 'Authentication failed - try running "gh auth login" in your terminal instead';
+    } finally {
+      githubAuthing = false;
     }
-    githubAuthing = false;
   }
 
   // ---- Save / Skip ----

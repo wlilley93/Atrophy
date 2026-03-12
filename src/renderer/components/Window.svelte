@@ -2,7 +2,6 @@
   import { onMount, onDestroy } from 'svelte';
   import OrbAvatar from './OrbAvatar.svelte';
   import AgentName from './AgentName.svelte';
-  import ThinkingIndicator from './ThinkingIndicator.svelte';
   import Transcript from './Transcript.svelte';
   import InputBar from './InputBar.svelte';
   import ServiceCard from './ServiceCard.svelte';
@@ -60,7 +59,7 @@
   let setupWizardPhase = $state<'welcome' | 'creating' | 'done' | 'hidden'>('hidden');
   /** Whether the setup flow is active (services + agent creation in main chat) */
   let setupActive = $state(false);
-  /** Current service step: 0-3 = showing card, 4+ = services complete */
+  /** Current service step: 0-4 = showing card, 5+ = services complete */
   let setupServiceStep = $state(0);
   /** Whether the service card is currently visible */
   let setupShowServiceCard = $state(false);
@@ -211,8 +210,22 @@
     }, 500);
   }
 
+  // Service titles for chat messages (matches ServiceCard.SERVICE_PROMPTS order)
+  const SETUP_SERVICE_TITLES = [
+    'Voice - ElevenLabs',
+    'Visual Presence - Fal.ai',
+    'Messaging - Telegram',
+    'Google Workspace + YouTube + Photos',
+    'GitHub',
+  ];
+
   function onSetupServiceSaved(key: string) {
     setupServicesSaved.push(key);
+
+    // Show confirmation in chat
+    const title = SETUP_SERVICE_TITLES[setupServiceStep] || key;
+    addMessage('system', `${title} saved.`);
+    completeLast();
 
     // Play confirmation audio for ElevenLabs
     if (key === 'ELEVENLABS_API_KEY') {
@@ -225,9 +238,20 @@
   function onSetupServiceSkipped(key: string) {
     setupServicesSkipped.push(key);
 
+    // Show skip in chat
+    const title = SETUP_SERVICE_TITLES[setupServiceStep] || key;
+    addMessage('system', `${title} skipped.`);
+    completeLast();
+
     // Play farewell if ElevenLabs was skipped (last chance for pre-baked audio)
     if (key === 'ELEVENLABS_API_KEY') {
       api?.playAgentAudio?.('voice_farewell.mp3');
+      addMessage('agent',
+        "This is the last you'll hear of my voice. If you change your " +
+        "mind later, you can add your API key in Settings - it'll appear " +
+        "after this setup flow."
+      );
+      completeLast();
     }
 
     advanceSetupService();
@@ -235,9 +259,9 @@
 
   function advanceSetupService() {
     setupServiceStep++;
-    setupShowServiceCard = setupServiceStep < 4;
+    setupShowServiceCard = setupServiceStep < SETUP_SERVICE_TITLES.length;
 
-    if (setupServiceStep >= 4) {
+    if (setupServiceStep >= SETUP_SERVICE_TITLES.length) {
       // All services done - transition to AI agent creation in chat
       api?.playAgentAudio?.('service_complete.mp3');
       addMessage('agent', 'System configured. Now - who do you want to create?');
@@ -448,11 +472,21 @@
     }
   }
 
+  function resetAskState() {
+    askVisible = false;
+    askRequestId = '';
+    askReply = '';
+    askQuestion = '';
+    askActionType = 'question';
+    askInputType = 'password';
+    askLabel = '';
+    askDestination = '';
+  }
+
   function handleAskConfirm(approved: boolean) {
     if (!askRequestId || !api) return;
     api.respondToAsk(askRequestId, approved);
-    askVisible = false;
-    askRequestId = '';
+    resetAskState();
   }
 
   function handleAskReply() {
@@ -460,16 +494,13 @@
     const text = askReply.trim();
     if (!text) return;
     api.respondToAsk(askRequestId, text);
-    askVisible = false;
-    askRequestId = '';
-    askReply = '';
+    resetAskState();
   }
 
   function handleAskDismiss() {
     if (!askRequestId || !api) return;
     api.respondToAsk(askRequestId, null);
-    askVisible = false;
-    askRequestId = '';
+    resetAskState();
   }
 
   // ---------------------------------------------------------------------------
@@ -579,10 +610,13 @@
   let wakeAudioCtx: AudioContext | null = null;
   let wakeProcessor: ScriptProcessorNode | null = null;
 
+  let wakeStarting = false;
   async function toggleWake() {
-    wakeListening = !wakeListening;
+    if (wakeStarting) return;
 
-    if (wakeListening && api) {
+    if (!wakeListening && api) {
+      wakeStarting = true;
+      wakeListening = true;
       try {
         wakeStream = await navigator.mediaDevices.getUserMedia({
           audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
@@ -600,8 +634,11 @@
       } catch (err) {
         console.error('[wake word] failed to start audio capture:', err);
         wakeListening = false;
+      } finally {
+        wakeStarting = false;
       }
     } else {
+      wakeListening = false;
       // Tear down ambient audio capture
       if (wakeProcessor) { wakeProcessor.disconnect(); wakeProcessor = null; }
       if (wakeAudioCtx) { wakeAudioCtx.close(); wakeAudioCtx = null; }
@@ -620,10 +657,13 @@
   const CALL_SILENCE_FRAMES = 15; // ~15 * 4096/16000 = ~3.8s of silence
   const CALL_MIN_CHUNKS = 4; // minimum chunks before processing
 
+  let callStarting = false;
   async function toggleCall() {
-    callActive = !callActive;
+    if (callStarting) return;
 
-    if (callActive && api) {
+    if (!callActive && api) {
+      callStarting = true;
+      callActive = true;
       try {
         callStream = await navigator.mediaDevices.getUserMedia({
           audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
@@ -667,8 +707,11 @@
       } catch (err) {
         console.error('[call] failed to start:', err);
         callActive = false;
+      } finally {
+        callStarting = false;
       }
     } else {
+      callActive = false;
       // Tear down call audio
       if (callProcessor) { callProcessor.disconnect(); callProcessor = null; }
       if (callAudioCtx) { callAudioCtx.close(); callAudioCtx = null; }
@@ -863,9 +906,6 @@
       onCycleUp={() => cycleAgent(-1)}
       onCycleDown={() => cycleAgent(1)}
     />
-    {#if session.inferenceState !== 'idle'}
-      <ThinkingIndicator />
-    {/if}
   </div>
 
   <!-- Mode buttons (top-right) -->
