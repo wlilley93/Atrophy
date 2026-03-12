@@ -525,7 +525,12 @@ Session end is triggered by window close, `app.on('will-quit')`, or agent switch
 
 ### App Shutdown
 
-`app.on('will-quit')` performs cleanup of all running background systems. This handler runs regardless of how the app exits (window close, Cmd+Q, system shutdown), ensuring no resources leak.
+The app handles shutdown from two entry points:
+
+1. **Signal handlers** - `SIGTERM` and `SIGINT` (e.g. `launchctl stop`, Ctrl+C) call `app.quit()`, which triggers the `will-quit` handler below.
+2. **`app.on('will-quit')`** - runs regardless of how the app exits (window close, Cmd+Q, system shutdown, signal), ensuring no resources leak.
+
+The `will-quit` cleanup sequence:
 
 - Unregisters all global shortcuts (Cmd+Shift+Space for menu bar toggle)
 - Clears all interval timers (sentinel, queue, deferral)

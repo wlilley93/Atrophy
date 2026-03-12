@@ -21,6 +21,9 @@ import { Session } from './session';
 import { loadSystemPrompt } from './context';
 import { streamInference, InferenceEvent } from './inference';
 import { search as vectorSearch } from './vector-search';
+import { createLogger } from './logger';
+
+const log = createLogger('server');
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -55,10 +58,21 @@ let inferLock = false;
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
+const MAX_BODY_SIZE = 1024 * 1024; // 1MB
+
 function parseBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let totalSize = 0;
+    req.on('data', (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error('Request body too large'));
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks).toString()));
     req.on('error', reject);
   });
@@ -332,7 +346,7 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
         sendJson(res, { error: 'not found' }, 404);
       }
     } catch (e) {
-      console.log(`[server] Error handling ${method} ${pathname}: ${e}`);
+      log.error(`Error handling ${method} ${pathname}: ${e}`);
       if (!res.headersSent) {
         sendJson(res, { error: 'internal server error' }, 500);
       }
@@ -341,13 +355,13 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
 
   httpServer.listen(port, host, () => {
     const config = getConfig();
-    console.log(`\n  Atrophy - HTTP API`);
-    console.log(`  Agent: ${config.AGENT_DISPLAY_NAME}`);
-    console.log(`  http://${host}:${port}`);
-    console.log(`  Token: ${serverToken.slice(0, 8)}...${serverToken.slice(-4)}`);
-    console.log(`  Token file: ${TOKEN_PATH}`);
-    console.log(`  Endpoints: /health, /chat, /chat/stream, /memory/search, /memory/threads, /session`);
-    console.log(`  Auth: Bearer token required on all endpoints except /health\n`);
+    log.info(`Atrophy - HTTP API`);
+    log.info(`Agent: ${config.AGENT_DISPLAY_NAME}`);
+    log.info(`http://${host}:${port}`);
+    log.info(`Token: ${serverToken.slice(0, 8)}...${serverToken.slice(-4)}`);
+    log.info(`Token file: ${TOKEN_PATH}`);
+    log.info(`Endpoints: /health, /chat, /chat/stream, /memory/search, /memory/threads, /session`);
+    log.info(`Auth: Bearer token required on all endpoints except /health`);
   });
 }
 

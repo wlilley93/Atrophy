@@ -88,10 +88,15 @@
     // Italic
     text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
 
-    // Links [text](url)
+    // Links [text](url) - only allow http(s) schemes
     text = text.replace(
       /\[([^\]]+)\]\(([^)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener" class="md-link">$1</a>'
+      (_match: string, linkText: string, href: string) => {
+        if (/^https?:\/\//i.test(href)) {
+          return `<a href="${href}" target="_blank" rel="noopener" class="md-link">${linkText}</a>`;
+        }
+        return `${linkText} (${href})`;
+      }
     );
 
     // Bare URLs - match http(s) URLs not already inside an href or tag

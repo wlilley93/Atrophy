@@ -6,6 +6,29 @@ This document covers every module in the main process in dependency order: confi
 
 ---
 
+## logger.ts
+
+The logger module provides leveled logging across the entire codebase, replacing raw `console.log` calls. Every main-process module creates a tagged logger via `createLogger('tag')` and uses `log.debug`, `log.info`, `log.warn`, or `log.error` for output. The active threshold is controlled by the `LOG_LEVEL` environment variable, defaulting to `debug` in development and `info` in production.
+
+### Exported API
+
+```typescript
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+export function setLogLevel(level: LogLevel): void;
+export function createLogger(tag: string): {
+  debug(msg: string, ...args: unknown[]): void;
+  info(msg: string, ...args: unknown[]): void;
+  warn(msg: string, ...args: unknown[]): void;
+  error(msg: string, ...args: unknown[]): void;
+};
+export default log; // default logger tagged 'atrophy'
+```
+
+Each log line is prefixed with `[tag]` automatically, so modules do not include their own bracket tags in message strings. The level ordering is `debug < info < warn < error` - setting `LOG_LEVEL=warn` suppresses all debug and info output.
+
+---
+
 ## config.ts
 
 The configuration module is the foundation that every other module depends on. It implements a three-tier resolution scheme - env vars, then `~/.atrophy/config.json`, then `agents/<name>/data/agent.json`, then hardcoded defaults - so that deployment-level overrides take precedence over user preferences, which in turn take precedence over per-agent manifests. This design lets the same agent bundle run in different environments (dev, packaged app, CI) without changing any agent files. The module is a port of `config.py` and weighs in at 735 lines, most of which is property resolution logic.

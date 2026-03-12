@@ -79,6 +79,8 @@ const ALLOWED_ENV_KEYS = new Set([
 /** Save a secret to ~/.atrophy/.env. Updates or appends the key. */
 export function saveEnvVar(key: string, value: string): void {
   if (!ALLOWED_ENV_KEYS.has(key)) return;
+  // Strip newlines to prevent env injection
+  value = value.replace(/[\r\n]/g, '');
   const envPath = path.join(USER_DATA, '.env');
   fs.mkdirSync(USER_DATA, { recursive: true });
   let lines: string[] = [];
@@ -724,7 +726,7 @@ export function saveAgentConfig(
   } catch { /* empty */ }
   Object.assign(existing, updates);
   fs.mkdirSync(path.dirname(agentJsonPath), { recursive: true });
-  fs.writeFileSync(agentJsonPath, JSON.stringify(existing, null, 2));
+  fs.writeFileSync(agentJsonPath, JSON.stringify(existing, null, 2), { mode: 0o600 });
 }
 
 // ---------------------------------------------------------------------------

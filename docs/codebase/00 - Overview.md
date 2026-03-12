@@ -69,7 +69,7 @@ The application boots through a carefully ordered initialization sequence in `sr
 4. **`getConfig()`** - instantiate the Config singleton. This loads `~/.atrophy/.env` into `process.env`, reads `~/.atrophy/config.json`, resolves the VERSION file, detects the Python path, resolves the default agent, and computes all derived paths.
 5. **`initDb()`** - open (or create) the SQLite database for the current agent at `~/.atrophy/agents/<name>/data/memory.db`.
 6. **Set `currentAgentName`** - store the active agent name for deferral tracking.
-7. **Log startup** - print version, agent name, and database path.
+7. **Log startup** - log version, agent name, and database path via the leveled logger (`src/main/logger.ts`).
 8. **`registerIpcHandlers()`** - register all `ipcMain.handle()` channels (see IPC registry below).
 9. **`registerAudioHandlers()`** - register audio capture IPC (start/stop recording, chunk receiving). Takes a getter function for the main window reference.
 10. **`registerWakeWordHandlers()`** - register wake word detection IPC.
@@ -368,8 +368,11 @@ On `window-all-closed`, the app quits on non-macOS platforms. On macOS, the app 
 ### Activate
 On `activate` (clicking the dock icon), if no window exists a new one is created; otherwise the existing window is shown. This handles the macOS convention where clicking a dock icon should always bring the app to the foreground.
 
-### Will Quit
-The `will-quit` handler performs cleanup in a specific order to avoid resource leaks and ensure graceful shutdown. Each step depends on the previous ones - for example, database connections must close last since other cleanup steps may write final state.
+### Graceful Shutdown
+
+The app handles shutdown from two entry points. Process signals (`SIGTERM`, `SIGINT`) call `app.quit()`, which funnels into the same `will-quit` handler that fires on window close, Cmd+Q, or system shutdown. This ensures clean teardown whether the app is stopped by launchctl, Ctrl+C, or the user.
+
+The `will-quit` handler performs cleanup in a specific order to avoid resource leaks. Each step depends on the previous ones - for example, database connections must close last since other cleanup steps may write final state.
 
 1. Unregister all global shortcuts
 2. Clear the sentinel timer (5-minute coherence checks)

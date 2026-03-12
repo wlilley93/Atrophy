@@ -70,7 +70,7 @@
 
   <div class="canvas-pip">
     {#if url}
-      <webview src={url} class="canvas-webview"></webview>
+      <webview src={url} class="canvas-webview" partition="persist:canvas"></webview>
     {:else}
       <div class="canvas-empty">
         <p>No canvas content</p>

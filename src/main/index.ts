@@ -3,7 +3,7 @@
  * Port of main.py - two modes: menu bar (--app) and GUI (--gui).
  */
 
-import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, session as electronSession } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ensureUserData, getConfig, saveUserConfig, saveAgentConfig, saveEnvVar, BUNDLE_ROOT, USER_DATA } from './config';
@@ -27,6 +27,9 @@ import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
 import { getAppIcon, getTrayIcon, TrayState } from './icon';
 import { initAutoUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater';
+import { createLogger } from './logger';
+
+const log = createLogger('main');
 
 // ---------------------------------------------------------------------------
 // State
@@ -62,11 +65,22 @@ function createWindow(): BrowserWindow {
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.mjs'),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false,
     },
+  });
+
+  // Content Security Policy
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src 'self' file:; font-src 'self'; connect-src 'self' https:; frame-src 'self' blob:",
+        ],
+      },
+    });
   });
 
   // Load renderer
@@ -245,19 +259,30 @@ function registerIpcHandlers(): void {
     const userUpdates: Record<string, unknown> = {};
     const agentUpdates: Record<string, unknown> = {};
 
+    // Allowlist of keys safe to update from the renderer
+    const agentKeys = new Set([
+      'AGENT_DISPLAY_NAME', 'OPENING_LINE', 'TTS_BACKEND', 'TTS_PLAYBACK_RATE',
+      'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL', 'ELEVENLABS_STABILITY',
+      'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
+      'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
+      'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
+      'DISABLED_TOOLS',
+    ]);
+    const userKeys = new Set([
+      'USER_NAME', 'INPUT_MODE', 'PTT_KEY', 'WAKE_WORD_ENABLED', 'WAKE_WORDS',
+      'WAKE_CHUNK_SECONDS', 'SAMPLE_RATE', 'MAX_RECORD_SEC',
+      'CLAUDE_EFFORT', 'ADAPTIVE_EFFORT', 'CONTEXT_SUMMARIES',
+      'MAX_CONTEXT_TOKENS', 'VECTOR_SEARCH_WEIGHT', 'EMBEDDING_MODEL',
+      'SESSION_SOFT_LIMIT_MINS', 'NOTIFICATIONS_ENABLED',
+      'AVATAR_ENABLED', 'AVATAR_RESOLUTION', 'OBSIDIAN_VAULT',
+    ]);
+    const safeKeys = new Set([...agentKeys, ...userKeys]);
+
     for (const [key, value] of Object.entries(updates)) {
+      if (!safeKeys.has(key)) continue;
       if (key in c) {
         (c as Record<string, unknown>)[key] = value;
       }
-      // Route to correct config file
-      const agentKeys = new Set([
-        'AGENT_DISPLAY_NAME', 'OPENING_LINE', 'TTS_BACKEND', 'TTS_PLAYBACK_RATE',
-        'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL', 'ELEVENLABS_STABILITY',
-        'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
-        'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
-        'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
-        'DISABLED_TOOLS',
-      ]);
       if (agentKeys.has(key)) {
         agentUpdates[key] = value;
       } else {
@@ -460,9 +485,14 @@ Output EXACTLY this format - a single fenced JSON block:
       if (wantWorkspace) args.push('--workspace');
       if (wantExtra) args.push('--extra');
 
+      // Only pass necessary env vars to subprocess
+      const safeEnv: Record<string, string> = {};
+      for (const k of ['PATH', 'HOME', 'USER', 'LANG', 'TERM', 'PYTHONPATH', 'VIRTUAL_ENV']) {
+        if (process.env[k]) safeEnv[k] = process.env[k]!;
+      }
       await execFileAsync(pythonPath, [scriptPath, ...args], {
         timeout: 120_000,
-        env: { ...process.env },
+        env: safeEnv,
       });
       return 'complete';
     } catch (err: unknown) {
@@ -627,6 +657,8 @@ Output EXACTLY this format - a single fenced JSON block:
     const loopsDir = path.join(c.AVATAR_DIR, 'loops');
     const col = colour || 'blue';
     const cl = clip || 'bounce_playful';
+    // Validate inputs to prevent path traversal
+    if (!/^[a-zA-Z0-9_-]+$/.test(col) || !/^[a-zA-Z0-9_-]+$/.test(cl)) return null;
     const videoPath = path.join(loopsDir, col, `loop_${cl}.mp4`);
     if (fs.existsSync(videoPath)) {
       return videoPath;
@@ -701,6 +733,8 @@ Output EXACTLY this format - a single fenced JSON block:
   // ── Agent message queues ──
 
   ipcMain.handle('queue:drainAgent', (_event, agentName: string) => {
+    // Validate agent name to prevent path traversal
+    if (!/^[a-zA-Z0-9_-]+$/.test(agentName)) return [];
     return drainAgentQueue(agentName);
   });
 
@@ -734,7 +768,7 @@ app.whenReady().then(() => {
   initDb();
 
   currentAgentName = config.AGENT_NAME;
-  console.log(`[atrophy] v${config.VERSION} | agent: ${config.AGENT_NAME} | db: ${config.DB_PATH}`);
+  log.info(`v${config.VERSION} | agent: ${config.AGENT_NAME} | db: ${config.DB_PATH}`);
 
   // Register IPC
   registerIpcHandlers();
@@ -761,7 +795,7 @@ app.whenReady().then(() => {
   if (lastAgent && lastAgent !== config.AGENT_NAME) {
     config.reloadForAgent(lastAgent);
     initDb();
-    console.log(`[atrophy] resumed agent: ${config.AGENT_NAME}`);
+    log.info(`resumed agent: ${config.AGENT_NAME}`);
   }
 
   // Sentinel timer - coherence check every 5 minutes
@@ -859,6 +893,18 @@ app.on('will-quit', () => {
   stopServer();
   closeAllDbs();
 });
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown on SIGTERM/SIGINT (e.g. launchctl stop, Ctrl+C)
+// ---------------------------------------------------------------------------
+
+function gracefulShutdown(signal: string): void {
+  log.info(`received ${signal} - shutting down gracefully`);
+  app.quit();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Keep BUNDLE_ROOT and USER_DATA referenced so they don't get tree-shaken
 void BUNDLE_ROOT;

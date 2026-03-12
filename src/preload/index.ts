@@ -180,8 +180,22 @@ const api: AtrophyAPI = {
   drainAgentQueue: (agentName: string) => ipcRenderer.invoke('queue:drainAgent', agentName),
   drainAllAgentQueues: () => ipcRenderer.invoke('queue:drainAll'),
 
-  // Generic listener for any channel
+  // Channel listener with allowlist
   on: (channel, cb) => {
+    const ALLOWED_CHANNELS = new Set([
+      'inference:textDelta', 'inference:sentenceReady', 'inference:toolUse',
+      'inference:done', 'inference:compacting', 'inference:error',
+      'tts:started', 'tts:done', 'tts:queueEmpty',
+      'wakeword:start', 'wakeword:stop',
+      'queue:message', 'deferral:request',
+      'updater:available', 'updater:not-available', 'updater:progress',
+      'updater:downloaded', 'updater:error',
+      'canvas:updated', 'artefact:updated',
+    ]);
+    if (!ALLOWED_CHANNELS.has(channel)) {
+      console.warn(`IPC channel not allowed: ${channel}`);
+      return () => {};
+    }
     const handler = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => cb(...args);
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.removeListener(channel, handler);

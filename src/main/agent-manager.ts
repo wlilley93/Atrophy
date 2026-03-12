@@ -5,8 +5,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { getConfig, BUNDLE_ROOT, USER_DATA } from './config';
+import { createLogger } from './logger';
+
+const log = createLogger('agent-manager');
 
 // ---------------------------------------------------------------------------
 // Agent search dirs
@@ -156,19 +159,25 @@ function toggleAgentCron(agentName: string, enable: boolean): void {
   const config = getConfig();
   const jobsFile = path.join(BUNDLE_ROOT, 'scripts', 'agents', agentName, 'jobs.json');
   if (!fs.existsSync(jobsFile)) {
-    console.log(`  [No jobs.json for ${agentName} - skipping cron toggle]`);
+    log.debug(`No jobs.json for ${agentName} - skipping cron toggle`);
     return;
   }
 
   const cmd = enable ? 'install' : 'uninstall';
+  // Validate agent name to prevent path traversal or injection
+  if (!/^[a-zA-Z0-9_-]+$/.test(agentName)) {
+    log.warn(`Invalid agent name for cron toggle: ${agentName}`);
+    return;
+  }
   try {
-    execSync(
-      `${config.PYTHON_PATH} ${path.join(BUNDLE_ROOT, 'scripts', 'cron.py')} --agent ${agentName} ${cmd}`,
+    execFileSync(
+      config.PYTHON_PATH,
+      [path.join(BUNDLE_ROOT, 'scripts', 'cron.py'), '--agent', agentName, cmd],
       { cwd: BUNDLE_ROOT, timeout: 10000, stdio: 'pipe' },
     );
-    console.log(`  [Cron ${cmd}: ${agentName}]`);
+    log.info(`Cron ${cmd}: ${agentName}`);
   } catch (e) {
-    console.log(`  [Cron ${cmd} failed for ${agentName}: ${e}]`);
+    log.error(`Cron ${cmd} failed for ${agentName}: ${e}`);
   }
 }
 
@@ -274,7 +283,7 @@ export function validateDeferralRequest(target: string, currentAgent: string): b
   }
   deferralCount++;
   if (deferralCount > MAX_DEFERRALS_PER_WINDOW) {
-    console.log('[deferral] suppressed - too many in 60s');
+    log.warn('deferral suppressed - too many in 60s');
     return false;
   }
 

@@ -185,7 +185,7 @@
           bind:this={iframeRef}
           srcdoc={content}
           class="artefact-iframe"
-          sandbox="allow-scripts allow-same-origin"
+          sandbox="allow-scripts"
           title="Artefact content"
         ></iframe>
       {:else if contentType === 'image'}

@@ -95,7 +95,7 @@ All database operations follow a consistent pattern designed for safety, perform
 Error handling follows a severity-based approach. Critical errors that prevent the app from functioning propagate and crash loudly. Non-critical errors are caught and logged without interrupting the user experience. The goal is that the user never sees an error dialog for something that does not actually prevent them from using the app.
 
 - Fail silently for non-critical features (Obsidian reads, avatar loading, TTS synthesis). A missing avatar or failed TTS should not interrupt a conversation.
-- Log warnings via `console.log` for background failures (embedding errors, cron toggle failures). These are useful for debugging but should not alert the user.
+- Log via the leveled logger (`src/main/logger.ts`), never raw `console.log`. Use `createLogger('tag')` per module and pick the appropriate level: `log.error` for failures that need attention, `log.warn` for fallbacks and degraded paths, `log.info` for operational messages (startup, connected, loaded), `log.debug` for verbose/trace output. The `LOG_LEVEL` env var controls the threshold (defaults to `debug` in dev, `info` in production).
 - Let critical errors propagate (database initialization, inference subprocess spawn). If the database cannot be opened or Claude CLI is not found, the app cannot function.
 - No custom exception hierarchy. Use built-in `Error` and check error codes where needed. The codebase is not large enough to benefit from custom error classes.
 

@@ -42,10 +42,11 @@ The Electron app enforces strict boundaries between the main and renderer proces
 
 - **`contextIsolation: true`** - The renderer runs in an isolated JavaScript context. It cannot access Node.js APIs, Electron internals, or the preload script's scope directly. Any data from the preload script is explicitly marshalled across the isolation boundary.
 - **`nodeIntegration: false`** - The renderer has no access to `require()`, `fs`, `child_process`, or any Node.js module. All system access must go through the preload bridge.
-- **`sandbox: false`** - The sandbox is disabled to allow the preload script to use Node.js APIs for the IPC bridge. This is required for `contextBridge` to function but does not weaken the renderer's isolation since `contextIsolation` is enabled. The preload script runs in a privileged context, but the renderer cannot reach it.
+- **`sandbox: true`** - The renderer process runs in an OS-level sandbox, restricting its access to system resources beyond what the preload bridge explicitly provides. This is defense-in-depth on top of `contextIsolation`.
+- **Content Security Policy** - A strict CSP is set via `session.webRequest.onHeadersReceived` on every response: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src 'self' file:; font-src 'self'; connect-src 'self' https:; frame-src 'self' blob:`. This prevents inline script injection and restricts resource loading origins.
+- **`webSecurity: true`** (default) - The same-origin policy is enforced. Cross-origin requests from the renderer are blocked unless explicitly allowed by CORS headers.
 - **Preload bridge only** - The preload script (`src/preload/index.ts`) uses `contextBridge.exposeInMainWorld()` to expose a typed API object (`window.atrophy`). This is the only way the renderer can communicate with the main process. The API surface is fixed at build time.
 - **No remote module** - The deprecated Electron `remote` module is not used anywhere. This module would allow the renderer to call main process functions directly, bypassing all security boundaries.
-- **`webSecurity: false`** - Disabled to allow loading local file URLs and cross-origin resources for the canvas and avatar components. This is a deliberate tradeoff: it enables local content loading but removes same-origin policy enforcement. Since the app does not load arbitrary web content and the renderer is already isolated from system resources, the risk is acceptable.
 
 ### IPC Channel Whitelist
 
@@ -105,7 +106,7 @@ The preload script defines exactly three communication patterns, each serving a 
 | `audio:chunk` | `ArrayBuffer` |
 | `wakeword:chunk` | `ArrayBuffer` |
 
-A generic `on(channel, cb)` escape hatch is exposed for channels not covered by the typed API, but this is only used as a fallback for edge cases. The typed API covers all production use cases.
+A generic `on(channel, cb)` method is exposed for dynamic channel subscriptions, but it enforces a strict allowlist of permitted channels. Any attempt to listen on an unlisted channel is rejected with a console warning and a no-op cleanup function. The allowed channels are: `inference:*`, `tts:*`, `wakeword:*`, `queue:message`, `deferral:request`, `updater:*`, `canvas:updated`, and `artefact:updated`.
 
 ### Companion <-> External Services
 
@@ -304,6 +305,39 @@ The server uses plain HTTP only. There are no WebSocket endpoints, no persistent
 
 ---
 
+## IPC Input Validation
+
+Several IPC handlers accept string parameters that are used in filesystem paths or shell commands. All such parameters are validated against strict patterns to prevent path traversal and command injection.
+
+### Path Traversal Prevention
+
+- **`avatar:getVideoPath`**: The `colour` and `clip` parameters are validated against `/^[a-zA-Z0-9_-]+$/` before being used in `path.join()`. Invalid values return `null`.
+- **`queue:drainAgent`**: The `agentName` parameter is validated against the same alphanumeric pattern before constructing the queue file path.
+- **Agent cron toggle**: The `agentName` parameter in `toggleAgentCron()` is validated before being passed to `execFileSync()`.
+
+### Command Injection Prevention
+
+- **`toggleAgentCron()`**: Uses `execFileSync()` with an arguments array instead of `execSync()` with string interpolation. This prevents shell interpretation of agent names or other parameters.
+- **Subprocess env filtering**: The Google OAuth subprocess (`setup:googleOAuth`) receives a filtered environment with only necessary variables (`PATH`, `HOME`, `USER`, `LANG`, `TERM`, `PYTHONPATH`, `VIRTUAL_ENV`), preventing leakage of secrets like `ELEVENLABS_API_KEY` or `TELEGRAM_BOT_TOKEN` to the subprocess.
+
+### Markdown Link Sanitization
+
+The Transcript component's markdown renderer validates link URLs before inserting them into anchor tags. Only `http://` and `https://` schemes are allowed. Links with `javascript:`, `data:`, `vbscript:`, or other dangerous schemes are rendered as plain text with the URL in parentheses.
+
+### Artefact Iframe Sandbox
+
+The artefact overlay uses `sandbox="allow-scripts"` on its iframe (without `allow-same-origin`). This prevents the iframe content from accessing the parent page's DOM or the `window.atrophy` API, even if the content contains malicious JavaScript. The `allow-same-origin` attribute is deliberately excluded because combining it with `allow-scripts` would allow the iframe to remove its own sandbox restrictions.
+
+### Canvas Webview Isolation
+
+The Canvas webview uses `partition="persist:canvas"` to isolate its cookies and storage from the main renderer session.
+
+### HTTP Server Body Size Limit
+
+The HTTP server enforces a 1MB body size limit on all requests. Requests exceeding this limit are immediately destroyed, preventing memory exhaustion attacks.
+
+---
+
 ## Content Safety
 
 ### SENTINEL Coherence Monitor
@@ -431,6 +465,19 @@ All secrets are loaded from `~/.atrophy/.env` into `process.env` on startup. The
 
 This last rule is important because it means you can override any `.env` value by setting a real environment variable, which is useful for testing and deployment.
 
+### Config Update Key Allowlist
+
+The `config:update` IPC handler restricts which configuration keys can be modified from the renderer. Only explicitly allowlisted keys are accepted - any key not in the safe set is silently ignored. This prevents a compromised renderer from overwriting security-sensitive paths like `CLAUDE_BIN`, `PYTHON_PATH`, or `DB_PATH`.
+
+The allowlisted keys are split into two sets:
+
+- **Agent keys** (saved to `agent.json`): display name, voice settings, heartbeat schedule, Telegram chat ID, window dimensions, disabled tools.
+- **User keys** (saved to `config.json`): user name, input mode, audio settings, inference effort, memory settings, session limits, notifications, avatar settings, Obsidian vault path.
+
+### Env Value Sanitization
+
+Values written to `.env` via `saveEnvVar()` are stripped of newline characters (`\r` and `\n`) before writing. This prevents newline injection attacks where a crafted value like `real_value\nPATH=/evil/path` could inject additional environment variables.
+
 ### Allowed Secret Keys (Whitelist)
 
 Only these keys can be written to `.env` via the `saveEnvVar()` function. Any attempt to write a key not in this whitelist is silently ignored, preventing the setup wizard or any other code path from writing arbitrary keys.
@@ -452,6 +499,7 @@ The following table documents all files that contain sensitive data, their permi
 | `~/.atrophy/server_token` | `0o600` | `crypto.randomBytes(32).toString('base64url')` | HTTP API bearer token |
 | `~/.atrophy/.env` | `0o600` | Manual entry or setup wizard | API keys and secrets |
 | `~/.atrophy/config.json` | `0o600` | Auto-created empty, written by save operations | User configuration |
+| `~/.atrophy/agents/*/data/agent.json` | `0o600` | Agent creation or settings save | Per-agent configuration |
 | `~/.atrophy/.google/token.json` | `0o600` | OAuth2 consent flow | Google refresh + access tokens |
 
 ### Agent Configuration Security

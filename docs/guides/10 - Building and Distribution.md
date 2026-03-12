@@ -296,8 +296,6 @@ The app uses macOS hardened runtime, which restricts the app's capabilities to o
   <true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
   <true/>
-  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
-  <true/>
   <key>com.apple.security.device.audio-input</key>
   <true/>
   <key>com.apple.security.network.client</key>
@@ -316,7 +314,6 @@ The following table explains why each entitlement is necessary. Removing any of 
 |-------------|-----------------|
 | `cs.allow-jit` | Required by Electron's V8 JavaScript engine for JIT compilation |
 | `cs.allow-unsigned-executable-memory` | Required by Electron's V8 and WASM (Transformers.js embeddings) |
-| `cs.allow-dyld-environment-variables` | Required for native module loading (`better-sqlite3`) |
 | `device.audio-input` | Microphone access for speech-to-text via whisper.cpp |
 | `network.client` | Outbound HTTP for ElevenLabs TTS, Telegram Bot API, auto-update checks |
 | `network.server` | Inbound HTTP for the `--server` mode API |
