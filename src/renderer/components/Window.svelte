@@ -515,6 +515,9 @@
       };
       await api.updateConfig(updates);
 
+      // Force config reload so avatar paths pick up newly downloaded assets
+      await api.reloadConfig?.();
+
       // Reload config and agent list
       try {
         const [cfg, agentList] = await Promise.all([

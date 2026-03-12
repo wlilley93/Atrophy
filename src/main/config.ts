@@ -793,3 +793,9 @@ export function getConfig(): Config {
   }
   return _config;
 }
+
+/** Force config to reload from disk on next access (e.g. after agent switch or setup). */
+export function reloadConfig(): Config {
+  _config = new Config();
+  return _config;
+}

@@ -37,6 +37,7 @@ export interface AtrophyAPI {
 
   // Config
   getConfig: () => Promise<Record<string, unknown>>;
+  reloadConfig: () => Promise<void>;
   applyConfig: (updates: Record<string, unknown>) => Promise<void>;
   updateConfig: (updates: Record<string, unknown>) => Promise<void>;
 
@@ -193,6 +194,7 @@ const api: AtrophyAPI = {
 
   // Config
   getConfig: () => ipcRenderer.invoke('config:get'),
+  reloadConfig: () => ipcRenderer.invoke('config:reload'),
   applyConfig: (updates) => ipcRenderer.invoke('config:apply', updates),
   updateConfig: (updates) => ipcRenderer.invoke('config:update', updates),
 

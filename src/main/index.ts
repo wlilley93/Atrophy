@@ -7,7 +7,7 @@ import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, s
 import * as path from 'path';
 import * as fs from 'fs';
 import { execFile, execSync, spawn } from 'child_process';
-import { ensureUserData, getConfig, saveUserConfig, saveAgentConfig, saveEnvVar, isAllowedEnvKey, BUNDLE_ROOT, USER_DATA } from './config';
+import { ensureUserData, getConfig, reloadConfig, saveUserConfig, saveAgentConfig, saveEnvVar, isAllowedEnvKey, BUNDLE_ROOT, USER_DATA } from './config';
 import { initDb, closeAll as closeAllDbs, writeObservation } from './memory';
 import { streamInference, stopInference, stopAllInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
@@ -291,6 +291,10 @@ function resetJournalNudgeTimer(): void {
 
 function registerIpcHandlers(): void {
   const config = getConfig();
+
+  ipcMain.handle('config:reload', () => {
+    reloadConfig();
+  });
 
   ipcMain.handle('config:get', () => {
     const c = getConfig();
