@@ -11,6 +11,9 @@
       description: "Gives your companion a real voice - speaks out loud.\n$5/month minimum. Hundreds of voices, or clone your own.",
       label: 'ElevenLabs API Key',
       placeholder: 'xi-...',
+      url: 'https://elevenlabs.io/app/settings/api-keys',
+      urlLabel: 'Get your API key',
+      skipWarning: "Without ElevenLabs, your companion will have no voice. You can add this later in Settings.",
     },
     {
       key: 'FAL_KEY',
@@ -18,6 +21,9 @@
       description: "Handles image and video generation. Pay-as-you-go:\navatar images ~$0.01 each, ambient video clips ~$0.30 each.",
       label: 'Fal API Key',
       placeholder: 'fal-...',
+      url: 'https://fal.ai/dashboard/keys',
+      urlLabel: 'Get your API key',
+      skipWarning: "Without Fal, you won't be able to generate pictures or videos for your avatar. Are you sure?",
     },
     {
       key: 'TELEGRAM',
@@ -25,6 +31,9 @@
       description: "Your companion can message you directly - check-ins,\nbriefs, reminders. Free.",
       label: '',
       placeholder: '',
+      url: 'https://t.me/BotFather',
+      urlLabel: 'Create a bot with @BotFather',
+      skipWarning: "Without Telegram, you won't be able to talk to your agent remotely. If you change your mind later, you can set this up in Settings.",
     },
     {
       key: 'GOOGLE',
@@ -32,6 +41,7 @@
       description: "Gmail, Calendar, Drive, Sheets, Docs, Tasks, Contacts,\nMeet, YouTube, Photos, and Search Console.\nFree - opens your browser for Google consent.",
       label: '',
       placeholder: '',
+      skipWarning: "No problem - we won't save anything to your Google Drive. Note that this means your agent can't tell you about your schedule or emails, if you use Google.",
     },
     {
       key: 'GITHUB',
@@ -39,6 +49,8 @@
       description: "Repos, issues, PRs, code search, gists, and releases.\nFree - opens your browser for GitHub login.\nRequires the gh CLI (installed automatically via Homebrew).",
       label: '',
       placeholder: '',
+      url: 'https://github.com/settings/tokens',
+      urlLabel: 'GitHub settings',
     },
   ];
 
@@ -73,6 +85,9 @@
   let googleExtra = $state(true);
   let googleAuthing = $state(false);
   let googleResult = $state<string | null>(null);
+
+  // Skip confirmation
+  let skipConfirmVisible = $state(false);
 
   // GitHub
   let githubChecking = $state(false);
@@ -227,8 +242,25 @@
 
   function skipCurrentService() {
     const s = SERVICE_PROMPTS[step];
-    if (s) onSkipped(s.key);
+    if (!s) return;
+    // If service has a skip warning and we haven't confirmed yet, show it
+    if (s.skipWarning && !skipConfirmVisible) {
+      skipConfirmVisible = true;
+      return;
+    }
+    skipConfirmVisible = false;
+    onSkipped(s.key);
   }
+
+  function cancelSkip() {
+    skipConfirmVisible = false;
+  }
+
+  // Reset skip confirm when step changes
+  $effect(() => {
+    step; // track
+    skipConfirmVisible = false;
+  });
 
   function hasValue(): boolean {
     const s = SERVICE_PROMPTS[step];
@@ -248,8 +280,22 @@
     <div class="service-card-header">
       <h3 class="service-card-title">{svc.title}</h3>
       <p class="service-card-desc">{@html safeHtml(svc.description)}</p>
+      {#if svc.url}
+        <a class="service-link" href={svc.url} target="_blank" rel="noopener">{svc.urlLabel || 'Open'} &#8599;</a>
+      {/if}
     </div>
 
+    {#if skipConfirmVisible && svc.skipWarning}
+      <div class="skip-warning fade-in">
+        <p class="skip-warning-text">{svc.skipWarning}</p>
+        <div class="service-card-actions">
+          <button class="svc-btn" onclick={cancelSkip}>Go back</button>
+          <button class="svc-btn skip-confirm-btn" onclick={skipCurrentService}>Skip anyway</button>
+        </div>
+      </div>
+    {/if}
+
+    {#if !skipConfirmVisible}
     <div class="service-card-body">
       {#if svc.key === 'ELEVENLABS_API_KEY'}
         <label class="service-field">
@@ -405,6 +451,7 @@
         {/if}
       {/if}
     </div>
+    {/if}
   </div>
 {/if}
 
@@ -444,6 +491,41 @@
     color: var(--text-secondary);
     line-height: 1.4;
     margin: 0;
+  }
+
+  .service-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12px;
+    color: rgba(100, 140, 255, 0.8);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+
+  .service-link:hover {
+    color: rgba(100, 140, 255, 1);
+    text-decoration: underline;
+  }
+
+  .skip-warning {
+    padding: 12px 0;
+  }
+
+  .skip-warning-text {
+    font-size: 13px;
+    color: rgba(255, 180, 80, 0.9);
+    line-height: 1.5;
+    text-align: center;
+    margin: 0 0 12px;
+  }
+
+  .skip-confirm-btn {
+    background: rgba(255, 120, 80, 0.12);
+    border-color: rgba(255, 120, 80, 0.35);
+  }
+
+  .skip-confirm-btn:hover:not(:disabled) {
+    background: rgba(255, 120, 80, 0.22);
   }
 
   .service-card-body {
