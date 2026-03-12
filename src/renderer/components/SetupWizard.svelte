@@ -132,7 +132,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg);
+    background: transparent;
     overflow: hidden;
   }
 

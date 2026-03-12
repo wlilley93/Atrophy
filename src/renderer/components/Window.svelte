@@ -74,15 +74,16 @@
   /** User name from welcome screen */
   let setupUserName = $state('');
 
-  // Pre-baked opening text (matches Python _OPENING_TEXT)
-  const SETUP_OPENING_TEXT =
-    "I'm Xan. I ship with the system - protector, first contact, always on.\n\n" +
-    "You already have me. But the real power is in creating something yours - " +
-    "a companion with its own edges, its own voice, someone shaped by you " +
-    "for a specific purpose.\n\n" +
-    "This is the last you'll hear of my voice until you've added your " +
-    "ElevenLabs API key, which I will ask you to do in a moment.\n\n" +
-    "First, we need to set up your system. Let's get started.";
+  // Pre-baked opening paragraphs - streamed one at a time during setup
+  const SETUP_PARAGRAPHS = [
+    "I'm Xan. I ship with the system - protector, first contact, always on.",
+    "You already have me. But the real power is in creating something yours - a companion with its own edges, its own voice, someone shaped by you for a specific purpose.",
+    "This is the last you'll hear of my voice until you've added your ElevenLabs API key, which I will ask you to do in a moment.",
+    "First, we need to set up your system. Let's get started.",
+  ];
+
+  // Paragraph streaming timing (ms between each paragraph appearing)
+  const PARA_STREAM_DELAY = 3500;
 
   // Agent switch clip-path animation
   let agentSwitchActive = $state(false);
@@ -208,25 +209,39 @@
     setupUserName = name;
     if (api) await api.updateConfig({ USER_NAME: name });
 
-    // Dismiss the welcome overlay - chat is now visible
+    // Dismiss the welcome overlay immediately - chat + ambient video visible
     setupWizardPhase = 'hidden';
     setupActive = true;
 
     // Play transition audio
     api?.playAgentAudio?.('name.mp3');
 
-    // Show Xan's opening text in the main transcript
-    setTimeout(() => {
-      api?.playAgentAudio?.('opening.mp3');
-      addMessage('agent', SETUP_OPENING_TEXT);
-      completeLast();
+    // Stream paragraphs one at a time with delays
+    api?.playAgentAudio?.('opening.mp3');
 
-      // Start service cards after opening settles
-      setTimeout(() => {
-        setupServiceStep = 0;
-        setupShowServiceCard = true;
-      }, 2000);
-    }, 500);
+    let cumulativeText = '';
+    for (let i = 0; i < SETUP_PARAGRAPHS.length; i++) {
+      if (i > 0) {
+        await new Promise(r => setTimeout(r, PARA_STREAM_DELAY));
+      }
+      cumulativeText += (cumulativeText ? '\n\n' : '') + SETUP_PARAGRAPHS[i];
+      // Update the single agent message with growing text
+      if (i === 0) {
+        addMessage('agent', cumulativeText);
+      } else {
+        // Replace last message content with the growing text
+        const msgs = transcript.messages;
+        if (msgs.length > 0) {
+          msgs[msgs.length - 1].text = cumulativeText;
+        }
+      }
+    }
+    completeLast();
+
+    // Wait for last paragraph to settle, then show first service card
+    await new Promise(r => setTimeout(r, 1500));
+    setupServiceStep = 0;
+    setupShowServiceCard = true;
   }
 
   // Service titles for chat messages (matches ServiceCard.SERVICE_PROMPTS order)

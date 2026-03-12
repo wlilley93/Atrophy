@@ -999,6 +999,9 @@ Output EXACTLY this format - a single fenced JSON block:
     // Also check loops/ambient_loop.mp4 as fallback
     const loopAmbient = path.join(avatarDir, 'loops', 'ambient_loop.mp4');
     if (fs.existsSync(loopAmbient)) return loopAmbient;
+    // Bundled fallback - resources/xan_ambient.mp4
+    const bundled = path.join(c.BUNDLE_ROOT, 'resources', 'xan_ambient.mp4');
+    if (fs.existsSync(bundled)) return bundled;
     return null;
   });
 
