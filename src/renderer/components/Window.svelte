@@ -970,8 +970,8 @@
     </div>
   {/if}
 
-  <!-- Top bar: agent name + thinking indicator -->
-  <div class="top-bar">
+  <!-- Top bar: agent name - hidden during splash/setup -->
+  <div class="top-bar" class:hidden={splashVisible || setupActive || needsSetup}>
     <AgentName
       name={agents.displayName}
       direction={agents.switchDirection}
@@ -981,8 +981,8 @@
     />
   </div>
 
-  <!-- Mode buttons (top-right) -->
-  <div class="mode-buttons" data-no-drag>
+  <!-- Mode buttons (top-right) - hidden during splash/setup -->
+  <div class="mode-buttons" class:hidden={splashVisible || setupActive || needsSetup} data-no-drag>
     <!-- Eye: toggle avatar -->
     <button
       class="mode-btn"
@@ -1299,6 +1299,12 @@
     padding: var(--pad);
     padding-top: 36px;
     padding-bottom: 0;
+    transition: opacity 0.5s ease;
+  }
+
+  .top-bar.hidden {
+    opacity: 0;
+    pointer-events: none;
   }
 
   /* -- Mode buttons -- */
@@ -1311,6 +1317,12 @@
     display: flex;
     flex-direction: row;
     gap: 2px;
+    transition: opacity 0.5s ease;
+  }
+
+  .mode-buttons.hidden {
+    opacity: 0;
+    pointer-events: none;
   }
 
   .mode-btn {
