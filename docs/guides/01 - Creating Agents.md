@@ -1,6 +1,6 @@
 # Creating Agents
 
-Each agent in The Atrophied Mind is a self-contained identity with its own voice, memory, personality, and autonomous behaviour. The default agent is `xan` (the system layer). You can create as many additional agents as you need.
+Each agent in Atrophy is a self-contained identity with its own voice, memory, personality, and autonomous behaviour. The default agent is `xan` (the system layer). You can create as many additional agents as you need.
 
 ---
 

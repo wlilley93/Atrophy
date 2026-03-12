@@ -168,7 +168,7 @@ The emotional state decays toward baselines between sessions via exponential dec
 ### Entity Extraction
 
 `memory.extract_entities()` uses regex-based pattern matching (not ML) to identify:
-- **Multi-word proper nouns**: Consecutive capitalised words (e.g., "John Smith", "The Atrophied Mind").
+- **Multi-word proper nouns**: Consecutive capitalised words (e.g., "John Smith", "Atrophy").
 - **Mid-sentence proper nouns**: Single capitalised words following lowercase text.
 - **Quoted terms**: Terms in double quotes, treated as significant concepts.
 

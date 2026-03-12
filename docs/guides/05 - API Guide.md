@@ -1,6 +1,6 @@
 # API Guide
 
-The Atrophied Mind runs as a headless HTTP server for remote access, web frontends, and programmatic integration. No GUI, no TTS, no voice input - just a REST API over localhost.
+Atrophy runs as a headless HTTP server for remote access, web frontends, and programmatic integration. No GUI, no TTS, no voice input - just a REST API over localhost.
 
 The server is implemented in `src/main/server.ts` using Node's built-in `http` module (no Express or other framework). It runs inside the Electron main process, sharing the same config, database, and inference pipeline as the GUI mode. This design keeps the codebase simple - the server is just an alternative interface to the same underlying agent system.
 

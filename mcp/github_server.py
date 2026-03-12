@@ -8,6 +8,8 @@ no tokens or keys to manage manually.
 Protocol: JSON-RPC 2.0 over stdio (MCP standard transport).
 """
 
+from __future__ import annotations
+
 import json
 import os
 import shutil
@@ -351,12 +353,16 @@ def handle_api(args):
     endpoint = args.get("endpoint", "")
     if not endpoint:
         return "Error: endpoint is required (e.g. '/user' or '/repos/owner/repo')"
-    # Only allow GET requests for safety
+    # Only allow GET requests for safety - explicitly enforce with --method GET
     if not endpoint.startswith("/"):
         endpoint = "/" + endpoint
-    cmd = ["api", endpoint]
+    cmd = ["api", "--method", "GET", endpoint]
     if args.get("jq"):
-        cmd.extend(["--jq", args["jq"]])
+        # Sanitize jq filter - block shell-like patterns
+        jq_filter = args["jq"]
+        if any(c in jq_filter for c in [";", "|", "$("]):
+            return "Error: jq filter contains disallowed characters"
+        cmd.extend(["--jq", jq_filter])
     result = _run_gh(cmd)
     return _format_result(result)
 

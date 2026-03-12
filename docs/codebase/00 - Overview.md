@@ -1,6 +1,6 @@
 # Architecture Overview
 
-The Atrophied Mind is an Electron/TypeScript companion agent system. It uses the Claude CLI for inference (streaming JSON output via subprocess), maintains persistent memory in SQLite via `better-sqlite3`, speaks with synthesised voice, and runs autonomous background processes via macOS launchd. The UI is built with Svelte 5 (runes mode). The system is designed as a desktop-native application that acts as a persistent, voice-enabled companion with long-term memory and self-evolving personality.
+Atrophy is an Electron/TypeScript companion agent system. It uses the Claude CLI for inference (streaming JSON output via subprocess), maintains persistent memory in SQLite via `better-sqlite3`, speaks with synthesised voice, and runs autonomous background processes via macOS launchd. The UI is built with Svelte 5 (runes mode). The system is designed as a desktop-native application that acts as a persistent, voice-enabled companion with long-term memory and self-evolving personality.
 
 ## Technology Stack
 

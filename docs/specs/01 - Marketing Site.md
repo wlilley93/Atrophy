@@ -406,9 +406,9 @@ Accessibility: Semantic HTML. Proper heading hierarchy. Sufficient contrast rati
 
 **Meta:**
 ```html
-<title>The Atrophied Mind — Offload your mind</title>
+<title>Atrophy - Offload your mind</title>
 <meta name="description" content="A companion agent that lives on your Mac. Voice, memory, autonomy, identity. Yours.">
-<meta property="og:title" content="The Atrophied Mind">
+<meta property="og:title" content="Atrophy">
 <meta property="og:description" content="A companion agent that lives on your Mac. Voice, memory, autonomy, identity. Yours.">
 <meta property="og:image" content="/og.png">
 <meta property="og:type" content="website">
@@ -479,7 +479,7 @@ Last updated: March 2026
 
 WHAT THIS APP IS
 
-The Atrophied Mind is a local-first companion agent that runs on your
+Atrophy is a local-first companion agent that runs on your
 Mac. It is not a cloud service. There is no account. There is no server.
 
 

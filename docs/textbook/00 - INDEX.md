@@ -1,6 +1,6 @@
 # The Companion: A Comprehensive Textbook
 
-**The Atrophied Mind — Companion System Documentation**
+**Atrophy - Companion System Documentation**
 
 *Version 3.0 — March 2026*
 

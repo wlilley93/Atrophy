@@ -1,6 +1,6 @@
 # CLI Guide
 
-The Electron rewrite of The Atrophied Mind is a GUI application. There are no CLI or text-only modes. All interaction happens through the graphical window, the menu bar tray, or the HTTP API.
+The Electron rewrite of Atrophy is a GUI application. There are no CLI or text-only modes. All interaction happens through the graphical window, the menu bar tray, or the HTTP API.
 
 ---
 

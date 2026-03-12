@@ -1,6 +1,6 @@
 # Quick Start
 
-Get The Atrophied Mind running on your machine. This guide covers the minimum path from clone to conversation, plus troubleshooting for common issues.
+Get Atrophy running on your machine. This guide covers the minimum path from clone to conversation, plus troubleshooting for common issues.
 
 ---
 

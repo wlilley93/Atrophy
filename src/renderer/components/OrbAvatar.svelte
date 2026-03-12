@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { session } from '../stores/session.svelte';
   import { emotionalState } from '../stores/emotional-state.svelte';
-  import { activeEmotion, EMOTIONS } from '../stores/emotion-colours.svelte';
+  import { activeEmotion, EMOTIONS, getColourDirName } from '../stores/emotion-colours.svelte';
+  import type { EmotionType } from '../stores/emotion-colours.svelte';
   import { agents } from '../stores/agents.svelte';
 
   const api = (window as any).atrophy;
@@ -79,7 +80,10 @@
         }
         videoError = false;
       }
-    } catch { /* fall through to single-clip load */ }
+    } catch {
+      // API unavailable or errored - loadAllLoops returns with allLoops empty,
+      // caller will fall back to single-clip loadVideo
+    }
   }
 
   /** Cycle to the next loop when the current one ends. */
@@ -271,11 +275,7 @@
     if (emotion) {
       const spec = EMOTIONS[emotion];
       if (spec) {
-        // Map emotion colour name to directory name
-        const colourName = Object.entries({
-          blue: { h: 220 }, dark_blue: { h: 230 }, red: { h: 0 },
-          green: { h: 140 }, orange: { h: 30 }, purple: { h: 270 },
-        }).find(([, v]) => v.h === spec.colour.h)?.[0] || 'blue';
+        const colourName = getColourDirName(emotion as EmotionType);
         loadVideo(loadGeneration, colourName, spec.clip);
       }
     } else {

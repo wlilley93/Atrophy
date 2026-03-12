@@ -1,6 +1,6 @@
 # Code Conventions
 
-Style guide for The Atrophied Mind Electron codebase. These conventions apply to all TypeScript, Svelte, and CSS files in the project. They reflect the specific architectural choices of an Electron + Svelte 5 desktop application that manages multiple companion agents, each with their own databases, identity files, and behavioral configuration.
+Style guide for the Atrophy Electron codebase. These conventions apply to all TypeScript, Svelte, and CSS files in the project. They reflect the specific architectural choices of an Electron + Svelte 5 desktop application that manages multiple companion agents, each with their own databases, identity files, and behavioral configuration.
 
 ## TypeScript Style
 

@@ -166,6 +166,19 @@ export function getReaction(emotion: EmotionType): { colour: HSLColour; clip: st
   return { colour: spec.colour, clip: spec.clip };
 }
 
+/** Resolve the avatar directory colour name for a given emotion. */
+export function getColourDirName(emotion: EmotionType): string {
+  const spec = EMOTIONS[emotion];
+  if (!spec) return 'blue';
+  // Reverse-lookup which named colour matches this emotion's HSL
+  for (const [name, hsl] of Object.entries(COLOURS)) {
+    if (hsl.h === spec.colour.h && hsl.s === spec.colour.s && hsl.l === spec.colour.l) {
+      return name;
+    }
+  }
+  return 'blue';
+}
+
 // -- Reactive state --
 
 /** The currently active emotion (null means default/ambient). */

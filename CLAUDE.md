@@ -1,4 +1,4 @@
-# The Atrophied Mind -- Electron + TypeScript Rewrite
+# Atrophy -- Electron + TypeScript Rewrite
 
 A companion agent system -- voice-enabled, memory-bearing, self-evolving. Rewritten from Python/PyQt5 to Electron/TypeScript/Svelte.
 

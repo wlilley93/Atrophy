@@ -19,7 +19,7 @@ import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
 import { sendMessage, _post, setLastUpdateId } from './telegram';
 import { routeMessage, RoutingDecision } from './router';
 import { discoverAgents, getAgentState, setAgentState } from './agent-manager';
-import { streamInference, InferenceEvent } from './inference';
+import { streamInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
 import * as memory from './memory';
 import { createLogger } from './logger';
@@ -106,14 +106,24 @@ function acquireLockFallback(): boolean {
   if (fs.existsSync(LOCK_FILE)) {
     try {
       const raw = fs.readFileSync(LOCK_FILE, 'utf-8').trim();
-      const pid = parseInt(raw, 10);
+      const lines = raw.split('\n');
+      const pid = parseInt(lines[0], 10);
+      const lockTime = lines[1] ? parseInt(lines[1], 10) : NaN;
+
+      // If process is alive AND lock is < 30 minutes old, it's valid.
+      // If timestamp is missing/corrupt but process is alive, still treat as valid
+      // to avoid reclaiming a lock from a running process.
+      const STALE_MS = 30 * 60 * 1000;
       if (pid && isProcessAlive(pid)) {
-        return false;
+        if (isNaN(lockTime) || (Date.now() - lockTime < STALE_MS)) {
+          return false;
+        }
       }
+      // Otherwise: process dead, PID recycled, or lock stale - reclaim
     } catch { /* stale or corrupt - reclaim */ }
   }
 
-  fs.writeFileSync(LOCK_FILE, String(process.pid) + '\n');
+  fs.writeFileSync(LOCK_FILE, `${process.pid}\n${Date.now()}\n`);
   // Open + hold the fd so the file stays referenced for our lifetime
   _lockFd = fs.openSync(LOCK_FILE, fs.constants.O_RDONLY);
   return true;
@@ -253,6 +263,7 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
     // streamInference reads config at spawn time for CLI args, MCP paths,
     // agency context, etc. - so it must run while the target agent is active.
     config.reloadForAgent(agentName);
+    resetMcpConfig();
     memory.initDb();
 
     const system = loadSystemPrompt();
@@ -294,6 +305,7 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
   } finally {
     // Always restore original agent
     config.reloadForAgent(originalAgent);
+    resetMcpConfig();
     memory.initDb();
   }
 }
@@ -492,13 +504,24 @@ export function startDaemon(intervalMs = 10_000): boolean {
 
   log.info(`Starting (last_update_id=${_lastUpdateId}, interval=${intervalMs}ms)`);
 
-  // Initial poll
-  pollOnce().catch((e) => log.error(`Poll error: ${e}`));
+  // Sequential polling loop - wait for each poll to complete before scheduling next
+  async function pollLoop(): Promise<void> {
+    while (_running) {
+      try {
+        await pollOnce();
+      } catch (e) {
+        log.error(`Poll error: ${e}`);
+      }
+      // Wait before next poll (only if still running)
+      if (_running) {
+        await new Promise((resolve) => {
+          _pollTimer = setTimeout(resolve, intervalMs) as unknown as ReturnType<typeof setInterval>;
+        });
+      }
+    }
+  }
 
-  // Recurring polls
-  _pollTimer = setInterval(() => {
-    pollOnce().catch((e) => log.error(`Poll error: ${e}`));
-  }, intervalMs);
+  pollLoop();
 
   return true;
 }
@@ -507,11 +530,11 @@ export function startDaemon(intervalMs = 10_000): boolean {
  * Stop the polling daemon and release the instance lock.
  */
 export function stopDaemon(): void {
+  _running = false;
   if (_pollTimer) {
-    clearInterval(_pollTimer);
+    clearTimeout(_pollTimer as unknown as ReturnType<typeof setTimeout>);
     _pollTimer = null;
   }
-  _running = false;
   releaseLock();
   log.info('Stopped');
 }

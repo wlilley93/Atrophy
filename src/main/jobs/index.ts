@@ -11,6 +11,7 @@
  */
 
 import { getConfig } from '../config';
+import { resetMcpConfig } from '../inference';
 import { createLogger } from '../logger';
 
 const log = createLogger('jobs');
@@ -78,9 +79,10 @@ export function getJob(name: string): JobDefinition | undefined {
 export async function runJob(name: string, agent?: string): Promise<JobResult> {
   const t0 = Date.now();
 
-  // If an agent is specified, reload config for that agent
+  // If an agent is specified, reload config and reset MCP config for that agent
   if (agent) {
     getConfig().reloadForAgent(agent);
+    resetMcpConfig();
   }
 
   const def = _registry.get(name);
@@ -158,6 +160,7 @@ export async function runJobFromCli(argv: string[]): Promise<void> {
 
   if (agent) {
     getConfig().reloadForAgent(agent);
+    resetMcpConfig();
   }
 
   const result = await runJob(jobName, agent);

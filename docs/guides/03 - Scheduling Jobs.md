@@ -1,6 +1,6 @@
 # Scheduling Jobs
 
-The Atrophied Mind uses macOS launchd for autonomous behaviour. Agents can introspect, reach out, and evolve on schedules you define. The control plane is `scripts/cron.py`.
+Atrophy uses macOS launchd for autonomous behaviour. Agents can introspect, reach out, and evolve on schedules you define. The control plane is `scripts/cron.py`.
 
 ---
 

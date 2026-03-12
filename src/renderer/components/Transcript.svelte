@@ -1,7 +1,9 @@
 <script lang="ts">
   import { transcript, type Message } from '../stores/transcript.svelte';
+  import { session } from '../stores/session.svelte';
   import { getArtifact } from '../stores/artifacts.svelte';
   import { onMount, tick } from 'svelte';
+  import ThinkingIndicator from './ThinkingIndicator.svelte';
 
   let { onArtifactClick }: { onArtifactClick?: (id: string) => void } = $props();
 
@@ -306,10 +308,17 @@
           <span class="divider-text">{msg.content}</span>
         </div>
       {:else}
-        <div class="message {msg.role}">
-          <div class="message-text">{@html renderMessage(msg)}</div>
-          <span class="message-time">{relativeTime(msg.timestamp, now)}</span>
-        </div>
+        {#if msg.role === 'agent' && !msg.content && session.inferenceState !== 'idle'}
+          <!-- Brain cycling indicator while waiting for first token -->
+          <div class="thinking-row">
+            <ThinkingIndicator />
+          </div>
+        {:else}
+          <div class="message {msg.role}">
+            <div class="message-text">{@html renderMessage(msg)}</div>
+            <span class="message-time">{relativeTime(msg.timestamp, now)}</span>
+          </div>
+        {/if}
       {/if}
     {/each}
   </div>
@@ -514,6 +523,11 @@
 
   .message-text :global(em) {
     font-style: italic;
+  }
+
+  .thinking-row {
+    margin-bottom: 14px;
+    margin-top: 8px;
   }
 
   .divider {

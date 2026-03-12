@@ -3,6 +3,7 @@
   import { addMessage, appendToLast, completeLast, transcript } from '../stores/transcript.svelte';
   import { audio } from '../stores/audio.svelte';
   import { storeArtifact } from '../stores/artifacts.svelte';
+  import { setEmotion, setEmotionFromText, revertToDefault } from '../stores/emotion-colours.svelte';
 
   let {
     onSubmit: customSubmit,
@@ -58,6 +59,7 @@
     addMessage('user', text);
     addMessage('agent', '');
     session.inferenceState = 'thinking';
+    setEmotion('thinking');
 
     const api = (window as any).atrophy;
     if (api) {
@@ -77,9 +79,11 @@
 
   // -- Push-to-talk audio capture --
 
+  let recordingStarting = false;
   async function startRecording() {
     const api = (window as any).atrophy;
-    if (!api || isRecording) return;
+    if (!api || isRecording || recordingStarting) return;
+    recordingStarting = true;
 
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -116,6 +120,8 @@
       isRecording = true;
     } catch (err) {
       console.error('[audio] mic access failed:', err);
+    } finally {
+      recordingStarting = false;
     }
   }
 
@@ -208,16 +214,19 @@
           flushBuffer();
         }
       }),
-      api.onDone((_fullText: string) => {
+      api.onDone((fullText: string) => {
         // Flush any remaining buffer (partial tags that never completed)
         flushBuffer();
         completeLast();
         session.inferenceState = 'idle';
+        // Classify emotion from complete response and trigger avatar reaction
+        setEmotionFromText(fullText);
       }),
       api.onError((_msg: string) => {
         flushBuffer();
         completeLast();
         session.inferenceState = 'idle';
+        revertToDefault();
       }),
       api.onCompacting(() => {
         session.inferenceState = 'compacting';

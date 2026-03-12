@@ -472,6 +472,13 @@ export function streamInference(
   const mode = cliSessionId ? 'resume' : 'new';
   const t0 = Date.now();
 
+  // Kill any previous active process before spawning to prevent orphans
+  // and close the race window where stopInference() could miss the new process
+  if (_activeProcess) {
+    try { _activeProcess.kill(); } catch { /* already dead */ }
+    _activeProcess = null;
+  }
+
   // Spawn process
   let proc: ChildProcess;
   try {
@@ -481,10 +488,6 @@ export function streamInference(
       cwd: os.homedir(),
       detached: false,
     });
-    // Kill any previous active process to prevent orphans
-    if (_activeProcess && _activeProcess !== proc) {
-      try { _activeProcess.kill(); } catch { /* already dead */ }
-    }
     _activeProcess = proc;
     _allProcesses.add(proc);
   } catch (e) {

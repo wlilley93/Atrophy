@@ -99,7 +99,11 @@ function parseQuery(url: string): Record<string, string> {
   const qs = url.slice(idx + 1);
   for (const pair of qs.split('&')) {
     const [k, v] = pair.split('=');
-    if (k) params[decodeURIComponent(k)] = decodeURIComponent(v || '');
+    if (k) {
+      try {
+        params[decodeURIComponent(k)] = decodeURIComponent(v || '');
+      } catch { /* malformed percent-encoding - skip */ }
+    }
   }
   return params;
 }
@@ -245,10 +249,11 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
     inferLock = false;
   }
 
-  // Clean up on client disconnect - release lock and stop inference
+  // Clean up on client disconnect - release lock, stop inference, remove listeners
   res.on('close', () => {
     if (!streamEnded) {
       finalize();
+      emitter.removeAllListeners();
       stopInference();
     }
   });
