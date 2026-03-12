@@ -62,6 +62,8 @@
   let setupWizardPhase = $state<'welcome' | 'creating' | 'done' | 'hidden'>('hidden');
   /** Whether the setup flow is active (services + agent creation in main chat) */
   let setupActive = $state(false);
+  /** Brief flag for InputBar enter animation after name submission */
+  let setupJustEnteredChat = $state(false);
   /** Current service step: 0-4 = showing card, 5+ = services complete */
   let setupServiceStep = $state(0);
   /** Whether the service card is currently visible */
@@ -240,12 +242,11 @@
     setupUserName = name;
     if (api) await api.updateConfig({ USER_NAME: name });
 
-    // Dismiss the welcome overlay immediately - chat + ambient video visible
+    // Dismiss the welcome overlay - chat + ambient video visible
     setupWizardPhase = 'hidden';
     setupActive = true;
-
-    // Play transition audio
-    api?.playAgentAudio?.('name.mp3');
+    setupJustEnteredChat = true;
+    setTimeout(() => { setupJustEnteredChat = false; }, 800);
 
     // Stream paragraphs one at a time with delays
     api?.playAgentAudio?.('opening.mp3');
@@ -496,6 +497,10 @@
 
   function onSplashComplete() {
     splashVisible = false;
+    // Play "What is your name?" audio when welcome screen becomes visible
+    if (needsSetup && setupWizardPhase === 'welcome') {
+      api?.playAgentAudio?.('name.mp3');
+    }
   }
 
   function onShutdownComplete() {
@@ -1234,11 +1239,14 @@
   {/if}
 
   <!-- Input bar -->
-  <InputBar
-    onSubmit={setupActive && !setupShowServiceCard && setupServiceStep >= 4 ? setupSubmit : undefined}
-    disabled={setupShowServiceCard}
-    placeholder={setupShowServiceCard ? 'Complete the setup above...' : (setupActive && setupServiceStep >= 4 ? 'Describe who you want to create...' : undefined)}
-  />
+  {#if !(setupWizardPhase === 'welcome' || splashVisible)}
+    <InputBar
+      onSubmit={setupActive && !setupShowServiceCard && setupServiceStep >= 4 ? setupSubmit : undefined}
+      disabled={setupShowServiceCard}
+      placeholder={setupShowServiceCard ? 'Complete the setup above...' : (setupActive && setupServiceStep >= 4 ? 'Describe who you want to create...' : undefined)}
+      enterAnimation={setupActive && setupJustEnteredChat}
+    />
+  {/if}
 
   <!-- Skip agent creation (visible during AI creation phase of setup) -->
   {#if setupActive && !setupShowServiceCard && setupServiceStep >= 4}

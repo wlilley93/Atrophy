@@ -78,23 +78,6 @@
 
           <h1 class="wizard-title">Atrophy</h1>
           <p class="wizard-tagline">Offload your mind.</p>
-
-          <div class="welcome-name-section">
-            <p class="wizard-subtitle">What is your name, human?</p>
-            <input
-              type="text"
-              bind:value={userName}
-              onkeydown={onKeydown}
-              class="wizard-input"
-              placeholder="Your name"
-              autofocus
-            />
-            <button
-              class="wizard-btn"
-              disabled={!userName.trim()}
-              onclick={submitName}
-            >Continue</button>
-          </div>
         </div>
 
       {:else if phase === 'creating'}
@@ -121,6 +104,34 @@
         </div>
       {/if}
     </div>
+
+    <!-- Name input pinned to bottom, styled like InputBar -->
+    {#if phase === 'welcome'}
+      <div class="name-bar-container fade-in">
+        <p class="name-prompt">What is your name, human?</p>
+        <div class="name-bar">
+          <input
+            type="text"
+            bind:value={userName}
+            onkeydown={onKeydown}
+            class="name-input"
+            placeholder="Your name"
+            autofocus
+          />
+          {#if userName.trim()}
+            <button
+              class="name-submit-btn poof-in"
+              onclick={submitName}
+              aria-label="Continue"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+              </svg>
+            </button>
+          {/if}
+        </div>
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -132,7 +143,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: transparent;
+    background: rgba(0, 0, 0, 0.85);
     overflow: hidden;
   }
 
@@ -140,8 +151,13 @@
     position: relative;
     z-index: 2;
     width: 100%;
+    height: 100%;
     max-width: 460px;
     padding: var(--pad);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
   }
 
   .wizard-center {
@@ -186,57 +202,92 @@
     margin-bottom: 40px;
   }
 
-  .welcome-name-section {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
   .wizard-subtitle {
     font-size: 15px;
     color: var(--text-secondary);
     margin-bottom: 16px;
   }
 
-  .wizard-input {
-    width: 100%;
-    max-width: 320px;
-    height: 44px;
-    padding: 0 16px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    color: var(--text-primary);
-    font-family: var(--font-sans);
-    font-size: 15px;
-    outline: none;
-    text-align: center;
-    margin-bottom: 16px;
+  /* Name input bar pinned to bottom */
+  .name-bar-container {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px var(--pad, 20px) var(--pad, 20px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
   }
 
-  .wizard-input:focus {
-    border-color: var(--border-hover);
-  }
-
-  .wizard-btn {
-    padding: 10px 28px;
-    border: 1px solid rgba(100, 140, 255, 0.3);
-    border-radius: 10px;
-    background: rgba(100, 140, 255, 0.1);
-    color: rgba(255, 255, 255, 0.85);
-    font-family: var(--font-sans);
+  .name-prompt {
     font-size: 14px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+    font-family: var(--font-sans, -apple-system, system-ui, sans-serif);
+  }
+
+  .name-bar {
+    position: relative;
+    width: 100%;
+    height: var(--bar-height, 48px);
+    background: var(--bg-input, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+    border-radius: var(--bar-radius, 14px);
+    display: flex;
+    align-items: center;
+    transition: border-color 0.2s;
+  }
+
+  .name-bar:focus-within {
+    border-color: var(--border-hover, rgba(255, 255, 255, 0.2));
+  }
+
+  .name-input {
+    flex: 1;
+    height: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: rgba(255, 255, 255, 0.9);
+    font-family: var(--font-sans, -apple-system, system-ui, sans-serif);
+    font-size: 14px;
+    padding: 0 20px;
+    text-align: center;
+  }
+
+  .name-input::placeholder {
+    color: var(--text-dim, rgba(255, 255, 255, 0.3));
+  }
+
+  .name-submit-btn {
+    position: absolute;
+    right: 6px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.7);
     cursor: pointer;
-    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
   }
 
-  .wizard-btn:hover:not(:disabled) {
-    background: rgba(100, 140, 255, 0.2);
+  .name-submit-btn:hover {
+    background: rgba(255, 255, 255, 0.24);
+    color: rgba(255, 255, 255, 0.9);
   }
 
-  .wizard-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
+  .poof-in {
+    animation: poof 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+
+  @keyframes poof {
+    from { opacity: 0; transform: scale(0); }
+    to { opacity: 1; transform: scale(1); }
   }
 
   /* ---- Creating ---- */

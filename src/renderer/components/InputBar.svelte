@@ -9,10 +9,12 @@
     onSubmit: customSubmit,
     disabled: externalDisabled = false,
     placeholder: customPlaceholder,
+    enterAnimation: enterAnim = false,
   }: {
     onSubmit?: (text: string) => Promise<void>;
     disabled?: boolean;
     placeholder?: string;
+    enterAnimation?: boolean;
   } = $props();
 
   let inputText = $state('');
@@ -374,7 +376,7 @@
   );
 </script>
 
-<div class="bar-container" data-no-drag>
+<div class="bar-container" class:enter-anim={enterAnim} data-no-drag>
   <div class="input-bar" class:recording={isRecording} class:in-call={callActive}>
     <input
       bind:this={inputEl}
@@ -431,6 +433,7 @@
     <!-- Send / Stop button -->
     <button
       class="action-btn"
+      class:poof={enterAnim}
       onclick={isActive ? stop : submit}
       class:active={isActive}
       disabled={callActive}
@@ -634,5 +637,37 @@
 
   .action-btn.active:hover {
     background: rgba(255, 255, 255, 0.9);
+  }
+
+  /* Enter animation - bar slides up from below and widens */
+  .bar-container.enter-anim {
+    animation: bar-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  @keyframes bar-enter {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scaleX(0.6);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scaleX(1);
+    }
+  }
+
+  /* Send button poof into place */
+  .action-btn.poof {
+    animation: poof-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both;
+  }
+
+  @keyframes poof-in {
+    from {
+      opacity: 0;
+      transform: scale(0);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 </style>
