@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig } from './config';
+import { discoverAgents } from './agent-manager';
 
 // Track last processed update to avoid re-reading old ones
 let _lastUpdateId = 0;
@@ -290,6 +291,85 @@ export async function askQuestion(text: string, timeoutSecs = 120): Promise<stri
   await flushOldUpdates();
   if (!(await sendMessage(text))) return null;
   return pollReply(timeoutSecs);
+}
+
+// ---------------------------------------------------------------------------
+// Bot command registration
+// ---------------------------------------------------------------------------
+
+interface BotCommand {
+  command: string;
+  description: string;
+}
+
+function buildCommands(): BotCommand[] {
+  const commands: BotCommand[] = [];
+
+  for (const agent of discoverAgents()) {
+    let desc = agent.description || `Talk to ${agent.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}`;
+    // Telegram limits command descriptions to 256 chars
+    if (desc.length > 256) {
+      desc = desc.slice(0, 253) + '...';
+    }
+    commands.push({ command: agent.name, description: desc });
+  }
+
+  // Utility commands
+  commands.push(
+    { command: 'status', description: 'Show which agents are active' },
+    { command: 'mute', description: 'Mute/unmute the current agent' },
+  );
+
+  return commands;
+}
+
+/**
+ * Register bot commands with the Telegram API (setMyCommands).
+ * Scans all discovered agents and registers /agent_name commands
+ * plus utility commands (/status, /mute) for autocomplete.
+ *
+ * Returns true on success, false on failure.
+ */
+export async function registerBotCommands(): Promise<boolean> {
+  const config = getConfig();
+  if (!config.TELEGRAM_BOT_TOKEN) {
+    console.log('[telegram] Cannot register commands - TELEGRAM_BOT_TOKEN not configured');
+    return false;
+  }
+
+  const commands = buildCommands();
+  console.log(`[telegram] Registering ${commands.length} bot commands`);
+
+  const result = await post('setMyCommands', { commands });
+  if (result !== null) {
+    console.log('[telegram] Bot commands registered successfully');
+    return true;
+  }
+
+  console.log('[telegram] Failed to register bot commands');
+  return false;
+}
+
+/**
+ * Remove all bot commands from the Telegram API (deleteMyCommands).
+ *
+ * Returns true on success, false on failure.
+ */
+export async function clearBotCommands(): Promise<boolean> {
+  const config = getConfig();
+  if (!config.TELEGRAM_BOT_TOKEN) {
+    console.log('[telegram] Cannot clear commands - TELEGRAM_BOT_TOKEN not configured');
+    return false;
+  }
+
+  const result = await post('deleteMyCommands', {});
+  if (result !== null) {
+    console.log('[telegram] Bot commands cleared');
+    return true;
+  }
+
+  console.log('[telegram] Failed to clear bot commands');
+  return false;
 }
 
 // Export for daemon access

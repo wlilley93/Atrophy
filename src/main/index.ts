@@ -6,7 +6,7 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ensureUserData, getConfig, BUNDLE_ROOT, USER_DATA } from './config';
+import { ensureUserData, getConfig, saveUserConfig, saveAgentConfig, BUNDLE_ROOT, USER_DATA } from './config';
 import { initDb, closeAll as closeAllDbs } from './memory';
 import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
@@ -26,6 +26,7 @@ import { startDaemon, stopDaemon } from './telegram-daemon';
 import { listJobs, installAllJobs, uninstallAllJobs, toggleCron } from './cron';
 import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
+import { getAppIcon, getTrayIcon, TrayState } from './icon';
 
 // ---------------------------------------------------------------------------
 // State
@@ -51,19 +52,18 @@ function createWindow(): BrowserWindow {
     height: config.WINDOW_HEIGHT,
     minWidth: 360,
     minHeight: 480,
-    frame: false,
-    transparent: true,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 14, y: 14 },
     vibrancy: 'ultra-dark',
     visualEffectState: 'active',
-    titleBarStyle: 'hidden',
-    trafficLightPosition: { x: -100, y: -100 },
     backgroundColor: '#00000000',
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'index.js'),
+      preload: path.join(__dirname, '..', 'preload', 'index.mjs'),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: false,
     },
   });
 
@@ -92,21 +92,23 @@ function createWindow(): BrowserWindow {
 // ---------------------------------------------------------------------------
 
 function createTray(): void {
-  // Use the menu bar brain icon (template image for macOS light/dark auto-adaptation)
+  // Prefer the hand-crafted menu bar brain icon (template image for macOS
+  // light/dark auto-adaptation). Fall back to a procedural orb icon.
   const iconDir = app.isPackaged
     ? path.join(process.resourcesPath, 'icons')
     : path.join(__dirname, '..', '..', 'resources', 'icons');
 
   const icon2x = path.join(iconDir, 'menubar_brain@2x.png');
   const icon1x = path.join(iconDir, 'menubar_brain.png');
-  const iconPath = fs.existsSync(icon2x) ? icon2x : fs.existsSync(icon1x) ? icon1x : '';
+  const brainPath = fs.existsSync(icon2x) ? icon2x : fs.existsSync(icon1x) ? icon1x : '';
 
   let trayIcon: Electron.NativeImage;
-  if (iconPath) {
-    trayIcon = nativeImage.createFromPath(iconPath);
+  if (brainPath) {
+    trayIcon = nativeImage.createFromPath(brainPath);
     trayIcon.setTemplateImage(true);
   } else {
-    trayIcon = nativeImage.createEmpty();
+    // Procedural orb fallback (44px for @2x tray)
+    trayIcon = getTrayIcon('active');
   }
 
   tray = new Tray(trayIcon);
@@ -141,6 +143,19 @@ function createTray(): void {
   });
 }
 
+/**
+ * Update the tray icon to reflect the current state (active, muted, idle, away).
+ * Only updates if a tray exists and no hand-crafted brain icon is in use
+ * (the brain icon is a template image and handles state differently).
+ */
+export function updateTrayState(state: TrayState): void {
+  if (!tray) return;
+  const current = tray.getImage();
+  // If using template image (hand-crafted brain), skip procedural updates
+  if (current.isTemplateImage()) return;
+  tray.setImage(getTrayIcon(state));
+}
+
 // ---------------------------------------------------------------------------
 // IPC handlers
 // ---------------------------------------------------------------------------
@@ -149,22 +164,110 @@ function registerIpcHandlers(): void {
   const config = getConfig();
 
   ipcMain.handle('config:get', () => {
+    const c = getConfig();
     return {
-      agentName: config.AGENT_NAME,
-      agentDisplayName: config.AGENT_DISPLAY_NAME,
-      userName: config.USER_NAME,
-      openingLine: config.OPENING_LINE,
-      version: config.VERSION,
-      windowWidth: config.WINDOW_WIDTH,
-      windowHeight: config.WINDOW_HEIGHT,
-      avatarEnabled: config.AVATAR_ENABLED,
-      ttsBackend: config.TTS_BACKEND,
-      inputMode: config.INPUT_MODE,
+      // Identity
+      agentName: c.AGENT_NAME,
+      agentDisplayName: c.AGENT_DISPLAY_NAME,
+      userName: c.USER_NAME,
+      openingLine: c.OPENING_LINE,
+      wakeWords: c.WAKE_WORDS,
+      disabledTools: c.DISABLED_TOOLS,
+      // Voice
+      ttsBackend: c.TTS_BACKEND,
+      elevenlabsApiKey: c.ELEVENLABS_API_KEY,
+      elevenlabsVoiceId: c.ELEVENLABS_VOICE_ID,
+      elevenlabsModel: c.ELEVENLABS_MODEL,
+      elevenlabsStability: c.ELEVENLABS_STABILITY,
+      elevenlabsSimilarity: c.ELEVENLABS_SIMILARITY,
+      elevenlabsStyle: c.ELEVENLABS_STYLE,
+      ttsPlaybackRate: c.TTS_PLAYBACK_RATE,
+      falVoiceId: c.FAL_VOICE_ID,
+      // Input
+      inputMode: c.INPUT_MODE,
+      pttKey: c.PTT_KEY,
+      wakeWordEnabled: c.WAKE_WORD_ENABLED,
+      wakeChunkSeconds: c.WAKE_CHUNK_SECONDS,
+      // Audio
+      sampleRate: c.SAMPLE_RATE,
+      maxRecordSec: c.MAX_RECORD_SEC,
+      // Inference
+      claudeBin: c.CLAUDE_BIN,
+      claudeEffort: c.CLAUDE_EFFORT,
+      adaptiveEffort: c.ADAPTIVE_EFFORT,
+      // Memory
+      contextSummaries: c.CONTEXT_SUMMARIES,
+      maxContextTokens: c.MAX_CONTEXT_TOKENS,
+      vectorSearchWeight: c.VECTOR_SEARCH_WEIGHT,
+      embeddingModel: c.EMBEDDING_MODEL,
+      embeddingDim: c.EMBEDDING_DIM,
+      // Session
+      sessionSoftLimitMins: c.SESSION_SOFT_LIMIT_MINS,
+      // Heartbeat
+      heartbeatActiveStart: c.HEARTBEAT_ACTIVE_START,
+      heartbeatActiveEnd: c.HEARTBEAT_ACTIVE_END,
+      heartbeatIntervalMins: c.HEARTBEAT_INTERVAL_MINS,
+      // Telegram
+      telegramBotToken: c.TELEGRAM_BOT_TOKEN,
+      telegramChatId: c.TELEGRAM_CHAT_ID,
+      // Notifications
+      notificationsEnabled: c.NOTIFICATIONS_ENABLED,
+      // Window
+      windowWidth: c.WINDOW_WIDTH,
+      windowHeight: c.WINDOW_HEIGHT,
+      avatarEnabled: c.AVATAR_ENABLED,
+      avatarResolution: c.AVATAR_RESOLUTION,
+      // Paths
+      obsidianVault: c.OBSIDIAN_VAULT,
+      dbPath: c.DB_PATH,
+      whisperBin: c.WHISPER_BIN,
+      // Google
+      googleConfigured: c.GOOGLE_CONFIGURED,
+      // About
+      version: c.VERSION,
+      bundleRoot: BUNDLE_ROOT,
     };
   });
 
   ipcMain.handle('agent:list', () => {
+    return discoverAgents().map(a => a.name);
+  });
+
+  ipcMain.handle('agent:listFull', () => {
     return discoverAgents();
+  });
+
+  ipcMain.handle('config:update', (_event, updates: Record<string, unknown>) => {
+    // Apply updates to running config and save
+    const c = getConfig();
+    const userUpdates: Record<string, unknown> = {};
+    const agentUpdates: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (key in c) {
+        (c as Record<string, unknown>)[key] = value;
+      }
+      // Route to correct config file
+      const agentKeys = new Set([
+        'AGENT_DISPLAY_NAME', 'OPENING_LINE', 'TTS_BACKEND', 'TTS_PLAYBACK_RATE',
+        'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL', 'ELEVENLABS_STABILITY',
+        'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
+        'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
+        'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
+        'DISABLED_TOOLS',
+      ]);
+      if (agentKeys.has(key)) {
+        agentUpdates[key] = value;
+      } else {
+        userUpdates[key] = value;
+      }
+    }
+    if (Object.keys(userUpdates).length > 0) {
+      saveUserConfig(userUpdates);
+    }
+    if (Object.keys(agentUpdates).length > 0) {
+      saveAgentConfig(c.AGENT_NAME, agentUpdates);
+    }
   });
 
   ipcMain.handle('agent:cycle', (_event, direction: number) => {
@@ -376,6 +479,25 @@ function registerIpcHandlers(): void {
     return vectorSearch(query, n);
   });
 
+  // ── Avatar video ──
+
+  ipcMain.handle('avatar:getVideoPath', (_event, colour?: string, clip?: string) => {
+    const c = getConfig();
+    const loopsDir = path.join(c.AVATAR_DIR, 'loops');
+    const col = colour || 'blue';
+    const cl = clip || 'bounce_playful';
+    const videoPath = path.join(loopsDir, col, `loop_${cl}.mp4`);
+    if (fs.existsSync(videoPath)) {
+      return videoPath;
+    }
+    // Fallback to ambient_loop.mp4
+    const ambient = path.join(loopsDir, 'ambient_loop.mp4');
+    if (fs.existsSync(ambient)) {
+      return ambient;
+    }
+    return null;
+  });
+
   // ── Login item ──
 
   ipcMain.handle('install:isEnabled', () => {
@@ -400,16 +522,10 @@ app.whenReady().then(() => {
   if (isMenuBarMode || isServerMode) {
     app.dock?.hide();
   } else {
-    // Set dock icon (prevents default Electron icon flash)
-    const iconDir = app.isPackaged
-      ? path.join(process.resourcesPath, 'icons')
-      : path.join(__dirname, '..', '..', 'resources', 'icons');
-    const dockIcon = path.join(iconDir, 'icon_dock_512.png');
-    if (fs.existsSync(dockIcon)) {
-      const icon = nativeImage.createFromPath(dockIcon);
-      const resized = icon.resize({ width: 128, height: 128 });
-      app.dock?.setIcon(resized);
-    }
+    // Set dock icon - prefers .icns brain icon, falls back to procedural orb
+    const appIcon = getAppIcon();
+    const resized = appIcon.resize({ width: 128, height: 128 });
+    app.dock?.setIcon(resized);
   }
 
   // Initialize

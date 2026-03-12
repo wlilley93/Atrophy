@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig, USER_DATA } from './config';
+import { embed, vectorToBlob as embVectorToBlob } from './embeddings';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,6 +99,30 @@ export interface UsageEntry {
   tool_count: number;
 }
 
+export interface Entity {
+  id: number;
+  name: string;
+  entity_type: string;
+  mention_count: number;
+  last_seen: string;
+}
+
+export interface EntityRelation {
+  id: number;
+  entity_a: number;
+  entity_b: number;
+  relation: string;
+  strength: number;
+  last_seen: string;
+}
+
+export interface CrossAgentSearchResult {
+  agent: string;
+  turns: Pick<Turn, 'id' | 'session_id' | 'role' | 'content' | 'timestamp'>[];
+  summaries: Pick<Summary, 'session_id' | 'content' | 'created_at'>[];
+  error?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Embedding helpers
 // ---------------------------------------------------------------------------
@@ -108,6 +133,43 @@ export function vectorToBlob(vec: Float32Array): Buffer {
 
 export function blobToVector(blob: Buffer): Float32Array {
   return new Float32Array(blob.buffer, blob.byteOffset, blob.length / 4);
+}
+
+// ---------------------------------------------------------------------------
+// Async embedding helper - fire-and-forget background embedding
+// ---------------------------------------------------------------------------
+
+function embedAsync(table: string, rowId: number, text: string, dbPath?: string): void {
+  const allowed = ['turns', 'summaries', 'observations', 'bookmarks'];
+  if (!allowed.includes(table)) return;
+
+  embed(text)
+    .then((vec) => {
+      const blob = embVectorToBlob(vec);
+      const p = dbPath || getConfig().DB_PATH;
+      const db = connect(p);
+      db.prepare(`UPDATE ${table} SET embedding = ? WHERE id = ?`).run(blob, rowId);
+    })
+    .catch((err) => {
+      console.error(`[embed-async] Failed to embed ${table}:${rowId}:`, err);
+    });
+}
+
+/**
+ * Embed text and store the vector blob synchronously.
+ * Useful when you need to guarantee the embedding is written before continuing.
+ */
+export async function embedAndStore(
+  table: string,
+  rowId: number,
+  text: string,
+  dbPath?: string,
+): Promise<void> {
+  const vec = await embed(text);
+  const blob = embVectorToBlob(vec);
+  const p = dbPath || getConfig().DB_PATH;
+  const db = connect(p);
+  db.prepare(`UPDATE ${table} SET embedding = ? WHERE id = ?`).run(blob, rowId);
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +320,12 @@ export function writeTurn(
        VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .run(sessionId, role, content, topicTags || null, weight, channel);
-  return Number(result.lastInsertRowid);
+  const turnId = Number(result.lastInsertRowid);
+
+  // Background embedding - does not block the conversation pipeline
+  embedAsync('turns', turnId, content);
+
+  return turnId;
 }
 
 export function getSessionTurns(sessionId: number): Turn[] {
@@ -317,7 +384,12 @@ export function writeSummary(
   const result = db
     .prepare('INSERT INTO summaries (session_id, content, topics) VALUES (?, ?, ?)')
     .run(sessionId, content, topics || null);
-  return Number(result.lastInsertRowid);
+  const summaryId = Number(result.lastInsertRowid);
+
+  // Background embedding
+  embedAsync('summaries', summaryId, content);
+
+  return summaryId;
 }
 
 export function getRecentSummaries(n = 3): Summary[] {
@@ -411,7 +483,12 @@ export function writeObservation(
        VALUES (?, ?, ?, ?)`,
     )
     .run(content, sourceTurn || null, confidence, validFrom || null);
-  return Number(result.lastInsertRowid);
+  const obsId = Number(result.lastInsertRowid);
+
+  // Background embedding
+  embedAsync('observations', obsId, content);
+
+  return obsId;
 }
 
 export function markObservationIncorporated(obsId: number): void {
@@ -426,16 +503,51 @@ export function retireObservation(obsId: number): void {
 
 export function markObservationsStale(olderThanDays = 30): number {
   const db = getDb();
+  // Match Python semantics: flag old un-incorporated observations as stale.
+  // Uses incorporated = 0 (never reviewed/confirmed) rather than activation threshold.
   const result = db
     .prepare(
       `UPDATE observations
        SET content = '[stale] ' || content
-       WHERE activation < 0.1
-         AND last_accessed < datetime('now', ? || ' days')
-         AND content NOT LIKE '[stale]%'`,
+       WHERE incorporated = 0
+         AND content NOT LIKE '[stale]%'
+         AND created_at < datetime('now', ?)`,
     )
-    .run(`-${olderThanDays}`);
+    .run(`-${olderThanDays} days`);
   return result.changes;
+}
+
+export function getTodaysObservations(): Observation[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT * FROM observations
+       WHERE date(created_at) = date('now')
+       ORDER BY created_at`,
+    )
+    .all() as Observation[];
+}
+
+export function getRecentObservations(
+  limit = 10,
+  activationThreshold?: number,
+): Observation[] {
+  const db = getDb();
+  if (activationThreshold !== undefined) {
+    return db
+      .prepare(
+        `SELECT * FROM observations
+         WHERE COALESCE(activation, 1.0) >= ?
+         ORDER BY created_at DESC LIMIT ?`,
+      )
+      .all(activationThreshold, limit) as Observation[];
+  }
+  return db
+    .prepare(
+      `SELECT * FROM observations
+       ORDER BY created_at DESC LIMIT ?`,
+    )
+    .all(limit) as Observation[];
 }
 
 // ---------------------------------------------------------------------------
@@ -500,7 +612,12 @@ export function writeBookmark(
   const result = db
     .prepare('INSERT INTO bookmarks (session_id, moment, quote) VALUES (?, ?, ?)')
     .run(sessionId, moment, quote || null);
-  return Number(result.lastInsertRowid);
+  const bmId = Number(result.lastInsertRowid);
+
+  // Background embedding
+  embedAsync('bookmarks', bmId, moment);
+
+  return bmId;
 }
 
 export function getTodaysBookmarks(): Bookmark[] {
@@ -518,34 +635,168 @@ export function getTodaysBookmarks(): Bookmark[] {
 // Entity management
 // ---------------------------------------------------------------------------
 
-const ENTITY_NAME_RE = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g;
-const PROPER_NOUN_RE = /(?<=[a-z]\s)([A-Z][a-z]{2,})\b/g;
-const QUOTED_RE = /"([^"]{2,30})"/g;
+const PERSON_TITLES = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'professor']);
 
+// Pattern 1: Capitalized multi-word names (e.g. "John Smith", "The Atrophied Mind")
+const ENTITY_NAME_RE = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g;
+// Pattern 2: Mid-sentence proper nouns (single capitalized word after lowercase)
+const PROPER_NOUN_RE = /(?<=[a-z]\s)([A-Z][a-z]{2,})\b/g;
+// Pattern 3: Quoted terms
+const QUOTED_RE = /"([^"]{2,50})"/g;
+
+const STOP_WORDS = new Set([
+  'the', 'this', 'that', 'what', 'when', 'where', 'how',
+  'which', 'while', 'also', 'just', 'very', 'really',
+]);
+
+function guessEntityType(name: string): string {
+  const lower = name.toLowerCase();
+  const words = lower.split(/\s+/);
+  if (words[0] && PERSON_TITLES.has(words[0])) return 'person';
+  if (/\b(project|system|framework|engine|app|tool)\b/.test(lower)) return 'project';
+  if (/\b(street|road|city|park|building|country|place)\b/.test(lower)) return 'place';
+  return 'concept';
+}
+
+/**
+ * Extract entity names from text using regex patterns.
+ * Returns raw name strings - use extractAndStoreEntities() for full DB integration.
+ */
 export function extractEntities(text: string): string[] {
   const found = new Set<string>();
   for (const re of [ENTITY_NAME_RE, PROPER_NOUN_RE, QUOTED_RE]) {
     let m: RegExpExecArray | null;
     re.lastIndex = 0;
     while ((m = re.exec(text)) !== null) {
-      found.add(m[1] || m[0]);
+      const name = (m[1] || m[0]).trim();
+      if (name.length > 2 && !STOP_WORDS.has(name.toLowerCase())) {
+        found.add(name);
+      }
     }
   }
   return [...found];
 }
 
-function guessEntityType(name: string): string {
-  const lower = name.toLowerCase();
-  if (/\b(he|she|they|mr|ms|dr)\b/.test(lower)) return 'person';
-  if (/\b(project|app|tool|system)\b/.test(lower)) return 'project';
-  if (/\b(city|country|place|street)\b/.test(lower)) return 'place';
-  return 'concept';
+/**
+ * Full entity extraction with DB storage and cross-referencing.
+ * Port of Python's extract_entities() - extracts entities from text,
+ * upserts them in the DB, and returns enriched entity objects.
+ */
+export function extractAndStoreEntities(
+  text: string,
+): { id: number; name: string; entity_type: string; mention_count: number }[] {
+  const db = getDb();
+  const entities: { name: string; entity_type: string }[] = [];
+  const seen = new Set<string>();
+
+  // Pattern 1: Multi-word capitalized names
+  {
+    ENTITY_NAME_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = ENTITY_NAME_RE.exec(text)) !== null) {
+      const name = m[1].trim();
+      if (name.length > 2 && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        entities.push({ name, entity_type: guessEntityType(name) });
+      }
+    }
+  }
+
+  // Pattern 2: Mid-sentence proper nouns
+  {
+    PROPER_NOUN_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = PROPER_NOUN_RE.exec(text)) !== null) {
+      const name = m[1].trim();
+      if (!seen.has(name.toLowerCase()) && !STOP_WORDS.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        entities.push({ name, entity_type: 'concept' });
+      }
+    }
+  }
+
+  // Pattern 3: Quoted terms
+  {
+    QUOTED_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = QUOTED_RE.exec(text)) !== null) {
+      const term = m[1].trim();
+      if (term.length > 2 && !seen.has(term.toLowerCase())) {
+        seen.add(term.toLowerCase());
+        entities.push({ name: term, entity_type: 'concept' });
+      }
+    }
+  }
+
+  if (entities.length === 0) return [];
+
+  // Batch lookup existing entities
+  const placeholders = entities.map(() => '?').join(',');
+  const existingRows = db
+    .prepare(
+      `SELECT id, LOWER(name) as lower_name, mention_count FROM entities
+       WHERE LOWER(name) IN (${placeholders})`,
+    )
+    .all(...entities.map((e) => e.name.toLowerCase())) as {
+      id: number;
+      lower_name: string;
+      mention_count: number;
+    }[];
+  const existingMap = new Map(existingRows.map((r) => [r.lower_name, r]));
+
+  // Batch updates and inserts in a transaction
+  const results: { id: number; name: string; entity_type: string; mention_count: number }[] = [];
+
+  const updateStmt = db.prepare(
+    `UPDATE entities SET mention_count = mention_count + 1,
+     last_seen = CURRENT_TIMESTAMP WHERE id = ?`,
+  );
+  const insertStmt = db.prepare(
+    `INSERT INTO entities (name, entity_type, last_seen)
+     VALUES (?, ?, CURRENT_TIMESTAMP)`,
+  );
+
+  const batch = db.transaction(() => {
+    for (const ent of entities) {
+      const existing = existingMap.get(ent.name.toLowerCase());
+      if (existing) {
+        updateStmt.run(existing.id);
+        results.push({
+          id: existing.id,
+          name: ent.name,
+          entity_type: ent.entity_type,
+          mention_count: existing.mention_count + 1,
+        });
+      } else {
+        const res = insertStmt.run(ent.name, ent.entity_type);
+        const id = Number(res.lastInsertRowid);
+        results.push({
+          id,
+          name: ent.name,
+          entity_type: ent.entity_type,
+          mention_count: 1,
+        });
+      }
+    }
+  });
+  batch();
+
+  // Cross-reference: if multiple entities found in same text, link them
+  if (results.length >= 2) {
+    for (let i = 0; i < results.length; i++) {
+      for (let j = i + 1; j < results.length; j++) {
+        linkEntities(results[i].id, results[j].id, 'co_occurs');
+      }
+    }
+  }
+
+  return results;
 }
 
 export function upsertEntity(name: string, entityType?: string): number {
   const db = getDb();
   const existing = db
-    .prepare('SELECT id, mention_count FROM entities WHERE name = ?')
+    .prepare('SELECT id, mention_count FROM entities WHERE LOWER(name) = LOWER(?)')
     .get(name) as { id: number; mention_count: number } | undefined;
 
   if (existing) {
@@ -556,34 +807,59 @@ export function upsertEntity(name: string, entityType?: string): number {
   }
 
   const result = db
-    .prepare('INSERT INTO entities (name, entity_type) VALUES (?, ?)')
+    .prepare('INSERT INTO entities (name, entity_type, last_seen) VALUES (?, ?, CURRENT_TIMESTAMP)')
     .run(name, entityType || guessEntityType(name));
   return Number(result.lastInsertRowid);
 }
 
+/**
+ * Create or strengthen a relationship between two entities.
+ * Checks both directions (a->b and b->a) to avoid duplicates.
+ */
 export function linkEntities(
   entityA: number,
   entityB: number,
   relation: string,
 ): void {
+  if (entityA === entityB) return;
+
   const db = getDb();
+  // Check both directions
   const existing = db
     .prepare(
-      'SELECT id, strength FROM entity_relations WHERE entity_a = ? AND entity_b = ? AND relation = ?',
+      `SELECT id, strength FROM entity_relations
+       WHERE (entity_a = ? AND entity_b = ? AND relation = ?)
+          OR (entity_a = ? AND entity_b = ? AND relation = ?)`,
     )
-    .get(entityA, entityB, relation) as { id: number; strength: number } | undefined;
+    .get(entityA, entityB, relation, entityB, entityA, relation) as
+      { id: number; strength: number } | undefined;
 
   if (existing) {
+    const newStrength = Math.min(1.0, (existing.strength || 0.5) + 0.1);
     db.prepare(
       `UPDATE entity_relations
-       SET strength = MIN(1.0, strength + 0.1), last_seen = CURRENT_TIMESTAMP
+       SET strength = ?, last_seen = CURRENT_TIMESTAMP
        WHERE id = ?`,
-    ).run(existing.id);
+    ).run(newStrength, existing.id);
   } else {
     db.prepare(
-      'INSERT INTO entity_relations (entity_a, entity_b, relation) VALUES (?, ?, ?)',
+      'INSERT INTO entity_relations (entity_a, entity_b, relation, last_seen) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
     ).run(entityA, entityB, relation);
   }
+}
+
+/**
+ * Link two entities by name (convenience wrapper).
+ * Creates the entities if they do not exist.
+ */
+export function linkEntitiesByName(
+  nameA: string,
+  nameB: string,
+  relation = 'related_to',
+): void {
+  const idA = upsertEntity(nameA);
+  const idB = upsertEntity(nameB);
+  linkEntities(idA, idB, relation);
 }
 
 // ---------------------------------------------------------------------------
@@ -737,6 +1013,51 @@ export function getOtherAgentsRecentSummaries(
   }
 
   return results;
+}
+
+/**
+ * Search another agent's turns and summaries by keyword.
+ * Opens the other agent's DB read-only. Does not search observations or identity.
+ */
+export function searchOtherAgentMemory(
+  agentName: string,
+  query: string,
+  limit = 10,
+): CrossAgentSearchResult {
+  const dbPath = path.join(USER_DATA, 'agents', agentName, 'data', 'memory.db');
+  if (!fs.existsSync(dbPath)) {
+    return { agent: agentName, turns: [], summaries: [], error: `Agent '${agentName}' has no memory database.` };
+  }
+
+  try {
+    const db = connect(dbPath);
+    const likeQuery = `%${query}%`;
+
+    const turns = db
+      .prepare(
+        `SELECT id, session_id, role, content, timestamp
+         FROM turns WHERE content LIKE ?
+         ORDER BY timestamp DESC LIMIT ?`,
+      )
+      .all(likeQuery, limit) as Pick<Turn, 'id' | 'session_id' | 'role' | 'content' | 'timestamp'>[];
+
+    const summaries = db
+      .prepare(
+        `SELECT session_id, content, created_at
+         FROM summaries WHERE content LIKE ?
+         ORDER BY created_at DESC LIMIT ?`,
+      )
+      .all(likeQuery, limit) as Pick<Summary, 'session_id' | 'content' | 'created_at'>[];
+
+    return { agent: agentName, turns, summaries };
+  } catch (err) {
+    return {
+      agent: agentName,
+      turns: [],
+      summaries: [],
+      error: `Failed to search ${agentName}'s memory: ${err}`,
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------

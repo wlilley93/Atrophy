@@ -33,6 +33,7 @@ export interface AtrophyAPI {
   // Agents
   switchAgent: (name: string) => Promise<{ agentName: string; agentDisplayName: string }>;
   getAgents: () => Promise<string[]>;
+  getAgentsFull: () => Promise<{ name: string; display_name: string; description: string; role: string }[]>;
 
   // Config
   getConfig: () => Promise<Record<string, unknown>>;
@@ -56,6 +57,9 @@ export interface AtrophyAPI {
   // Login item
   isLoginItemEnabled: () => Promise<boolean>;
   toggleLoginItem: (enabled: boolean) => Promise<void>;
+
+  // Avatar
+  getAvatarVideoPath: (colour?: string, clip?: string) => Promise<string | null>;
 
   // Usage & activity
   getUsage: (days?: number) => Promise<unknown>;
@@ -99,6 +103,7 @@ const api: AtrophyAPI = {
   // Agents
   switchAgent: (name) => ipcRenderer.invoke('agent:switch', name),
   getAgents: () => ipcRenderer.invoke('agent:list'),
+  getAgentsFull: () => ipcRenderer.invoke('agent:listFull'),
 
   // Config
   getConfig: () => ipcRenderer.invoke('config:get'),
@@ -122,6 +127,9 @@ const api: AtrophyAPI = {
   // Login item
   isLoginItemEnabled: () => ipcRenderer.invoke('install:isEnabled'),
   toggleLoginItem: (enabled) => ipcRenderer.invoke('install:toggle', enabled),
+
+  // Avatar
+  getAvatarVideoPath: (colour, clip) => ipcRenderer.invoke('avatar:getVideoPath', colour, clip),
 
   // Usage & activity
   getUsage: (days) => ipcRenderer.invoke('usage:all', days),

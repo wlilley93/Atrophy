@@ -55,12 +55,12 @@ const DEFAULT_TRUST: Trust = {
 
 const EMOTION_BASELINES: Emotions = { ...DEFAULT_EMOTIONS };
 
-// Half-lives in hours (frustration and playfulness decay fastest)
+// Half-lives in hours
 const EMOTION_HALF_LIVES: Record<keyof Emotions, number> = {
   connection: 8,
-  curiosity: 6,
-  confidence: 6,
-  warmth: 7,
+  curiosity: 4,
+  confidence: 4,
+  warmth: 4,
   frustration: 4,
   playfulness: 4,
 };

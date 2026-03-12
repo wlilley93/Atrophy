@@ -7,6 +7,7 @@
  */
 
 import * as fs from 'fs';
+import { execSync } from 'child_process';
 import { getConfig } from './config';
 
 // ---------------------------------------------------------------------------
@@ -96,6 +97,38 @@ export function setAway(reason = ''): void {
 
 export function isAway(): boolean {
   return getStatus().status === 'away';
+}
+
+// ---------------------------------------------------------------------------
+// macOS idle detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if the Mac has been idle (no keyboard/mouse) for threshold seconds.
+ *
+ * Uses macOS IOKit HIDIdleTime via ioreg. Returns true if idle, false if
+ * active. Falls back to false (assume active) on error.
+ */
+export function isMacIdle(thresholdSecs: number = IDLE_TIMEOUT_SECS): boolean {
+  try {
+    const output = execSync('ioreg -c IOHIDSystem -d 4', {
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    for (const line of output.split('\n')) {
+      if (line.includes('HIDIdleTime') && line.includes('=')) {
+        const nsStr = line.split('=').pop()?.trim();
+        if (!nsStr) continue;
+        const idleNs = parseInt(nsStr, 10);
+        if (isNaN(idleNs)) continue;
+        const idleSecs = idleNs / 1_000_000_000;
+        return idleSecs >= thresholdSecs;
+      }
+    }
+  } catch {
+    // assume active on error
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------

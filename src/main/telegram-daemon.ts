@@ -14,6 +14,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
 import { sendMessage, _post, setLastUpdateId } from './telegram';
 import { routeMessage, RoutingDecision } from './router';
@@ -41,6 +42,199 @@ function loadLastUpdateId(): number {
 function saveLastUpdateId(updateId: number): void {
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
   fs.writeFileSync(STATE_FILE, JSON.stringify({ last_update_id: updateId }) + '\n');
+}
+
+// ---------------------------------------------------------------------------
+// Instance locking
+// ---------------------------------------------------------------------------
+
+const LOCK_FILE = path.join(USER_DATA, '.telegram_daemon.lock');
+
+let _lockFd: number | null = null;
+
+/**
+ * Acquire an exclusive daemon lock using file-level locking.
+ *
+ * Opens the lock file with O_EXLOCK | O_NONBLOCK on macOS to get an
+ * exclusive, non-blocking lock - equivalent to Python's fcntl.flock
+ * with LOCK_EX | LOCK_NB. Falls back to a simple pid-check strategy
+ * on platforms that do not support O_EXLOCK.
+ *
+ * Returns true if the lock was acquired, false if another instance holds it.
+ */
+export function acquireLock(): boolean {
+  fs.mkdirSync(path.dirname(LOCK_FILE), { recursive: true });
+
+  // macOS supports O_EXLOCK (0x20) for advisory exclusive lock on open
+  const O_EXLOCK = 0x20;
+  const O_NONBLOCK = 0x4000; // fs.constants.O_NONBLOCK is not always exposed
+
+  try {
+    _lockFd = fs.openSync(
+      LOCK_FILE,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | O_EXLOCK | O_NONBLOCK,
+      0o644,
+    );
+  } catch (err: unknown) {
+    // EAGAIN / EWOULDBLOCK means another process holds the lock
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EAGAIN' || code === 'EWOULDBLOCK') {
+      return false;
+    }
+    // If O_EXLOCK is not supported (Linux), fall back to pid-check
+    return acquireLockFallback();
+  }
+
+  // Write our pid so operators can inspect who holds the lock
+  const pidBuf = Buffer.from(String(process.pid) + '\n');
+  fs.writeSync(_lockFd, pidBuf, 0, pidBuf.length, 0);
+  fs.ftruncateSync(_lockFd, pidBuf.length);
+  return true;
+}
+
+/**
+ * Fallback lock strategy for systems without O_EXLOCK.
+ *
+ * Reads the pid from the lock file. If no process with that pid exists,
+ * the lock is stale and we reclaim it. This is not race-free but is
+ * acceptable for a single-user daemon.
+ */
+function acquireLockFallback(): boolean {
+  if (fs.existsSync(LOCK_FILE)) {
+    try {
+      const raw = fs.readFileSync(LOCK_FILE, 'utf-8').trim();
+      const pid = parseInt(raw, 10);
+      if (pid && isProcessAlive(pid)) {
+        return false;
+      }
+    } catch { /* stale or corrupt - reclaim */ }
+  }
+
+  fs.writeFileSync(LOCK_FILE, String(process.pid) + '\n');
+  // Open + hold the fd so the file stays referenced for our lifetime
+  _lockFd = fs.openSync(LOCK_FILE, fs.constants.O_RDONLY);
+  return true;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Release the daemon lock. Safe to call even if no lock is held.
+ */
+export function releaseLock(): void {
+  if (_lockFd !== null) {
+    try { fs.closeSync(_lockFd); } catch { /* ignore */ }
+    _lockFd = null;
+  }
+  try { fs.unlinkSync(LOCK_FILE); } catch { /* may already be gone */ }
+}
+
+// ---------------------------------------------------------------------------
+// launchd install / uninstall
+// ---------------------------------------------------------------------------
+
+const PLIST_LABEL = 'com.atrophiedmind.telegram-daemon';
+const LAUNCH_AGENTS = path.join(process.env.HOME || '/tmp', 'Library', 'LaunchAgents');
+const PLIST_PATH = path.join(LAUNCH_AGENTS, `${PLIST_LABEL}.plist`);
+
+/**
+ * Build an XML plist string for the telegram daemon launchd agent.
+ *
+ * Uses the same XML serialisation style as cron.ts - hand-built rather
+ * than pulling in a plist library.
+ */
+function buildDaemonPlist(electronBin: string, loopFlag: boolean): string {
+  const logDir = path.join(USER_DATA, 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+
+  const args = [electronBin];
+  if (loopFlag) args.push('--telegram-daemon');
+
+  const envPath = process.env.PATH || '/usr/local/bin:/usr/bin:/bin';
+
+  const lines: string[] = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>',
+    '\t<key>Label</key>',
+    `\t<string>${PLIST_LABEL}</string>`,
+    '\t<key>ProgramArguments</key>',
+    '\t<array>',
+    ...args.map((a) => `\t\t<string>${escapeXml(a)}</string>`),
+    '\t</array>',
+    '\t<key>RunAtLoad</key>',
+    '\t<true/>',
+    '\t<key>KeepAlive</key>',
+    '\t<true/>',
+    '\t<key>StandardOutPath</key>',
+    `\t<string>${escapeXml(path.join(logDir, 'telegram_daemon.log'))}</string>`,
+    '\t<key>StandardErrorPath</key>',
+    `\t<string>${escapeXml(path.join(logDir, 'telegram_daemon.err'))}</string>`,
+    '\t<key>EnvironmentVariables</key>',
+    '\t<dict>',
+    '\t\t<key>PATH</key>',
+    `\t\t<string>${escapeXml(envPath)}</string>`,
+    '\t</dict>',
+    '</dict>',
+    '</plist>',
+  ];
+
+  return lines.join('\n');
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Install the telegram daemon as a launchd agent.
+ *
+ * @param electronBin - Path to the Electron binary or app entry point that
+ *   accepts a --telegram-daemon flag to start continuous polling.
+ */
+export function installLaunchd(electronBin: string): void {
+  fs.mkdirSync(LAUNCH_AGENTS, { recursive: true });
+
+  // Unload first if already installed
+  if (fs.existsSync(PLIST_PATH)) {
+    spawnSync('launchctl', ['unload', PLIST_PATH], { stdio: 'pipe' });
+  }
+
+  fs.writeFileSync(PLIST_PATH, buildDaemonPlist(electronBin, true));
+  spawnSync('launchctl', ['load', PLIST_PATH], { stdio: 'pipe' });
+  console.log(`[telegram-daemon] Installed launchd agent: ${PLIST_PATH}`);
+}
+
+/**
+ * Uninstall the telegram daemon launchd agent.
+ */
+export function uninstallLaunchd(): void {
+  if (fs.existsSync(PLIST_PATH)) {
+    spawnSync('launchctl', ['unload', PLIST_PATH], { stdio: 'pipe' });
+    fs.unlinkSync(PLIST_PATH);
+    console.log(`[telegram-daemon] Uninstalled launchd agent: ${PLIST_PATH}`);
+  } else {
+    console.log('[telegram-daemon] launchd agent not installed');
+  }
+}
+
+/**
+ * Check whether the daemon is installed as a launchd agent.
+ */
+export function isLaunchdInstalled(): boolean {
+  return fs.existsSync(PLIST_PATH);
 }
 
 // ---------------------------------------------------------------------------
@@ -274,8 +468,18 @@ async function pollOnce(): Promise<void> {
 let _pollTimer: ReturnType<typeof setInterval> | null = null;
 let _running = false;
 
-export function startDaemon(intervalMs = 10_000): void {
-  if (_running) return;
+/**
+ * Start the polling daemon. Acquires an instance lock to prevent
+ * duplicate processes. Returns false if another instance is already running.
+ */
+export function startDaemon(intervalMs = 10_000): boolean {
+  if (_running) return true;
+
+  if (!acquireLock()) {
+    console.log('[telegram-daemon] Another instance is running - exiting');
+    return false;
+  }
+
   _running = true;
   _lastUpdateId = loadLastUpdateId();
   setLastUpdateId(_lastUpdateId);
@@ -289,14 +493,20 @@ export function startDaemon(intervalMs = 10_000): void {
   _pollTimer = setInterval(() => {
     pollOnce().catch((e) => console.log(`[telegram-daemon] Poll error: ${e}`));
   }, intervalMs);
+
+  return true;
 }
 
+/**
+ * Stop the polling daemon and release the instance lock.
+ */
 export function stopDaemon(): void {
   if (_pollTimer) {
     clearInterval(_pollTimer);
     _pollTimer = null;
   }
   _running = false;
+  releaseLock();
   console.log('[telegram-daemon] Stopped');
 }
 

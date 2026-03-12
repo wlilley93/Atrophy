@@ -1,0 +1,136 @@
+/**
+ * Check and fire due reminders.
+ * Port of scripts/agents/companion/check_reminders.py.
+ *
+ * Runs every minute via launchd. Reads reminders from the agent's
+ * reminder store, fires notifications + queues messages for any
+ * that are due, then removes them.
+ *
+ * Reminders are stored in agents/<name>/data/.reminders.json:
+ * [
+ *   {
+ *     "id": "uuid",
+ *     "time": "2024-03-10T14:30:00",
+ *     "message": "Take out the bins",
+ *     "source": "will",
+ *     "created_at": "2024-03-10T12:00:00"
+ *   }
+ * ]
+ *
+ * Dual-use: callable as a function from the main process, or runnable
+ * as a standalone launchd script via the CLI entry point at the bottom.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { getConfig } from '../config';
+import { sendNotification } from '../notify';
+import { queueMessage } from '../queue';
+import { sendMessage as telegramSend } from '../telegram';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface Reminder {
+  id: string;
+  time: string;
+  message: string;
+  source: string;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Reminder storage
+// ---------------------------------------------------------------------------
+
+function remindersPath(): string {
+  const config = getConfig();
+  return path.join(config.DATA_DIR, '.reminders.json');
+}
+
+function loadReminders(): Reminder[] {
+  const p = remindersPath();
+  if (!fs.existsSync(p)) return [];
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
+function saveReminders(reminders: Reminder[]): void {
+  const p = remindersPath();
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, JSON.stringify(reminders, null, 2) + '\n');
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
+
+export async function checkReminders(): Promise<void> {
+  const config = getConfig();
+  const reminders = loadReminders();
+  if (reminders.length === 0) return;
+
+  const now = new Date();
+  const due: Reminder[] = [];
+  const remaining: Reminder[] = [];
+
+  for (const r of reminders) {
+    let remindTime: Date;
+    try {
+      remindTime = new Date(r.time);
+      if (isNaN(remindTime.getTime())) {
+        remaining.push(r);
+        continue;
+      }
+    } catch {
+      remaining.push(r);
+      continue;
+    }
+
+    if (remindTime <= now) {
+      due.push(r);
+    } else {
+      remaining.push(r);
+    }
+  }
+
+  if (due.length === 0) return;
+
+  // Fire due reminders
+  for (const r of due) {
+    const msg = r.message || 'Reminder';
+    console.log(`[reminder] Firing: ${msg}`);
+
+    // macOS notification with sound
+    sendNotification(`Reminder - ${config.AGENT_DISPLAY_NAME}`, msg);
+
+    // Queue for next app interaction
+    queueMessage(`Reminder: ${msg}`, 'reminder');
+
+    // Send via Telegram if configured
+    try {
+      if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID) {
+        await telegramSend(`Reminder: ${msg}`);
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  // Save remaining
+  saveReminders(remaining);
+  console.log(`[reminder] Fired ${due.length}, ${remaining.length} remaining.`);
+}
+
+// ---------------------------------------------------------------------------
+// CLI entry point - for launchd
+// ---------------------------------------------------------------------------
+
+if (require.main === module) {
+  checkReminders().catch((e) => {
+    console.error(`[reminder] Fatal: ${e}`);
+    process.exit(1);
+  });
+}

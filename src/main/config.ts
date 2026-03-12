@@ -131,29 +131,55 @@ export function ensureUserData(): void {
 }
 
 function migrateAgentData(): void {
-  // Copy runtime data from bundle to user data (skip agent.json)
+  // One-time migration: copy runtime data from bundle to ~/.atrophy/.
+  // Matches Python's _migrate_legacy_data() - copies files individually,
+  // skipping agent.json (manifest stays in bundle) and any file that
+  // already exists at the destination.
   const bundleAgents = path.join(BUNDLE_ROOT, 'agents');
-  if (!fs.existsSync(bundleAgents)) return;
+  if (!fs.existsSync(bundleAgents) || !fs.statSync(bundleAgents).isDirectory()) return;
 
   for (const name of fs.readdirSync(bundleAgents)) {
-    const bundleData = path.join(bundleAgents, name, 'data');
-    if (!fs.existsSync(bundleData)) continue;
+    const agentDir = path.join(bundleAgents, name);
+    if (!fs.statSync(agentDir).isDirectory()) continue;
 
-    const userData = agentDataDir(name);
-    for (const file of fs.readdirSync(bundleData)) {
-      if (file === 'agent.json') continue;
-      const src = path.join(bundleData, file);
-      const dst = path.join(userData, file);
-      if (!fs.existsSync(dst) && fs.statSync(src).isFile()) {
-        fs.copyFileSync(src, dst);
+    // Migrate data/ files (skip agent.json - manifest stays in bundle)
+    const bundleData = path.join(agentDir, 'data');
+    if (fs.existsSync(bundleData) && fs.statSync(bundleData).isDirectory()) {
+      const userData = agentDataDir(name);
+      for (const file of fs.readdirSync(bundleData)) {
+        if (file === 'agent.json') continue;
+        const src = path.join(bundleData, file);
+        const dst = path.join(userData, file);
+        if (!fs.existsSync(dst) && fs.statSync(src).isFile()) {
+          fs.copyFileSync(src, dst);
+        }
       }
     }
 
-    // Copy avatar tree
-    const bundleAvatar = path.join(bundleAgents, name, 'avatar');
+    // Migrate entire avatar/ tree - walk recursively, copy individual
+    // files only if they do not already exist at the destination.
+    // This preserves any user modifications while filling in missing files.
+    const bundleAvatar = path.join(agentDir, 'avatar');
     const userAvatar = path.join(USER_DATA, 'agents', name, 'avatar');
-    if (fs.existsSync(bundleAvatar) && !fs.existsSync(userAvatar)) {
-      fs.cpSync(bundleAvatar, userAvatar, { recursive: true });
+    if (fs.existsSync(bundleAvatar) && fs.statSync(bundleAvatar).isDirectory()) {
+      copyTreeIfMissing(bundleAvatar, userAvatar);
+    }
+  }
+}
+
+/**
+ * Recursively copy files from src to dst, creating directories as needed.
+ * Only copies files that do not already exist at the destination.
+ */
+function copyTreeIfMissing(src: string, dst: string): void {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcEntry = path.join(src, entry.name);
+    const dstEntry = path.join(dst, entry.name);
+    if (entry.isDirectory()) {
+      copyTreeIfMissing(srcEntry, dstEntry);
+    } else if (entry.isFile() && !fs.existsSync(dstEntry)) {
+      fs.copyFileSync(srcEntry, dstEntry);
     }
   }
 }
@@ -181,11 +207,27 @@ function findPython(): string {
 // ---------------------------------------------------------------------------
 
 function googleConfigured(): boolean {
+  // Legacy: custom OAuth tokens
   const legacyToken = path.join(USER_DATA, '.google', 'token.json');
   if (fs.existsSync(legacyToken)) return true;
+
+  // New: gws CLI auth - find the binary, run `gws auth status`, parse JSON
+  let gwsBin: string | null = null;
   try {
-    execSync('which gws', { stdio: 'pipe' });
-    return true;
+    gwsBin = execSync('which gws', { stdio: 'pipe', encoding: 'utf-8' }).trim();
+  } catch {
+    return false;
+  }
+  if (!gwsBin) return false;
+
+  try {
+    const result = execSync(`${gwsBin} auth status`, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    return (parsed.auth_method ?? 'none') !== 'none';
   } catch {
     return false;
   }
@@ -553,15 +595,49 @@ export class Config {
 // Save config updates
 // ---------------------------------------------------------------------------
 
+/**
+ * Deep-merge updates into ~/.atrophy/config.json, preserving existing keys.
+ * Reads the current file, merges recursively, writes back, then reloads
+ * the in-memory config cache so subsequent cfg() calls see new values.
+ */
 export function saveUserConfig(updates: Record<string, unknown>): void {
   const cfgPath = path.join(USER_DATA, 'config.json');
   let existing: Record<string, unknown> = {};
   try {
     existing = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-  } catch { /* empty */ }
-  Object.assign(existing, updates);
-  fs.writeFileSync(cfgPath, JSON.stringify(existing, null, 2), { mode: 0o600 });
+  } catch { /* empty or missing - start fresh */ }
+  const merged = deepMerge(existing, updates);
+  fs.writeFileSync(cfgPath, JSON.stringify(merged, null, 2) + '\n', { mode: 0o600 });
   loadUserConfig();
+}
+
+/**
+ * Recursively merge source into target. Plain objects are merged key-by-key;
+ * all other values (arrays, primitives, null) are overwritten from source.
+ * Returns a new object - does not mutate either input.
+ */
+function deepMerge(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...target };
+  for (const key of Object.keys(source)) {
+    const srcVal = source[key];
+    const tgtVal = result[key];
+    if (isPlainObject(srcVal) && isPlainObject(tgtVal)) {
+      result[key] = deepMerge(
+        tgtVal as Record<string, unknown>,
+        srcVal as Record<string, unknown>,
+      );
+    } else {
+      result[key] = srcVal;
+    }
+  }
+  return result;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function saveAgentConfig(

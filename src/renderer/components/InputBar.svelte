@@ -69,8 +69,13 @@
         audio: {
           sampleRate: 16000,
           channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
+          // All three MUST be false - otherwise Chromium switches macOS
+          // to "voice processing" audio mode which downsamples all system
+          // audio to 16kHz (makes music sound grainy/compressed).
+          // Python used sounddevice (Core Audio) so it never hit this.
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
         },
       });
 

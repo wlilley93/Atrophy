@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import OrbAvatar from './OrbAvatar.svelte';
   import AgentName from './AgentName.svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
@@ -12,7 +13,7 @@
   import { session } from '../stores/session.svelte';
   import { audio } from '../stores/audio.svelte';
   import { agents } from '../stores/agents.svelte';
-  import { settings } from '../stores/settings.svelte';
+
   import { addMessage, completeLast } from '../stores/transcript.svelte';
 
   const api = (window as any).atrophy;
@@ -39,44 +40,140 @@
   let callActive = $state(false);
   let hasNewArtefacts = $state(false);
 
+  // Eye mode - hides transcript when active
+  let eyeMode = $state(false);
+
+  // Agent switch clip-path animation
+  let agentSwitchActive = $state(false);
+  let agentSwitchClip = $state('circle(0% at 50% 50%)');
+
+  // Silence timer - prompts after 5 minutes idle
+  let lastInputTime = $state(Date.now());
+  let silencePromptVisible = $state(false);
+  let silenceTimerId: ReturnType<typeof setTimeout> | null = null;
+  const SILENCE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
   // ---------------------------------------------------------------------------
   // Boot sequence
   // ---------------------------------------------------------------------------
 
+  let bootRan = false;
+
   async function runBootSequence() {
-    if (!api) { bootPhase = 'ready'; return; }
+    if (bootRan) return;
+    bootRan = true;
+
+    if (!api) {
+      bootPhase = 'ready';
+      return;
+    }
+
+    // Load config and agent list
+    try {
+      const [cfg, agentList] = await Promise.all([
+        api.getConfig(),
+        api.getAgents(),
+      ]);
+      agents.current = cfg.agentName || '';
+      agents.displayName = cfg.agentDisplayName || cfg.agentName || '';
+      agents.list = agentList || [];
+    } catch {
+      // continue with defaults
+    }
 
     // Check if setup needed
     try {
       needsSetup = await api.needsSetup();
-    } catch { needsSetup = false; }
+    } catch {
+      needsSetup = false;
+    }
 
     if (needsSetup) {
+      // Fade out boot overlay to reveal setup wizard
+      bootOpacity = 0;
+      await new Promise(r => setTimeout(r, 500));
       bootPhase = 'ready';
       return;
     }
 
     // Fetch opening line
-    bootLabel = 'loading opening...';
+    bootLabel = '';
     try {
       const opening = await api.getOpeningLine();
       if (opening) {
         addMessage('agent', opening);
         completeLast();
       }
-    } catch { /* use default */ }
+    } catch {
+      // use default
+    }
 
     // Fade out boot overlay
     bootLabel = '';
     bootOpacity = 0;
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 1500));
     bootPhase = 'ready';
   }
 
-  $effect(() => {
-    if (settings.loaded) {
-      runBootSequence();
+  // ---------------------------------------------------------------------------
+  // Silence timer
+  // ---------------------------------------------------------------------------
+
+  function resetSilenceTimer() {
+    lastInputTime = Date.now();
+    silencePromptVisible = false;
+
+    if (silenceTimerId) clearTimeout(silenceTimerId);
+    silenceTimerId = setTimeout(() => {
+      silencePromptVisible = true;
+    }, SILENCE_TIMEOUT_MS);
+  }
+
+  function dismissSilencePrompt() {
+    silencePromptVisible = false;
+    resetSilenceTimer();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Agent switch animation
+  // ---------------------------------------------------------------------------
+
+  function playAgentSwitchAnimation() {
+    agentSwitchActive = true;
+    agentSwitchClip = 'circle(0% at 50% 50%)';
+
+    // Force a reflow so the start state registers
+    requestAnimationFrame(() => {
+      agentSwitchClip = 'circle(150% at 50% 50%)';
+    });
+
+    // Clean up after transition
+    setTimeout(() => {
+      agentSwitchActive = false;
+    }, 700);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------------
+
+  let agentSwitchCleanup: (() => void) | null = null;
+
+  onMount(() => {
+    runBootSequence();
+    resetSilenceTimer();
+
+    // Listen for agent:switched events from main process
+    if (api && typeof api.onDone === 'function') {
+      // Re-use IPC listener pattern - listen for agent switch events
+      // The agent switch IPC is handled inline in cycleAgent,
+      // so we trigger the animation from there directly.
     }
+  });
+
+  onDestroy(() => {
+    if (silenceTimerId) clearTimeout(silenceTimerId);
+    if (agentSwitchCleanup) agentSwitchCleanup();
   });
 
   // ---------------------------------------------------------------------------
@@ -93,15 +190,9 @@
       const result = await api.switchAgent(next);
       agents.current = result.agentName;
       agents.displayName = result.agentDisplayName;
+      playAgentSwitchAnimation();
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // Window controls
-  // ---------------------------------------------------------------------------
-
-  function minimizeWindow() { api?.minimizeWindow(); }
-  function closeWindow() { api?.closeWindow(); }
 
   // ---------------------------------------------------------------------------
   // Mode button actions
@@ -129,6 +220,9 @@
   // ---------------------------------------------------------------------------
 
   function onKeydown(e: KeyboardEvent) {
+    // Reset silence timer on any keypress
+    resetSilenceTimer();
+
     // Cmd+Up/Down: cycle agents
     if (e.metaKey && e.key === 'ArrowUp') {
       e.preventDefault();
@@ -147,6 +241,11 @@
       e.preventDefault();
       showCanvas = !showCanvas;
     }
+    // Cmd+E : toggle eye mode (hide transcript)
+    else if (e.metaKey && e.key === 'e') {
+      e.preventDefault();
+      eyeMode = !eyeMode;
+    }
     // Cmd+Shift+W : wake word
     else if (e.metaKey && e.shiftKey && e.key === 'W') {
       e.preventDefault();
@@ -158,11 +257,17 @@
       else if (showArtefact) showArtefact = false;
       else if (showCanvas) showCanvas = false;
       else if (showTimer) showTimer = false;
+      else if (silencePromptVisible) dismissSilencePrompt();
     }
+  }
+
+  // Also reset silence timer on mouse movement
+  function onMouseMove() {
+    resetSilenceTimer();
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onmousemove={onMouseMove} />
 
 <div class="window">
   <!-- Background orb / avatar layer -->
@@ -176,7 +281,7 @@
     style="opacity: {audio.vignetteOpacity}"
   ></div>
 
-  <!-- Boot overlay (fades out after startup) -->
+  <!-- Boot overlay - black div that fades from opacity 1 to 0 over 1.5s -->
   {#if bootPhase === 'boot'}
     <div class="boot-overlay" style="opacity: {bootOpacity}">
       {#if bootLabel}
@@ -185,33 +290,20 @@
     </div>
   {/if}
 
-  <!-- Traffic light buttons (top-left) -->
-  <div class="traffic-lights" data-no-drag>
-    <button
-      class="traffic-btn close"
-      onclick={closeWindow}
-      title="Close"
-      aria-label="Close window"
-    ></button>
-    <button
-      class="traffic-btn minimize"
-      onclick={minimizeWindow}
-      title="Minimize"
-      aria-label="Minimize window"
-    ></button>
-    <button
-      class="traffic-btn fullscreen"
-      onclick={() => api?.toggleFullscreen()}
-      title="Fullscreen"
-      aria-label="Toggle fullscreen"
-    ></button>
-  </div>
+  <!-- Agent switch clip-path reveal animation -->
+  {#if agentSwitchActive}
+    <div
+      class="agent-switch-overlay"
+      style="clip-path: {agentSwitchClip}"
+    ></div>
+  {/if}
 
   <!-- Top bar: agent name + thinking indicator -->
   <div class="top-bar">
     <AgentName
       name={agents.displayName}
       direction={agents.switchDirection}
+      canCycle={agents.list.length > 1}
       onCycleUp={() => cycleAgent(-1)}
       onCycleDown={() => cycleAgent(1)}
     />
@@ -263,13 +355,6 @@
           <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
         </svg>
       {/if}
-    </button>
-
-    <!-- Minimize to tray -->
-    <button class="mode-btn" onclick={minimizeWindow} title="Minimize" aria-label="Minimize">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
     </button>
 
     <!-- Wake word -->
@@ -349,11 +434,20 @@
     </button>
   </div>
 
-  <!-- Chat area -->
-  <Transcript />
+  <!-- Chat area - hidden in eye mode -->
+  {#if !eyeMode}
+    <Transcript />
+  {/if}
 
   <!-- Input bar -->
   <InputBar />
+
+  <!-- Silence prompt - subtle nudge after 5 minutes idle -->
+  {#if silencePromptVisible}
+    <div class="silence-prompt" onclick={dismissSilencePrompt}>
+      <span class="silence-text">Still here?</span>
+    </div>
+  {/if}
 
   <!-- Overlays (conditionally rendered) -->
   {#if showTimer}
@@ -402,17 +496,17 @@
     transition: opacity 0.8s ease;
   }
 
-  /* ── Boot overlay ── */
+  /* -- Boot overlay -- */
 
   .boot-overlay {
-    position: absolute;
+    position: fixed;
     inset: 0;
-    z-index: 80;
-    background: var(--bg);
+    z-index: 9999;
+    background: #000000;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.6s ease;
+    transition: opacity 1.5s ease;
     pointer-events: none;
   }
 
@@ -424,50 +518,48 @@
     text-transform: lowercase;
   }
 
-  /* ── Traffic lights ── */
+  /* -- Agent switch clip-path overlay -- */
 
-  .traffic-lights {
+  .agent-switch-overlay {
     position: absolute;
-    top: 14px;
-    left: 14px;
-    z-index: 15;
-    display: flex;
-    gap: 8px;
-    align-items: center;
+    inset: 0;
+    z-index: 75;
+    background: var(--bg);
+    pointer-events: none;
+    transition: clip-path 0.65s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .traffic-btn {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: none;
+  /* -- Silence prompt -- */
+
+  .silence-prompt {
+    position: absolute;
+    bottom: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 12;
     cursor: pointer;
-    transition: opacity 0.15s;
-    opacity: 0.7;
+    animation: silenceFadeIn 1.5s ease forwards;
   }
 
-  .traffic-btn:hover {
+  .silence-text {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    opacity: 0.6;
+    transition: opacity 0.3s;
+  }
+
+  .silence-prompt:hover .silence-text {
     opacity: 1;
   }
 
-  .traffic-btn.close {
-    background: #ff5f57;
+  @keyframes silenceFadeIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
 
-  .traffic-btn.minimize {
-    background: #febc2e;
-  }
-
-  .traffic-btn.fullscreen {
-    background: #28c840;
-  }
-
-  /* Dim when window not focused (pure CSS via :not(:focus-within) on parent) */
-  .window:not(:hover) .traffic-btn {
-    opacity: 0.4;
-  }
-
-  /* ── Top bar ── */
+  /* -- Top bar -- */
 
   .top-bar {
     position: relative;
@@ -480,16 +572,16 @@
     padding-bottom: 0;
   }
 
-  /* ── Mode buttons ── */
+  /* -- Mode buttons -- */
 
   .mode-buttons {
     position: absolute;
-    top: 36px;
+    top: 14px;
     right: var(--pad);
-    z-index: 10;
+    z-index: 15;
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-direction: row;
+    gap: 2px;
   }
 
   .mode-btn {

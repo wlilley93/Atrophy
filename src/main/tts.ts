@@ -185,6 +185,92 @@ async function synthesiseElevenLabsStream(text: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// Fal TTS (fallback - fal.ai hosted ElevenLabs v3)
+// ---------------------------------------------------------------------------
+
+async function synthesiseFal(text: string): Promise<string> {
+  const config = getConfig();
+  const { text: cleanedText } = processProsody(text);
+
+  if (!cleanedText || !cleanedText.trim()) {
+    throw new Error('Empty text after prosody stripping');
+  }
+
+  // fal.ai REST API - submit and poll for result
+  const submitUrl = `https://queue.fal.run/${config.FAL_TTS_ENDPOINT}`;
+
+  const submitResponse = await fetch(submitUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Key ${process.env.FAL_KEY || ''}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text: cleanedText,
+      voice: config.FAL_VOICE_ID,
+      stability: config.ELEVENLABS_STABILITY,
+    }),
+  });
+
+  if (!submitResponse.ok) {
+    const body = await submitResponse.text();
+    throw new Error(`Fal submit ${submitResponse.status}: ${body.slice(0, 300)}`);
+  }
+
+  const submitResult = (await submitResponse.json()) as {
+    request_id?: string;
+    audio?: { url: string };
+  };
+
+  // If the response came back synchronously (small queue), use it directly
+  let audioUrl: string | undefined;
+
+  if (submitResult.audio?.url) {
+    audioUrl = submitResult.audio.url;
+  } else if (submitResult.request_id) {
+    // Poll for result
+    const resultUrl = `https://queue.fal.run/${config.FAL_TTS_ENDPOINT}/requests/${submitResult.request_id}`;
+    const maxAttempts = 30;
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const pollResponse = await fetch(resultUrl, {
+        headers: {
+          Authorization: `Key ${process.env.FAL_KEY || ''}`,
+        },
+      });
+      if (!pollResponse.ok) continue;
+      const pollResult = (await pollResponse.json()) as {
+        status?: string;
+        audio?: { url: string };
+      };
+      if (pollResult.audio?.url) {
+        audioUrl = pollResult.audio.url;
+        break;
+      }
+      if (pollResult.status === 'FAILED') {
+        throw new Error('Fal TTS request failed');
+      }
+    }
+    if (!audioUrl) {
+      throw new Error('Fal TTS request timed out');
+    }
+  } else {
+    throw new Error('Fal returned unexpected response shape');
+  }
+
+  // Download the audio file
+  const audioResponse = await fetch(audioUrl, { signal: AbortSignal.timeout(30_000) });
+  if (!audioResponse.ok) {
+    throw new Error(`Fal audio download failed: ${audioResponse.status}`);
+  }
+
+  const tmpPath = secureTmp('.mp3');
+  const buffer = Buffer.from(await audioResponse.arrayBuffer());
+  fs.writeFileSync(tmpPath, buffer);
+  return tmpPath;
+}
+
+// ---------------------------------------------------------------------------
 // macOS say (last resort)
 // ---------------------------------------------------------------------------
 
@@ -227,11 +313,20 @@ export async function synthesise(text: string): Promise<string | null> {
     try {
       return await synthesiseElevenLabsStream(text);
     } catch (e) {
-      console.log(`[TTS] ElevenLabs failed (${e}), trying fallback...`);
+      console.log(`[TTS] ElevenLabs failed (${e}), trying Fal...`);
     }
   }
 
-  // Fallback: macOS say
+  // Fallback: Fal (fal.ai hosted ElevenLabs v3)
+  if (config.FAL_VOICE_ID) {
+    try {
+      return await synthesiseFal(text);
+    } catch (e) {
+      console.log(`[TTS] Fal failed (${e}), trying macOS say...`);
+    }
+  }
+
+  // Last resort: macOS say
   try {
     return await synthesiseMacOS(text);
   } catch (e) {
@@ -240,6 +335,24 @@ export async function synthesise(text: string): Promise<string | null> {
 
   console.log('[TTS] No voice available - skipping audio');
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Synchronous synthesise - for setup wizard and other blocking contexts
+// ---------------------------------------------------------------------------
+
+/**
+ * Blocking wrapper around synthesise(). Returns a promise that resolves to the
+ * audio file path, but is intended for use in contexts where the caller awaits
+ * inline (e.g. setup wizard TTS playback between steps).
+ *
+ * This mirrors Python's synthesise_sync() which ran the async function in a
+ * new event loop. In Node/Electron the event loop is always running, so this
+ * is simply an alias with the same fallback chain - the caller awaits it
+ * synchronously within their flow.
+ */
+export async function synthesiseSync(text: string): Promise<string | null> {
+  return synthesise(text);
 }
 
 // ---------------------------------------------------------------------------

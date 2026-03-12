@@ -1,12 +1,13 @@
 <script lang="ts">
   /**
-   * First-launch wizard: name -> AI-driven agent creation -> service setup.
+   * First-launch wizard: brain intro -> name -> AI-driven agent creation -> service cards -> done.
    * Port of display/setup_wizard.py.
    */
+  import { onMount, onDestroy } from 'svelte';
 
-  type Phase = 'welcome' | 'create' | 'services' | 'done';
+  type Phase = 'intro' | 'welcome' | 'create' | 'elevenlabs' | 'telegram' | 'done';
 
-  let phase = $state<Phase>('welcome');
+  let phase = $state<Phase>('intro');
   let userName = $state('');
   let conversationLog = $state<{ role: string; text: string }[]>([]);
   let currentInput = $state('');
@@ -17,6 +18,29 @@
   let telegramToken = $state('');
   let telegramChatId = $state('');
 
+  // Service verification state
+  let elevenLabsVerifying = $state(false);
+  let elevenLabsVerified = $state<boolean | null>(null);
+  let telegramVerifying = $state(false);
+  let telegramVerified = $state<boolean | null>(null);
+
+  // Brain frame animation
+  let brainFrame = $state(0);
+  let brainInterval: ReturnType<typeof setInterval> | null = null;
+  const BRAIN_FRAME_COUNT = 10;
+
+  // Build frame paths using Vite static imports
+  const brainFramePaths: string[] = [];
+  const frameModules = import.meta.glob(
+    '../../../resources/icons/brain_frames/brain_*.png',
+    { eager: true, query: '?url', import: 'default' }
+  );
+  // Sort by filename to ensure correct order
+  const sortedKeys = Object.keys(frameModules).sort();
+  for (const key of sortedKeys) {
+    brainFramePaths.push(frameModules[key] as string);
+  }
+
   // Allowed secure keys
   const SECURE_KEYS = [
     'ELEVENLABS_API_KEY',
@@ -26,6 +50,43 @@
     'ANTHROPIC_API_KEY',
   ];
 
+  // ---------------------------------------------------------------------------
+  // Brain intro animation
+  // ---------------------------------------------------------------------------
+
+  function startBrainAnimation() {
+    brainFrame = 0;
+    brainInterval = setInterval(() => {
+      brainFrame = (brainFrame + 1) % BRAIN_FRAME_COUNT;
+    }, 180);
+
+    // Auto-advance after the animation plays through a couple of times
+    setTimeout(() => {
+      phase = 'welcome';
+    }, 3200);
+  }
+
+  function stopBrainAnimation() {
+    if (brainInterval) {
+      clearInterval(brainInterval);
+      brainInterval = null;
+    }
+  }
+
+  onMount(() => {
+    if (phase === 'intro') {
+      startBrainAnimation();
+    }
+  });
+
+  onDestroy(() => {
+    stopBrainAnimation();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase transitions
+  // ---------------------------------------------------------------------------
+
   function nextPhase() {
     if (phase === 'welcome' && userName.trim()) {
       phase = 'create';
@@ -34,12 +95,27 @@
         text: `You are ${userName}. Good. Now - who do you want to create? Tell me about the companion you want.`,
       });
     } else if (phase === 'create') {
-      phase = 'services';
-    } else if (phase === 'services') {
+      phase = 'elevenlabs';
+    } else if (phase === 'elevenlabs') {
+      phase = 'telegram';
+    } else if (phase === 'telegram') {
       phase = 'done';
       finishSetup();
     }
   }
+
+  function skipToNext() {
+    if (phase === 'elevenlabs') {
+      phase = 'telegram';
+    } else if (phase === 'telegram') {
+      phase = 'done';
+      finishSetup();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wizard conversation (agent creation phase)
+  // ---------------------------------------------------------------------------
 
   async function sendMessage() {
     const text = currentInput.trim();
@@ -61,30 +137,93 @@
     isInferring = false;
   }
 
+  // ---------------------------------------------------------------------------
+  // Service verification
+  // ---------------------------------------------------------------------------
+
+  async function verifyElevenLabs() {
+    if (!elevenLabsKey.trim()) return;
+    elevenLabsVerifying = true;
+    elevenLabsVerified = null;
+
+    try {
+      // Test the key by hitting the ElevenLabs user endpoint
+      const res = await fetch('https://api.elevenlabs.io/v1/user', {
+        headers: { 'xi-api-key': elevenLabsKey.trim() },
+      });
+      elevenLabsVerified = res.ok;
+    } catch {
+      elevenLabsVerified = false;
+    }
+    elevenLabsVerifying = false;
+  }
+
+  async function verifyTelegram() {
+    if (!telegramToken.trim()) return;
+    telegramVerifying = true;
+    telegramVerified = null;
+
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${telegramToken.trim()}/getMe`);
+      const data = await res.json();
+      telegramVerified = data.ok === true;
+    } catch {
+      telegramVerified = false;
+    }
+    telegramVerifying = false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Finish
+  // ---------------------------------------------------------------------------
+
   async function finishSetup() {
     const api = (window as any).atrophy;
     if (api) {
-      await api.updateConfig({
+      const updates: Record<string, unknown> = {
         USER_NAME: userName,
         setup_complete: true,
-      });
+      };
+      if (elevenLabsKey.trim()) updates.ELEVENLABS_API_KEY = elevenLabsKey.trim();
+      if (telegramToken.trim()) updates.TELEGRAM_BOT_TOKEN = telegramToken.trim();
+      if (telegramChatId.trim()) updates.TELEGRAM_CHAT_ID = telegramChatId.trim();
+      await api.updateConfig(updates);
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Keyboard
+  // ---------------------------------------------------------------------------
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (phase === 'welcome') nextPhase();
       else if (phase === 'create') sendMessage();
-      else if (phase === 'services') nextPhase();
+      else if (phase === 'elevenlabs' || phase === 'telegram') nextPhase();
     }
   }
 </script>
 
 <div class="wizard-overlay" data-no-drag>
   <div class="wizard-content">
-    {#if phase === 'welcome'}
-      <div class="wizard-center">
+    {#if phase === 'intro'}
+      <!-- Brain frame animation intro -->
+      <div class="wizard-center brain-intro">
+        {#if brainFramePaths.length > 0}
+          <img
+            class="brain-frame"
+            src={brainFramePaths[brainFrame]}
+            alt="Brain animation"
+            draggable="false"
+          />
+        {:else}
+          <div class="wizard-orb"></div>
+        {/if}
+      </div>
+
+    {:else if phase === 'welcome'}
+      <div class="wizard-center fade-in">
         <div class="wizard-orb"></div>
         <h1 class="wizard-title">Hello.</h1>
         <p class="wizard-subtitle">What's your name?</p>
@@ -104,7 +243,7 @@
       </div>
 
     {:else if phase === 'create'}
-      <div class="wizard-chat">
+      <div class="wizard-chat fade-in">
         <div class="chat-messages">
           {#each conversationLog as msg}
             <div class="chat-msg {msg.role}">
@@ -132,33 +271,113 @@
         </button>
       </div>
 
-    {:else if phase === 'services'}
-      <div class="wizard-center">
-        <h2 class="wizard-title">Services</h2>
-        <p class="wizard-subtitle">Optional. You can set these up later in Settings.</p>
+    {:else if phase === 'elevenlabs'}
+      <!-- ElevenLabs service card -->
+      <div class="wizard-center fade-in">
+        <div class="service-card">
+          <div class="service-card-header">
+            <h2 class="service-card-title">Voice - ElevenLabs</h2>
+            <p class="service-card-desc">
+              Paste your API key to enable natural voice synthesis.
+              Get one at <span class="service-link">elevenlabs.io</span>
+            </p>
+          </div>
 
-        <div class="service-fields">
-          <label class="service-field">
-            <span>ElevenLabs API Key</span>
-            <input type="password" bind:value={elevenLabsKey} class="wizard-input" placeholder="sk-..." />
-          </label>
-          <label class="service-field">
-            <span>Telegram Bot Token</span>
-            <input type="password" bind:value={telegramToken} class="wizard-input" placeholder="123456:ABC..." />
-          </label>
-          <label class="service-field">
-            <span>Telegram Chat ID</span>
-            <input type="text" bind:value={telegramChatId} class="wizard-input" placeholder="12345678" />
-          </label>
+          <div class="service-card-body">
+            <label class="service-field">
+              <span>API Key</span>
+              <input
+                type="password"
+                bind:value={elevenLabsKey}
+                onkeydown={onKeydown}
+                class="wizard-input secure-input"
+                placeholder="xi-..."
+                autofocus
+              />
+            </label>
+
+            {#if elevenLabsVerified === true}
+              <span class="verify-status verified">Verified</span>
+            {:else if elevenLabsVerified === false}
+              <span class="verify-status failed">Invalid key</span>
+            {/if}
+          </div>
+
+          <div class="service-card-actions">
+            <button
+              class="wizard-btn verify-btn"
+              disabled={!elevenLabsKey.trim() || elevenLabsVerifying}
+              onclick={verifyElevenLabs}
+            >
+              {elevenLabsVerifying ? 'Checking...' : 'Verify'}
+            </button>
+            <button class="wizard-btn" onclick={nextPhase}>
+              {elevenLabsKey.trim() ? 'Next' : 'Skip'}
+            </button>
+          </div>
         </div>
+      </div>
 
-        <button class="wizard-btn" onclick={nextPhase}>
-          {elevenLabsKey || telegramToken ? 'Save & Finish' : 'Skip & Finish'}
-        </button>
+    {:else if phase === 'telegram'}
+      <!-- Telegram service card -->
+      <div class="wizard-center fade-in">
+        <div class="service-card">
+          <div class="service-card-header">
+            <h2 class="service-card-title">Messaging - Telegram</h2>
+            <p class="service-card-desc">
+              Connect a Telegram bot for mobile messaging.
+              Talk to <span class="service-link">@BotFather</span> to create one.
+            </p>
+          </div>
+
+          <div class="service-card-body">
+            <label class="service-field">
+              <span>Bot Token</span>
+              <input
+                type="password"
+                bind:value={telegramToken}
+                onkeydown={onKeydown}
+                class="wizard-input secure-input"
+                placeholder="123456:ABC-DEF..."
+                autofocus
+              />
+            </label>
+
+            <label class="service-field">
+              <span>Chat ID</span>
+              <input
+                type="text"
+                bind:value={telegramChatId}
+                onkeydown={onKeydown}
+                class="wizard-input"
+                placeholder="12345678"
+              />
+            </label>
+
+            {#if telegramVerified === true}
+              <span class="verify-status verified">Bot verified</span>
+            {:else if telegramVerified === false}
+              <span class="verify-status failed">Invalid token</span>
+            {/if}
+          </div>
+
+          <div class="service-card-actions">
+            <button
+              class="wizard-btn verify-btn"
+              disabled={!telegramToken.trim() || telegramVerifying}
+              onclick={verifyTelegram}
+            >
+              {telegramVerifying ? 'Checking...' : 'Verify'}
+            </button>
+            <button class="wizard-btn" onclick={nextPhase}>
+              {telegramToken.trim() ? 'Finish' : 'Skip & Finish'}
+            </button>
+          </div>
+        </div>
       </div>
 
     {:else if phase === 'done'}
-      <div class="wizard-center">
+      <div class="wizard-center fade-in">
         <div class="wizard-orb done"></div>
         <h2 class="wizard-title">Ready.</h2>
         <p class="wizard-subtitle">Close this to start.</p>
@@ -191,6 +410,38 @@
     text-align: center;
   }
 
+  .fade-in {
+    animation: fadeIn 0.5s ease forwards;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---- Brain intro animation ---- */
+
+  .brain-intro {
+    justify-content: center;
+    min-height: 300px;
+  }
+
+  .brain-frame {
+    width: 200px;
+    height: 200px;
+    object-fit: contain;
+    image-rendering: auto;
+    filter: brightness(0.9) contrast(1.05);
+    animation: brainPulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes brainPulse {
+    0%, 100% { opacity: 0.85; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.03); }
+  }
+
+  /* ---- Orb ---- */
+
   .wizard-orb {
     width: 60px;
     height: 60px;
@@ -219,6 +470,8 @@
     50% { transform: scale(1.08); opacity: 1; }
   }
 
+  /* ---- Typography ---- */
+
   .wizard-title {
     font-family: var(--font-sans);
     font-size: 24px;
@@ -232,6 +485,8 @@
     color: var(--text-secondary);
     margin-bottom: 28px;
   }
+
+  /* ---- Inputs ---- */
 
   .wizard-input {
     width: 100%;
@@ -252,6 +507,21 @@
   .wizard-input:focus {
     border-color: var(--border-hover);
   }
+
+  .secure-input {
+    border-color: rgba(220, 140, 40, 0.45);
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+
+  .secure-input:focus {
+    border-color: rgba(220, 160, 60, 0.7);
+    box-shadow: 0 0 0 2px rgba(220, 140, 40, 0.12);
+  }
+
+  /* ---- Buttons ---- */
 
   .wizard-btn {
     padding: 10px 28px;
@@ -274,7 +544,87 @@
     cursor: not-allowed;
   }
 
-  /* Chat phase */
+  .verify-btn {
+    background: rgba(220, 140, 40, 0.12);
+    border-color: rgba(220, 140, 40, 0.35);
+  }
+
+  .verify-btn:hover:not(:disabled) {
+    background: rgba(220, 140, 40, 0.22);
+  }
+
+  /* ---- Service cards ---- */
+
+  .service-card {
+    width: 100%;
+    max-width: 380px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 24px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .service-card-header {
+    margin-bottom: 20px;
+  }
+
+  .service-card-title {
+    font-family: var(--font-sans);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+
+  .service-card-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .service-link {
+    color: rgba(100, 160, 255, 0.8);
+  }
+
+  .service-card-body {
+    margin-bottom: 20px;
+  }
+
+  .service-card-body .service-field {
+    margin-bottom: 12px;
+  }
+
+  .service-card-body .wizard-input {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .service-card-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  .verify-status {
+    display: inline-block;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+  }
+
+  .verify-status.verified {
+    color: rgba(120, 220, 140, 0.9);
+    background: rgba(60, 160, 80, 0.15);
+  }
+
+  .verify-status.failed {
+    color: rgba(255, 120, 100, 0.9);
+    background: rgba(200, 60, 40, 0.15);
+  }
+
+  /* ---- Chat phase ---- */
+
   .wizard-chat {
     display: flex;
     flex-direction: column;
@@ -339,12 +689,7 @@
     align-self: center;
   }
 
-  /* Services */
-  .service-fields {
-    width: 100%;
-    max-width: 360px;
-    margin-bottom: 24px;
-  }
+  /* ---- Service fields (shared) ---- */
 
   .service-field {
     display: flex;
