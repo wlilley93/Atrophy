@@ -50,8 +50,8 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     win?.webContents.send('updater:error', err.message);
   });
 
-  // Check on launch after a short delay
-  setTimeout(() => checkForUpdates(), 5_000);
+  // Update check is triggered by the renderer during splash screen boot sequence.
+  // No automatic delay needed here.
 }
 
 /** Manually trigger an update check. */

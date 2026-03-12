@@ -37,6 +37,9 @@
   let splashVisible = $state(true);
   let avatarDownloading = $state(false);
   let avatarDownloadPercent = $state(0);
+  let updateStatus = $state<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'>('idle');
+  let updateVersion = $state('');
+  let updatePercent = $state(0);
 
   // Shutdown screen
   let shutdownVisible = $state(false);
@@ -155,6 +158,35 @@
     api.onAvatarDownloadError?.(() => {
       avatarDownloading = false;
     });
+
+    // Listen for auto-updater events
+    api.onUpdateAvailable?.((info: { version: string }) => {
+      updateStatus = 'available';
+      updateVersion = info.version;
+      // Auto-start download
+      api.downloadUpdate?.();
+      updateStatus = 'downloading';
+    });
+    api.onUpdateNotAvailable?.(() => {
+      updateStatus = 'up-to-date';
+    });
+    api.onUpdateProgress?.((progress: { percent: number }) => {
+      updateStatus = 'downloading';
+      updatePercent = progress.percent;
+    });
+    api.onUpdateDownloaded?.((info: { version: string }) => {
+      updateStatus = 'downloaded';
+      updateVersion = info.version;
+    });
+    api.onUpdateError?.(() => {
+      if (updateStatus === 'checking') {
+        updateStatus = 'error';
+      }
+    });
+
+    // Trigger update check immediately (main process also checks after 5s delay)
+    updateStatus = 'checking';
+    api.checkForUpdates?.();
 
     // Load config and agent list
     try {
@@ -957,6 +989,9 @@
     <SplashScreen
       downloading={avatarDownloading}
       downloadPercent={avatarDownloadPercent}
+      {updateStatus}
+      {updateVersion}
+      {updatePercent}
       onComplete={onSplashComplete}
     />
   {/if}
