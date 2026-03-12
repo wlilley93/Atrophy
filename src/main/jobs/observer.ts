@@ -93,7 +93,6 @@ function getRecentTurns(agentName: string, sinceId: number): TurnRow[] {
   if (!fs.existsSync(dbPath)) return [];
 
   const db = new Database(dbPath, { readonly: true });
-  db.pragma('journal_mode = WAL');
 
   try {
     const cutoff = new Date(Date.now() - 15 * 60 * 1000)

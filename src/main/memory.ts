@@ -135,7 +135,10 @@ export function vectorToBlob(vec: Float32Array): Buffer {
 }
 
 export function blobToVector(blob: Buffer): Float32Array {
-  return new Float32Array(blob.buffer, blob.byteOffset, blob.length / 4);
+  // Copy the buffer - better-sqlite3 may reuse the underlying ArrayBuffer
+  const copy = Buffer.alloc(blob.length);
+  blob.copy(copy);
+  return new Float32Array(copy.buffer, copy.byteOffset, copy.length / 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +338,7 @@ export function writeTurn(
   const turnId = Number(result.lastInsertRowid);
 
   // Background embedding - does not block the conversation pipeline
-  embedAsync('turns', turnId, content);
+  embedAsync('turns', turnId, content, getConfig().DB_PATH);
 
   return turnId;
 }
@@ -602,7 +605,7 @@ export function decayActivations(halfLifeDays = 30): void {
   const batch = db.transaction(() => {
     for (const row of rows) {
       const refTime = row.last_accessed || row.created_at;
-      const elapsed = (now - new Date(refTime).getTime()) / (1000 * 60 * 60 * 24);
+      const elapsed = Math.max(0, (now - new Date(refTime).getTime()) / (1000 * 60 * 60 * 24));
       let newActivation = row.activation * Math.exp(-decayConstant * elapsed);
       if (newActivation < 0.01) newActivation = 0;
       update.run(newActivation, row.id);

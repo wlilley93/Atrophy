@@ -166,28 +166,17 @@ function runHeartbeatInference(
           break;
         case 'StreamDone':
           fullText = (event as StreamDoneEvent).fullText;
+          if (toolsUsed.length > 0) {
+            log.debug(`used tools: ${toolsUsed.join(', ')}`);
+          }
+          resolve(fullText);
           break;
         case 'StreamError':
           reject(new Error((event as StreamErrorEvent).message));
-          return;
+          break;
         default:
           break;
       }
-    });
-
-    emitter.on('done', () => {
-      if (toolsUsed.length > 0) {
-        log.debug(`used tools: ${toolsUsed.join(', ')}`);
-      }
-      resolve(fullText);
-    });
-
-    // If no explicit 'done' event, resolve when the emitter ends
-    emitter.on('end', () => {
-      if (toolsUsed.length > 0) {
-        log.debug(`used tools: ${toolsUsed.join(', ')}`);
-      }
-      resolve(fullText);
     });
   });
 }

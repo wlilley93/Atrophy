@@ -102,7 +102,6 @@ function connect(): Database.Database {
   const dbPath = config.DB_PATH;
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath, { readonly: true });
-  db.pragma('journal_mode = WAL');
   return db;
 }
 

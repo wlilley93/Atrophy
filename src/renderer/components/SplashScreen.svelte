@@ -38,6 +38,7 @@
   let line2Opacity = $state(0);
   let line3Opacity = $state(0);
   let showContinue = $state(false);
+  let introFinished = false;
 
   // Intro animation step counter (ticks at 80ms)
   let introStep = 0;
@@ -64,16 +65,16 @@
     }, 800);
   }
 
-  // Cinematic text sequence - matches Python timeline
+  // Cinematic text sequence - timed to match intro.mp3 voiceover (15.5s)
   // Ticks at 80ms intervals:
   //   0-15    (0-1.2s):     fade in "In the beginning there was nothing"
-  //   15-35   (1.2-2.8s):   pause
+  //   15-35   (1.2-2.8s):   pause (voice still speaking)
   //   35-50   (2.8-4.0s):   fade in "and then..."
   //   50-70   (4.0-5.6s):   pause
   //   70-90   (5.6-7.2s):   fade in "intelligence."
   //   90-110  (7.2-8.8s):   pause
-  //   110-125 (8.8-10.0s):  fade in "Use the last reserves..."
-  //   140:                   show continue button
+  //   110-130 (8.8-10.4s):  fade in "Use the last reserves..."
+  //   190     (15.2s):      show continue (after voiceover ends)
   function introTick() {
     const t = introStep;
     introStep++;
@@ -84,9 +85,10 @@
       line1Opacity = (t - 35) / 15;
     } else if (t >= 70 && t <= 90) {
       line2Opacity = (t - 70) / 20;
-    } else if (t >= 110 && t <= 125) {
-      line3Opacity = (t - 110) / 15;
-    } else if (t === 140) {
+    } else if (t >= 110 && t <= 130) {
+      line3Opacity = (t - 110) / 20;
+    } else if (t === 190) {
+      introFinished = true;
       showContinue = true;
       if (introTimer) { clearInterval(introTimer); introTimer = null; }
     }
@@ -108,21 +110,8 @@
   }
 
   function onContinue() {
-    // If still downloading, don't dismiss yet - just hide the button
-    // The $effect below will dismiss when download completes
-    if (downloading) {
-      showContinue = false;
-      return;
-    }
     dismiss();
   }
-
-  // When download finishes after continue was clicked, dismiss
-  $effect(() => {
-    if (!downloading && !showContinue && introStep >= 140 && !dismissed) {
-      dismiss();
-    }
-  });
 
   onMount(() => {
     startIntro();
@@ -160,27 +149,23 @@
       </p>
     </div>
 
-    <!-- Download progress bar (always visible once download starts) -->
-    {#if downloading || downloadPercent > 0}
-      <div class="progress-section">
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {downloadPercent}%"></div>
-        </div>
-        <span class="progress-label">
-          {#if downloading}
-            downloading avatar... {downloadPercent}%
-          {:else}
-            download complete
-          {/if}
-        </span>
-      </div>
-    {/if}
-
     <!-- Continue button -->
     {#if showContinue}
       <button class="continue-btn" onclick={onContinue}>
-        {downloading ? `downloading... ${downloadPercent}%` : 'Continue'}
+        Continue
       </button>
+    {/if}
+  </div>
+
+  <!-- Progress bar - always at bottom -->
+  <div class="progress-footer">
+    <div class="progress-bar">
+      <div class="progress-fill" style="width: {downloadPercent}%"></div>
+    </div>
+    {#if downloading}
+      <span class="progress-label">downloading avatar... {downloadPercent}%</span>
+    {:else if downloadPercent >= 100}
+      <span class="progress-label">ready</span>
     {/if}
   </div>
 </div>
@@ -249,13 +234,34 @@
     max-width: 360px;
   }
 
-  .progress-section {
+  .continue-btn {
+    margin-top: 30px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 22px;
+    padding: 10px 40px;
+    font-family: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .continue-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Progress bar pinned to bottom of screen */
+  .progress-footer {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    margin-top: 24px;
-    width: 100%;
+    gap: 8px;
   }
 
   .progress-bar {
@@ -278,23 +284,5 @@
     letter-spacing: 1.5px;
     color: rgba(255, 255, 255, 0.25);
     text-transform: lowercase;
-  }
-
-  .continue-btn {
-    margin-top: 30px;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 22px;
-    padding: 10px 40px;
-    font-family: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    font-size: 15px;
-    cursor: pointer;
-    transition: background 0.2s, border-color 0.2s;
-  }
-
-  .continue-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
   }
 </style>

@@ -278,7 +278,9 @@ function storeIdentityFlags(flags: string[]): void {
     });
   }
 
-  fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2));
+  const tmp = queuePath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(queue, null, 2));
+  fs.renameSync(tmp, queuePath);
   log.info(`Flagged ${flags.length} item(s) for identity review`);
 }
 

@@ -6,7 +6,7 @@
  * ElevenLabs streaming is primary for lowest latency.
  */
 
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -362,7 +362,9 @@ export async function synthesiseSync(text: string): Promise<string | null> {
 // Playback via afplay
 // ---------------------------------------------------------------------------
 
-export function playAudio(audioPath: string, rate?: number): Promise<void> {
+let _activeAfplay: ChildProcess | null = null;
+
+export function playAudio(audioPath: string, rate?: number, cleanupFile = true): Promise<void> {
   return new Promise((resolve, reject) => {
     const config = getConfig();
     const playbackRate = rate || config.TTS_PLAYBACK_RATE;
@@ -370,17 +372,38 @@ export function playAudio(audioPath: string, rate?: number): Promise<void> {
     const proc = spawn('afplay', ['-r', String(playbackRate), audioPath], {
       stdio: ['ignore', 'ignore', 'ignore'],
     });
+    _activeAfplay = proc;
 
-    proc.on('close', () => {
-      // Clean up temp file
-      try { fs.unlinkSync(audioPath); } catch { /* noop */ }
+    proc.on('close', (code) => {
+      if (_activeAfplay === proc) _activeAfplay = null;
+      // Clean up temp file (skip for permanent bundle files)
+      if (cleanupFile) {
+        try { fs.unlinkSync(audioPath); } catch { /* noop */ }
+      }
+      if (code !== 0 && code !== null) {
+        log.warn(`afplay exited ${code} for ${path.basename(audioPath)}`);
+      }
       resolve();
     });
     proc.on('error', (err) => {
-      try { fs.unlinkSync(audioPath); } catch { /* noop */ }
+      if (_activeAfplay === proc) _activeAfplay = null;
+      if (cleanupFile) {
+        try { fs.unlinkSync(audioPath); } catch { /* noop */ }
+      }
       reject(err);
     });
   });
+}
+
+/**
+ * Kill the currently playing afplay process (if any).
+ * Used by clearAudioQueue to actually stop sound output.
+ */
+export function stopCurrentPlayback(): void {
+  if (_activeAfplay) {
+    try { _activeAfplay.kill(); } catch { /* already dead */ }
+    _activeAfplay = null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -415,8 +438,12 @@ export function enqueueAudio(audioPath: string, index: number): void {
   }
 }
 
+/**
+ * Clear all pending audio and stop the currently playing clip.
+ */
 export function clearAudioQueue(): void {
   _queue = [];
+  stopCurrentPlayback();
 }
 
 async function processQueue(): Promise<void> {

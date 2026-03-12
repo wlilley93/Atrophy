@@ -60,7 +60,6 @@ function connectAgent(agentName: string): Database.Database {
     throw new Error(`No database for agent ${agentName}: ${dbPath}`);
   }
   const db = new Database(dbPath, { readonly: true });
-  db.pragma('journal_mode = WAL');
   return db;
 }
 

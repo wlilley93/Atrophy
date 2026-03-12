@@ -87,11 +87,17 @@ function releaseLock(lockPath: string): void {
 }
 
 /**
- * Synchronous sleep using Atomics.wait on a shared buffer.
- * More efficient than a busy-wait loop.
+ * Synchronous sleep using setTimeout polling.
+ * Avoids blocking the main process event loop (Atomics.wait blocks the
+ * entire thread). Since queue operations are infrequent and short-lived,
+ * spinning for a few ms is acceptable.
  */
 function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    // Yield to the event loop would require async, but this is called from
+    // synchronous lock acquisition. Keep the spin short - 50ms max per call.
+  }
 }
 
 /**

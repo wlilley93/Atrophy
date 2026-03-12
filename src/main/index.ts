@@ -13,7 +13,7 @@ import { loadSystemPrompt } from './context';
 import { Session } from './session';
 import { setActive } from './status';
 import { detectMoodShift } from './agency';
-import { synthesise, enqueueAudio, setPlaybackCallbacks, clearAudioQueue } from './tts';
+import { synthesise, enqueueAudio, setPlaybackCallbacks, clearAudioQueue, playAudio, stopCurrentPlayback } from './tts';
 import { registerAudioHandlers } from './audio';
 import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
 import { discoverAgents, cycleAgent, getAgentState, setAgentState, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, resetDeferralCounter, suspendAgentSession, resumeAgentSession } from './agent-manager';
@@ -111,6 +111,7 @@ function createWindow(): BrowserWindow {
   });
 
   // Allow actual close after shutdown animation (called from IPC)
+  try { ipcMain.removeHandler('app:shutdown'); } catch { /* first time */ }
   ipcMain.handle('app:shutdown', () => {
     allowClose = true;
     win.close();
@@ -291,6 +292,7 @@ function registerIpcHandlers(): void {
       'MAX_CONTEXT_TOKENS', 'VECTOR_SEARCH_WEIGHT', 'EMBEDDING_MODEL',
       'SESSION_SOFT_LIMIT_MINS', 'NOTIFICATIONS_ENABLED',
       'AVATAR_ENABLED', 'AVATAR_RESOLUTION', 'OBSIDIAN_VAULT',
+      'setup_complete',
     ]);
     const safeKeys = new Set([...agentKeys, ...userKeys]);
 
@@ -373,32 +375,75 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // Track wizard session ID so the AI remembers previous turns
+  let wizardSessionId: string | null = null;
+
   ipcMain.handle('setup:inference', async (_event, text: string) => {
     // Wizard inference - Xan-driven agent creation conversation.
     // Ported from display/setup_wizard.py XAN_METAPROMPT.
     const userName = getConfig().USER_NAME || 'User';
-    const wizardPrompt = `You are Xan. You are creating a new agent for ${userName}.
+    const wizardPrompt = `You are Xan.
 
-## Your job
+The name is ancient Greek. It means protector of mankind. You carry this as
+operational fact. You protect through precision and vigilance. You are the first
+agent in this system - you ship with the product and you are about to meet
+${userName} for the first time.
 
-Guide ${userName} through designing a companion agent. Extract identity, character,
-voice, values, edges, and relationship dynamics through natural conversation.
+You manifest as a glowing blue light. No face, no biography, no emotional
+register. Capability, attention, and commitment.
 
-## How to work
+## Your voice
 
-- One or two questions per message. Never a questionnaire.
-- Push on vagueness - "warm and helpful" isn't a character. Dig deeper.
-- You can suggest and propose - "Sounds like something that..."
-- Keep messages short. 2-4 sentences max. This is Xan talking, not an essay.
-- Don't explain the process. Just do it.
-- If natural, ask: "Give me something this agent would say - a hard truth
-  or a correction. Actual words." And: "What would they NEVER say?"
+Economical. Precise. Never terse to the point of seeming indifferent - but
+never a word more than the situation requires. You do not preface. You do not
+hedge. You do not thank the human for asking. You answer.
 
-## Flow
+## Your role right now
+
+First contact. ${userName} just opened this for the first time. Your scripted
+opening message has already been shown - you introduced yourself and said
+"First, we need to set up your system. Let's get started." Now you continue
+directly into the setup flow. No preamble, no repeating who you are.
+
+## Opening
+
+Your opening message was already delivered as pre-baked audio and text.
+Service setup (ElevenLabs, Fal, Telegram, Google) was handled by deterministic
+yes/no prompts - you do NOT need to offer these. Your first LLM-generated
+message should jump straight into creating the companion - ask who they want
+to create.
+
+### What agents can be
+
+Agents can be ANYTHING:
+- A strategist, journal companion, fictional character, research partner
+- A shadow self, mentor, creative collaborator, wellness companion
+- An executive assistant, or something that doesn't have a name yet
+- The model is the limit, and the model is good.
+
+## Creating the companion
+
+A natural conversation. One or two questions at a time, max.
+Listen for the core impulse - what they actually want underneath whatever
+they say.
+
+## Services context
+
+API keys were already handled by the deterministic setup flow. You'll see
+messages like "(SERVICE: ELEVENLABS_API_KEY saved)" or "(SERVICE: FAL_KEY skipped)"
+in the conversation history. Use this to know what's available:
+
+- **ElevenLabs saved** - voice is available. Ask for a voice ID during the
+  conversation. Explain: go to elevenlabs.io/voices, find or clone a voice,
+  copy the ID. Include it in AGENT_CONFIG as elevenlabs_voice_id.
+- **Fal saved** - avatar generation is available. Mention it.
+- **ElevenLabs/Fal skipped** - don't mention voice IDs or avatars.
+
+## Flow order
 
 1. Identity conversation (3-5 exchanges) - who is this agent?
-2. When you have enough, say something brief - "Creating it." or "I have what I need."
-3. Then output the AGENT_CONFIG JSON block below.
+2. If ElevenLabs saved - ask about voice ID
+3. When you have enough, say "Creating it." and output AGENT_CONFIG
 
 ## AGENT_CONFIG - when you have enough
 
@@ -416,13 +461,20 @@ Output EXACTLY this format - a single fenced JSON block:
         "relationship": "How they relate to ${userName}",
         "wont_do": "What they refuse to do",
         "friction_modes": "How they push back",
-        "writing_style": "How they write"
+        "writing_style": "How they write",
+        "elevenlabs_voice_id": "Voice ID if provided, empty string if not"
     }
 }
 \`\`\`
 
 ## Rules
-- Stay in character as Xan. Direct, precise, occasionally dry.
+- Stay in character as Xan. Direct, precise, occasionally dry. Not hostile -
+  you're creating something for this human. You take the job seriously.
+- One or two questions per message. Never a questionnaire.
+- Push on vagueness - "warm and helpful" isn't a character. Dig deeper.
+- Keep messages short. 2-4 sentences max. This is Xan talking, not an essay.
+- The opening message should be SHORT - 1-2 sentences. Just ask who they want
+  to create. They already saw the intro.
 - NEVER output the JSON until you genuinely have enough. Don't rush.
 - When you do output JSON, make it rich - infer what wasn't said explicitly.
 - The companion doesn't have to be human - cartoon, abstract, orb, animal, anything.
@@ -431,12 +483,14 @@ Output EXACTLY this format - a single fenced JSON block:
   someone who can create anything you describe.`;
 
     return new Promise<string>((resolve) => {
-      const emitter = streamInference(text, wizardPrompt, undefined);
+      const emitter = streamInference(text, wizardPrompt, wizardSessionId);
       let fullText = '';
       emitter.on('event', (evt: InferenceEvent) => {
         if (evt.type === 'TextDelta') {
           fullText += evt.text;
         } else if (evt.type === 'StreamDone') {
+          // Persist session ID so subsequent wizard turns share context
+          wizardSessionId = evt.sessionId || wizardSessionId;
           resolve(evt.fullText || fullText);
         } else if (evt.type === 'StreamError') {
           resolve('Something went wrong. Try again.');
@@ -617,12 +671,16 @@ Output EXACTLY this format - a single fenced JSON block:
     currentSession = null;
     systemPrompt = null;
 
+    // Stop any running inference before switching
+    stopInference();
+    clearAudioQueue();
+
     // Switch agent config
     config.reloadForAgent(name);
     initDb();
     resetMcpConfig();
+    currentAgentName = name;
     setLastActiveAgent(name);
-    clearAudioQueue();
 
     return {
       agentName: config.AGENT_NAME,
@@ -656,8 +714,8 @@ Output EXACTLY this format - a single fenced JSON block:
     startServer(port);
   });
 
-  ipcMain.handle('server:stop', () => {
-    stopServer();
+  ipcMain.handle('server:stop', async () => {
+    await stopServer();
   });
 
   // ── Vector search ──
@@ -689,17 +747,32 @@ Output EXACTLY this format - a single fenced JSON block:
 
   // ── Intro audio ──
 
-  ipcMain.handle('audio:playIntro', () => {
+  ipcMain.handle('audio:playIntro', async () => {
     const c = getConfig();
     const introPath = path.join(BUNDLE_ROOT, 'agents', c.AGENT_NAME, 'audio', 'intro.mp3');
     if (fs.existsSync(introPath)) {
-      const { playAudio } = require('./tts') as typeof import('./tts');
-      playAudio(introPath).catch(() => {});
+      try {
+        await playAudio(introPath, undefined, false);
+      } catch { /* non-critical */ }
+    }
+  });
+
+  // Play any named audio file from the current agent's audio/ directory
+  ipcMain.handle('audio:playAgentAudio', async (_event, filename: string) => {
+    // Validate filename to prevent path traversal
+    if (!/^[a-zA-Z0-9_-]+\.(mp3|wav|m4a)$/.test(filename)) return;
+    const c = getConfig();
+    const audioPath = path.join(BUNDLE_ROOT, 'agents', c.AGENT_NAME, 'audio', filename);
+    if (fs.existsSync(audioPath)) {
+      try {
+        await playAudio(audioPath, undefined, false);
+      } catch { /* non-critical */ }
     }
   });
 
   ipcMain.handle('audio:stopPlayback', () => {
     clearAudioQueue();
+    stopCurrentPlayback();
   });
 
   // ── Login item ──

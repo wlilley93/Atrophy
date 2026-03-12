@@ -509,7 +509,7 @@ export function createAgent(opts: CreateAgentOptions): AgentManifest {
   // Custom skills
   const customSkills = opts.tools?.customSkills || [];
   for (const skill of customSkills) {
-    const skillSlug = skill.name.toLowerCase().replace(/\s+/g, '-');
+    const skillSlug = skill.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     writeIfMissing(
       path.join(agentDir, 'skills', `${skillSlug}.md`),
       `# ${skill.name}\n\n${skill.description}\n`,

@@ -234,7 +234,7 @@ function buildAgencyContext(userMessage: string): string {
     }
   }
 
-  const parts: string[] = [timeOfDayContext()];
+  const parts: string[] = [timeOfDayContext().context];
 
   // Inner life - emotional state
   parts.push(formatForContext());
@@ -248,8 +248,7 @@ function buildAgencyContext(userMessage: string): string {
   // Session patterns
   // Get session count and times for current week
   try {
-    const db = (memory as unknown as { getRecentSummaries: (n: number) => { created_at: string }[] });
-    const recentSessions = db.getRecentSummaries(10);
+    const recentSessions = memory.getRecentSummaries(10);
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const thisWeek = recentSessions.filter(
       (s: { created_at: string }) => new Date(s.created_at) > weekAgo,
@@ -379,6 +378,7 @@ function buildAgencyContext(userMessage: string): string {
 // ---------------------------------------------------------------------------
 
 let _activeProcess: ChildProcess | null = null;
+const _allProcesses = new Set<ChildProcess>();
 
 export function stopInference(): void {
   if (_activeProcess) {
@@ -387,6 +387,15 @@ export function stopInference(): void {
     } catch { /* already dead */ }
     _activeProcess = null;
   }
+}
+
+/** Kill all tracked inference processes (for shutdown). */
+export function stopAllInference(): void {
+  for (const proc of _allProcesses) {
+    try { proc.kill(); } catch { /* already dead */ }
+  }
+  _allProcesses.clear();
+  _activeProcess = null;
 }
 
 export function streamInference(
@@ -457,7 +466,12 @@ export function streamInference(
       env: cleanEnv(),
       detached: false,
     });
+    // Kill any previous active process to prevent orphans
+    if (_activeProcess && _activeProcess !== proc) {
+      try { _activeProcess.kill(); } catch { /* already dead */ }
+    }
     _activeProcess = proc;
+    _allProcesses.add(proc);
   } catch (e) {
     log.error(`failed to start: ${e}`);
     setImmediate(() => emitter.emit('event', { type: 'StreamError', message: String(e) } as StreamErrorEvent));
@@ -607,7 +621,8 @@ export function streamInference(
 
   // Handle process exit
   proc.on('close', (code) => {
-    _activeProcess = null;
+    if (_activeProcess === proc) _activeProcess = null;
+    _allProcesses.delete(proc);
     const elapsed = (Date.now() - t0) / 1000;
 
     // Check for failure

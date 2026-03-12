@@ -51,7 +51,7 @@ function jobsFile(): string {
 
 function logsDir(): string {
   const config = getConfig();
-  return path.join(BUNDLE_ROOT, 'logs', config.AGENT_NAME);
+  return path.join(USER_DATA, 'logs', config.AGENT_NAME);
 }
 
 function plistPath(name: string): string {
@@ -161,28 +161,32 @@ function plistToXml(plist: PlistDict): string {
     '<dict>',
   ];
 
+  function escapeXml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   function addKeyValue(key: string, value: unknown, indent = 1): void {
     const tab = '\t'.repeat(indent);
     if (typeof value === 'string') {
-      lines.push(`${tab}<key>${key}</key>`);
-      lines.push(`${tab}<string>${value}</string>`);
+      lines.push(`${tab}<key>${escapeXml(key)}</key>`);
+      lines.push(`${tab}<string>${escapeXml(value)}</string>`);
     } else if (typeof value === 'number') {
-      lines.push(`${tab}<key>${key}</key>`);
+      lines.push(`${tab}<key>${escapeXml(key)}</key>`);
       lines.push(`${tab}<integer>${value}</integer>`);
     } else if (typeof value === 'boolean') {
-      lines.push(`${tab}<key>${key}</key>`);
+      lines.push(`${tab}<key>${escapeXml(key)}</key>`);
       lines.push(`${tab}<${value}/>`);
     } else if (Array.isArray(value)) {
-      lines.push(`${tab}<key>${key}</key>`);
+      lines.push(`${tab}<key>${escapeXml(key)}</key>`);
       lines.push(`${tab}<array>`);
       for (const item of value) {
         if (typeof item === 'string') {
-          lines.push(`${tab}\t<string>${item}</string>`);
+          lines.push(`${tab}\t<string>${escapeXml(item)}</string>`);
         }
       }
       lines.push(`${tab}</array>`);
     } else if (typeof value === 'object' && value !== null) {
-      lines.push(`${tab}<key>${key}</key>`);
+      lines.push(`${tab}<key>${escapeXml(key)}</key>`);
       lines.push(`${tab}<dict>`);
       for (const [k, v] of Object.entries(value)) {
         addKeyValue(k, v, indent + 1);

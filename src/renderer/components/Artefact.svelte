@@ -71,6 +71,7 @@
   onDestroy(() => {
     window.removeEventListener('resize', handleResize);
     cleanups.forEach(fn => fn());
+    if (artefactCleanup) artefactCleanup();
     // Memory cleanup - clear any iframe/webview content
     clearContent();
   });
@@ -109,10 +110,13 @@
     }, 300);
   }
 
+  let artefactCleanup: (() => void) | null = null;
+
   function selectGalleryItem(item: typeof gallery[0]) {
     if (item.path && api) {
-      // Request artefact metadata from main process via the path
-      api.on('artefact:updated', (data: any) => {
+      // Clean up previous listener before registering a new one
+      if (artefactCleanup) artefactCleanup();
+      artefactCleanup = api.on('artefact:updated', (data: any) => {
         loadArtefact(data);
       });
     }

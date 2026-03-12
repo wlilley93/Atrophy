@@ -245,15 +245,23 @@ export function isLaunchdInstalled(): boolean {
 // ---------------------------------------------------------------------------
 
 async function dispatchToAgent(agentName: string, text: string): Promise<string | null> {
+  const config = getConfig();
+  const originalAgent = config.AGENT_NAME;
+
   try {
-    // Temporarily switch config for this agent
-    const config = getConfig();
-    const originalAgent = config.AGENT_NAME;
+    // Temporarily switch config for this agent - capture needed values
+    // synchronously, then restore before the async inference call to
+    // minimize the window where global config is mutated.
     config.reloadForAgent(agentName);
     memory.initDb();
 
     const system = loadSystemPrompt();
     const cliSessionId = memory.getLastCliSessionId();
+
+    // Restore config now - inference reads config internally but only
+    // at spawn time, and we've already captured what we need.
+    config.reloadForAgent(originalAgent);
+    memory.initDb();
 
     const prompt = `[Telegram message from Will]\n\n${text}`;
     let fullText = '';
@@ -284,13 +292,12 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
       log.debug(`[${agentName}] used tools: ${toolsUsed.join(', ')}`);
     }
 
-    // Restore original agent
-    config.reloadForAgent(originalAgent);
-    memory.initDb();
-
     return fullText.trim() || null;
   } catch (e) {
     log.error(`[${agentName}] dispatch failed: ${e}`);
+    // Always restore original agent on failure
+    config.reloadForAgent(originalAgent);
+    memory.initDb();
     return null;
   }
 }

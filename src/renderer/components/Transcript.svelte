@@ -108,7 +108,11 @@
     // Process line-based syntax
     const lines = text.split('\n');
     const processed: string[] = [];
-    let inList = false;
+    let listTag: 'ul' | 'ol' | null = null;
+
+    function closeList() {
+      if (listTag) { processed.push(`</${listTag}>`); listTag = null; }
+    }
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
@@ -116,7 +120,7 @@
       // Check for code block placeholder
       const codeMatch = line.match(/\x00CODEBLOCK:(codeblock-\d+)\x00/);
       if (codeMatch) {
-        if (inList) { processed.push('</ul>'); inList = false; }
+        closeList();
         const block = codeBlocks.find(b => b.id === codeMatch[1]);
         if (block) {
           const escapedCode = escapeHtml(block.code);
@@ -134,7 +138,7 @@
       // Headers
       const headerMatch = line.match(/^(#{1,6})\s+(.+)/);
       if (headerMatch) {
-        if (inList) { processed.push('</ul>'); inList = false; }
+        closeList();
         const level = headerMatch[1].length;
         processed.push(`<h${level} class="md-header md-h${level}">${headerMatch[2]}</h${level}>`);
         continue;
@@ -142,7 +146,7 @@
 
       // Blockquotes
       if (line.match(/^&gt;\s?/)) {
-        if (inList) { processed.push('</ul>'); inList = false; }
+        closeList();
         const quoteText = line.replace(/^&gt;\s?/, '');
         processed.push(`<blockquote class="md-blockquote">${quoteText}</blockquote>`);
         continue;
@@ -151,7 +155,7 @@
       // Unordered list items
       const listMatch = line.match(/^[-*]\s+(.+)/);
       if (listMatch) {
-        if (!inList) { processed.push('<ul class="md-list">'); inList = true; }
+        if (listTag !== 'ul') { closeList(); processed.push('<ul class="md-list">'); listTag = 'ul'; }
         processed.push(`<li>${listMatch[1]}</li>`);
         continue;
       }
@@ -159,18 +163,18 @@
       // Ordered list items
       const olMatch = line.match(/^\d+\.\s+(.+)/);
       if (olMatch) {
-        if (!inList) { processed.push('<ul class="md-list md-ol">'); inList = true; }
+        if (listTag !== 'ol') { closeList(); processed.push('<ol class="md-list md-ol">'); listTag = 'ol'; }
         processed.push(`<li>${olMatch[1]}</li>`);
         continue;
       }
 
       // End list if we hit a non-list line
-      if (inList) { processed.push('</ul>'); inList = false; }
+      closeList();
 
       processed.push(line);
     }
 
-    if (inList) processed.push('</ul>');
+    closeList();
 
     return processed.join('\n');
   }
@@ -178,8 +182,8 @@
   // Filter display text: strip prosody tags, audio tags
   function displayText(content: string, revealed: number): string {
     let text = content.slice(0, revealed);
-    // Strip [prosody] tags
-    text = text.replace(/\[[\w_]+\]/g, '');
+    // Strip [prosody] tags (including multi-word tags like [voice breaking])
+    text = text.replace(/\[[^\]]+\]/g, '');
     // Strip audio tags
     text = text.replace(/<audio[^>]*>.*?<\/audio>/gs, '');
     // Collapse multiple spaces
@@ -266,18 +270,20 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="transcript selectable" data-no-drag bind:this={container} onscroll={onScroll} onclick={handleCopyClick}>
-  {#each transcript.messages as msg (msg.id)}
-    {#if msg.role === 'divider'}
-      <div class="divider">
-        <span class="divider-text">{msg.content}</span>
-      </div>
-    {:else}
-      <div class="message {msg.role}">
-        <div class="message-text">{@html renderMessage(msg)}</div>
-        <span class="message-time">{relativeTime(msg.timestamp, now)}</span>
-      </div>
-    {/if}
-  {/each}
+  <div class="transcript-inner">
+    {#each transcript.messages as msg (msg.id)}
+      {#if msg.role === 'divider'}
+        <div class="divider">
+          <span class="divider-text">{msg.content}</span>
+        </div>
+      {:else}
+        <div class="message {msg.role}">
+          <div class="message-text">{@html renderMessage(msg)}</div>
+          <span class="message-time">{relativeTime(msg.timestamp, now)}</span>
+        </div>
+      {/if}
+    {/each}
+  </div>
 </div>
 
 <style>
@@ -291,6 +297,15 @@
     max-width: 700px;
     margin: 0 auto;
     width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.3) 15%, black 33%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.3) 15%, black 33%);
+  }
+
+  .transcript-inner {
+    flex-shrink: 0;
   }
 
   .message {

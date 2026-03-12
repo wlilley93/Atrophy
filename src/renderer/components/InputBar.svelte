@@ -88,7 +88,7 @@
         if (!isRecording) return;
         const input = e.inputBuffer.getChannelData(0);
         const buffer = new Float32Array(input);
-        api.sendAudioChunk(buffer.buffer);
+        api.sendAudioChunk(buffer.buffer.slice(0));
       };
 
       source.connect(processor);

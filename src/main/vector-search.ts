@@ -88,6 +88,7 @@ function vectorSearch(
   n = 20,
   db?: Database.Database,
 ): [number, number][] {
+  if (!(table in SEARCHABLE_TABLES)) return [];
   const conn = db || getDb();
 
   let rows: { id: number; embedding: Buffer }[];
@@ -118,6 +119,7 @@ function bm25Search(
   n = 20,
   db?: Database.Database,
 ): [number, number][] {
+  if (!(table in SEARCHABLE_TABLES)) return [];
   const conn = db || getDb();
 
   let rows: { id: number; [key: string]: unknown }[];

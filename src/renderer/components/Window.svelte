@@ -182,8 +182,8 @@
     }
 
     // Kill audio
-    if (api.clearAudioQueue) {
-      api.clearAudioQueue();
+    if (api.stopPlayback) {
+      api.stopPlayback();
     }
 
     // Iris wipe animation (fast, codec-style)
@@ -400,7 +400,7 @@
     try {
       const transcript = await api.stopRecording();
       if (transcript && transcript.trim().length > 1) {
-        addMessage('will', transcript.trim());
+        addMessage('user', transcript.trim());
         completeLast();
         await api.sendMessage(transcript.trim());
       }

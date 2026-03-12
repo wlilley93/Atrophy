@@ -19,7 +19,7 @@ import { getConfig, USER_DATA } from './config';
 import * as memory from './memory';
 import { Session } from './session';
 import { loadSystemPrompt } from './context';
-import { streamInference, InferenceEvent } from './inference';
+import { streamInference, stopInference, InferenceEvent } from './inference';
 import { search as vectorSearch } from './vector-search';
 import { createLogger } from './logger';
 
@@ -152,6 +152,8 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse): 
     let fullText = '';
     let sessionId = session.cliSessionId || '';
 
+    let errored = false;
+
     await new Promise<void>((resolve) => {
       const emitter = streamInference(message, systemPrompt, session!.cliSessionId);
 
@@ -163,12 +165,15 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse): 
             resolve();
             break;
           case 'StreamError':
+            errored = true;
             sendJson(res, { error: evt.message }, 500);
             resolve();
             break;
         }
       });
     });
+
+    if (errored) return;
 
     if (sessionId && sessionId !== session.cliSessionId) {
       session.setCliSessionId(sessionId);
@@ -365,12 +370,13 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
   });
 }
 
-export function stopServer(): void {
+export async function stopServer(): Promise<void> {
   if (httpServer) {
     httpServer.close();
     httpServer = null;
   }
   if (session) {
-    session.end(systemPrompt);
+    await session.end(systemPrompt);
+    session = null;
   }
 }

@@ -73,6 +73,8 @@
       />
     {/if}
 
+    <span class="status-text">Restoring your sanity...</span>
+
     <div class="progress-bar">
       <div class="progress-fill" style="width: {progress}%"></div>
     </div>
@@ -104,6 +106,13 @@
     object-fit: contain;
     user-select: none;
     -webkit-user-drag: none;
+  }
+
+  .status-text {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.5px;
   }
 
   .progress-bar {

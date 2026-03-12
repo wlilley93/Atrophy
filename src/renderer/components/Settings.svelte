@@ -278,8 +278,10 @@
 
   async function save() {
     await apply();
-    saveStatus = 'Saved';
-    setTimeout(() => saveStatus = '', 2000);
+    if (saveStatus !== 'Error') {
+      saveStatus = 'Saved';
+      setTimeout(() => saveStatus = '', 2000);
+    }
   }
 
   // ---------------------------------------------------------------------------

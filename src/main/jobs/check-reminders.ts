@@ -65,7 +65,11 @@ function loadReminders(): Reminder[] {
 function saveReminders(reminders: Reminder[]): void {
   const p = remindersPath();
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(reminders, null, 2) + '\n');
+  // Write to temp file then rename for atomicity (prevents data loss
+  // if another process writes between our read and write)
+  const tmp = p + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(reminders, null, 2) + '\n');
+  fs.renameSync(tmp, p);
 }
 
 // ---------------------------------------------------------------------------
@@ -122,9 +126,13 @@ export async function checkReminders(): Promise<void> {
     } catch { /* non-fatal */ }
   }
 
-  // Save remaining
-  saveReminders(remaining);
-  log.info(`Fired ${due.length}, ${remaining.length} remaining.`);
+  // Re-read to merge any reminders added while we were firing notifications,
+  // then remove only the ones we actually fired (by time+message identity)
+  const firedSet = new Set(due.map(r => `${r.time}|${r.message}`));
+  const fresh = loadReminders();
+  const merged = fresh.filter(r => !firedSet.has(`${r.time}|${r.message}`));
+  saveReminders(merged);
+  log.info(`Fired ${due.length}, ${merged.length} remaining.`);
 }
 
 // ---------------------------------------------------------------------------

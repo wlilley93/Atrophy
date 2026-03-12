@@ -80,6 +80,7 @@ export interface AtrophyAPI {
 
   // Intro audio
   playIntroAudio: () => Promise<void>;
+  playAgentAudio: (filename: string) => Promise<void>;
   stopPlayback: () => Promise<void>;
 
   // Shutdown
@@ -186,6 +187,7 @@ const api: AtrophyAPI = {
 
   // Intro audio
   playIntroAudio: () => ipcRenderer.invoke('audio:playIntro'),
+  playAgentAudio: (filename) => ipcRenderer.invoke('audio:playAgentAudio', filename),
   stopPlayback: () => ipcRenderer.invoke('audio:stopPlayback'),
 
   // Shutdown
