@@ -209,7 +209,7 @@
       api.onUpdateError?.(() => {
         updateStatus = 'error';
         clearTimeout(timeout);
-        setTimeout(done, 800);
+        done();
       });
 
       updateStatus = 'checking';
@@ -1060,7 +1060,7 @@
         {:else if updateStatus === 'up-to-date'}
           <span class="update-label">Up to date</span>
         {:else if updateStatus === 'error'}
-          <span class="update-label">Offline</span>
+          <span class="update-label"></span>
         {/if}
       </div>
     </div>
