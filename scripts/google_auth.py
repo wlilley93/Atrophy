@@ -32,11 +32,9 @@ _EXTRA_SCOPES = [
 ]
 _EXTRA_TOKEN_PATH = Path.home() / ".atrophy" / ".google" / "extra_token.json"
 
-# Bundled OAuth client credentials — identifies the app, not the user.
-# Google's security model for Desktop apps treats these as public
-# (the user still authorizes via browser consent screen).
-_CLIENT_ID = ""
-_CLIENT_SECRET = ""
+# OAuth client credentials - loaded from env or ~/.atrophy/.env
+_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
 
 _GWS_BIN = shutil.which("gws")
 

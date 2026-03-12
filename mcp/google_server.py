@@ -73,9 +73,9 @@ def _wrap_untrusted(content: str, source: str = "google") -> str:
 
 # ── gws CLI ──
 
-# Bundled OAuth client credentials — identifies the app, not the user.
-_CLIENT_ID = ""
-_CLIENT_SECRET = ""
+# OAuth client credentials - loaded from env or ~/.atrophy/.env
+_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
 
 def _gws_env() -> dict:
     """Build env with bundled OAuth credentials for gws."""
