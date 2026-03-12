@@ -134,6 +134,7 @@ function createWindow(): BrowserWindow {
   ipcMain.handle('app:shutdown', () => {
     allowClose = true;
     win.close();
+    app.quit();
   });
 
   return win;
