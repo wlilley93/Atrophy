@@ -42,7 +42,7 @@ mac:
         - "**/*.sql"
 
 dmg:
-  title: ""
+  title: "Atrophy"
   artifactName: "${productName}-${version}-${arch}.${ext}"
   background: resources/dmg-background.png
   icon: resources/icons/TheAtrophiedMind.icns
