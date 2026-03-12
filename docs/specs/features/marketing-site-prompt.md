@@ -39,7 +39,7 @@ The site should match the app's aesthetic:
 - Tagline: "A companion that remembers, speaks, and evolves"
 - Subtitle: "Local-first AI agent for macOS. Persistent memory. Real voice. Multiple personalities."
 - **Download button** - prominent, links to the latest GitHub Release DMG:
-  `https://github.com/wlilley93/Atrophy/releases/latest/download/Atrophy-1.0.2-arm64.dmg`
+  `https://github.com/wlilley93/Atrophy/releases/latest/download/Atrophy-1.1.0-arm64.dmg`
   Label: "Download for macOS (Apple Silicon)"
   Below it in small text: "Requires macOS 13+. Intel build coming soon." and a link to the GitHub releases page for older versions
 - App icon displayed near the hero
@@ -71,7 +71,7 @@ Small, understated section showing: Electron, TypeScript, Svelte 5, SQLite, Clau
 ### Footer
 - GitHub link: https://github.com/wlilley93/Atrophy
 - "Built by Will Lilley"
-- Version number (1.0.2)
+- Version number (1.1.0)
 
 ## Technical requirements
 - Single HTML file or simple static site (index.html + style.css + main.js)
