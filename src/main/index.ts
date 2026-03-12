@@ -710,10 +710,6 @@ Output EXACTLY this format - a single fenced JSON block:
     if (googleAuthInProgress) return 'in_progress';
     googleAuthInProgress = true;
 
-    const { execFile } = require('child_process');
-    const { promisify } = require('util');
-    const execFileAsync = promisify(execFile);
-
     // Find python3
     const pythonCandidates = [
       process.env.PYTHON_PATH,
@@ -740,16 +736,39 @@ Output EXACTLY this format - a single fenced JSON block:
       if (wantWorkspace) args.push('--workspace');
       if (wantExtra) args.push('--extra');
 
-      // Only pass necessary env vars to subprocess
-      const safeEnv: Record<string, string> = {};
-      for (const k of ['PATH', 'HOME', 'USER', 'LANG', 'TERM', 'PYTHONPATH', 'VIRTUAL_ENV']) {
-        if (process.env[k]) safeEnv[k] = process.env[k]!;
-      }
-      await execFileAsync(pythonPath, [scriptPath, ...args], {
-        timeout: 120_000,
-        env: safeEnv,
+      // Use spawn so the script can open browser and wait for OAuth callback.
+      // Pass full env so gws CLI and browser opening work correctly.
+      const result = await new Promise<string>((resolve) => {
+        const proc = spawn(pythonPath, [scriptPath, ...args], {
+          env: { ...process.env },
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+
+        let stdout = '';
+        let stderr = '';
+        proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+        proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+
+        const timeout = setTimeout(() => {
+          proc.kill();
+          resolve('error: timeout (120s)');
+        }, 120_000);
+
+        proc.on('close', (code) => {
+          clearTimeout(timeout);
+          if (code === 0) {
+            resolve('complete');
+          } else {
+            resolve(`error: ${stderr || stdout || 'exit code ' + code}`);
+          }
+        });
+
+        proc.on('error', (err) => {
+          clearTimeout(timeout);
+          resolve(`error: ${err.message}`);
+        });
       });
-      return 'complete';
+      return result;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return `error: ${msg}`;

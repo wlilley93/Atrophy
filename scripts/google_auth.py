@@ -32,9 +32,38 @@ _EXTRA_SCOPES = [
 ]
 _EXTRA_TOKEN_PATH = Path.home() / ".atrophy" / ".google" / "extra_token.json"
 
-# OAuth client credentials - loaded from env or ~/.atrophy/.env
+# Google's security model for Desktop apps treats these as public
+# (the user still authorizes via browser consent screen).
+# Load from env vars, then fall back to ~/.atrophy/google_oauth.json
 _CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 _CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+
+if not _CLIENT_ID or not _CLIENT_SECRET:
+    # Try loading from local config file
+    _oauth_creds_path = Path.home() / ".atrophy" / "google_oauth.json"
+    if _oauth_creds_path.exists():
+        try:
+            _creds = json.loads(_oauth_creds_path.read_text())
+            _CLIENT_ID = _creds.get("client_id", _CLIENT_ID)
+            _CLIENT_SECRET = _creds.get("client_secret", _CLIENT_SECRET)
+        except Exception:
+            pass
+
+if not _CLIENT_ID or not _CLIENT_SECRET:
+    # Try loading from source repo's google_auth.py (development fallback)
+    _source_script = Path.home() / "Projects" / "Claude Code Projects" / "Atrophy App" / "scripts" / "google_auth.py"
+    if _source_script.exists():
+        try:
+            import re as _re
+            _src = _source_script.read_text()
+            _id_match = _re.search(r'_CLIENT_ID\s*=\s*"([^"]+)"', _src)
+            _secret_match = _re.search(r'_CLIENT_SECRET\s*=\s*"([^"]+)"', _src)
+            if _id_match and not _CLIENT_ID:
+                _CLIENT_ID = _id_match.group(1)
+            if _secret_match and not _CLIENT_SECRET:
+                _CLIENT_SECRET = _secret_match.group(1)
+        except Exception:
+            pass
 
 _GWS_BIN = shutil.which("gws")
 

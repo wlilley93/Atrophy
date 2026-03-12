@@ -16,9 +16,10 @@ out/
 *.db-wal
 *.db-shm
 
-# Avatar assets (large binaries) - tracked for bundled agents like xan
-# Only ignore for dynamically created agents in user data
+# Avatar assets (large binaries) - ignore generated audio for user agents
+# but track pre-baked setup audio for bundled agents (xan)
 agents/*/audio/
+!agents/xan/audio/
 
 # Personal agents (not shipped)
 agents-personal/

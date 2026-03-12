@@ -87,8 +87,6 @@
   let setupServicesSaved: string[] = [];
   /** Services that were skipped */
   let setupServicesSkipped: string[] = [];
-  /** Telegram chat ID (saved via ServiceCard, committed in finishSetup) */
-  let setupTelegramChatId = $state('');
   /** Created agent display name (for creating/done overlays) */
   let setupCreatedAgentName = $state('');
   /** User name from welcome screen */
@@ -343,26 +341,23 @@
     'GitHub',
   ];
 
-  // Narration text for each service transition (spoken by Xan when ElevenLabs is active)
-  const SETUP_NARRATIONS: Record<number, string> = {
-    1: "Good. Now - your visual presence. Fal handles image and video generation for your avatar.",
-    2: "Messaging. This lets your companion reach you directly - check-ins, reminders, morning briefs.",
-    3: "Google Workspace. Calendar, email, drive - if you use Google, this gives your companion eyes on your schedule.",
-    4: "Last one. GitHub. Repos, issues, pull requests.",
+  // Narration text + pre-baked audio for each service transition
+  const SETUP_NARRATIONS: Record<number, { text: string; audio: string }> = {
+    1: { text: "Good. Now - your visual presence. Fal handles image and video generation for your avatar.", audio: 'narration_fal.mp3' },
+    2: { text: "Messaging. This lets your companion reach you directly - check-ins, reminders, morning briefs.", audio: 'narration_telegram.mp3' },
+    3: { text: "Google Workspace. Calendar, email, drive - if you use Google, this gives your companion eyes on your schedule.", audio: 'narration_google.mp3' },
+    4: { text: "Last one. GitHub. Repos, issues, pull requests.", audio: 'narration_github.mp3' },
   };
 
-  /** Whether ElevenLabs was saved during this setup (enables TTS for remaining steps) */
-  let setupVoiceEnabled = $state(false);
-
-  /** Stream narration text word-by-word into chat, optionally voiced via TTS */
-  async function streamNarration(text: string, voiced: boolean): Promise<void> {
+  /** Stream narration text word-by-word into chat, with pre-baked audio playback */
+  async function streamNarration(text: string, audioFile?: string): Promise<void> {
     addMessage('agent', '');
     const words = text.split(' ');
     const msgs = transcript.messages;
 
-    if (voiced && api?.setupSpeak) {
-      // Start TTS in background - don't await it, let it play while text streams
-      const ttsPromise = api.setupSpeak(text).catch(() => {});
+    if (audioFile) {
+      // Play pre-baked audio in background while text streams
+      api?.playAgentAudio?.(audioFile);
 
       // Stream words with timing that roughly matches speech cadence
       const msPerWord = 120; // ~150 wpm
@@ -371,23 +366,22 @@
         accumulated += (i > 0 ? ' ' : '') + words[i];
         if (msgs.length > 0) {
           msgs[msgs.length - 1].content = accumulated;
-        msgs[msgs.length - 1].revealed = accumulated.length;
+          msgs[msgs.length - 1].revealed = accumulated.length;
         }
         await new Promise(r => setTimeout(r, msPerWord));
       }
 
-      // Wait for TTS to finish before proceeding
-      await ttsPromise;
-      // Small buffer after TTS ends
-      await new Promise(r => setTimeout(r, 400));
+      // Estimate audio duration from file size (rough: ~10KB/s for mp3 speech)
+      // Add small buffer after text finishes streaming
+      await new Promise(r => setTimeout(r, 800));
     } else {
-      // No voice - stream text quickly
+      // No audio - stream text quickly
       let accumulated = '';
       for (let i = 0; i < words.length; i++) {
         accumulated += (i > 0 ? ' ' : '') + words[i];
         if (msgs.length > 0) {
           msgs[msgs.length - 1].content = accumulated;
-        msgs[msgs.length - 1].revealed = accumulated.length;
+          msgs[msgs.length - 1].revealed = accumulated.length;
         }
         await new Promise(r => setTimeout(r, 40));
       }
@@ -403,11 +397,6 @@
     const title = SETUP_SERVICE_TITLES[setupServiceStep] || key;
     addMessage('system', `${title} saved.`);
     completeLast();
-
-    // Enable voice for remaining steps if ElevenLabs was just saved
-    if (key === 'ELEVENLABS_API_KEY') {
-      setupVoiceEnabled = true;
-    }
 
     await advanceSetupService();
   }
@@ -435,7 +424,7 @@
 
       const noVoiceKey = setupServicesSkipped.includes('ELEVENLABS_API_KEY');
       if (noVoiceKey) {
-        // No ElevenLabs - play pre-baked farewell, then transition
+        // No ElevenLabs - play pre-baked farewell
         api?.playAgentAudio?.('voice_farewell.mp3');
         addMessage('agent',
           "System configured. This is the last you'll hear of my voice " +
@@ -443,19 +432,14 @@
           "do you want to create?"
         );
         completeLast();
-      } else if (setupVoiceEnabled) {
-        // ElevenLabs active - stream with live TTS
-        await streamNarration('System configured. Now - who do you want to create?', true);
       } else {
-        // Fallback
-        api?.playAgentAudio?.('service_complete.mp3');
-        addMessage('agent', 'System configured. Now - who do you want to create?');
-        completeLast();
+        // Play pre-baked service complete audio
+        await streamNarration('System configured. Now - who do you want to create?', 'service_complete.mp3');
       }
     } else if (narration) {
-      // Hide card, stream narration, then show next card
+      // Hide card, stream narration with pre-baked audio, then show next card
       setupShowServiceCard = false;
-      await streamNarration(narration, setupVoiceEnabled);
+      await streamNarration(narration.text, narration.audio);
       setupShowServiceCard = true;
     } else {
       setupShowServiceCard = true;
@@ -519,6 +503,7 @@
 
   async function finishSetup() {
     setupActive = false;
+    needsSetup = false;
     setupWizardPhase = 'hidden';
 
     if (api) {
@@ -1163,8 +1148,8 @@
     </div>
   {/if}
 
-  <!-- Top bar: agent name - hidden during splash/setup -->
-  <div class="top-bar" class:hidden={updateCheckVisible || splashVisible || setupActive || needsSetup}>
+  <!-- Top bar: agent name - hidden only during update check -->
+  <div class="top-bar" class:hidden={updateCheckVisible}>
     <AgentName
       name={agents.displayName}
       direction={agents.switchDirection}
@@ -1174,8 +1159,8 @@
     />
   </div>
 
-  <!-- Mode buttons (top-right) - hidden during splash/setup -->
-  <div class="mode-buttons" class:hidden={updateCheckVisible || splashVisible || setupActive || needsSetup} data-no-drag>
+  <!-- Mode buttons (top-right) - hidden only during update check -->
+  <div class="mode-buttons" class:hidden={updateCheckVisible} data-no-drag>
     <!-- Eye: toggle avatar -->
     <button
       class="mode-btn"

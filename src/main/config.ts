@@ -108,6 +108,10 @@ export function saveEnvVar(key: string, value: string): boolean {
   fs.writeFileSync(envPath, lines.join('\n') + '\n', { mode: 0o600 });
   // Also set in current process
   process.env[key] = value;
+  // Update cached config singleton so getConfig() sees the new value
+  if (_config && key in _config) {
+    (_config as any)[key] = value;
+  }
   return true;
 }
 

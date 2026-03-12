@@ -71,8 +71,6 @@
   let elevenLabsKey = $state('');
   let falKey = $state('');
   let telegramToken = $state('');
-  let telegramChatId = $state('');
-
   // Verification state
   let elevenLabsVerifying = $state(false);
   let elevenLabsVerified = $state<boolean | null>(null);
@@ -173,6 +171,14 @@
 
   // ---- GitHub auth ----
 
+  // Auto-check GitHub status when the GitHub card appears
+  $effect(() => {
+    const svc = SERVICE_PROMPTS[step];
+    if (svc?.key === 'GITHUB' && githubInstalled === null && !githubChecking) {
+      checkGitHub();
+    }
+  });
+
   async function checkGitHub() {
     if (!api?.githubAuthStatus) return;
     githubChecking = true;
@@ -228,9 +234,6 @@
       onSaved('FAL_KEY');
     } else if (s.key === 'TELEGRAM' && telegramToken.trim()) {
       await api?.saveSecret('TELEGRAM_BOT_TOKEN', telegramToken.trim());
-      if (telegramChatId.trim()) {
-        await api?.updateConfig({ TELEGRAM_CHAT_ID: telegramChatId.trim() });
-      }
       // Start the polling daemon now that credentials are saved
       api?.startTelegramDaemon?.().catch(() => { /* non-critical */ });
       onSaved('TELEGRAM_BOT_TOKEN');
@@ -359,15 +362,6 @@
             autofocus
           />
         </label>
-        <label class="service-field">
-          <span>Chat ID</span>
-          <input
-            type="text"
-            bind:value={telegramChatId}
-            class="svc-input"
-            placeholder="12345678"
-          />
-        </label>
         {#if telegramVerified === true}
           <span class="verify-status verified">Bot verified</span>
         {:else if telegramVerified === false}
@@ -413,8 +407,8 @@
       {:else if svc.key === 'GITHUB'}
         {#if githubInstalled === null}
           <div class="service-card-actions">
-            <button class="svc-btn verify-btn" disabled={githubChecking} onclick={checkGitHub}>
-              {githubChecking ? 'Checking...' : 'Check status'}
+            <button class="svc-btn verify-btn" disabled={true}>
+              Checking...
             </button>
             <button class="svc-btn" onclick={skipCurrentService}>Skip</button>
           </div>
