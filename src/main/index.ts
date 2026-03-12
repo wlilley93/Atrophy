@@ -673,18 +673,6 @@ Output EXACTLY this format - a single fenced JSON block:
     return saveEnvVar(key, value);
   });
 
-  // Synthesise and play text during setup - resolves when playback completes
-  ipcMain.handle('setup:speak', async (_event, text: string) => {
-    try {
-      const audioPath = await synthesise(text);
-      if (audioPath) {
-        await playAudio(audioPath);
-      }
-    } catch (err) {
-      log.error('[setup:speak] TTS failed:', err);
-    }
-  });
-
   ipcMain.handle('setup:createAgent', (_event, agentConfig: Record<string, string>) => {
     const { createAgent } = require('./create-agent');
     const userName = getConfig().USER_NAME || 'User';
@@ -1599,8 +1587,10 @@ app.whenReady().then(() => {
     /* non-critical */
   });
 
+  // Always create tray icon (brain in macOS menu bar)
+  createTray();
+
   if (isMenuBarMode) {
-    createTray();
     // Global shortcut: Cmd+Shift+Space to toggle
     globalShortcut.register('CommandOrControl+Shift+Space', () => {
       if (mainWindow) {

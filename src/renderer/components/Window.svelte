@@ -300,8 +300,6 @@
     // Dismiss the welcome overlay - chat + ambient video visible
     setupWizardPhase = 'hidden';
     setupActive = true;
-    setupJustEnteredChat = true;
-    setTimeout(() => { setupJustEnteredChat = false; }, 800);
 
     // Stream paragraphs one at a time with delays
     api?.playAgentAudio?.('opening.mp3');
@@ -436,6 +434,10 @@
         // Play pre-baked service complete audio
         await streamNarration('System configured. Now - who do you want to create?', 'service_complete.mp3');
       }
+
+      // Trigger InputBar enter animation now that services are done
+      setupJustEnteredChat = true;
+      setTimeout(() => { setupJustEnteredChat = false; }, 800);
     } else if (narration) {
       // Hide card, stream narration with pre-baked audio, then show next card
       setupShowServiceCard = false;
@@ -1307,12 +1309,11 @@
     />
   {/if}
 
-  <!-- Input bar -->
-  {#if !(setupWizardPhase === 'welcome' || splashVisible)}
+  <!-- Input bar - hidden during splash, welcome, and setup service phase -->
+  {#if !(setupWizardPhase === 'welcome' || splashVisible || (setupActive && setupServiceStep < SETUP_SERVICE_TITLES.length))}
     <InputBar
-      onSubmit={setupActive && !setupShowServiceCard && setupServiceStep >= 4 ? setupSubmit : undefined}
-      disabled={setupShowServiceCard}
-      placeholder={setupShowServiceCard ? 'Complete the setup above...' : (setupActive && setupServiceStep >= 4 ? 'Describe who you want to create...' : undefined)}
+      onSubmit={setupActive && setupServiceStep >= SETUP_SERVICE_TITLES.length ? setupSubmit : undefined}
+      placeholder={setupActive && setupServiceStep >= SETUP_SERVICE_TITLES.length ? 'Describe who you want to create...' : undefined}
       enterAnimation={setupActive && setupJustEnteredChat}
     />
   {/if}

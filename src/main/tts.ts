@@ -405,6 +405,9 @@ export async function synthesiseSync(text: string): Promise<string | null> {
 let _activeAfplay: ChildProcess | null = null;
 
 export function playAudio(audioPath: string, rate?: number, cleanupFile = true): Promise<void> {
+  // Stop any currently playing audio to prevent overlap
+  stopCurrentPlayback();
+
   return new Promise((resolve, reject) => {
     const config = getConfig();
     const playbackRate = rate || config.TTS_PLAYBACK_RATE;
