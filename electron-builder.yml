@@ -1,0 +1,51 @@
+appId: com.atrophiedmind.app
+productName: Atrophy
+copyright: Copyright © 2024-2026 Will Lilley
+
+directories:
+  output: dist
+  buildResources: resources
+
+files:
+  - out/**/*
+  - "!out/**/*.map"
+
+mac:
+  category: public.app-category.utilities
+  target:
+    - dmg
+    - zip
+  icon: resources/icons/TheAtrophiedMind.icns
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extraResources:
+    # - from: vendor/whisper.cpp  # uncomment when whisper binary is bundled
+    #   to: whisper
+    #   filter:
+    #     - "**/*"
+    - from: mcp/
+      to: mcp
+      filter:
+        - "**/*.py"
+    - from: scripts/
+      to: scripts
+      filter:
+        - "**/*"
+    - from: agents/
+      to: agents
+      filter:
+        - "**/*"
+    - from: db/
+      to: db
+      filter:
+        - "**/*.sql"
+
+dmg:
+  title: Atrophy
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+
+publish:
+  provider: github
+  owner: willlilley
+  repo: atrophy-app

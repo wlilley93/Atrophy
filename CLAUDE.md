@@ -495,3 +495,20 @@ When porting any module, **read the Python source first**:
 | 8 | `source_repo/core/context.py` | Context assembly logic. |
 | 9 | `source_repo/core/prompts.py` | Prompt loading from Obsidian + fallbacks. |
 | 10 | `source_repo/voice/tts.py` | TTS pipeline with prosody tags. |
+
+---
+
+## 11. Documentation
+
+- `docs/` is the source of truth for all project documentation
+- Any markdown files created during development (guides, specs, architecture notes, references) go in the appropriate `docs/` subdirectory
+- **Specs organisation** - `docs/specs/` has 4 subdirectories:
+  - `architecture/` - Living reference docs (CLAUDE-*.md). One per major module. Always kept up to date.
+  - `features/` - Standalone feature specs, requirements docs, feature inventories.
+  - `decisions/` - Design decisions and proposals. Prefix filenames with `YYYY-MM-DD-` for chronological sorting.
+  - `performance/` - Performance checklists, benchmarks, optimization summaries.
+- Writes to `docs/` auto-sync to Obsidian at `Projects/Atrophy App Electron/Docs/` (PostToolUse hook)
+- On session start, newer Obsidian edits are pulled back into `docs/` automatically
+- Manual full sync: `/sync-project-docs`
+- Project skills are in Obsidian - use `/project-skills` to discover them
+- For full system docs, read `/Users/williamlilley/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind/CLAUDE.md`
