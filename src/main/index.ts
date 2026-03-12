@@ -726,16 +726,25 @@ Output EXACTLY this format - a single fenced JSON block:
 
       // Use spawn so the script can open browser and wait for OAuth callback.
       // Pass full env so gws CLI and browser opening work correctly.
+      // Use 'inherit' for stdio so gws can interact with the terminal and open browser.
       const result = await new Promise<string>((resolve) => {
         const proc = spawn(pythonPath, [scriptPath, ...args], {
           env: { ...process.env },
-          stdio: ['pipe', 'pipe', 'pipe'],
+          stdio: ['inherit', 'pipe', 'pipe'],
         });
 
         let stdout = '';
         let stderr = '';
-        proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
-        proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+        proc.stdout?.on('data', (d: Buffer) => {
+          const chunk = d.toString();
+          stdout += chunk;
+          log.info('[google-oauth] stdout:', chunk.trim());
+        });
+        proc.stderr?.on('data', (d: Buffer) => {
+          const chunk = d.toString();
+          stderr += chunk;
+          log.warn('[google-oauth] stderr:', chunk.trim());
+        });
 
         const timeout = setTimeout(() => {
           proc.kill();

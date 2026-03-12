@@ -41,6 +41,10 @@ mac:
       to: db
       filter:
         - "**/*.sql"
+    - from: resources/icons/
+      to: icons
+      filter:
+        - "menubar_brain*.png"
 
 dmg:
   title: "Atrophy"
