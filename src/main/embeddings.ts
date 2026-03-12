@@ -75,7 +75,10 @@ export async function embed(text: string): Promise<Float32Array> {
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   if (!texts.length) return [];
 
-  const pipe = await loadPipeline() as (texts: string[], opts: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
+  const pipe = await loadPipeline() as (
+    input: string | string[],
+    opts: Record<string, unknown>,
+  ) => Promise<{ data: Float32Array; dims: number[] }>;
 
   // Process in chunks to manage memory
   const chunkSize = 32;
@@ -84,10 +87,18 @@ export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   for (let i = 0; i < texts.length; i += chunkSize) {
     const chunk = texts.slice(i, i + chunkSize);
 
-    // Transformers.js handles batching internally
-    for (const text of chunk) {
-      const vec = await embed(text);
-      results.push(vec);
+    // Pass the whole chunk as an array - Transformers.js pipeline accepts
+    // batched string inputs and returns a tensor with shape [n, dim].
+    const output = await pipe(chunk, {
+      pooling: 'mean',
+      normalize: true,
+    });
+
+    // output.data is a flat Float32Array of length n * EMBEDDING_DIM.
+    // Slice it into individual vectors.
+    for (let j = 0; j < chunk.length; j++) {
+      const start = j * EMBEDDING_DIM;
+      results.push(new Float32Array(output.data.slice(start, start + EMBEDDING_DIM)));
     }
   }
 

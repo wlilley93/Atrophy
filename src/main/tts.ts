@@ -182,8 +182,19 @@ async function synthesiseElevenLabsStream(text: string): Promise<string> {
   }
 
   const tmpPath = secureTmp('.mp3');
-  const buffer = Buffer.from(await response.arrayBuffer());
-  fs.writeFileSync(tmpPath, buffer);
+
+  // Stream chunks to disk as they arrive - avoids buffering the entire
+  // response in memory and reduces time-to-first-byte latency.
+  const fileHandle = fs.createWriteStream(tmpPath);
+  const reader = response.body!.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    fileHandle.write(Buffer.from(value));
+  }
+  fileHandle.end();
+  await new Promise<void>((resolve) => fileHandle.on('finish', resolve));
+
   return tmpPath;
 }
 
@@ -295,6 +306,34 @@ function synthesiseMacOS(text: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// Silent audio file - returned when text is empty/too short.
+// Matches Python behavior: callers always get a valid file path.
+// ---------------------------------------------------------------------------
+
+// Minimal WAV: 44-byte header, zero data samples, 16kHz mono 16-bit PCM.
+const SILENT_WAV_HEADER = Buffer.from([
+  0x52, 0x49, 0x46, 0x46, // "RIFF"
+  0x24, 0x00, 0x00, 0x00, // file size - 8 (36 bytes remaining)
+  0x57, 0x41, 0x56, 0x45, // "WAVE"
+  0x66, 0x6d, 0x74, 0x20, // "fmt "
+  0x10, 0x00, 0x00, 0x00, // subchunk1 size (16)
+  0x01, 0x00,             // PCM format
+  0x01, 0x00,             // 1 channel
+  0x80, 0x3e, 0x00, 0x00, // 16000 Hz sample rate
+  0x00, 0x7d, 0x00, 0x00, // byte rate (32000)
+  0x02, 0x00,             // block align
+  0x10, 0x00,             // 16 bits per sample
+  0x64, 0x61, 0x74, 0x61, // "data"
+  0x00, 0x00, 0x00, 0x00, // data size (0 - silence)
+]);
+
+function writeSilentFile(): string {
+  const tmpPath = secureTmp('.wav');
+  fs.writeFileSync(tmpPath, SILENT_WAV_HEADER);
+  return tmpPath;
+}
+
+// ---------------------------------------------------------------------------
 // Main interface
 // ---------------------------------------------------------------------------
 
@@ -303,10 +342,11 @@ export async function synthesise(text: string): Promise<string | null> {
   text = text.replace(CODE_BLOCK_RE, '');
   text = text.replace(INLINE_CODE_RE, '');
 
-  // Check for empty/too-short text
+  // Check for empty/too-short text - return a silent file so callers
+  // always receive a valid path (matches Python behavior)
   const { text: cleaned } = processProsody(text);
   if (!cleaned || cleaned.trim().length < 8) {
-    return null; // Nothing to say
+    return writeSilentFile();
   }
 
   const config = getConfig();

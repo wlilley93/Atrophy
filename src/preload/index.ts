@@ -37,6 +37,7 @@ export interface AtrophyAPI {
 
   // Config
   getConfig: () => Promise<Record<string, unknown>>;
+  applyConfig: (updates: Record<string, unknown>) => Promise<void>;
   updateConfig: (updates: Record<string, unknown>) => Promise<void>;
 
   // Setup
@@ -48,6 +49,7 @@ export interface AtrophyAPI {
 
   // Window
   toggleFullscreen: () => Promise<void>;
+  toggleAlwaysOnTop: () => Promise<void>;
   minimizeWindow: () => Promise<void>;
   closeWindow: () => Promise<void>;
 
@@ -72,6 +74,7 @@ export interface AtrophyAPI {
   onUpdateError: (cb: (message: string) => void) => () => void;
 
   // Avatar
+  getAvatarAmbientPath: () => Promise<string | null>;
   getAvatarVideoPath: (colour?: string, clip?: string) => Promise<string | null>;
   listAvatarLoops: () => Promise<string[]>;
   onAvatarDownloadStart: (cb: () => void) => () => void;
@@ -136,6 +139,14 @@ export interface AtrophyAPI {
   drainAgentQueue: (agentName: string) => Promise<unknown[]>;
   drainAllAgentQueues: () => Promise<Record<string, unknown[]>>;
 
+  // Voice call mode
+  startCall: () => Promise<void>;
+  stopCall: () => Promise<void>;
+  getCallStatus: () => Promise<{ active: boolean; status: string; muted: boolean }>;
+  setCallMuted: (muted: boolean) => Promise<void>;
+  sendCallChunk: (buffer: ArrayBuffer) => void;
+  onCallStatusChanged: (cb: (status: string) => void) => () => void;
+
   // Generic listener
   on: (channel: string, cb: (...args: unknown[]) => void) => () => void;
 }
@@ -181,6 +192,7 @@ const api: AtrophyAPI = {
 
   // Config
   getConfig: () => ipcRenderer.invoke('config:get'),
+  applyConfig: (updates) => ipcRenderer.invoke('config:apply', updates),
   updateConfig: (updates) => ipcRenderer.invoke('config:update', updates),
 
   // Setup
@@ -192,6 +204,7 @@ const api: AtrophyAPI = {
 
   // Window
   toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
+  toggleAlwaysOnTop: () => ipcRenderer.invoke('window:toggleAlwaysOnTop'),
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
 
@@ -216,6 +229,7 @@ const api: AtrophyAPI = {
   onUpdateError: createListener('updater:error') as AtrophyAPI['onUpdateError'],
 
   // Avatar
+  getAvatarAmbientPath: () => ipcRenderer.invoke('avatar:getAmbientPath'),
   getAvatarVideoPath: (colour, clip) => ipcRenderer.invoke('avatar:getVideoPath', colour, clip),
   listAvatarLoops: () => ipcRenderer.invoke('avatar:listLoops'),
   onAvatarDownloadStart: createListener('avatar:download-start') as AtrophyAPI['onAvatarDownloadStart'],
@@ -280,6 +294,14 @@ const api: AtrophyAPI = {
   drainAgentQueue: (agentName: string) => ipcRenderer.invoke('queue:drainAgent', agentName),
   drainAllAgentQueues: () => ipcRenderer.invoke('queue:drainAll'),
 
+  // Voice call mode
+  startCall: () => ipcRenderer.invoke('call:start', null, null),
+  stopCall: () => ipcRenderer.invoke('call:stop'),
+  getCallStatus: () => ipcRenderer.invoke('call:status'),
+  setCallMuted: (muted) => ipcRenderer.invoke('call:setMuted', muted),
+  sendCallChunk: (buffer) => ipcRenderer.send('call:chunk', buffer),
+  onCallStatusChanged: createListener('call:statusChanged') as AtrophyAPI['onCallStatusChanged'],
+
   // Channel listener with allowlist
   on: (channel, cb) => {
     const ALLOWED_CHANNELS = new Set([
@@ -295,6 +317,7 @@ const api: AtrophyAPI = {
       'avatar:download-start', 'avatar:download-progress',
       'avatar:download-complete', 'avatar:download-error',
       'mirror:avatarProgress',
+      'call:statusChanged',
       'app:shutdownRequested',
     ]);
     if (!ALLOWED_CHANNELS.has(channel)) {

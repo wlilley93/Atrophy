@@ -286,7 +286,26 @@
     };
   }
 
+  /**
+   * Apply updates to the running config only - not persisted to disk.
+   * Useful for testing runtime changes before committing them.
+   */
   async function apply() {
+    if (!api) return;
+    try {
+      await api.applyConfig(gatherUpdates());
+      saveStatus = 'Applied (not saved)';
+      setTimeout(() => saveStatus = '', 3000);
+    } catch {
+      saveStatus = 'Error';
+    }
+  }
+
+  /**
+   * Apply updates to the running config AND persist to disk.
+   * Also saves any changed secrets to .env.
+   */
+  async function save() {
     if (!api) return;
     try {
       await api.updateConfig(gatherUpdates());
@@ -300,18 +319,10 @@
       if (telegramBotToken && telegramBotToken !== '***') {
         await api.saveSecret('TELEGRAM_BOT_TOKEN', telegramBotToken);
       }
-      saveStatus = 'Applied';
+      saveStatus = 'Saved';
       setTimeout(() => saveStatus = '', 2000);
     } catch {
       saveStatus = 'Error';
-    }
-  }
-
-  async function save() {
-    await apply();
-    if (saveStatus !== 'Error') {
-      saveStatus = 'Saved';
-      setTimeout(() => saveStatus = '', 2000);
     }
   }
 

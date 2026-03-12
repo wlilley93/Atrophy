@@ -109,12 +109,12 @@
     background: rgba(12, 12, 14, 0.95);
     backdrop-filter: blur(20px);
     pointer-events: auto;
-    transform: translateY(8px) scale(0.97);
-    transition: transform 0.3s ease;
+    transform: translateX(100%);
+    transition: transform 0.3s ease-out;
   }
 
   .canvas-overlay.visible .canvas-pip {
-    transform: translateY(0) scale(1);
+    transform: translateX(0);
   }
 
   .close-btn {

@@ -45,6 +45,9 @@ let _cliSessionId: string | null = null;
 let _systemPrompt: string | null = null;
 let _getWindow: (() => BrowserWindow | null) | null = null;
 
+// External callback to propagate CLI session ID changes
+let _setCliSessionIdExternal: ((id: string) => void) | null = null;
+
 // Audio chunk accumulation for VAD
 let _chunks: Float32Array[] = [];
 let _speechStarted = false;
@@ -137,15 +140,40 @@ export function offCallEvent(
 // IPC registration - call this once at startup
 // ---------------------------------------------------------------------------
 
-export function registerCallHandlers(getWindow: () => BrowserWindow | null): void {
+/**
+ * Register IPC handlers for the call module.
+ *
+ * @param getWindow - returns the main BrowserWindow
+ * @param getSystemPrompt - returns the current system prompt (loaded lazily by main)
+ * @param getCliSessionId - returns the current CLI session ID
+ * @param setCliSessionId - updates the CLI session ID when inference rotates it
+ */
+export function registerCallHandlers(
+  getWindow: () => BrowserWindow | null,
+  getSystemPrompt?: () => string | null,
+  getCliSessionId?: () => string | null,
+  setCliSessionId?: (id: string) => void,
+): void {
+  // Store the session ID setter so the loop can propagate new IDs
+  _setCliSessionIdExternal = setCliSessionId || null;
+
   // Receive PCM chunks from renderer during a call
   ipcMain.on('call:chunk', (_event, buffer: ArrayBuffer) => {
     if (!_active) return;
     _ingestChunk(new Float32Array(buffer));
   });
 
-  ipcMain.handle('call:start', (_event, systemPrompt: string, cliSessionId: string | null) => {
-    startCall(systemPrompt, cliSessionId, getWindow);
+  ipcMain.handle('call:start', (_event, systemPrompt: string | null, cliSessionId: string | null) => {
+    // Use provided values or fall back to main process state
+    const prompt = systemPrompt || getSystemPrompt?.() || null;
+    const sessionId = cliSessionId || getCliSessionId?.() || null;
+
+    if (!prompt) {
+      log.warn('cannot start call - no system prompt available');
+      return;
+    }
+
+    startCall(prompt, sessionId, getWindow);
   });
 
   ipcMain.handle('call:stop', () => {
@@ -360,6 +388,8 @@ function _runInference(text: string): Promise<string | null> {
           fullText = evt.fullText;
           if (evt.sessionId) {
             _cliSessionId = evt.sessionId;
+            // Propagate the updated session ID back to the main process
+            _setCliSessionIdExternal?.(evt.sessionId);
           }
           _getWindow?.()?.webContents.send('inference:done', fullText);
           resolve(fullText || null);

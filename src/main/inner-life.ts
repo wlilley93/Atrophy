@@ -73,12 +73,48 @@ const TRUST_HALF_LIFE = 8;
 
 function emotionLabel(name: string, value: number): string {
   const labels: Record<string, [number, string][]> = {
-    connection: [[0.7, 'present, engaged'], [0.4, 'attentive'], [0, 'distant']],
-    curiosity: [[0.7, 'deeply curious'], [0.4, 'interested'], [0, 'disengaged']],
-    confidence: [[0.7, 'grounded, sure'], [0.4, 'steady'], [0, 'uncertain']],
-    warmth: [[0.7, 'warm, open'], [0.4, 'neutral'], [0, 'guarded']],
-    frustration: [[0.6, 'frustrated'], [0.3, 'mildly tense'], [0, 'calm']],
-    playfulness: [[0.6, 'playful'], [0.3, 'light'], [0, 'serious']],
+    connection: [
+      [0.85, 'deeply present'],
+      [0.7, 'present, engaged'],
+      [0.5, 'steady'],
+      [0.3, 'distant'],
+      [0.0, 'withdrawn'],
+    ],
+    curiosity: [
+      [0.8, 'something caught your attention'],
+      [0.6, 'curious'],
+      [0.4, 'neutral'],
+      [0.2, 'flat'],
+      [0.0, 'disengaged'],
+    ],
+    confidence: [
+      [0.8, 'sure of your read'],
+      [0.6, 'fairly clear'],
+      [0.4, 'reading the room'],
+      [0.2, 'uncertain'],
+      [0.0, 'lost'],
+    ],
+    warmth: [
+      [0.8, 'tender'],
+      [0.6, 'warm'],
+      [0.4, 'neutral'],
+      [0.2, 'cool'],
+      [0.0, 'guarded'],
+    ],
+    frustration: [
+      [0.7, 'sharp, frustrated'],
+      [0.5, 'irritated'],
+      [0.3, 'mildly annoyed'],
+      [0.15, 'a twinge'],
+      [0.0, 'calm'],
+    ],
+    playfulness: [
+      [0.7, 'feeling light'],
+      [0.5, 'playful'],
+      [0.3, 'a little'],
+      [0.1, 'flat'],
+      [0.0, 'serious'],
+    ],
   };
 
   const thresholds = labels[name] || [[0, name]];
@@ -117,7 +153,6 @@ function applyDecay(state: EmotionalState): EmotionalState {
     ...state,
     emotions,
     trust,
-    last_updated: new Date().toISOString(),
   };
 }
 
@@ -174,7 +209,7 @@ export function updateEmotions(
   const emotions = { ...state.emotions };
   for (const [key, delta] of Object.entries(deltas) as [keyof Emotions, number][]) {
     if (key in emotions) {
-      emotions[key] = clamp(emotions[key] + delta);
+      emotions[key] = Math.round(clamp(emotions[key] + delta) * 1000) / 1000;
     }
   }
   const updated = { ...state, emotions };
@@ -190,7 +225,7 @@ export function updateTrust(
   // Max +/-0.05 per call
   const clamped = clamp(delta, -0.05, 0.05);
   const trust = { ...state.trust };
-  trust[domain] = clamp(trust[domain] + clamped);
+  trust[domain] = Math.round(clamp(trust[domain] + clamped) * 1000) / 1000;
   const updated = { ...state, trust };
   saveState(updated);
   return updated;
@@ -202,20 +237,24 @@ export function updateTrust(
 
 export function formatForContext(state?: EmotionalState): string {
   const s = state || loadState();
-  const lines: string[] = ['## Inner State'];
+  const lines: string[] = ['## Internal State'];
 
-  for (const [key, value] of Object.entries(s.emotions)) {
-    lines.push(`- ${key}: ${emotionLabel(key, value)} (${value.toFixed(2)})`);
+  // Match Python order: connection, curiosity, warmth, frustration, playfulness, confidence
+  const emotionOrder: (keyof Emotions)[] = [
+    'connection', 'curiosity', 'warmth', 'frustration', 'playfulness', 'confidence',
+  ];
+  for (const key of emotionOrder) {
+    const value = s.emotions[key];
+    const label = emotionLabel(key, value);
+    const name = key.charAt(0).toUpperCase() + key.slice(1);
+    lines.push(`${name}: ${value.toFixed(2)} (${label})`);
   }
 
-  lines.push('');
-  lines.push('## Trust');
-  for (const [key, value] of Object.entries(s.trust)) {
-    lines.push(`- ${key}: ${value.toFixed(2)}`);
-  }
+  const trustParts = Object.entries(s.trust).map(([d, v]) => `${d} ${v.toFixed(2)}`);
+  lines.push(`\nTrust: ${trustParts.join(', ')}`);
 
   if (s.session_tone) {
-    lines.push(`\nSession tone: ${s.session_tone}`);
+    lines.push(`Session tone: ${s.session_tone}`);
   }
 
   return lines.join('\n');

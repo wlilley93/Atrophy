@@ -22,6 +22,13 @@
   let audioContext: AudioContext | null = null;
   let workletNode: AudioWorkletNode | ScriptProcessorNode | null = null;
 
+  // -- Voice call mode (continuous hands-free conversation) --
+  let callActive = $state(false);
+  let callStatus = $state<string>('idle'); // idle, listening, thinking, speaking
+  let callStream: MediaStream | null = null;
+  let callAudioCtx: AudioContext | null = null;
+  let callProcessor: ScriptProcessorNode | null = null;
+
   // Keystroke sound (macOS Tink)
   let lastSound = 0;
   function playKeystroke() {
@@ -153,9 +160,88 @@
     }
   }
 
+  // -- Voice call mode: start/stop --
+
+  async function toggleCall() {
+    const api = (window as any).atrophy;
+    if (!api) return;
+
+    if (callActive) {
+      await stopCallMode();
+    } else {
+      await startCallMode();
+    }
+  }
+
+  async function startCallMode() {
+    const api = (window as any).atrophy;
+    if (!api || callActive) return;
+
+    try {
+      // Open mic stream for continuous capture
+      callStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+
+      callAudioCtx = new AudioContext({ sampleRate: 16000 });
+      const source = callAudioCtx.createMediaStreamSource(callStream);
+
+      // Send PCM chunks to main process via call:chunk IPC
+      callProcessor = callAudioCtx.createScriptProcessor(1600, 1, 1);
+      callProcessor.onaudioprocess = (e) => {
+        if (!callActive) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const buffer = new Float32Array(input);
+        api.sendCallChunk(buffer.buffer.slice(0));
+      };
+
+      source.connect(callProcessor);
+      callProcessor.connect(callAudioCtx.destination);
+
+      // Tell main process to start the call loop
+      await api.startCall();
+      callActive = true;
+      callStatus = 'listening';
+    } catch (err) {
+      console.error('[call] failed to start:', err);
+      await stopCallMode();
+    }
+  }
+
+  async function stopCallMode() {
+    const api = (window as any).atrophy;
+    callActive = false;
+    callStatus = 'idle';
+
+    // Clean up audio pipeline
+    if (callProcessor) {
+      callProcessor.disconnect();
+      callProcessor = null;
+    }
+    if (callAudioCtx) {
+      callAudioCtx.close().catch(() => {});
+      callAudioCtx = null;
+    }
+    if (callStream) {
+      callStream.getTracks().forEach((t) => t.stop());
+      callStream = null;
+    }
+
+    // Tell main process to stop the call loop
+    if (api) {
+      await api.stopCall().catch(() => {});
+    }
+  }
+
   // Push-to-talk: Ctrl key detection
   function onGlobalKeydown(e: KeyboardEvent) {
-    if (e.key === 'Control' && !isRecording && session.inferenceState === 'idle') {
+    if (e.key === 'Control' && !isRecording && !callActive && session.inferenceState === 'idle') {
       startRecording();
     }
   }
@@ -247,6 +333,19 @@
         audio.isPlaying = false;
         audio.vignetteOpacity = 0;
       }),
+      // Voice call status updates from main process
+      api.onCallStatusChanged((status: string) => {
+        callStatus = status;
+        if (status === 'idle') {
+          // Call ended from main process side - clean up renderer
+          if (callActive) {
+            callActive = false;
+            if (callProcessor) { callProcessor.disconnect(); callProcessor = null; }
+            if (callAudioCtx) { callAudioCtx.close().catch(() => {}); callAudioCtx = null; }
+            if (callStream) { callStream.getTracks().forEach((t: MediaStreamTrack) => t.stop()); callStream = null; }
+          }
+        }
+      }),
     ];
 
     // Push-to-talk keyboard events
@@ -258,30 +357,67 @@
       window.removeEventListener('keydown', onGlobalKeydown);
       window.removeEventListener('keyup', onGlobalKeyup);
       if (isRecording) stopRecording();
+      if (callActive) stopCallMode();
     };
   });
 
   let isActive = $derived(session.inferenceState !== 'idle');
+
+  // Derive a placeholder that reflects call state
+  let callPlaceholder = $derived(
+    callActive
+      ? callStatus === 'listening' ? 'Listening...'
+        : callStatus === 'thinking' ? 'Thinking...'
+        : callStatus === 'speaking' ? 'Speaking...'
+        : 'In call...'
+      : ''
+  );
 </script>
 
 <div class="bar-container" data-no-drag>
-  <div class="input-bar" class:recording={isRecording}>
+  <div class="input-bar" class:recording={isRecording} class:in-call={callActive}>
     <input
       bind:this={inputEl}
       bind:value={inputText}
       onkeydown={onKeydown}
-      placeholder={isRecording ? 'Listening...' : (customPlaceholder || 'Message...')}
+      placeholder={callActive ? callPlaceholder : isRecording ? 'Listening...' : (customPlaceholder || 'Message...')}
       type="text"
       class="input-field"
-      disabled={isActive || isRecording || externalDisabled}
+      disabled={isActive || isRecording || callActive || externalDisabled}
     />
 
-    <!-- Mic button -->
+    <!-- Call button (phone icon) - toggle voice call mode -->
+    <button
+      class="call-btn"
+      class:active={callActive}
+      class:listening={callActive && callStatus === 'listening'}
+      class:thinking={callActive && callStatus === 'thinking'}
+      class:speaking={callActive && callStatus === 'speaking'}
+      onclick={toggleCall}
+      disabled={isRecording || (isActive && !callActive)}
+      aria-label={callActive ? 'End call' : 'Start voice call'}
+      title={callActive ? 'End call' : 'Voice call'}
+    >
+      {#if callActive}
+        <!-- Phone off / hang up icon -->
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <path d="M23.71 16.67C20.66 13.78 16.54 12 12 12S3.34 13.78.29 16.67a1 1 0 0 0 0 1.41l2.12 2.12a1 1 0 0 0 1.41 0 12.6 12.6 0 0 1 3.51-2.37 1 1 0 0 0 .58-.91V14a13.94 13.94 0 0 1 8.18 0v2.92a1 1 0 0 0 .58.91 12.6 12.6 0 0 1 3.51 2.37 1 1 0 0 0 1.41 0l2.12-2.12a1 1 0 0 0 0-1.41z"/>
+        </svg>
+      {:else}
+        <!-- Phone icon -->
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+        </svg>
+      {/if}
+    </button>
+
+    <!-- Mic button (push-to-talk) -->
     <button
       class="mic-btn"
       class:recording={isRecording}
       onmousedown={isRecording ? undefined : startRecording}
       onmouseup={isRecording ? stopRecording : undefined}
+      disabled={callActive}
       aria-label={isRecording ? 'Stop recording' : 'Record'}
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill={isRecording ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2">
@@ -297,6 +433,7 @@
       class="action-btn"
       onclick={isActive ? stop : submit}
       class:active={isActive}
+      disabled={callActive}
       aria-label={isActive ? 'Stop' : 'Send'}
     >
       {#if isActive}
@@ -337,6 +474,10 @@
     border-color: rgba(255, 80, 80, 0.5);
   }
 
+  .input-bar.in-call {
+    border-color: rgba(80, 200, 120, 0.5);
+  }
+
   .input-field {
     flex: 1;
     height: 100%;
@@ -347,7 +488,7 @@
     font-family: var(--font-sans);
     font-size: 14px;
     padding: 0 20px;
-    padding-right: 90px;
+    padding-right: 128px;
   }
 
   .input-field::placeholder {
@@ -360,6 +501,68 @@
 
   .input-field:disabled {
     opacity: 0.5;
+  }
+
+  .call-btn {
+    position: absolute;
+    right: calc(var(--pad) + 82px);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .call-btn:hover {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .call-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .call-btn.active {
+    color: rgba(80, 200, 120, 0.9);
+    background: rgba(80, 200, 120, 0.15);
+  }
+
+  .call-btn.active:hover {
+    color: rgba(255, 80, 80, 0.9);
+    background: rgba(255, 80, 80, 0.15);
+  }
+
+  .call-btn.listening {
+    animation: pulse-call 2s ease-in-out infinite;
+  }
+
+  .call-btn.thinking {
+    animation: pulse-call-think 1s ease-in-out infinite;
+  }
+
+  .call-btn.speaking {
+    animation: pulse-call-speak 0.8s ease-in-out infinite;
+  }
+
+  @keyframes pulse-call {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  @keyframes pulse-call-think {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  @keyframes pulse-call-speak {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(80, 200, 120, 0.3); }
+    50% { box-shadow: 0 0 8px 2px rgba(80, 200, 120, 0.15); }
   }
 
   .mic-btn {
@@ -380,6 +583,11 @@
 
   .mic-btn:hover {
     color: rgba(255, 255, 255, 0.7);
+  }
+
+  .mic-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 
   .mic-btn.recording {
@@ -417,6 +625,11 @@
   .action-btn.active {
     background: rgba(255, 255, 255, 0.78);
     color: rgba(0, 0, 0, 0.8);
+  }
+
+  .action-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 
   .action-btn.active:hover {

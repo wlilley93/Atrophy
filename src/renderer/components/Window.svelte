@@ -17,7 +17,7 @@
   import { audio } from '../stores/audio.svelte';
   import { agents } from '../stores/agents.svelte';
 
-  import { addMessage, completeLast } from '../stores/transcript.svelte';
+  import { addMessage, completeLast, transcript } from '../stores/transcript.svelte';
   import { getArtifact } from '../stores/artifacts.svelte';
 
   const api = (window as any).atrophy;
@@ -109,6 +109,25 @@
   let silenceTimerId: ReturnType<typeof setTimeout> | null = null;
   let silenceTimerEnabled = true;
   let silenceTimeoutMs = 5 * 60 * 1000; // default 5 minutes
+
+  // Status bar metrics
+  let lastResponseMs = $state<number | null>(null);
+  let contextUsagePercent = $state<number | null>(null);
+  let inferenceStartTime = 0;
+
+  // Track inference timing via session state changes
+  $effect(() => {
+    if (session.inferenceState === 'thinking') {
+      inferenceStartTime = Date.now();
+    } else if (session.inferenceState === 'idle' && inferenceStartTime > 0) {
+      lastResponseMs = Date.now() - inferenceStartTime;
+      inferenceStartTime = 0;
+    }
+  });
+
+  // Journal nudge state - once per session
+  let journalNudgeShown = $state(false);
+  let journalNudgeVisible = $state(false);
 
   // ---------------------------------------------------------------------------
   // Boot sequence
@@ -544,6 +563,19 @@
       ipcCleanups.push(api.on('artefact:loading', () => {
         hasNewArtefacts = true;
       }));
+
+      // Context usage updates from main process
+      ipcCleanups.push(api.on('inference:contextUsage', (percent: number) => {
+        contextUsagePercent = percent;
+      }));
+
+      // Journal nudge from main process (silence-based)
+      ipcCleanups.push(api.on('journal:nudge', () => {
+        if (!journalNudgeShown) {
+          journalNudgeVisible = true;
+          journalNudgeShown = true;
+        }
+      }));
     }
 
     // Listen for shutdown signal from main process
@@ -780,6 +812,21 @@
       e.preventDefault();
       toggleWake();
     }
+    // Cmd+Shift+C : copy last agent message to clipboard
+    else if (e.metaKey && e.shiftKey && e.key === 'C') {
+      e.preventDefault();
+      copyLastAgentMessage();
+    }
+    // Cmd+Shift+T : toggle timer overlay
+    else if (e.metaKey && e.shiftKey && e.key === 'T') {
+      e.preventDefault();
+      showTimer = !showTimer;
+    }
+    // Cmd+Shift+A : toggle always-on-top
+    else if (e.metaKey && e.shiftKey && e.key === 'A') {
+      e.preventDefault();
+      api?.toggleAlwaysOnTop?.();
+    }
     // Escape: close overlays in priority order
     else if (e.key === 'Escape') {
       if (showSettings) showSettings = false;
@@ -787,6 +834,17 @@
       else if (showCanvas) showCanvas = false;
       else if (showTimer) showTimer = false;
       else if (silencePromptVisible) dismissSilencePrompt();
+    }
+  }
+
+  /** Copy the most recent agent message text to the clipboard. */
+  function copyLastAgentMessage() {
+    const msgs = transcript.messages;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'agent' && msgs[i].content.trim()) {
+        navigator.clipboard.writeText(msgs[i].content).catch(() => {});
+        return;
+      }
     }
   }
 
@@ -801,7 +859,7 @@
 <div class="window">
   <!-- Background orb / avatar layer -->
   {#if avatarVisible}
-    <OrbAvatar />
+    <OrbAvatar pip={showArtefact} ambientMode={splashVisible || setupActive} />
   {/if}
 
   <!-- Warm vignette overlay (shows during audio playback) -->
@@ -1107,6 +1165,25 @@
   <!-- Mirror custom setup (shown when switching to Mirror for the first time) -->
   {#if mirrorSetupVisible}
     <MirrorSetup onComplete={() => { mirrorSetupVisible = false; }} />
+  {/if}
+
+  <!-- Status bar - response time and context usage -->
+  {#if lastResponseMs !== null || contextUsagePercent !== null}
+    <div class="status-bar">
+      {#if lastResponseMs !== null}
+        <span class="status-metric">{lastResponseMs}ms</span>
+      {/if}
+      {#if contextUsagePercent !== null}
+        <span class="status-metric">ctx {contextUsagePercent}%</span>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Journal nudge - gentle suggestion after silence -->
+  {#if journalNudgeVisible}
+    <button class="journal-nudge" onclick={() => { journalNudgeVisible = false; }}>
+      <span class="journal-nudge-text">been a while - want to write something down?</span>
+    </button>
   {/if}
 </div>
 
@@ -1426,6 +1503,59 @@
 
   .ask-dismiss:hover {
     color: var(--text-secondary);
+  }
+
+  /* -- Status bar -- */
+
+  .status-bar {
+    position: absolute;
+    bottom: 4px;
+    right: 12px;
+    z-index: 8;
+    display: flex;
+    gap: 12px;
+    pointer-events: none;
+    opacity: 0.35;
+    transition: opacity 0.3s;
+  }
+
+  .status-bar:hover {
+    opacity: 0.6;
+  }
+
+  .status-metric {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+  }
+
+  /* -- Journal nudge -- */
+
+  .journal-nudge {
+    position: absolute;
+    bottom: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 12;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    animation: silenceFadeIn 1.5s ease forwards;
+  }
+
+  .journal-nudge-text {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+    opacity: 0.5;
+    transition: opacity 0.3s;
+  }
+
+  .journal-nudge:hover .journal-nudge-text {
+    opacity: 0.9;
   }
 </style>
 

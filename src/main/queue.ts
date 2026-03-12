@@ -22,7 +22,7 @@ export interface QueuedMessage {
 }
 
 // ---------------------------------------------------------------------------
-// File locking
+// File locking (async - non-blocking)
 // ---------------------------------------------------------------------------
 
 const LOCK_RETRY_INTERVAL_MS = 50;
@@ -30,13 +30,20 @@ const LOCK_TIMEOUT_MS = 5000;
 const LOCK_STALE_MS = 30000; // consider lock stale after 30s
 
 /**
- * Acquire an exclusive lock file. Uses O_CREAT | O_EXCL (wx flag) for atomic
- * creation - only one process can create the file. Retries with backoff up to
- * the timeout. Stale locks (older than LOCK_STALE_MS) are removed automatically.
+ * Wait for the given number of milliseconds without blocking the event loop.
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Acquire an exclusive lock file asynchronously. Uses O_CREAT | O_EXCL (wx flag)
+ * for atomic creation - only one process can create the file. Retries with
+ * setTimeout-based delay up to the timeout, never blocking the event loop.
  *
  * Returns the lock file path on success so the caller can release it.
  */
-function acquireLock(queueFile: string): string {
+async function acquireLock(queueFile: string): Promise<string> {
   const lockPath = queueFile + '.lock';
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
 
@@ -63,8 +70,8 @@ function acquireLock(queueFile: string): string {
           // Lock file vanished between check and stat - retry
           continue;
         }
-        // Wait and retry
-        sleepSync(LOCK_RETRY_INTERVAL_MS);
+        // Wait without blocking the event loop, then retry
+        await delay(LOCK_RETRY_INTERVAL_MS);
       } else {
         // Unexpected error (permissions, disk full, etc.) - throw
         throw err;
@@ -87,25 +94,11 @@ function releaseLock(lockPath: string): void {
 }
 
 /**
- * Synchronous sleep using setTimeout polling.
- * Avoids blocking the main process event loop (Atomics.wait blocks the
- * entire thread). Since queue operations are infrequent and short-lived,
- * spinning for a few ms is acceptable.
- */
-function sleepSync(ms: number): void {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    // Yield to the event loop would require async, but this is called from
-    // synchronous lock acquisition. Keep the spin short - 50ms max per call.
-  }
-}
-
-/**
- * Execute a function while holding an exclusive file lock on the queue file.
+ * Execute an async function while holding an exclusive file lock on the queue file.
  * The lock is always released, even if the function throws.
  */
-function withLock<T>(queueFile: string, fn: () => T): T {
-  const lockPath = acquireLock(queueFile);
+async function withLock<T>(queueFile: string, fn: () => T): Promise<T> {
+  const lockPath = await acquireLock(queueFile);
   try {
     return fn();
   } finally {
@@ -117,16 +110,16 @@ function withLock<T>(queueFile: string, fn: () => T): T {
 // Queue operations
 // ---------------------------------------------------------------------------
 
-export function queueMessage(
+export async function queueMessage(
   text: string,
   source = 'task',
   audioPath = '',
-): void {
+): Promise<void> {
   const config = getConfig();
   const queueFile = config.MESSAGE_QUEUE_FILE;
   fs.mkdirSync(path.dirname(queueFile), { recursive: true });
 
-  withLock(queueFile, () => {
+  await withLock(queueFile, () => {
     // Read existing queue
     let queue: QueuedMessage[] = [];
     try {
@@ -146,7 +139,7 @@ export function queueMessage(
   });
 }
 
-export function drainQueue(): QueuedMessage[] {
+export async function drainQueue(): Promise<QueuedMessage[]> {
   const config = getConfig();
   const queueFile = config.MESSAGE_QUEUE_FILE;
 
@@ -176,7 +169,7 @@ export function drainQueue(): QueuedMessage[] {
  * Drain message queue for a specific agent.
  * Used during boot and agent switching to deliver pending messages.
  */
-export function drainAgentQueue(agentName: string): QueuedMessage[] {
+export async function drainAgentQueue(agentName: string): Promise<QueuedMessage[]> {
   const queueFile = path.join(
     USER_DATA,
     'agents',
@@ -206,7 +199,7 @@ export function drainAgentQueue(agentName: string): QueuedMessage[] {
 /**
  * Drain all agents' queues. Returns a map of agent name to messages.
  */
-export function drainAllAgentQueues(): Record<string, QueuedMessage[]> {
+export async function drainAllAgentQueues(): Promise<Record<string, QueuedMessage[]>> {
   const agentsDir = path.join(USER_DATA, 'agents');
   const result: Record<string, QueuedMessage[]> = {};
 
@@ -214,7 +207,7 @@ export function drainAllAgentQueues(): Record<string, QueuedMessage[]> {
 
   const agents = fs.readdirSync(agentsDir);
   for (const agent of agents) {
-    const messages = drainAgentQueue(agent);
+    const messages = await drainAgentQueue(agent);
     if (messages.length > 0) {
       result[agent] = messages;
     }

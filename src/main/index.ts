@@ -27,12 +27,14 @@ import { registerBotCommands } from './telegram';
 import { listJobs, toggleCron } from './cron';
 import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
+import { registerCallHandlers } from './call';
 import { getAppIcon, getTrayIcon, TrayState } from './icon';
 import { initAutoUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater';
 import { ensureAvatarAssets } from './avatar-downloader';
 import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSourcePhoto } from './jobs/generate-mirror-avatar';
 import type { MirrorAvatarProgress } from './jobs/generate-mirror-avatar';
 import { parseArtifacts } from './artifact-parser';
+import { loadCachedOpening, generateOpening, cacheNextOpening } from './opening';
 import { createLogger } from './logger';
 
 const log = createLogger('main');
@@ -337,33 +339,45 @@ function registerIpcHandlers(): void {
     return discoverAgents();
   });
 
+  // Allowlist of keys safe to update from the renderer
+  const agentKeys = new Set([
+    'AGENT_DISPLAY_NAME', 'OPENING_LINE', 'TTS_BACKEND', 'TTS_PLAYBACK_RATE',
+    'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL', 'ELEVENLABS_STABILITY',
+    'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
+    'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
+    'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
+    'DISABLED_TOOLS', 'WAKE_WORDS',
+  ]);
+  const userKeys = new Set([
+    'USER_NAME', 'INPUT_MODE', 'PTT_KEY', 'WAKE_WORD_ENABLED',
+    'WAKE_CHUNK_SECONDS', 'SAMPLE_RATE', 'MAX_RECORD_SEC',
+    'CLAUDE_BIN', 'CLAUDE_EFFORT', 'ADAPTIVE_EFFORT', 'CONTEXT_SUMMARIES',
+    'MAX_CONTEXT_TOKENS', 'VECTOR_SEARCH_WEIGHT', 'EMBEDDING_MODEL',
+    'EMBEDDING_DIM', 'SESSION_SOFT_LIMIT_MINS', 'NOTIFICATIONS_ENABLED',
+    'SILENCE_TIMER_ENABLED', 'SILENCE_TIMER_MINUTES',
+    'EYE_MODE_DEFAULT', 'MUTE_BY_DEFAULT',
+    'AVATAR_ENABLED', 'AVATAR_RESOLUTION', 'OBSIDIAN_VAULT',
+    'setup_complete',
+  ]);
+  const safeKeys = new Set([...agentKeys, ...userKeys]);
+
+  // Apply updates to running config only - no disk write.
+  // Lets users test runtime changes before committing them.
+  ipcMain.handle('config:apply', (_event, updates: Record<string, unknown>) => {
+    const c = getConfig();
+    for (const [key, value] of Object.entries(updates)) {
+      if (!safeKeys.has(key)) continue;
+      if (key in c) {
+        (c as Record<string, unknown>)[key] = value;
+      }
+    }
+  });
+
+  // Apply updates to running config AND persist to disk.
   ipcMain.handle('config:update', (_event, updates: Record<string, unknown>) => {
-    // Apply updates to running config and save
     const c = getConfig();
     const userUpdates: Record<string, unknown> = {};
     const agentUpdates: Record<string, unknown> = {};
-
-    // Allowlist of keys safe to update from the renderer
-    const agentKeys = new Set([
-      'AGENT_DISPLAY_NAME', 'OPENING_LINE', 'TTS_BACKEND', 'TTS_PLAYBACK_RATE',
-      'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL', 'ELEVENLABS_STABILITY',
-      'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
-      'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
-      'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
-      'DISABLED_TOOLS', 'WAKE_WORDS',
-    ]);
-    const userKeys = new Set([
-      'USER_NAME', 'INPUT_MODE', 'PTT_KEY', 'WAKE_WORD_ENABLED',
-      'WAKE_CHUNK_SECONDS', 'SAMPLE_RATE', 'MAX_RECORD_SEC',
-      'CLAUDE_BIN', 'CLAUDE_EFFORT', 'ADAPTIVE_EFFORT', 'CONTEXT_SUMMARIES',
-      'MAX_CONTEXT_TOKENS', 'VECTOR_SEARCH_WEIGHT', 'EMBEDDING_MODEL',
-      'EMBEDDING_DIM', 'SESSION_SOFT_LIMIT_MINS', 'NOTIFICATIONS_ENABLED',
-      'SILENCE_TIMER_ENABLED', 'SILENCE_TIMER_MINUTES',
-      'EYE_MODE_DEFAULT', 'MUTE_BY_DEFAULT',
-      'AVATAR_ENABLED', 'AVATAR_RESOLUTION', 'OBSIDIAN_VAULT',
-      'setup_complete',
-    ]);
-    const safeKeys = new Set([...agentKeys, ...userKeys]);
 
     const previousUserName = c.USER_NAME;
 
@@ -429,6 +443,12 @@ function registerIpcHandlers(): void {
     }
   });
 
+  ipcMain.handle('window:toggleAlwaysOnTop', () => {
+    if (mainWindow) {
+      mainWindow.setAlwaysOnTop(!mainWindow.isAlwaysOnTop());
+    }
+  });
+
   ipcMain.handle('window:minimize', () => {
     if (mainWindow) mainWindow.minimize();
   });
@@ -445,9 +465,37 @@ function registerIpcHandlers(): void {
 
   // ── Opening line ──
 
-  ipcMain.handle('opening:get', () => {
+  ipcMain.handle('opening:get', async () => {
     const config = getConfig();
-    return config.OPENING_LINE || `Ready. Where are we?`;
+
+    // 1. Try cached opening (instant if available and time bracket matches)
+    const cached = loadCachedOpening();
+    if (cached) {
+      log.info('[opening] Using cached opening');
+      // Pre-generate next opening in background
+      if (systemPrompt) {
+        cacheNextOpening(systemPrompt, currentSession?.cliSessionId);
+      }
+      return cached.text;
+    }
+
+    // 2. Generate dynamically if system prompt is loaded
+    if (systemPrompt) {
+      try {
+        const result = await generateOpening(
+          systemPrompt,
+          currentSession?.cliSessionId,
+        );
+        // Cache next opening in background for next launch
+        cacheNextOpening(systemPrompt, currentSession?.cliSessionId);
+        return result.text;
+      } catch (err) {
+        log.error('[opening] Generation failed, falling back to static:', err);
+      }
+    }
+
+    // 3. Fall back to static config line
+    return config.OPENING_LINE || 'Ready. Where are we?';
   });
 
   ipcMain.handle('setup:check', () => {
@@ -912,6 +960,21 @@ Output EXACTLY this format - a single fenced JSON block:
 
   // ── Avatar video ──
 
+  // Return path to the agent's ambient video (e.g. xan_ambient.mp4)
+  ipcMain.handle('avatar:getAmbientPath', () => {
+    const c = getConfig();
+    const avatarDir = c.AVATAR_DIR;
+    // Try {agentName}_ambient.mp4 first, then ambient.mp4
+    for (const name of [`${c.AGENT_NAME}_ambient.mp4`, 'ambient.mp4']) {
+      const p = path.join(avatarDir, name);
+      if (fs.existsSync(p)) return p;
+    }
+    // Also check loops/ambient_loop.mp4 as fallback
+    const loopAmbient = path.join(avatarDir, 'loops', 'ambient_loop.mp4');
+    if (fs.existsSync(loopAmbient)) return loopAmbient;
+    return null;
+  });
+
   ipcMain.handle('avatar:getVideoPath', (_event, colour?: string, clip?: string) => {
     const c = getConfig();
     const loopsDir = path.join(c.AVATAR_DIR, 'loops');
@@ -1269,6 +1332,22 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   registerAudioHandlers(() => mainWindow);
   registerWakeWordHandlers();
+  registerCallHandlers(
+    () => mainWindow,
+    () => {
+      // Lazily initialize session and system prompt (same as inference:send)
+      if (!currentSession) {
+        currentSession = new Session();
+        currentSession.start();
+      }
+      if (!systemPrompt) {
+        systemPrompt = loadSystemPrompt();
+      }
+      return systemPrompt;
+    },
+    () => currentSession?.cliSessionId || null,
+    (id: string) => { if (currentSession) currentSession.setCliSessionId(id); },
+  );
 
   // TTS playback callbacks
   setPlaybackCallbacks({
@@ -1314,8 +1393,8 @@ app.whenReady().then(() => {
   }, 5 * 60 * 1000);
 
   // Queue poller - check for messages from background jobs every 10s
-  queueTimer = setInterval(() => {
-    const messages = drainQueue();
+  queueTimer = setInterval(async () => {
+    const messages = await drainQueue();
     for (const msg of messages) {
       if (mainWindow) {
         mainWindow.webContents.send('queue:message', msg);

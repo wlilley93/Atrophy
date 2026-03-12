@@ -6,6 +6,14 @@
   import type { EmotionType } from '../stores/emotion-colours.svelte';
   import { agents } from '../stores/agents.svelte';
 
+  interface Props {
+    pip?: boolean;
+    /** When true, play the agent's ambient video and skip emotion clips. */
+    ambientMode?: boolean;
+  }
+
+  let { pip = false, ambientMode = false }: Props = $props();
+
   const api = (window as any).atrophy;
 
   let videoEl = $state<HTMLVideoElement | null>(null);
@@ -20,6 +28,9 @@
   // Track which agent + emotion the video is showing
   let loadedAgent = '';
   let loadedEmotion: string | null = null;
+
+  // Whether we're currently showing the ambient video
+  let showingAmbient = false;
 
   // Monotonic counter to discard stale async results
   let loadGeneration = 0;
@@ -43,6 +54,28 @@
   // Video loading
   // ---------------------------------------------------------------------------
 
+  /** Load the agent's ambient video (e.g. xan_ambient.mp4). */
+  async function loadAmbient(generation: number) {
+    if (!api?.getAvatarAmbientPath) return false;
+    try {
+      const filePath = await api.getAvatarAmbientPath();
+      if (generation !== loadGeneration) return false;
+      if (filePath) {
+        const newSrc = `file://${filePath}`;
+        if (newSrc !== videoSrc) {
+          videoSrc = newSrc;
+          videoReady = false;
+        }
+        videoError = false;
+        showingAmbient = true;
+        return true;
+      }
+    } catch {
+      if (generation !== loadGeneration) return false;
+    }
+    return false;
+  }
+
   async function loadVideo(generation: number, colour = 'blue', clip = 'bounce_playful') {
     if (!api) return;
     try {
@@ -55,6 +88,7 @@
           videoReady = false;
         }
         videoError = false;
+        showingAmbient = false;
       } else {
         videoError = true;
       }
@@ -79,6 +113,7 @@
           videoReady = false;
         }
         videoError = false;
+        showingAmbient = false;
       }
     } catch {
       // API unavailable or errored - loadAllLoops returns with allLoops empty,
@@ -88,6 +123,11 @@
 
   /** Cycle to the next loop when the current one ends. */
   function onVideoEnded() {
+    if (showingAmbient) {
+      // Ambient is a long video - just loop it
+      videoEl?.play().catch(() => {});
+      return;
+    }
     if (allLoops.length <= 1) {
       // Single loop - just replay
       videoEl?.play().catch(() => {});
@@ -233,39 +273,64 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Reactivity: reload video on agent switch
+  // Reactivity: reload video on agent switch or ambient mode change
   // ---------------------------------------------------------------------------
 
   $effect(() => {
     const agent = agents.current;
-    if (!agent || agent === loadedAgent) return;
-    loadedAgent = agent;
-    loadedEmotion = null;
+    const wantAmbient = ambientMode;
+    // Re-run when agent changes OR ambientMode toggles
+    if (!agent) return;
 
-    // Bump generation so in-flight loads from the previous agent are discarded
+    const agentChanged = agent !== loadedAgent;
+    const modeChanged = wantAmbient !== showingAmbient;
+    if (!agentChanged && !modeChanged) return;
+
+    if (agentChanged) {
+      loadedAgent = agent;
+      loadedEmotion = null;
+    }
+
+    // Bump generation so in-flight loads from previous state are discarded
     const gen = ++loadGeneration;
 
-    // Reset state for new agent
+    // Reset state
     videoSrc = '';
     videoReady = false;
     videoError = false;
     allLoops = [];
+    showingAmbient = false;
 
-    // Try to load all loops first, fall back to single-clip load
-    loadAllLoops(gen).then(() => {
-      if (gen !== loadGeneration) return;
-      if (allLoops.length === 0) {
-        loadVideo(gen);
-      }
-    });
+    if (wantAmbient) {
+      // Ambient mode: try to load the agent's ambient video
+      loadAmbient(gen).then((loaded) => {
+        if (gen !== loadGeneration) return;
+        if (!loaded) {
+          // No ambient video - fall through to loops/canvas
+          loadAllLoops(gen).then(() => {
+            if (gen !== loadGeneration) return;
+            if (allLoops.length === 0) loadVideo(gen);
+          });
+        }
+      });
+    } else {
+      // Emotion loop mode: load loops or single clip
+      loadAllLoops(gen).then(() => {
+        if (gen !== loadGeneration) return;
+        if (allLoops.length === 0) {
+          loadVideo(gen);
+        }
+      });
+    }
   });
 
   // ---------------------------------------------------------------------------
-  // Reactivity: switch video clip on emotion change
+  // Reactivity: switch video clip on emotion change (only in non-ambient mode)
   // ---------------------------------------------------------------------------
 
   $effect(() => {
     const emotion = activeEmotion.type;
+    if (ambientMode) return; // Don't switch clips in ambient mode
     if (emotion === loadedEmotion) return;
     loadedEmotion = emotion;
 
@@ -308,10 +373,22 @@
         // Retry loading the video now that files are available
         videoError = false;
         const gen = loadGeneration;
-        loadAllLoops(gen).then(() => {
-          if (gen !== loadGeneration) return;
-          if (allLoops.length === 0) loadVideo(gen);
-        });
+        if (ambientMode) {
+          loadAmbient(gen).then((loaded) => {
+            if (gen !== loadGeneration) return;
+            if (!loaded) {
+              loadAllLoops(gen).then(() => {
+                if (gen !== loadGeneration) return;
+                if (allLoops.length === 0) loadVideo(gen);
+              });
+            }
+          });
+        } else {
+          loadAllLoops(gen).then(() => {
+            if (gen !== loadGeneration) return;
+            if (allLoops.length === 0) loadVideo(gen);
+          });
+        }
       });
       if (c3) cleanups.push(c3);
       const c4 = api.onAvatarDownloadError?.(() => {
@@ -332,49 +409,106 @@
   });
 </script>
 
-<!-- Video layer (full-bleed, hidden until ready) -->
-{#if videoSrc && !videoError}
-  <video
-    bind:this={videoEl}
-    class="avatar-video"
-    class:visible={videoReady}
-    src={videoSrc}
-    oncanplay={onVideoCanPlay}
-    onerror={onVideoError}
-    onended={onVideoEnded}
-    loop={allLoops.length <= 1}
-    muted
-    playsinline
-    preload="auto"
-  ></video>
-{/if}
-
-<!-- Canvas fallback (shown when video not available) -->
-{#if !videoReady}
-  <canvas
-    bind:this={canvas}
-    class="orb-canvas"
-  ></canvas>
-{/if}
-
-<!-- Download progress overlay -->
-{#if downloading}
-  <div class="download-overlay">
-    <div class="download-label">downloading avatar</div>
-    <div class="download-bar">
-      <div class="download-fill" style="width: {downloadPercent}%"></div>
+<div class="orb-root" class:pip>
+  <!-- Video layer (full-bleed, hidden until ready) -->
+  {#if videoSrc && !videoError}
+    <div class="video-drift" class:drifting={videoReady && !showingAmbient}>
+      <video
+        bind:this={videoEl}
+        class="avatar-video"
+        class:visible={videoReady}
+        src={videoSrc}
+        oncanplay={onVideoCanPlay}
+        onerror={onVideoError}
+        onended={onVideoEnded}
+        loop={showingAmbient || allLoops.length <= 1}
+        muted
+        playsinline
+        preload="auto"
+      ></video>
     </div>
-    <div class="download-percent">{downloadPercent}%</div>
-  </div>
-{/if}
+  {/if}
+
+  <!-- Canvas fallback (shown when video not available) -->
+  {#if !videoReady}
+    <canvas
+      bind:this={canvas}
+      class="orb-canvas"
+    ></canvas>
+  {/if}
+
+  <!-- Download progress overlay -->
+  {#if downloading}
+    <div class="download-overlay">
+      <div class="download-label">downloading avatar</div>
+      <div class="download-bar">
+        <div class="download-fill" style="width: {downloadPercent}%"></div>
+      </div>
+      <div class="download-percent">{downloadPercent}%</div>
+    </div>
+  {/if}
+</div>
 
 <style>
+  /* -- Root container - handles PIP transition -- */
+
+  .orb-root {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .orb-root.pip {
+    position: fixed;
+    inset: auto 16px 16px auto;
+    width: 120px;
+    height: 120px;
+    border-radius: 16px;
+    overflow: hidden;
+    z-index: 50;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* -- Ken Burns drift wrapper (disabled for ambient video) -- */
+
+  .video-drift {
+    position: absolute;
+    inset: -5%;
+    width: 110%;
+    height: 110%;
+    z-index: 0;
+  }
+
+  .video-drift.drifting {
+    animation: kenBurnsDrift 45s ease-in-out infinite alternate;
+  }
+
+  @keyframes kenBurnsDrift {
+    0% {
+      transform: scale(1.05) translate(0%, 0%);
+    }
+    25% {
+      transform: scale(1.10) translate(-1.5%, 1%);
+    }
+    50% {
+      transform: scale(1.15) translate(1%, -1.5%);
+    }
+    75% {
+      transform: scale(1.08) translate(1.5%, 1.5%);
+    }
+    100% {
+      transform: scale(1.12) translate(-1%, -0.5%);
+    }
+  }
+
   .avatar-video {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    z-index: 0;
     pointer-events: none;
     object-fit: cover;
     opacity: 0;

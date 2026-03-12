@@ -81,7 +81,7 @@ const TOOL_BLACKLIST = [
 // Period/question/exclamation followed by space or end
 const SENTENCE_RE = /(?<=[.!?])\s+|(?<=[.!?])$/;
 // Clause boundary: comma/semicolon/dash followed by space
-const CLAUSE_RE = /(?<=[,;\-])\s+/;
+const CLAUSE_RE = /(?<=[,; \u2013\-])\s+/;
 // Min chars before clause-level split
 const CLAUSE_SPLIT_THRESHOLD = 120;
 
@@ -283,7 +283,10 @@ function buildAgencyContext(userMessage: string): string {
   }
 
   // Session mood
-  // (mood tracking is done at session level, checked via memory)
+  const sessionMood = memory.getCurrentSessionMood();
+  if (sessionMood === 'heavy') {
+    parts.push('The session mood is heavy. Be present before being useful. Don\'t try to fix, reframe, or redirect unless asked.');
+  }
 
   // Time-gap awareness
   const lastTime = memory.getLastSessionTime();
@@ -349,9 +352,10 @@ function buildAgencyContext(userMessage: string): string {
     if (otherAgents.length > 0) {
       const crossParts = ['## Other Agents - Recent Activity'];
       for (const oa of otherAgents) {
-        crossParts.push(`### ${oa.agent}`);
+        crossParts.push(`### ${oa.display_name || oa.agent}`);
         for (const s of oa.summaries) {
-          crossParts.push(`[${s.created_at}] ${s.content}`);
+          const mood = s.mood ? ` [${s.mood}]` : '';
+          crossParts.push(`[${s.created_at}]${mood} ${s.content}`);
         }
       }
       crossParts.push(

@@ -208,10 +208,18 @@ export function getDb(): Database.Database {
 export function initDb(dbPath?: string): void {
   const p = dbPath || getConfig().DB_PATH;
   const db = connect(p);
-  migrate(db);
   const config = getConfig();
   const schema = fs.readFileSync(config.SCHEMA_PATH, 'utf-8');
-  db.exec(schema);
+  // Match Python approach: try schema first, then migrate + schema.
+  // This handles edge cases where schema references columns not yet migrated.
+  try {
+    db.exec(schema);
+  } catch {
+    // Schema has new columns/indexes the old DB lacks - migrate first
+    migrate(db);
+    db.exec(schema);
+  }
+  migrate(db);
 }
 
 function migrate(db: Database.Database): void {
@@ -236,13 +244,44 @@ function migrate(db: Database.Database): void {
     safeAddColumn('turns', 'weight', 'INTEGER DEFAULT 1');
     safeAddColumn('turns', 'topic_tags', 'TEXT');
 
-    // Migrate legacy role 'companion' -> 'agent' from Python-era databases
-    const legacyRows = db
-      .prepare("SELECT COUNT(*) as cnt FROM turns WHERE role = 'companion'")
-      .get() as { cnt: number };
-    if (legacyRows.cnt > 0) {
-      db.prepare("UPDATE turns SET role = 'agent' WHERE role = 'companion'").run();
-      log.info(`renamed ${legacyRows.cnt} turns from role 'companion' to 'agent'`);
+    // Migrate legacy role 'companion' -> 'agent' and drop old CHECK constraint.
+    // SQLite can't alter CHECK constraints, so we recreate via temp table swap.
+    const checkSql = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'")
+      .get() as { sql: string } | undefined;
+    if (checkSql && (checkSql.sql || '').includes("'companion'")) {
+      db.exec(`
+        CREATE TABLE turns_tmp (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id  INTEGER REFERENCES sessions(id),
+          role        TEXT NOT NULL,
+          content     TEXT NOT NULL,
+          timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+          topic_tags  TEXT,
+          weight      INTEGER DEFAULT 1,
+          channel     TEXT DEFAULT 'direct',
+          embedding   BLOB
+        );
+        INSERT INTO turns_tmp SELECT * FROM turns;
+        UPDATE turns_tmp SET role = 'agent' WHERE role = 'companion';
+        DROP TABLE turns;
+        CREATE TABLE turns (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id  INTEGER REFERENCES sessions(id),
+          role        TEXT NOT NULL CHECK(role IN ('will', 'agent')),
+          content     TEXT NOT NULL,
+          timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+          topic_tags  TEXT,
+          weight      INTEGER DEFAULT 1 CHECK(weight BETWEEN 1 AND 5),
+          channel     TEXT DEFAULT 'direct',
+          embedding   BLOB
+        );
+        INSERT INTO turns SELECT * FROM turns_tmp;
+        DROP TABLE turns_tmp;
+        CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
+        CREATE INDEX IF NOT EXISTS idx_turns_timestamp ON turns(timestamp);
+      `);
+      log.info('migrated turns table: companion -> agent with correct CHECK constraint');
     }
   }
 
@@ -574,10 +613,14 @@ export function updateActivation(table: string, rowId: number): void {
   if (!allowed.includes(table)) return;
 
   const db = getDb();
-  if (table === 'observations') {
+  // Dynamically check if the table has activation and last_accessed columns
+  const cols = new Set(
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name),
+  );
+  if (cols.has('activation') && cols.has('last_accessed')) {
     db.prepare(
-      `UPDATE observations
-       SET activation = MIN(1.0, activation + 0.2),
+      `UPDATE ${table}
+       SET activation = MIN(1.0, COALESCE(activation, 0.5) + 0.2),
            last_accessed = CURRENT_TIMESTAMP
        WHERE id = ?`,
     ).run(rowId);
@@ -963,12 +1006,14 @@ export function getToolAudit(opts?: {
 // ---------------------------------------------------------------------------
 
 export function getContextInjection(nSummaries = 3): string {
+  const config = getConfig();
+  const userName = config.USER_NAME || 'User';
   const parts: string[] = [];
 
   // Latest identity snapshot
   const identity = getLatestIdentity();
   if (identity) {
-    parts.push('## Identity\n' + identity.content);
+    parts.push(`## Who ${userName} Is (Current Understanding)\n` + identity.content);
   }
 
   // Active threads
@@ -976,18 +1021,19 @@ export function getContextInjection(nSummaries = 3): string {
   if (threads.length > 0) {
     parts.push(
       '## Active Threads\n' +
-        threads.map((t) => `- **${t.name}**: ${t.summary || '(no summary)'}`).join('\n'),
+        threads.map((t) => `- **${t.name}**: ${t.summary || 'No summary yet'}`).join('\n'),
     );
   }
 
-  // Recent summaries
+  // Recent summaries - reversed to show oldest-first (matches Python)
   const summaries = getRecentSummaries(nSummaries);
   if (summaries.length > 0) {
     parts.push(
       '## Recent Sessions\n' +
         summaries
+          .reverse()
           .map((s) => `[${s.created_at}] ${s.content}`)
-          .join('\n\n'),
+          .join('\n'),
     );
   }
 
@@ -1002,17 +1048,27 @@ export function getOtherAgentsRecentSummaries(
   nPerAgent = 2,
   maxAgents = 5,
   currentAgent?: string,
-): { agent: string; summaries: { content: string; created_at: string; mood: string | null }[] }[] {
+): { agent: string; display_name: string; summaries: { content: string; created_at: string; mood: string | null }[] }[] {
   const agentsDir = path.join(USER_DATA, 'agents');
   if (!fs.existsSync(agentsDir)) return [];
 
   const current = currentAgent || getConfig().AGENT_NAME;
-  const results: { agent: string; summaries: { content: string; created_at: string; mood: string | null }[] }[] = [];
+  const results: { agent: string; display_name: string; summaries: { content: string; created_at: string; mood: string | null }[] }[] = [];
 
   const agents = fs.readdirSync(agentsDir).filter((n) => n !== current);
   for (const agent of agents.slice(0, maxAgents)) {
     const dbPath = path.join(agentsDir, agent, 'data', 'memory.db');
     if (!fs.existsSync(dbPath)) continue;
+
+    // Read display_name from agent manifest
+    let displayName = agent.charAt(0).toUpperCase() + agent.slice(1);
+    try {
+      const manifestPath = path.join(agentsDir, agent, 'data', 'agent.json');
+      if (fs.existsSync(manifestPath)) {
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        if (manifest.display_name) displayName = manifest.display_name;
+      }
+    } catch { /* use fallback */ }
 
     try {
       const db = connect(dbPath);
@@ -1025,7 +1081,7 @@ export function getOtherAgentsRecentSummaries(
         )
         .all(nPerAgent) as { content: string; created_at: string; mood: string | null }[];
       if (rows.length > 0) {
-        results.push({ agent, summaries: rows });
+        results.push({ agent, display_name: displayName, summaries: rows });
       }
     } catch {
       continue;
@@ -1078,6 +1134,42 @@ export function searchOtherAgentMemory(
       error: `Failed to search ${agentName}'s memory: ${err}`,
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Session mood query
+// ---------------------------------------------------------------------------
+
+export function getCurrentSessionMood(): string | null {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT mood FROM sessions ORDER BY id DESC LIMIT 1')
+    .get() as { mood: string | null } | undefined;
+  return row?.mood || null;
+}
+
+// ---------------------------------------------------------------------------
+// Vector search wrapper - bumps activation on access
+// ---------------------------------------------------------------------------
+
+export async function searchMemory(
+  query: string,
+  n = 5,
+): Promise<{ _source_table: string; _score: number; [key: string]: unknown }[]> {
+  // Lazy import to avoid circular dependency at module load time
+  const { search } = await import('./vector-search');
+  const results = await search(query, n);
+
+  // Bump activation for each accessed memory so it doesn't decay without reinforcement
+  for (const r of results) {
+    const table = r._source_table;
+    const rowId = r.id as number | undefined;
+    if (table && rowId) {
+      updateActivation(table, rowId);
+    }
+  }
+
+  return results;
 }
 
 // ---------------------------------------------------------------------------

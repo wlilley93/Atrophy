@@ -10,6 +10,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { USER_DATA } from './config';
+import { getDb } from './memory';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,6 +35,33 @@ export interface ActivityItem {
   action: string;
   detail: string;
   flagged: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Log a usage record to the current agent's database
+// ---------------------------------------------------------------------------
+
+/**
+ * Write a single usage record to the usage_log table.
+ * Called after each inference call completes to track token consumption,
+ * latency, and tool usage per source (gui, telegram, heartbeat, etc.).
+ */
+export function logUsage(
+  source: string,
+  tokensIn: number,
+  tokensOut: number,
+  durationMs: number,
+  toolCount: number,
+): void {
+  try {
+    const db = getDb();
+    db.prepare(
+      `INSERT INTO usage_log (timestamp, source, tokens_in, tokens_out, duration_ms, tool_count)
+       VALUES (datetime('now'), ?, ?, ?, ?, ?)`,
+    ).run(source, tokensIn, tokensOut, durationMs, toolCount);
+  } catch {
+    // Non-fatal - usage logging should never break inference
+  }
 }
 
 // ---------------------------------------------------------------------------

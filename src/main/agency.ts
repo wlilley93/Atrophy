@@ -57,14 +57,32 @@ export function sessionPatternNote(sessionCount: number, times: string[]): strin
   if (sessionCount < 3) return null;
 
   const hours = times.map((t) => new Date(t).getHours());
-  const isEvening = hours.every((h) => h >= 18);
-  const isMorning = hours.every((h) => h >= 6 && h < 12);
-  const isLate = hours.every((h) => h >= 23 || h < 4);
 
-  if (isEvening) return `${sessionCount} sessions this week. All evenings.`;
-  if (isMorning) return `${sessionCount} sessions this week. All mornings.`;
-  if (isLate) return `${sessionCount} sessions this week. All late night.`;
-  return null;
+  // 70% threshold for time clustering (matches Python behavior)
+  const evening = hours.filter((h) => h >= 18 && h < 23).length;
+  const morning = hours.filter((h) => h >= 7 && h < 12).length;
+  const lateNight = hours.filter((h) => h >= 23 || h < 4).length;
+
+  let timeLabel: string | null = null;
+  if (evening >= sessionCount * 0.7) {
+    timeLabel = 'All evenings.';
+  } else if (morning >= sessionCount * 0.7) {
+    timeLabel = 'All mornings.';
+  } else if (lateNight >= sessionCount * 0.7) {
+    timeLabel = 'All late nights.';
+  }
+
+  const ordinals: Record<number, string> = {
+    3: 'Third', 4: 'Fourth', 5: 'Fifth', 6: 'Sixth', 7: 'Seventh',
+  };
+  const countStr = ordinals[sessionCount] || `${sessionCount}th`;
+
+  let note = `${countStr} session this week.`;
+  if (timeLabel) {
+    note += ` ${timeLabel}`;
+  }
+
+  return note;
 }
 
 // ---------------------------------------------------------------------------
