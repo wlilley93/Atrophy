@@ -682,10 +682,13 @@ Output EXACTLY this format - a single fenced JSON block:
 
     // Resume or create new session for target agent
     const resumed = resumeAgentSession(data.target);
-    if (resumed && currentSession) {
+    currentSession = new Session();
+    currentSession.start();
+    if (resumed) {
       currentSession.setCliSessionId(resumed.cliSessionId);
       currentSession.turnHistory = resumed.turnHistory as typeof currentSession.turnHistory;
     }
+    systemPrompt = null; // Force reload for new agent
 
     resetDeferralCounter();
 

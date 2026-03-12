@@ -214,8 +214,20 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
   let sessionId = session.cliSessionId || '';
 
   const emitter = streamInference(message, systemPrompt, session.cliSessionId);
+  let streamEnded = false;
+
+  // Clean up on client disconnect - release lock and stop inference
+  res.on('close', () => {
+    if (!streamEnded) {
+      streamEnded = true;
+      inferLock = false;
+      stopInference();
+    }
+  });
 
   emitter.on('event', (evt: InferenceEvent) => {
+    if (streamEnded) return;
+
     switch (evt.type) {
       case 'TextDelta':
         res.write(`data: ${JSON.stringify({ type: 'text', content: evt.text })}\n\n`);
@@ -234,11 +246,13 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
           session!.addTurn('agent', fullText);
         }
 
+        streamEnded = true;
         res.write(`data: ${JSON.stringify({ type: 'done', full_text: fullText })}\n\n`);
         inferLock = false;
         res.end();
         break;
       case 'StreamError':
+        streamEnded = true;
         res.write(`data: ${JSON.stringify({ type: 'error', message: evt.message })}\n\n`);
         inferLock = false;
         res.end();
