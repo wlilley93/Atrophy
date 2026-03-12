@@ -42,6 +42,9 @@ export interface AtrophyAPI {
   // Setup
   needsSetup: () => Promise<boolean>;
   wizardInference: (text: string) => Promise<string>;
+  createAgent: (config: Record<string, string>) => Promise<Record<string, unknown>>;
+  saveSecret: (key: string, value: string) => Promise<void>;
+  startGoogleOAuth: (wantWorkspace: boolean, wantExtra: boolean) => Promise<string>;
 
   // Window
   toggleFullscreen: () => Promise<void>;
@@ -133,6 +136,9 @@ const api: AtrophyAPI = {
   // Setup
   needsSetup: () => ipcRenderer.invoke('setup:check'),
   wizardInference: (text) => ipcRenderer.invoke('setup:inference', text),
+  createAgent: (config) => ipcRenderer.invoke('setup:createAgent', config),
+  saveSecret: (key, value) => ipcRenderer.invoke('setup:saveSecret', key, value),
+  startGoogleOAuth: (wantWorkspace, wantExtra) => ipcRenderer.invoke('setup:googleOAuth', wantWorkspace, wantExtra),
 
   // Window
   toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),

@@ -1,11 +1,14 @@
 <script lang="ts">
   /**
-   * First-launch wizard: brain intro -> name -> AI-driven agent creation -> service cards -> done.
+   * First-launch wizard: brain intro -> name -> services -> AI agent creation -> done.
    * Port of display/setup_wizard.py.
+   *
+   * Flow matches Python: services collected BEFORE AI chat so Xan knows
+   * which services are available. Keys saved to ~/.atrophy/.env (not config.json).
    */
   import { onMount, onDestroy } from 'svelte';
 
-  type Phase = 'intro' | 'welcome' | 'create' | 'elevenlabs' | 'telegram' | 'done';
+  type Phase = 'intro' | 'welcome' | 'elevenlabs' | 'fal' | 'telegram' | 'google' | 'create' | 'done';
 
   let phase = $state<Phase>('intro');
   let userName = $state('');
@@ -15,14 +18,27 @@
 
   // Service keys
   let elevenLabsKey = $state('');
+  let falKey = $state('');
   let telegramToken = $state('');
   let telegramChatId = $state('');
 
   // Service verification state
   let elevenLabsVerifying = $state(false);
   let elevenLabsVerified = $state<boolean | null>(null);
+  let falVerifying = $state(false);
+  let falVerified = $state<boolean | null>(null);
   let telegramVerifying = $state(false);
   let telegramVerified = $state<boolean | null>(null);
+
+  // Google OAuth state
+  let googleWorkspace = $state(true);
+  let googleExtra = $state(true);
+  let googleAuthing = $state(false);
+  let googleResult = $state<string | null>(null);
+
+  // Track which services were configured (injected into AI context)
+  let servicesSaved = $state<string[]>([]);
+  let servicesSkipped = $state<string[]>([]);
 
   // Brain frame animation
   let brainFrame = $state(0);
@@ -87,30 +103,83 @@
   // Phase transitions
   // ---------------------------------------------------------------------------
 
-  function nextPhase() {
+  async function nextPhase() {
+    const api = (window as any).atrophy;
     if (phase === 'welcome' && userName.trim()) {
-      phase = 'create';
-      conversationLog.push({
-        role: 'agent',
-        text: `You are ${userName}. Good. Now - who do you want to create? Tell me about the companion you want.`,
-      });
-    } else if (phase === 'create') {
+      // Save name immediately
+      if (api) await api.updateConfig({ USER_NAME: userName.trim() });
       phase = 'elevenlabs';
     } else if (phase === 'elevenlabs') {
+      // Save key to .env if provided
+      if (elevenLabsKey.trim() && api) {
+        await api.saveSecret('ELEVENLABS_API_KEY', elevenLabsKey.trim());
+        servicesSaved.push('ELEVENLABS_API_KEY');
+      } else {
+        servicesSkipped.push('ELEVENLABS_API_KEY');
+      }
+      phase = 'fal';
+    } else if (phase === 'fal') {
+      if (falKey.trim() && api) {
+        await api.saveSecret('FAL_KEY', falKey.trim());
+        servicesSaved.push('FAL_KEY');
+      } else {
+        servicesSkipped.push('FAL_KEY');
+      }
       phase = 'telegram';
     } else if (phase === 'telegram') {
+      if (telegramToken.trim() && api) {
+        await api.saveSecret('TELEGRAM_BOT_TOKEN', telegramToken.trim());
+        servicesSaved.push('TELEGRAM_BOT_TOKEN');
+      } else {
+        servicesSkipped.push('TELEGRAM_BOT_TOKEN');
+      }
+      if (telegramChatId.trim() && api) {
+        await api.updateConfig({ TELEGRAM_CHAT_ID: telegramChatId.trim() });
+      }
+      phase = 'google';
+    } else if (phase === 'google') {
+      startAgentCreation();
+    } else if (phase === 'create') {
+      // Skip to done if user skips agent creation
       phase = 'done';
       finishSetup();
     }
   }
 
-  function skipToNext() {
-    if (phase === 'elevenlabs') {
-      phase = 'telegram';
-    } else if (phase === 'telegram') {
-      phase = 'done';
-      finishSetup();
+  async function startGoogleAuth() {
+    const api = (window as any).atrophy;
+    if (!api) return;
+    googleAuthing = true;
+    googleResult = null;
+    try {
+      const result = await api.startGoogleOAuth(googleWorkspace, googleExtra);
+      googleResult = result;
+      if (result === 'complete') {
+        servicesSaved.push('GOOGLE');
+      } else {
+        servicesSkipped.push('GOOGLE');
+      }
+    } catch {
+      googleResult = 'failed';
+      servicesSkipped.push('GOOGLE');
     }
+    googleAuthing = false;
+  }
+
+  function startAgentCreation() {
+    phase = 'create';
+    // Build service context for Xan
+    const ctx: string[] = [];
+    for (const key of servicesSaved) ctx.push(`(SERVICE: ${key} saved)`);
+    for (const key of servicesSkipped) ctx.push(`(SERVICE: ${key} skipped)`);
+    conversationLog.push({
+      role: 'system',
+      text: ctx.join(' '),
+    });
+    conversationLog.push({
+      role: 'agent',
+      text: `You are ${userName}. Good. Now - who do you want to create?`,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -130,6 +199,25 @@
       try {
         const response = await api.wizardInference(text);
         conversationLog.push({ role: 'agent', text: response });
+
+        // Check if the response contains AGENT_CONFIG JSON
+        const configMatch = response.match(/```json\s*(\{[\s\S]*?"AGENT_CONFIG"[\s\S]*?\})\s*```/);
+        if (configMatch) {
+          try {
+            const parsed = JSON.parse(configMatch[1]);
+            const agentConfig = parsed.AGENT_CONFIG;
+            if (agentConfig && agentConfig.display_name) {
+              // Create the agent
+              isInferring = true;
+              conversationLog.push({ role: 'agent', text: `Creating ${agentConfig.display_name}...` });
+              await api.createAgent(agentConfig);
+              phase = 'done';
+              finishSetup();
+            }
+          } catch {
+            // JSON parse failed - continue conversation
+          }
+        }
       } catch {
         conversationLog.push({ role: 'agent', text: 'Something went wrong. Try again.' });
       }
@@ -158,6 +246,29 @@
     elevenLabsVerifying = false;
   }
 
+  async function verifyFal() {
+    if (!falKey.trim()) return;
+    falVerifying = true;
+    falVerified = null;
+
+    try {
+      // Test the key by hitting the Fal queue status endpoint
+      const res = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${falKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: 'test', image_size: 'square_hd' }),
+      });
+      // 200 or 201 means the key is valid (queued). 401/403 means invalid.
+      falVerified = res.status < 400;
+    } catch {
+      falVerified = false;
+    }
+    falVerifying = false;
+  }
+
   async function verifyTelegram() {
     if (!telegramToken.trim()) return;
     telegramVerifying = true;
@@ -182,12 +293,12 @@
   async function finishSetup() {
     const api = (window as any).atrophy;
     if (api) {
+      // Only non-secret settings go to config.json.
+      // API keys are already saved to .env via saveSecret() in nextPhase().
       const updates: Record<string, unknown> = {
         USER_NAME: userName,
         setup_complete: true,
       };
-      if (elevenLabsKey.trim()) updates.ELEVENLABS_API_KEY = elevenLabsKey.trim();
-      if (telegramToken.trim()) updates.TELEGRAM_BOT_TOKEN = telegramToken.trim();
       if (telegramChatId.trim()) updates.TELEGRAM_CHAT_ID = telegramChatId.trim();
       await api.updateConfig(updates);
     }
@@ -207,7 +318,7 @@
       e.preventDefault();
       if (phase === 'welcome') nextPhase();
       else if (phase === 'create') sendMessage();
-      else if (phase === 'elevenlabs' || phase === 'telegram') nextPhase();
+      else if (phase === 'elevenlabs' || phase === 'fal' || phase === 'telegram' || phase === 'google') nextPhase();
     }
   }
 </script>
@@ -325,6 +436,53 @@
         </div>
       </div>
 
+    {:else if phase === 'fal'}
+      <!-- Fal AI service card -->
+      <div class="wizard-center fade-in">
+        <div class="service-card">
+          <div class="service-card-header">
+            <h2 class="service-card-title">Image Generation - Fal</h2>
+            <p class="service-card-desc">
+              Paste your API key to enable image generation.
+              Get one at <span class="service-link">fal.ai</span>
+            </p>
+          </div>
+
+          <div class="service-card-body">
+            <label class="service-field">
+              <span>API Key</span>
+              <input
+                type="password"
+                bind:value={falKey}
+                onkeydown={onKeydown}
+                class="wizard-input secure-input"
+                placeholder="fal-..."
+                autofocus
+              />
+            </label>
+
+            {#if falVerified === true}
+              <span class="verify-status verified">Verified</span>
+            {:else if falVerified === false}
+              <span class="verify-status failed">Invalid key</span>
+            {/if}
+          </div>
+
+          <div class="service-card-actions">
+            <button
+              class="wizard-btn verify-btn"
+              disabled={!falKey.trim() || falVerifying}
+              onclick={verifyFal}
+            >
+              {falVerifying ? 'Checking...' : 'Verify'}
+            </button>
+            <button class="wizard-btn" onclick={nextPhase}>
+              {falKey.trim() ? 'Next' : 'Skip'}
+            </button>
+          </div>
+        </div>
+      </div>
+
     {:else if phase === 'telegram'}
       <!-- Telegram service card -->
       <div class="wizard-center fade-in">
@@ -378,6 +536,55 @@
             </button>
             <button class="wizard-btn" onclick={nextPhase}>
               {telegramToken.trim() ? 'Finish' : 'Skip & Finish'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+    {:else if phase === 'google'}
+      <div class="wizard-center fade-in">
+        <div class="service-card">
+          <div class="service-card-header">
+            <h2 class="service-card-title">Google Workspace + YouTube + Photos</h2>
+            <p class="service-card-desc">
+              Gmail, Calendar, Drive, Sheets, Docs, and more.
+              Opens your browser for Google consent.
+            </p>
+          </div>
+
+          <div class="service-card-body">
+            <label class="google-scope-row">
+              <input type="checkbox" bind:checked={googleWorkspace} disabled={googleAuthing} />
+              <div>
+                <span class="scope-label">Workspace</span>
+                <span class="scope-desc">Gmail, Calendar, Drive, Sheets, Docs, Tasks, Contacts, Meet</span>
+              </div>
+            </label>
+            <label class="google-scope-row">
+              <input type="checkbox" bind:checked={googleExtra} disabled={googleAuthing} />
+              <div>
+                <span class="scope-label">Extra</span>
+                <span class="scope-desc">YouTube, Photos, Search Console</span>
+              </div>
+            </label>
+
+            {#if googleResult === 'complete'}
+              <span class="verify-status verified">Connected</span>
+            {:else if googleResult}
+              <span class="verify-status failed">{googleResult}</span>
+            {/if}
+          </div>
+
+          <div class="service-card-actions">
+            <button
+              class="wizard-btn verify-btn"
+              disabled={googleAuthing || (!googleWorkspace && !googleExtra)}
+              onclick={startGoogleAuth}
+            >
+              {googleAuthing ? 'Waiting for browser...' : 'Connect selected'}
+            </button>
+            <button class="wizard-btn" onclick={nextPhase}>
+              {googleResult === 'complete' ? 'Next' : 'Skip'}
             </button>
           </div>
         </div>
@@ -710,5 +917,37 @@
     font-size: 12px;
     color: var(--text-secondary);
     padding-left: 4px;
+  }
+
+  /* ---- Google scope checkboxes ---- */
+
+  .google-scope-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+
+  .google-scope-row input[type="checkbox"] {
+    margin-top: 3px;
+    accent-color: rgba(100, 140, 255, 0.7);
+  }
+
+  .scope-label {
+    display: block;
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .scope-desc {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
   }
 </style>

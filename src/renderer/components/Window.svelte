@@ -219,12 +219,25 @@
     // Listen for deferral requests from main process
     if (api && typeof api.on === 'function') {
       api.on('deferral:request', handleDeferralRequest);
+
+      // Auto-show canvas when content is written (even if Canvas not mounted yet)
+      api.on('canvas:updated', () => {
+        showCanvas = true;
+      });
     }
   });
 
   onDestroy(() => {
     if (silenceTimerId) clearTimeout(silenceTimerId);
     if (agentSwitchCleanup) agentSwitchCleanup();
+    // Clean up wake word audio
+    if (wakeProcessor) { wakeProcessor.disconnect(); wakeProcessor = null; }
+    if (wakeAudioCtx) { wakeAudioCtx.close(); wakeAudioCtx = null; }
+    if (wakeStream) { wakeStream.getTracks().forEach((t) => t.stop()); wakeStream = null; }
+    // Clean up call audio
+    if (callProcessor) { callProcessor.disconnect(); callProcessor = null; }
+    if (callAudioCtx) { callAudioCtx.close(); callAudioCtx = null; }
+    if (callStream) { callStream.getTracks().forEach((t) => t.stop()); callStream = null; }
   });
 
   // ---------------------------------------------------------------------------
@@ -256,14 +269,131 @@
     // TODO: wire to TTS mute in main process
   }
 
-  function toggleWake() {
+  // Wake word audio capture state
+  let wakeStream: MediaStream | null = null;
+  let wakeAudioCtx: AudioContext | null = null;
+  let wakeProcessor: ScriptProcessorNode | null = null;
+
+  async function toggleWake() {
     wakeListening = !wakeListening;
-    // TODO: wire to wake word start/stop
+
+    if (wakeListening && api) {
+      try {
+        wakeStream = await navigator.mediaDevices.getUserMedia({
+          audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
+        });
+        wakeAudioCtx = new AudioContext({ sampleRate: 16000 });
+        const source = wakeAudioCtx.createMediaStreamSource(wakeStream);
+        wakeProcessor = wakeAudioCtx.createScriptProcessor(4096, 1, 1);
+        wakeProcessor.onaudioprocess = (e: AudioProcessingEvent) => {
+          if (!wakeListening) return;
+          const data = e.inputBuffer.getChannelData(0);
+          api.sendWakeWordChunk(data.buffer.slice(0));
+        };
+        source.connect(wakeProcessor);
+        wakeProcessor.connect(wakeAudioCtx.destination);
+      } catch (err) {
+        console.error('[wake word] failed to start audio capture:', err);
+        wakeListening = false;
+      }
+    } else {
+      // Tear down ambient audio capture
+      if (wakeProcessor) { wakeProcessor.disconnect(); wakeProcessor = null; }
+      if (wakeAudioCtx) { wakeAudioCtx.close(); wakeAudioCtx = null; }
+      if (wakeStream) { wakeStream.getTracks().forEach((t) => t.stop()); wakeStream = null; }
+    }
   }
 
-  function toggleCall() {
+  // Voice call mode - continuous record/transcribe/send/TTS loop
+  let callStream: MediaStream | null = null;
+  let callAudioCtx: AudioContext | null = null;
+  let callProcessor: ScriptProcessorNode | null = null;
+  let callChunks: Float32Array[] = [];
+  let callSilentFrames = 0;
+  let callSpeechStarted = false;
+  const CALL_ENERGY_THRESHOLD = 0.015;
+  const CALL_SILENCE_FRAMES = 15; // ~15 * 4096/16000 = ~3.8s of silence
+  const CALL_MIN_CHUNKS = 4; // minimum chunks before processing
+
+  async function toggleCall() {
     callActive = !callActive;
-    // TODO: wire to voice call mode
+
+    if (callActive && api) {
+      try {
+        callStream = await navigator.mediaDevices.getUserMedia({
+          audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
+        });
+        callAudioCtx = new AudioContext({ sampleRate: 16000 });
+        const source = callAudioCtx.createMediaStreamSource(callStream);
+        callProcessor = callAudioCtx.createScriptProcessor(4096, 1, 1);
+        callChunks = [];
+        callSilentFrames = 0;
+        callSpeechStarted = false;
+
+        callProcessor.onaudioprocess = (e: AudioProcessingEvent) => {
+          if (!callActive) return;
+          const data = e.inputBuffer.getChannelData(0);
+          const chunk = new Float32Array(data);
+
+          // Calculate RMS energy
+          let sum = 0;
+          for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
+          const energy = Math.sqrt(sum / chunk.length);
+
+          if (energy > CALL_ENERGY_THRESHOLD) {
+            callSpeechStarted = true;
+            callSilentFrames = 0;
+            callChunks.push(chunk);
+          } else if (callSpeechStarted) {
+            callSilentFrames++;
+            callChunks.push(chunk);
+            if (callSilentFrames >= CALL_SILENCE_FRAMES && callChunks.length >= CALL_MIN_CHUNKS) {
+              // Utterance complete - send accumulated audio for transcription
+              const allChunks = callChunks;
+              callChunks = [];
+              callSpeechStarted = false;
+              callSilentFrames = 0;
+              processCallUtterance(allChunks);
+            }
+          }
+        };
+        source.connect(callProcessor);
+        callProcessor.connect(callAudioCtx.destination);
+      } catch (err) {
+        console.error('[call] failed to start:', err);
+        callActive = false;
+      }
+    } else {
+      // Tear down call audio
+      if (callProcessor) { callProcessor.disconnect(); callProcessor = null; }
+      if (callAudioCtx) { callAudioCtx.close(); callAudioCtx = null; }
+      if (callStream) { callStream.getTracks().forEach((t) => t.stop()); callStream = null; }
+      callChunks = [];
+    }
+  }
+
+  async function processCallUtterance(chunks: Float32Array[]) {
+    if (!api) return;
+    // Concatenate chunks into a single buffer and send for STT
+    const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+    const merged = new Float32Array(totalLen);
+    let offset = 0;
+    for (const c of chunks) {
+      merged.set(c, offset);
+      offset += c.length;
+    }
+    // Use the existing audio:chunk -> audio:stop flow for transcription
+    api.sendAudioChunk(merged.buffer.slice(0));
+    try {
+      const transcript = await api.stopRecording();
+      if (transcript && transcript.trim().length > 1) {
+        addMessage('will', transcript.trim());
+        completeLast();
+        await api.sendMessage(transcript.trim());
+      }
+    } catch {
+      // Transcription failed - continue listening
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -487,6 +617,18 @@
       </svg>
     </button>
 
+    <!-- Minimize -->
+    <button
+      class="mode-btn"
+      onclick={() => api?.minimizeWindow()}
+      title="Minimize"
+      aria-label="Minimize"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+    </button>
+
     <!-- Settings -->
     <button
       class="mode-btn"
@@ -523,7 +665,7 @@
   {/if}
 
   {#if showCanvas}
-    <Canvas onClose={() => showCanvas = false} />
+    <Canvas onClose={() => showCanvas = false} onRequestShow={() => showCanvas = true} />
   {/if}
 
   {#if showArtefact}

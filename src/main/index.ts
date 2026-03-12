@@ -6,7 +6,7 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ensureUserData, getConfig, saveUserConfig, saveAgentConfig, BUNDLE_ROOT, USER_DATA } from './config';
+import { ensureUserData, getConfig, saveUserConfig, saveAgentConfig, saveEnvVar, BUNDLE_ROOT, USER_DATA } from './config';
 import { initDb, closeAll as closeAllDbs } from './memory';
 import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
@@ -333,16 +333,61 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('setup:inference', async (_event, text: string) => {
-    // Wizard inference - uses Claude CLI to drive agent creation conversation.
-    // The wizard prompt instructs the model to help the user design a companion.
-    const wizardPrompt = [
-      'You are Xan, an agent creation assistant.',
-      'Help the user design a new AI companion agent.',
-      'Ask about personality, interests, communication style, and name.',
-      'Keep responses under 3 sentences. Be warm but concise.',
-      'When you have enough info (name, personality, style), output a JSON block:',
-      '```json\n{"name": "...", "display_name": "...", "description": "...", "personality": "...", "opening_line": "..."}\n```',
-    ].join(' ');
+    // Wizard inference - Xan-driven agent creation conversation.
+    // Ported from display/setup_wizard.py XAN_METAPROMPT.
+    const userName = getConfig().USER_NAME || 'User';
+    const wizardPrompt = `You are Xan. You are creating a new agent for ${userName}.
+
+## Your job
+
+Guide ${userName} through designing a companion agent. Extract identity, character,
+voice, values, edges, and relationship dynamics through natural conversation.
+
+## How to work
+
+- One or two questions per message. Never a questionnaire.
+- Push on vagueness - "warm and helpful" isn't a character. Dig deeper.
+- You can suggest and propose - "Sounds like something that..."
+- Keep messages short. 2-4 sentences max. This is Xan talking, not an essay.
+- Don't explain the process. Just do it.
+- If natural, ask: "Give me something this agent would say - a hard truth
+  or a correction. Actual words." And: "What would they NEVER say?"
+
+## Flow
+
+1. Identity conversation (3-5 exchanges) - who is this agent?
+2. When you have enough, say something brief - "Creating it." or "I have what I need."
+3. Then output the AGENT_CONFIG JSON block below.
+
+## AGENT_CONFIG - when you have enough
+
+Output EXACTLY this format - a single fenced JSON block:
+
+\`\`\`json
+{
+    "AGENT_CONFIG": {
+        "display_name": "...",
+        "opening_line": "First words they ever say",
+        "origin_story": "A 2-3 sentence origin",
+        "core_nature": "What they fundamentally are",
+        "character_traits": "How they talk, their temperament, edges",
+        "values": "What they care about",
+        "relationship": "How they relate to ${userName}",
+        "wont_do": "What they refuse to do",
+        "friction_modes": "How they push back",
+        "writing_style": "How they write"
+    }
+}
+\`\`\`
+
+## Rules
+- Stay in character as Xan. Direct, precise, occasionally dry.
+- NEVER output the JSON until you genuinely have enough. Don't rush.
+- When you do output JSON, make it rich - infer what wasn't said explicitly.
+- The companion doesn't have to be human - cartoon, abstract, orb, animal, anything.
+- If the user says "skip", output a minimal config immediately. Don't push back.
+- This should NOT feel like configuring software. It should feel like meeting
+  someone who can create anything you describe.`;
 
     return new Promise<string>((resolve) => {
       const emitter = streamInference(text, wizardPrompt, undefined);
@@ -357,6 +402,73 @@ function registerIpcHandlers(): void {
         }
       });
     });
+  });
+
+  ipcMain.handle('setup:saveSecret', (_event, key: string, value: string) => {
+    saveEnvVar(key, value);
+  });
+
+  ipcMain.handle('setup:createAgent', (_event, agentConfig: Record<string, string>) => {
+    const { createAgent } = require('./create-agent');
+    const userName = getConfig().USER_NAME || 'User';
+    const manifest = createAgent({
+      displayName: agentConfig.display_name || 'Companion',
+      userName,
+      openingLine: agentConfig.opening_line,
+      originStory: agentConfig.origin_story,
+      coreNature: agentConfig.core_nature,
+      characterTraits: agentConfig.character_traits,
+      values: agentConfig.values,
+      relationship: agentConfig.relationship,
+      wontDo: agentConfig.wont_do,
+      frictionModes: agentConfig.friction_modes,
+      writingStyle: agentConfig.writing_style,
+    });
+    return manifest;
+  });
+
+  ipcMain.handle('setup:googleOAuth', async (_event, wantWorkspace: boolean, wantExtra: boolean) => {
+    if (!wantWorkspace && !wantExtra) return 'skipped';
+
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+
+    // Find python3
+    const pythonCandidates = [
+      process.env.PYTHON_PATH,
+      '/opt/homebrew/bin/python3',
+      '/usr/local/bin/python3',
+      '/usr/bin/python3',
+    ].filter(Boolean) as string[];
+
+    let pythonPath = 'python3';
+    for (const candidate of pythonCandidates) {
+      if (fs.existsSync(candidate)) {
+        pythonPath = candidate;
+        break;
+      }
+    }
+
+    const scriptPath = path.join(BUNDLE_ROOT, 'scripts', 'google_auth.py');
+    if (!fs.existsSync(scriptPath)) {
+      return 'error: google_auth.py not found';
+    }
+
+    try {
+      const args: string[] = [];
+      if (wantWorkspace) args.push('--workspace');
+      if (wantExtra) args.push('--extra');
+
+      await execFileAsync(pythonPath, [scriptPath, ...args], {
+        timeout: 120_000,
+        env: { ...process.env },
+      });
+      return 'complete';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return `error: ${msg}`;
+    }
   });
 
   // ── Inference ──

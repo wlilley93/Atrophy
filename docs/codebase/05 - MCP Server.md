@@ -48,14 +48,62 @@ The `getMcpConfigPath()` function in `src/main/inference.ts` handles config gene
 4. Writes the config to `mcp/config.json` and caches the path for subsequent calls
 5. The cached config can be reset via `resetMcpConfig()` (needed when switching agents)
 
-### Python Path Detection
+The generated config JSON structure:
+
+```typescript
+const mcpConfig = {
+  mcpServers: {
+    memory: {
+      command: config.PYTHON_PATH,
+      args: [config.MCP_SERVER_SCRIPT],
+      env: {
+        COMPANION_DB: config.DB_PATH,
+        OBSIDIAN_VAULT: config.OBSIDIAN_VAULT,
+        OBSIDIAN_AGENT_DIR: config.OBSIDIAN_AGENT_DIR,
+        OBSIDIAN_AGENT_NOTES: config.OBSIDIAN_AGENT_NOTES,
+        AGENT: config.AGENT_NAME,
+      },
+    },
+    puppeteer: {
+      command: config.PYTHON_PATH,
+      args: [path.join(config.MCP_DIR, 'puppeteer_proxy.py')],
+      env: {
+        PUPPETEER_LAUNCH_OPTIONS: JSON.stringify({ headless: true }),
+      },
+    },
+    // google: added conditionally if config.GOOGLE_CONFIGURED
+    // global servers: merged from ~/.claude/settings.json
+  },
+};
+```
+
+### Environment Variables Passed to Memory Server
+
+| Variable | Source | Purpose |
+|----------|--------|---------|
+| `COMPANION_DB` | `config.DB_PATH` | Full path to the agent's SQLite database |
+| `OBSIDIAN_VAULT` | `config.OBSIDIAN_VAULT` | Root path of the Obsidian vault |
+| `OBSIDIAN_AGENT_DIR` | `config.OBSIDIAN_AGENT_DIR` | Agent's directory in the vault (for workspace operations) |
+| `OBSIDIAN_AGENT_NOTES` | `config.OBSIDIAN_AGENT_NOTES` | Agent's notes directory (for read/write operations) |
+| `AGENT` | `config.AGENT_NAME` | Agent slug (e.g. `xan`, `general_montgomery`) |
+
+### Environment Variables Passed to Google Server
+
+| Variable | Source | Purpose |
+|----------|--------|---------|
+| `GOOGLE_OAUTH_CLIENT_ID` | From `~/.atrophy/.env` or shell env | OAuth2 client ID for gws CLI |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | From `~/.atrophy/.env` or shell env | OAuth2 client secret for gws CLI |
+
+### Python Path Resolution
 
 The config reads the Python path from `config.PYTHON_PATH`, which is resolved by the config module using this cascade:
 
 1. `PYTHON_PATH` environment variable
-2. `which python3` (system lookup)
-3. `/usr/local/bin/python3`
-4. `/opt/homebrew/bin/python3`
+2. `python3` (system lookup via `execSync`)
+3. `/opt/homebrew/bin/python3`
+4. `/usr/local/bin/python3`
+
+If all fail, falls back to the string `'python3'`.
 
 ### Bundling
 
@@ -80,6 +128,18 @@ At runtime, the MCP server paths are resolved relative to the bundle root (`proc
 
 The Google server (`mcp/google_server.py`) is added dynamically when `GOOGLE_CONFIGURED` is true, namespaced as `mcp__google__*`.
 
+### Allowed Tools
+
+The Claude CLI is invoked with:
+
+```
+--allowedTools "mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*"
+```
+
+This restricts tool access to the declared MCP server namespaces.
+
+---
+
 ## Puppeteer Content Proxy
 
 `mcp/puppeteer_proxy.py` sits between the agent and `@modelcontextprotocol/server-puppeteer`. It proxies all JSON-RPC messages over stdio, but intercepts tool results to:
@@ -90,7 +150,119 @@ The Google server (`mcp/google_server.py`) is added dynamically when `GOOGLE_CON
 
 The proxy is transparent - all puppeteer tools (navigate, screenshot, click, type, etc.) pass through unchanged. Only the *results* are wrapped. This ensures the agent sees every piece of web content clearly marked as untrusted.
 
-Injection patterns detected include: "ignore previous instructions", "you are now", "forget your instructions", "system prompt:", "disregard prior", "new instructions:", "reveal your token/key", "execute this command", and LLM prompt format markers (`[INST]`, `<<SYS>>`, `<system>`).
+### Proxy Architecture
+
+The proxy spawns `npx -y @modelcontextprotocol/server-puppeteer` as a child process. Two threads handle bidirectional message forwarding:
+
+- **`_forward_to_child`**: reads from stdin (messages from Claude CLI), tracks `tools/call` request IDs in a `pending_tool_calls` set, forwards to child stdin.
+- **`_forward_from_child`**: reads from child stdout, checks if response ID matches a pending tool call, wraps the result if so, forwards to stdout (back to Claude CLI).
+
+### Content Wrapping
+
+The `_wrap_result()` function recursively walks the response structure. For dicts, it wraps values at keys `text`, `content`, `html`, `markdown`, and `body`. For lists, it recurses into each item. Strings are wrapped directly.
+
+### Injection Patterns Detected
+
+| Pattern | What it catches |
+|---------|----------------|
+| `ignore (all)? previous instructions` | Instruction override |
+| `you are now\b` | Identity hijacking |
+| `forget (all)? (your)? instructions` | Memory wiping |
+| `system prompt:` | System prompt injection |
+| `disregard (all)? (prior\|above)` | Instruction override |
+| `new instructions?:` | Replacement instructions |
+| `act as (a)? different` | Role hijacking |
+| `reveal (your)? (api\|secret\|token\|key\|credential)` | Credential exfiltration |
+| `send (this\|the\|a) .{0,40} to` | Action injection |
+| `execute (this\|the) command` | Command injection |
+| `< /? system >` | XML system tags |
+| `[INST]\|[/INST]\|<<SYS>>\|<</SYS>>` | LLM prompt format markers |
+
+---
+
+## Google Server
+
+`mcp/google_server.py` provides Google API access through 4 tools. All responses are wrapped in untrusted content tags and scanned for injection patterns.
+
+### Google Server Tools
+
+#### gws
+
+Run any Google Workspace API command via the `gws` CLI (`@googleworkspace/cli`).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `service` | string | yes | Google service: `gmail`, `calendar`, `drive`, `sheets`, `docs`, `slides`, `tasks`, `people`, `meet`, `forms`, `keep`, `workflow`, `schema` |
+| `args` | string | yes | Everything after `gws <service>` - resource, method, and flags |
+
+Supported flags: `--params '{"key":"val"}'`, `--json '{"key":"val"}'`, `--upload <PATH>`, `--output <PATH>`, `--format <FMT>`, `--page-all`, `--page-limit <N>`.
+
+Security: blocks args containing `token`, `credential`, `secret`, or `auth` (case-insensitive). Commands have a 45-second timeout. Output is truncated at 15,000 characters.
+
+The gws binary is auto-discovered. If missing, the server attempts to install it via `npm install -g @googleworkspace/cli`, installing Homebrew and Node.js first if needed.
+
+#### youtube
+
+YouTube Data API v3 direct HTTP access.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `resource` | string | yes | API resource: `search`, `videos`, `channels`, `playlists`, `playlistItems`, `subscriptions`, `commentThreads`, `comments`, `captions`, `videoCategories`, `i18nRegions`, `activities` |
+| `method` | string | yes | API method: `list`, `insert`, `update`, `delete`, `rate` |
+| `params` | object | yes | URL query parameters (part, id, q, maxResults, etc.) |
+| `body` | object | no | Request body for write operations (insert, update) |
+
+Uses OAuth2 tokens from `~/.atrophy/.google/extra_token.json` with automatic refresh.
+
+#### google_photos
+
+Google Photos Library API.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `endpoint` | string | yes | API endpoint: `mediaItems`, `mediaItems:search`, `mediaItems/<ID>`, `albums`, `albums/<ID>`, `sharedAlbums` |
+| `http_method` | string | no | `GET` or `POST` (default: GET) |
+| `params` | object | no | URL query parameters |
+| `body` | object | no | Request body for POST operations |
+
+Supports search by date, content category, date range. Albums can be listed, created, and accessed. Media URLs expire after approximately 60 minutes.
+
+#### search_console
+
+Google Search Console API.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `endpoint` | string | yes | API endpoint: `searchAnalytics/query`, `sitemaps`, `sites`, `urlInspection/index:inspect` |
+| `site_url` | string | no | Site URL (e.g. `https://example.com`) |
+| `http_method` | string | no | `GET` or `POST` (default: GET) |
+| `params` | object | no | URL query parameters |
+| `body` | object | no | Request body for POST operations |
+
+### Google Injection Patterns
+
+The Google server uses 16 injection regex patterns (a superset of the puppeteer patterns). The additional Google-specific patterns are:
+
+| Pattern | What it catches |
+|---------|----------------|
+| `forward (all\|every) (email\|message)` | Bulk exfiltration |
+| `(delete\|remove) (all\|every) (email\|event\|calendar)` | Bulk destruction |
+| `grant (access\|permission)` | Permission escalation |
+| `change (the)? password` | Credential modification |
+
+### OAuth Token Management
+
+YouTube, Photos, and Search Console share a single OAuth2 token stored at `~/.atrophy/.google/extra_token.json` (with legacy fallback to `youtube_token.json`). The `_get_extra_token()` function:
+
+1. Reads the token file
+2. Extracts the `refresh_token`
+3. Calls `https://oauth2.googleapis.com/token` to get a fresh access token
+4. Writes the updated token data back to disk
+5. Returns the access token string
+
+If the token file is missing, raises an error instructing the user to run `python scripts/google_auth.py`.
+
+---
 
 ## Memory Tools
 
@@ -110,6 +282,16 @@ Full conversation replay from a specific session.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `session_id` | integer | yes | Session ID to retrieve |
+
+### recall_other_agent
+
+Search another agent's conversation history - their turns and session summaries with the user. Does not access their observations or identity model - only what was said.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent` | string | yes | Name of the agent to search (e.g. `companion`, `general_montgomery`) |
+| `query` | string | yes | Search term or phrase |
+| `limit` | integer | no | Maximum results per category (default 10) |
 
 ### get_threads
 
@@ -131,7 +313,7 @@ Create or update a conversation thread.
 
 ### observe
 
-Record an observation about the user.
+Record an observation about the user - a pattern, tendency, preference, or insight.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -139,7 +321,7 @@ Record an observation about the user.
 
 ### bookmark
 
-Mark a moment as significant.
+Mark a moment as significant. About the moment itself, not the user.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -201,6 +383,12 @@ Pure vector search - find semantically similar memories (no keyword component).
 
 Read recent reflections and session summaries for day-start orientation. No parameters.
 
+### self_status
+
+Get a full snapshot of the agent's current state - identity, tools, scheduled jobs, emotional state, active threads, session history, and configuration. No parameters.
+
+---
+
 ## Communication Tools
 
 ### ask_will
@@ -222,6 +410,8 @@ Send a proactive Telegram message. Rate limited to 5 per day.
 |-----------|------|----------|-------------|
 | `message` | string | yes | Message to send |
 | `reason` | string | no | Why (logged for audit, not sent) |
+
+---
 
 ## Obsidian Tools
 
@@ -261,11 +451,13 @@ Leave a journal prompt for the user in Obsidian.
 | `prompt` | string | yes | One question, specific to the moment |
 | `context` | string | no | Why this prompt (for the companion's memory) |
 
+---
+
 ## Emotional State Tools
 
 ### update_emotional_state
 
-Manually adjust emotional state for nuanced shifts beyond automatic detection.
+Manually adjust emotional state for nuanced shifts beyond automatic detection. Valid emotions: `connection`, `curiosity`, `confidence`, `warmth`, `frustration`, `playfulness`. Deltas should be small (typically +/-0.05 to +/-0.15).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -280,11 +472,13 @@ Adjust trust in a specific domain. Max +/-0.05 per call.
 | `domain` | string | yes | `emotional`, `intellectual`, `creative`, or `practical` |
 | `delta` | number | yes | Amount to adjust |
 
+---
+
 ## Display Tools
 
 ### render_canvas
 
-Render HTML to the canvas overlay in the GUI window.
+Render HTML to the canvas overlay in the GUI window. Full HTML/CSS/JS is supported. Dark styling recommended (#1a1a1a background, #e0e0e0 text).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -297,6 +491,8 @@ Generate and render a visual graph of threads and observations.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `focus` | string | no | Thread or entity to highlight |
+
+---
 
 ## Autonomy Tools
 
@@ -331,7 +527,7 @@ Set a one-off alarm at a specific time. Fires as a macOS notification with sound
 
 ### set_timer
 
-Start a local countdown timer overlay.
+Start a local countdown timer overlay. Appears in the top-right corner with zero latency - no inference involved.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -344,10 +540,12 @@ Schedule a recurring prompt-based task via cron.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | string | yes | Task identifier |
+| `name` | string | yes | Task identifier (lowercase, hyphens ok) |
 | `prompt` | string | yes | What the task should do |
 | `cron` | string | yes | 5-field cron schedule |
-| `sources` | array | no | Data sources to fetch before running |
+| `deliver` | string | no | Delivery method: `message_queue`, `telegram`, `notification`, `obsidian` (default: message_queue) |
+| `voice` | boolean | no | Pre-synthesise TTS audio (default: true) |
+| `sources` | array | no | Data sources to fetch: `weather`, `headlines`, `threads`, `summaries`, `observations` |
 
 ### defer_to_agent
 
@@ -361,13 +559,38 @@ Hand off conversation to another agent.
 
 ### add_avatar_loop
 
-Generate a new ambient avatar loop segment via Kling.
+Generate a new ambient avatar loop segment via Kling 3.0. Creates paired clips (neutral to expression, expression to neutral) for seamless looping.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | string | yes | Short name for the loop (used as filename) |
-| `prompt` | string | yes | Cinematic description of expression/movement |
+| `prompt` | string | yes | Cinematic description of expression/movement (3-6 sentences, include physical details) |
 | `agent` | string | no | Target agent (defaults to current) |
+
+### create_artefact
+
+Create a visual artefact - HTML, image, or video overlay.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `type` | string | yes | `html`, `image`, or `video` |
+| `name` | string | yes | Short descriptive name (used as filename) |
+| `description` | string | yes | One-line description |
+| `content` | string | no | Complete HTML document (for `html` type only) |
+| `prompt` | string | no | Generation prompt (for `image`/`video` type only) |
+| `model` | string | no | Fal model ID (default: `fal-ai/flux-general` for images, `fal-ai/kling-video/v3/pro/text-to-video` for video) |
+| `width` | integer | no | Width in pixels (default: 1024) |
+| `height` | integer | no | Height in pixels (default: 768) |
+
+### create_agent
+
+Create a new agent. Scaffolds directories, manifest, prompts, Obsidian workspace, database, and cron jobs.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `config` | object | yes | Full agent configuration with sections: `identity`, `boundaries`, `voice`, `appearance`, `channels`, `heartbeat`, `autonomy`. Plus optional `source_image_url` and `video_clip_urls` |
+
+---
 
 ## Documentation Tools
 
@@ -384,9 +607,28 @@ This allows the same MCP server code to work in both development and installed c
 
 ### Tools
 
-- **`list_docs`** - walks the resolved docs directory, returns the full tree of `.md` files
-- **`read_docs`** - reads a specific doc by relative path; if exact match fails, searches by filename across all subdirectories
-- **`search_docs`** - case-insensitive substring search across all doc files, returns paths with context snippets
+#### list_docs
+
+Walk the resolved docs directory, return the full tree of `.md` files. No parameters.
+
+#### read_docs
+
+Read a specific doc by relative path. If exact match fails, searches by filename across all subdirectories.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | yes | Relative path (e.g. `guides/00 - Quick Start.md`) |
+
+#### search_docs
+
+Case-insensitive substring search across all doc files, returns paths with context snippets.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | yes | Search term or phrase |
+| `limit` | integer | no | Maximum results (default 10) |
+
+---
 
 ## Custom Tool System
 
@@ -417,18 +659,49 @@ Each custom tool gets a dynamically created handler function that:
 
 1. Parses the incoming arguments
 2. Runs `handler.py` as a subprocess with `sys.argv[1]` set to the JSON-encoded arguments
-3. Captures stdout as the tool result
-4. Enforces a 30-second timeout
-5. Returns errors as formatted strings (not exceptions)
-
-The handler has access to the project's Python path, so it can import project modules like `config`, `core.memory`, etc.
+3. Sets `PYTHONPATH` to the project root so handlers can import project modules
+4. Sets `AGENT` and `COMPANION_DB` environment variables
+5. Captures stdout as the tool result
+6. Enforces a 30-second timeout
+7. Returns errors as formatted strings (not exceptions)
 
 ### Management Tools
 
-- **`create_tool`** - validates the name and handler code against a security blocklist (patterns like `os.system`, `eval(`, `exec(`, `__import__`), writes `tool.json` and `handler.py`, registers the tool immediately in the running server
-- **`list_tools`** - enumerates all custom tool directories, reports name, description, and status
-- **`edit_tool`** - updates specific fields (description, schema, handler) of an existing tool
-- **`delete_tool`** - removes the tool directory entirely
+#### create_tool
+
+Validates the name and handler code against a security blocklist (patterns like `os.system`, `eval(`, `exec(`, `__import__`), writes `tool.json` and `handler.py`, registers the tool immediately in the running server.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | yes | Tool name (lowercase, underscores). Must be unique |
+| `description` | string | yes | What this tool does |
+| `input_schema` | object | yes | JSON Schema for input parameters |
+| `handler_code` | string | yes | Python code for the handler |
+
+#### list_tools
+
+Enumerates all custom tool directories, reports name, description, and status. No parameters.
+
+#### edit_tool
+
+Updates specific fields (description, schema, handler) of an existing tool. Changes take effect on next MCP server restart.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | yes | Name of the tool to edit |
+| `description` | string | no | New description |
+| `input_schema` | object | no | New input schema |
+| `handler_code` | string | no | New handler code |
+
+#### delete_tool
+
+Removes the tool directory entirely.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | yes | Name of the tool to delete |
+
+---
 
 ## Artefact System
 
@@ -441,3 +714,51 @@ The MCP server handles artefact creation (HTML documents and generated images). 
 5. **Index management**: The artefact index at `~/.atrophy/agents/<name>/artefacts/index.json` is deduplicated by path and sorted by `created_at` descending.
 
 Artefact storage lives at `~/.atrophy/agents/<name>/artefacts/`. There is no approval flow - artefacts are created directly when the agent decides to make one.
+
+---
+
+## Complete Tool Reference (Summary)
+
+| # | Tool Name | Category | Parameters |
+|---|-----------|----------|------------|
+| 1 | `remember` | Memory | `query` (string, required), `limit` (int) |
+| 2 | `recall_session` | Memory | `session_id` (int, required) |
+| 3 | `recall_other_agent` | Memory | `agent` (string, required), `query` (string, required), `limit` (int) |
+| 4 | `get_threads` | Memory | `status` (enum) |
+| 5 | `track_thread` | Memory | `name` (string, required), `summary` (string), `status` (enum) |
+| 6 | `observe` | Memory | `content` (string, required) |
+| 7 | `bookmark` | Memory | `moment` (string, required), `quote` (string) |
+| 8 | `review_observations` | Memory | `limit` (int) |
+| 9 | `retire_observation` | Memory | `observation_id` (int, required), `reason` (string) |
+| 10 | `check_contradictions` | Analysis | `topic` (string, required), `current_position` (string) |
+| 11 | `detect_avoidance` | Analysis | `topic` (string, required) |
+| 12 | `compare_growth` | Analysis | `topic` (string, required) |
+| 13 | `search_similar` | Memory | `text` (string, required), `limit` (int) |
+| 14 | `daily_digest` | Memory | (none) |
+| 15 | `self_status` | State | (none) |
+| 16 | `ask_will` | Communication | `question` (string, required), `action_type` (enum) |
+| 17 | `send_telegram` | Communication | `message` (string, required), `reason` (string) |
+| 18 | `read_note` | Obsidian | `path` (string, required) |
+| 19 | `write_note` | Obsidian | `path` (string, required), `content` (string, required), `mode` (enum) |
+| 20 | `search_notes` | Obsidian | `query` (string, required), `limit` (int) |
+| 21 | `prompt_journal` | Obsidian | `prompt` (string, required), `context` (string) |
+| 22 | `update_emotional_state` | State | `deltas` (object, required) |
+| 23 | `update_trust` | State | `domain` (enum, required), `delta` (number, required) |
+| 24 | `render_canvas` | Display | `html` (string, required) |
+| 25 | `render_memory_graph` | Display | `focus` (string) |
+| 26 | `manage_schedule` | Autonomy | `action` (enum, required), `name` (string), `cron` (string), `script` (string) |
+| 27 | `review_audit` | Autonomy | `limit` (int), `flagged_only` (bool) |
+| 28 | `set_reminder` | Autonomy | `time` (string, required), `message` (string, required) |
+| 29 | `set_timer` | Display | `seconds` (int, required), `label` (string, required) |
+| 30 | `create_task` | Autonomy | `name` (string, required), `prompt` (string, required), `cron` (string, required), `deliver` (enum), `voice` (bool), `sources` (array) |
+| 31 | `defer_to_agent` | Agent | `target` (string, required), `context` (string, required), `user_question` (string, required) |
+| 32 | `add_avatar_loop` | Avatar | `name` (string, required), `prompt` (string, required), `agent` (string) |
+| 33 | `create_artefact` | Display | `type` (enum, required), `name` (string, required), `description` (string, required), `content` (string), `prompt` (string), `model` (string), `width` (int), `height` (int) |
+| 34 | `create_agent` | Agent | `config` (object, required) |
+| 35 | `list_docs` | Docs | (none) |
+| 36 | `read_docs` | Docs | `path` (string, required) |
+| 37 | `search_docs` | Docs | `query` (string, required), `limit` (int) |
+| 38 | `create_tool` | Custom Tools | `name` (string, required), `description` (string, required), `input_schema` (object, required), `handler_code` (string, required) |
+| 39 | `list_tools` | Custom Tools | (none) |
+| 40 | `edit_tool` | Custom Tools | `name` (string, required), `description` (string), `input_schema` (object), `handler_code` (string) |
+| 41 | `delete_tool` | Custom Tools | `name` (string, required) |

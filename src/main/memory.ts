@@ -229,6 +229,15 @@ function migrate(db: Database.Database): void {
     safeAddColumn('turns', 'embedding', 'BLOB');
     safeAddColumn('turns', 'weight', 'INTEGER DEFAULT 1');
     safeAddColumn('turns', 'topic_tags', 'TEXT');
+
+    // Migrate legacy role 'companion' -> 'agent' from Python-era databases
+    const legacyRows = db
+      .prepare("SELECT COUNT(*) as cnt FROM turns WHERE role = 'companion'")
+      .get() as { cnt: number };
+    if (legacyRows.cnt > 0) {
+      db.prepare("UPDATE turns SET role = 'agent' WHERE role = 'companion'").run();
+      console.log(`[migrate] renamed ${legacyRows.cnt} turns from role 'companion' to 'agent'`);
+    }
   }
 
   if (tableNames.has('sessions')) {
@@ -987,12 +996,12 @@ export function getOtherAgentsRecentSummaries(
   nPerAgent = 2,
   maxAgents = 5,
   currentAgent?: string,
-): { agent: string; summaries: { content: string; created_at: string }[] }[] {
+): { agent: string; summaries: { content: string; created_at: string; mood: string | null }[] }[] {
   const agentsDir = path.join(USER_DATA, 'agents');
   if (!fs.existsSync(agentsDir)) return [];
 
   const current = currentAgent || getConfig().AGENT_NAME;
-  const results: { agent: string; summaries: { content: string; created_at: string }[] }[] = [];
+  const results: { agent: string; summaries: { content: string; created_at: string; mood: string | null }[] }[] = [];
 
   const agents = fs.readdirSync(agentsDir).filter((n) => n !== current);
   for (const agent of agents.slice(0, maxAgents)) {
@@ -1002,8 +1011,13 @@ export function getOtherAgentsRecentSummaries(
     try {
       const db = connect(dbPath);
       const rows = db
-        .prepare('SELECT content, created_at FROM summaries ORDER BY created_at DESC LIMIT ?')
-        .all(nPerAgent) as { content: string; created_at: string }[];
+        .prepare(
+          `SELECT su.content, su.created_at, se.mood
+           FROM summaries su
+           LEFT JOIN sessions se ON su.session_id = se.id
+           ORDER BY su.created_at DESC LIMIT ?`,
+        )
+        .all(nPerAgent) as { content: string; created_at: string; mood: string | null }[];
       if (rows.length > 0) {
         results.push({ agent, summaries: rows });
       }

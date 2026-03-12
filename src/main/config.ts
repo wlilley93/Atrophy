@@ -38,6 +38,72 @@ function loadUserConfig(): void {
 }
 
 // ---------------------------------------------------------------------------
+// .env file (secrets - API keys, tokens)
+// ---------------------------------------------------------------------------
+
+/** Load ~/.atrophy/.env into process.env. Called once on startup. */
+function loadEnvFile(): void {
+  const envPath = path.join(USER_DATA, '.env');
+  if (!fs.existsSync(envPath)) return;
+  try {
+    const content = fs.readFileSync(envPath, 'utf-8');
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx === -1) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      let val = trimmed.slice(eqIdx + 1).trim();
+      // Strip surrounding quotes
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (key && !process.env[key]) {
+        process.env[key] = val;
+      }
+    }
+  } catch {
+    // .env parse failure is non-fatal
+  }
+}
+
+/** Whitelist of keys allowed in .env (secrets only). */
+const ALLOWED_ENV_KEYS = new Set([
+  'ELEVENLABS_API_KEY',
+  'FAL_KEY',
+  'TELEGRAM_BOT_TOKEN',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+]);
+
+/** Save a secret to ~/.atrophy/.env. Updates or appends the key. */
+export function saveEnvVar(key: string, value: string): void {
+  if (!ALLOWED_ENV_KEYS.has(key)) return;
+  const envPath = path.join(USER_DATA, '.env');
+  fs.mkdirSync(USER_DATA, { recursive: true });
+  let lines: string[] = [];
+  let replaced = false;
+  if (fs.existsSync(envPath)) {
+    lines = fs.readFileSync(envPath, 'utf-8').split('\n');
+    lines = lines.map(line => {
+      if (line.startsWith(`${key}=`)) {
+        replaced = true;
+        return `${key}=${value}`;
+      }
+      return line;
+    });
+  }
+  if (!replaced) {
+    lines.push(`${key}=${value}`);
+  }
+  // Remove trailing empty lines, ensure final newline
+  while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
+  fs.writeFileSync(envPath, lines.join('\n') + '\n', { mode: 0o600 });
+  // Also set in current process
+  process.env[key] = value;
+}
+
+// ---------------------------------------------------------------------------
 // Agent manifest
 // ---------------------------------------------------------------------------
 
@@ -468,6 +534,7 @@ export class Config {
   }
 
   load(): void {
+    loadEnvFile();
     loadUserConfig();
     this._resolveVersion();
     this._resolveAgent(cfg('AGENT', 'xan'));

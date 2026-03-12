@@ -50,6 +50,297 @@ agents/<name>/                     # In BUNDLE_ROOT (repo)
     ambient_loop.mp4               # master ambient loop (concatenated from segments)
 ```
 
+---
+
+## Startup Sequence
+
+The exact initialization order in `src/main/index.ts` (`app.whenReady()`) is:
+
+1. **Parse CLI arguments** - determine mode from `process.argv`: `--app` (menu bar), `--server` (headless API), or GUI (default).
+2. **Hide dock** - if menu bar or server mode, call `app.dock?.hide()`. Otherwise set the dock icon via `getAppIcon()` resized to 128x128.
+3. **`ensureUserData()`** - create `~/.atrophy/`, `~/.atrophy/agents/`, `~/.atrophy/logs/`, `~/.atrophy/models/` directories. Write an empty `config.json` if missing. Run `migrateAgentData()` to copy runtime data files from bundle to user data (skipping `agent.json` manifests and files that already exist).
+4. **`getConfig()`** - instantiate the Config singleton. This loads `~/.atrophy/.env` into `process.env`, reads `~/.atrophy/config.json`, resolves the VERSION file, detects the Python path, resolves the default agent, and computes all derived paths.
+5. **`initDb()`** - open (or create) the SQLite database for the current agent at `~/.atrophy/agents/<name>/data/memory.db`.
+6. **Set `currentAgentName`** - store the active agent name for deferral tracking.
+7. **Log startup** - print version, agent name, and database path.
+8. **`registerIpcHandlers()`** - register all `ipcMain.handle()` channels (see IPC registry below).
+9. **`registerAudioHandlers()`** - register audio capture IPC (start/stop recording, chunk receiving). Takes a getter function for the main window reference.
+10. **`registerWakeWordHandlers()`** - register wake word detection IPC.
+11. **`setPlaybackCallbacks()`** - wire TTS playback events to IPC and wake word pause/resume.
+12. **Resume last active agent** - read `getLastActiveAgent()`. If different from the default, call `config.reloadForAgent()` and `initDb()` again.
+13. **Start sentinel timer** - `setInterval` every 5 minutes. Runs `runCoherenceCheck()` if a session is active with a CLI session ID and system prompt.
+14. **Start queue poller** - `setInterval` every 10 seconds. Calls `drainQueue()` and forwards messages to the renderer via `queue:message`.
+15. **Start deferral watcher** - `setInterval` every 2 seconds. Calls `checkDeferralRequest()`, validates against anti-loop protection, and sends `deferral:request` to the renderer if valid.
+16. **Mode-specific startup**:
+    - **Server mode**: parse `--port` argument (default 5000), call `startServer(port)`, return (no window).
+    - **GUI/App mode**: call `createWindow()`.
+17. **Initialize auto-updater** - call `initAutoUpdater(mainWindow)` (5-second delayed check).
+18. **Menu bar setup** (if `--app`):
+    - `createTray()` - create system tray icon.
+    - Register global shortcut `Cmd+Shift+Space` to toggle window visibility.
+
+---
+
+## Window Creation
+
+`createWindow()` creates a `BrowserWindow` with these parameters:
+
+```typescript
+{
+  width: config.WINDOW_WIDTH,           // default 622
+  height: config.WINDOW_HEIGHT,         // default 830
+  minWidth: 360,
+  minHeight: 480,
+  titleBarStyle: 'hiddenInset',
+  trafficLightPosition: { x: 14, y: 14 },
+  vibrancy: 'ultra-dark',
+  visualEffectState: 'active',
+  backgroundColor: '#00000000',         // transparent
+  show: false,                          // hidden until ready-to-show
+  webPreferences: {
+    preload: path.join(__dirname, '..', 'preload', 'index.mjs'),
+    sandbox: false,
+    contextIsolation: true,
+    nodeIntegration: false,
+    webSecurity: false,
+  },
+}
+```
+
+The renderer is loaded from `ELECTRON_RENDERER_URL` (dev server) or the built `index.html` (production). The window shows on `ready-to-show` unless in menu bar mode. On close, the `mainWindow` reference is nulled.
+
+---
+
+## Tray Setup and Menu Structure
+
+The tray icon (`createTray()`) uses a hand-crafted brain icon if available:
+
+1. Check for `menubar_brain@2x.png` in the icons directory, then `menubar_brain.png`.
+2. If found, create a native image and set it as a template image (auto-adapts to macOS light/dark mode).
+3. If not found, fall back to a procedural orb icon via `getTrayIcon('active')`.
+
+The context menu has two items:
+
+| Item | Action |
+|------|--------|
+| Show | Show and focus the main window |
+| Quit | `app.quit()` |
+
+Click behavior on the tray icon toggles visibility: if visible, hide; if hidden, show and focus.
+
+The `updateTrayState()` function updates the procedural orb icon to reflect state (active, muted, idle, away) but skips updates when using the hand-crafted template image.
+
+---
+
+## IPC Channel Registry
+
+All IPC channels registered in `src/main/index.ts` via `registerIpcHandlers()`:
+
+### Configuration
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `config:get` | invoke | Returns a flat object of all config values for the renderer |
+| `config:update` | invoke | Accepts key-value updates, routes to user config or agent config based on key |
+
+The `config:update` handler classifies keys into agent-specific keys (voice, heartbeat, telegram, display, disabled tools) and user-level keys. Agent keys are saved to `agent.json`, user keys to `config.json`.
+
+### Agent Management
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `agent:list` | invoke | Returns array of agent name strings |
+| `agent:listFull` | invoke | Returns full agent info objects (name, display_name, description, role) |
+| `agent:switch` | invoke | End current session, reload config for new agent, reset MCP config, reinit DB, clear audio queue. Returns `{agentName, agentDisplayName}` |
+| `agent:cycle` | invoke | Cycle to next/previous agent by direction (+1/-1). Returns next agent info |
+| `agent:getState` | invoke | Get muted/enabled state for a named agent |
+| `agent:setState` | invoke | Set muted/enabled state for a named agent |
+
+### Inference
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `inference:send` | invoke | Main inference entry point. Marks user active, ensures session, loads system prompt, records turn, detects mood, streams inference. Routes events to renderer |
+| `inference:stop` | invoke | Kill the active Claude CLI subprocess |
+| `inference:textDelta` | send (main->renderer) | Partial text token |
+| `inference:sentenceReady` | send (main->renderer) | Complete sentence for display |
+| `inference:toolUse` | send (main->renderer) | Tool invocation notification |
+| `inference:compacting` | send (main->renderer) | Context window compression detected |
+| `inference:done` | send (main->renderer) | Full response text |
+| `inference:error` | send (main->renderer) | Error message |
+
+### TTS Playback
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `tts:started` | send (main->renderer) | Audio playback started for sentence index |
+| `tts:done` | send (main->renderer) | Audio playback completed for sentence index |
+| `tts:queueEmpty` | send (main->renderer) | All queued audio has finished playing |
+
+### Audio Capture
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `audio:start` | invoke | Start recording |
+| `audio:stop` | invoke | Stop recording, return transcription |
+| `audio:chunk` | send (renderer->main) | Raw audio buffer chunk |
+
+### Wake Word
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `wakeword:start` | send (main->renderer) | Start ambient listening with chunk duration |
+| `wakeword:stop` | send (main->renderer) | Stop ambient listening |
+| `wakeword:chunk` | send (renderer->main) | Audio buffer chunk for wake word detection |
+
+### Window Control
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `window:toggleFullscreen` | invoke | Toggle fullscreen on main window |
+| `window:minimize` | invoke | Minimize main window |
+| `window:close` | invoke | Hide (menu bar mode) or close (GUI mode) the main window |
+
+### Setup Wizard
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `setup:check` | invoke | Returns true if setup wizard should run (checks `setup_complete` in config.json) |
+| `setup:inference` | invoke | Run wizard inference with Xan metaprompt. Returns full response text |
+| `setup:saveSecret` | invoke | Save an API key to `~/.atrophy/.env` via `saveEnvVar()` |
+| `setup:createAgent` | invoke | Create a new agent from wizard config via `createAgent()` |
+
+### Opening Line
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `opening:get` | invoke | Returns agent's opening line or default "Ready. Where are we?" |
+
+### Usage and Activity
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `usage:all` | invoke | Get usage data for all agents, optional days filter |
+| `activity:all` | invoke | Get activity data for all agents, optional days and limit filters |
+
+### Cron Jobs
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `cron:list` | invoke | List all scheduled launchd jobs |
+| `cron:toggle` | invoke | Enable or disable all cron jobs |
+
+### Telegram Daemon
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `telegram:startDaemon` | invoke | Start the Telegram polling daemon |
+| `telegram:stopDaemon` | invoke | Stop the Telegram polling daemon |
+
+### HTTP Server
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `server:start` | invoke | Start the HTTP API server on optional port |
+| `server:stop` | invoke | Stop the HTTP API server |
+
+### Memory
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `memory:search` | invoke | Vector search across memory, returns results |
+
+### Avatar
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `avatar:getVideoPath` | invoke | Resolve avatar video loop path by colour and clip name. Falls back to ambient_loop.mp4 |
+
+### Login Item
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `install:isEnabled` | invoke | Check if app is registered as a login item |
+| `install:toggle` | invoke | Enable or disable login item registration |
+
+### Auto-Updater
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `updater:check` | invoke | Check for updates |
+| `updater:download` | invoke | Download available update |
+| `updater:quitAndInstall` | invoke | Quit app and install downloaded update |
+| `updater:available` | send (main->renderer) | Update available with version and release notes |
+| `updater:not-available` | send (main->renderer) | No update available |
+| `updater:progress` | send (main->renderer) | Download progress (percent, bytesPerSecond, transferred, total) |
+| `updater:downloaded` | send (main->renderer) | Update downloaded with version info |
+| `updater:error` | send (main->renderer) | Update error message |
+
+### Agent Deferral
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `deferral:complete` | invoke | Complete deferral: suspend current session, switch to target agent, resume target session. Returns new agent info |
+| `deferral:request` | send (main->renderer) | Deferral request detected (target, context, user_question) |
+
+### Agent Message Queues
+
+| Channel | Direction | Description |
+|---------|-----------|-------------|
+| `queue:drainAgent` | invoke | Drain pending messages for a specific agent |
+| `queue:drainAll` | invoke | Drain pending messages for all agents |
+| `queue:message` | send (main->renderer) | Background job message (text, source) |
+
+---
+
+## Preload API
+
+The preload script (`src/preload/index.ts`) exposes a typed `AtrophyAPI` interface via `contextBridge.exposeInMainWorld('atrophy', api)`. The renderer accesses all main process functionality through `window.atrophy`.
+
+The API uses two patterns:
+- **`ipcRenderer.invoke(channel, ...args)`** for request-response calls (returns a Promise)
+- **`createListener(channel)`** for event subscriptions (returns an unsubscribe function)
+
+The `createListener` helper wraps `ipcRenderer.on()` and returns a cleanup function that calls `ipcRenderer.removeListener()`. This prevents memory leaks from forgotten listeners.
+
+A generic `on(channel, cb)` method is also exposed for subscribing to arbitrary channels not covered by the typed API.
+
+---
+
+## Process Lifecycle
+
+### App Ready
+The `app.whenReady()` handler runs the full startup sequence described above.
+
+### Window Closed
+On `window-all-closed`, the app quits on non-macOS platforms. On macOS, the app stays running (standard macOS behavior).
+
+### Activate
+On `activate` (clicking the dock icon), if no window exists a new one is created; otherwise the existing window is shown.
+
+### Will Quit
+The `will-quit` handler performs cleanup in this order:
+1. Unregister all global shortcuts
+2. Clear the sentinel timer (5-minute coherence checks)
+3. Clear the queue poller timer (10-second message drain)
+4. Clear the deferral watcher timer (2-second deferral checks)
+5. Stop the wake word listener
+6. Stop the Telegram daemon
+7. Stop the HTTP server
+8. Close all SQLite database connections
+
+### Background Timers
+
+Three `setInterval` timers run in the main process:
+
+| Timer | Interval | Purpose |
+|-------|----------|---------|
+| `sentinelTimer` | 5 minutes | Run coherence check on the active session. If the session ID changes (e.g. from re-anchoring), update the session |
+| `queueTimer` | 10 seconds | Drain the file-based message queue and forward messages to the renderer |
+| `deferralTimer` | 2 seconds | Check for `.deferral_request.json` files, validate against anti-loop protection (no self-deferral, max 3 deferrals per 60s), and notify the renderer |
+
+---
+
 ## IPC Architecture
 
 Electron enforces a strict process separation:

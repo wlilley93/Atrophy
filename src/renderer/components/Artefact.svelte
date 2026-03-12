@@ -1,18 +1,168 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+
   interface Props {
     onClose: () => void;
   }
 
   let { onClose }: Props = $props();
 
-  // Artefact display state - will be populated via IPC
+  const api = (window as any).atrophy;
+
+  // Artefact display state
   let content = $state('');
-  let contentType = $state('html'); // html, markdown, code, svg
-  let gallery = $state<{ id: number; title: string; type: string }[]>([]);
+  let contentType = $state<'html' | 'svg' | 'code' | 'markdown' | 'image' | 'video'>('html');
+  let contentSrc = $state(''); // file:// URL for image/video
+  let visible = $state(false);
+
+  // Gallery state
+  let gallery = $state<{
+    id: number;
+    title: string;
+    type: string;
+    description?: string;
+    path?: string;
+    file?: string;
+    created_at?: string;
+  }[]>([]);
   let showGallery = $state(false);
+  let searchQuery = $state('');
+  let activeFilter = $state('all');
+
+  // Webview/iframe ref for memory cleanup
+  let iframeRef: HTMLIFrameElement | null = null;
+
+  const FILTER_OPTIONS = ['All', 'HTML', 'Code', 'Image', 'Video'] as const;
+  const BADGE_COLORS: Record<string, string> = {
+    html: '#4a9eff',
+    svg: '#4a9eff',
+    code: '#a8e6a1',
+    markdown: '#a8e6a1',
+    image: '#ff6b9d',
+    video: '#9b59b6',
+  };
+
+  // Fade in on mount
+  onMount(() => {
+    requestAnimationFrame(() => {
+      visible = true;
+    });
+
+    // Handle window resize
+    window.addEventListener('resize', handleResize);
+
+    // Listen for artefact updates
+    if (api && typeof api.on === 'function') {
+      const cleanup = api.on('artefact:updated', (data: {
+        type: string;
+        content?: string;
+        src?: string;
+        title?: string;
+        description?: string;
+      }) => {
+        loadArtefact(data);
+      });
+      cleanups.push(cleanup);
+    }
+  });
+
+  let cleanups: (() => void)[] = [];
+
+  onDestroy(() => {
+    window.removeEventListener('resize', handleResize);
+    cleanups.forEach(fn => fn());
+    // Memory cleanup - clear any iframe/webview content
+    clearContent();
+  });
+
+  function handleResize() {
+    // Force Svelte reactivity update for layout recalculation
+    // The CSS handles actual sizing, this just ensures re-render if needed
+  }
+
+  function loadArtefact(data: {
+    type: string;
+    content?: string;
+    src?: string;
+    title?: string;
+    description?: string;
+  }) {
+    contentType = (data.type || 'html') as typeof contentType;
+    content = data.content || '';
+    contentSrc = data.src || '';
+  }
+
+  function clearContent() {
+    content = '';
+    contentSrc = '';
+    if (iframeRef) {
+      iframeRef.srcdoc = '';
+      iframeRef.src = 'about:blank';
+    }
+  }
+
+  function handleClose() {
+    visible = false;
+    clearContent();
+    setTimeout(() => {
+      onClose();
+    }, 300);
+  }
+
+  function selectGalleryItem(item: typeof gallery[0]) {
+    if (item.path && api) {
+      // Request artefact metadata from main process via the path
+      api.on('artefact:updated', (data: any) => {
+        loadArtefact(data);
+      });
+    }
+    // For items with inline data
+    contentType = (item.type || 'html') as typeof contentType;
+    showGallery = false;
+  }
+
+  // Filtered + searched gallery items
+  let filteredGallery = $derived.by(() => {
+    let items = gallery;
+
+    // Apply type filter
+    if (activeFilter !== 'all') {
+      items = items.filter(item => {
+        const t = item.type?.toLowerCase();
+        const f = activeFilter.toLowerCase();
+        if (f === 'html') return t === 'html' || t === 'svg';
+        if (f === 'code') return t === 'code' || t === 'markdown';
+        return t === f;
+      });
+    }
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      items = items.filter(item =>
+        (item.title || '').toLowerCase().includes(q) ||
+        (item.description || '').toLowerCase().includes(q)
+      );
+    }
+
+    return items;
+  });
+
+  function setFilter(filter: string) {
+    activeFilter = filter.toLowerCase();
+  }
+
+  function formatDate(dateStr?: string): string {
+    if (!dateStr) return '';
+    return dateStr.slice(0, 10);
+  }
+
+  function formatTitle(title: string): string {
+    return title.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
 </script>
 
-<div class="artefact-overlay" data-no-drag>
+<div class="artefact-overlay" class:visible data-no-drag>
   <div class="artefact-header">
     <button class="gallery-btn" onclick={() => showGallery = !showGallery}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -21,7 +171,7 @@
       </svg>
     </button>
 
-    <button class="close-btn" onclick={onClose}>
+    <button class="close-btn" onclick={handleClose}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
@@ -29,9 +179,35 @@
   </div>
 
   <div class="artefact-content">
-    {#if content}
+    {#if content || contentSrc}
       {#if contentType === 'html' || contentType === 'svg'}
-        {@html content}
+        <iframe
+          bind:this={iframeRef}
+          srcdoc={content}
+          class="artefact-iframe"
+          sandbox="allow-scripts allow-same-origin"
+          title="Artefact content"
+        ></iframe>
+      {:else if contentType === 'image'}
+        <div class="artefact-media">
+          <img
+            src={contentSrc || `data:image/svg+xml,${encodeURIComponent(content)}`}
+            alt="Artefact"
+            class="artefact-image"
+          />
+        </div>
+      {:else if contentType === 'video'}
+        <div class="artefact-media">
+          <video
+            src={contentSrc}
+            class="artefact-video"
+            controls
+            autoplay
+            loop
+          >
+            <track kind="captions" />
+          </video>
+        </div>
       {:else}
         <pre class="artefact-code">{content}</pre>
       {/if}
@@ -44,16 +220,64 @@
 
   {#if showGallery}
     <div class="gallery-panel">
-      <div class="gallery-header section-header">Artefacts</div>
-      {#each gallery as item (item.id)}
-        <button class="gallery-item">
-          <span class="gallery-type">{item.type}</span>
-          <span class="gallery-title">{item.title}</span>
-        </button>
-      {/each}
-      {#if gallery.length === 0}
-        <p class="gallery-empty">No artefacts yet</p>
-      {/if}
+      <div class="gallery-header-row">
+        <div class="gallery-title section-header">Artefacts</div>
+      </div>
+
+      <!-- Search bar -->
+      <div class="gallery-search">
+        <input
+          type="text"
+          placeholder="Search artefacts..."
+          bind:value={searchQuery}
+          class="search-input"
+        />
+      </div>
+
+      <!-- Type filter buttons -->
+      <div class="filter-row">
+        {#each FILTER_OPTIONS as filter}
+          <button
+            class="filter-btn"
+            class:active={activeFilter === filter.toLowerCase()}
+            onclick={() => setFilter(filter)}
+          >
+            {filter}
+          </button>
+        {/each}
+      </div>
+
+      <!-- Artefact cards -->
+      <div class="gallery-list">
+        {#each filteredGallery as item (item.id)}
+          <button class="gallery-card" onclick={() => selectGalleryItem(item)}>
+            <div class="card-top">
+              <span
+                class="card-badge"
+                style="color: {BADGE_COLORS[item.type] || '#888'}"
+              >
+                {item.type.toUpperCase()}
+              </span>
+              {#if item.created_at}
+                <span class="card-date">{formatDate(item.created_at)}</span>
+              {/if}
+            </div>
+            <span class="card-title">{formatTitle(item.title)}</span>
+            {#if item.description}
+              <span class="card-desc">
+                {item.description.length > 60
+                  ? item.description.slice(0, 60) + '...'
+                  : item.description}
+              </span>
+            {/if}
+          </button>
+        {/each}
+        {#if filteredGallery.length === 0}
+          <p class="gallery-empty">
+            {searchQuery || activeFilter !== 'all' ? 'No matching artefacts' : 'No artefacts yet'}
+          </p>
+        {/if}
+      </div>
     </div>
   {/if}
 </div>
@@ -67,6 +291,14 @@
     flex-direction: column;
     background: rgba(12, 12, 14, 0.96);
     backdrop-filter: blur(20px);
+    opacity: 0;
+    transform: scale(0.98);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .artefact-overlay.visible {
+    opacity: 1;
+    transform: scale(1);
   }
 
   .artefact-header {
@@ -83,6 +315,7 @@
     color: var(--text-dim);
     cursor: pointer;
     padding: 4px;
+    transition: color 0.15s;
   }
 
   .close-btn:hover, .gallery-btn:hover {
@@ -94,6 +327,35 @@
     overflow: auto;
     padding: 0 var(--pad) var(--pad);
     color: var(--text-primary);
+  }
+
+  .artefact-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 8px;
+    background: #141418;
+  }
+
+  .artefact-media {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+  }
+
+  .artefact-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+  }
+
+  .artefact-video {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 8px;
   }
 
   .artefact-code {
@@ -112,52 +374,156 @@
     color: var(--text-dim);
   }
 
+  /* Gallery panel */
+
   .gallery-panel {
     position: absolute;
     left: var(--pad);
     top: 60px;
     bottom: var(--pad);
-    width: 240px;
+    width: 260px;
     background: rgba(20, 20, 24, 0.95);
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 16px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .gallery-header-row {
+    margin-bottom: 12px;
+  }
+
+  .gallery-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+  }
+
+  /* Search bar */
+
+  .gallery-search {
+    margin-bottom: 10px;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 7px 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: var(--font-sans);
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+  }
+
+  .search-input::placeholder {
+    color: var(--text-dim);
+  }
+
+  .search-input:focus {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Filter buttons */
+
+  .filter-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .filter-btn {
+    padding: 3px 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-dim);
+    font-size: 10px;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+
+  .filter-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+  }
+
+  .filter-btn.active {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+
+  /* Gallery list */
+
+  .gallery-list {
+    flex: 1;
     overflow-y: auto;
   }
 
-  .gallery-header {
-    margin-bottom: 16px;
-  }
+  /* Artefact cards */
 
-  .gallery-item {
+  .gallery-card {
     display: flex;
     flex-direction: column;
     width: 100%;
     padding: 10px 12px;
-    background: transparent;
+    background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--text-primary);
     cursor: pointer;
     text-align: left;
     margin-bottom: 6px;
-    transition: border-color 0.15s;
+    transition: background 0.15s, border-color 0.15s;
+    font-family: var(--font-sans);
   }
 
-  .gallery-item:hover {
-    border-color: var(--border-hover);
+  .gallery-card:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.18);
   }
 
-  .gallery-type {
-    font-size: 10px;
-    text-transform: uppercase;
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .card-badge {
+    font-size: 9px;
+    font-weight: bold;
     letter-spacing: 1px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+
+  .card-date {
+    font-size: 10px;
     color: var(--text-dim);
   }
 
-  .gallery-title {
+  .card-title {
     font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .card-desc {
+    font-size: 11px;
+    color: var(--text-dim);
     margin-top: 2px;
+    line-height: 1.4;
   }
 
   .gallery-empty {

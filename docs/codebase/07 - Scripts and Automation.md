@@ -2,371 +2,1497 @@
 
 Background jobs and utilities. All TypeScript job modules live in `src/main/jobs/`. Shared tooling lives in `src/main/`. Python scripts that remain as subprocesses live in `mcp/` and `scripts/`.
 
+---
+
+## Table of Contents
+
+1. [src/main/cron.ts - launchd Control Plane](#srcmaincronts---launchd-control-plane)
+2. [src/main/create-agent.ts - Agent Scaffolding](#srcmaincreate-agentts---agent-scaffolding)
+3. [src/main/jobs/index.ts - Job Runner Framework](#srcmainjobsindexts---job-runner-framework)
+4. [src/main/jobs/observer.ts - Fact Extraction](#srcmainjobsobserverts---fact-extraction)
+5. [src/main/jobs/heartbeat.ts - Periodic Check-In](#srcmainjobsheartbeatts---periodic-check-in)
+6. [src/main/jobs/sleep-cycle.ts - Nightly Reconciliation](#srcmainjobssleep-cyclets---nightly-reconciliation)
+7. [src/main/jobs/morning-brief.ts - Morning Briefing](#srcmainjobsmorning-briefts---morning-briefing)
+8. [src/main/jobs/introspect.ts - Self-Reflection](#srcmainjobsintrospectts---self-reflection)
+9. [src/main/jobs/evolve.ts - Monthly Self-Evolution](#srcmainjobsevolvets---monthly-self-evolution)
+10. [src/main/jobs/converse.ts - Inter-Agent Conversation](#srcmainjobsconversets---inter-agent-conversation)
+11. [src/main/jobs/gift.ts - Unprompted Gift Notes](#srcmainjobsgiftts---unprompted-gift-notes)
+12. [src/main/jobs/voice-note.ts - Spontaneous Voice Notes](#srcmainjobsvoice-notets---spontaneous-voice-notes)
+13. [src/main/jobs/generate-avatar.ts - Avatar Generation](#srcmainjobsgenerate-avatarts---avatar-generation)
+14. [src/main/jobs/run-task.ts - Generic Task Runner](#srcmainjobsrun-taskts---generic-task-runner)
+15. [src/main/jobs/check-reminders.ts - Reminder Checker](#srcmainjobscheck-remindersts---reminder-checker)
+16. [src/main/install.ts - Login Item](#srcmaininstallts---login-item)
+17. [Python Scripts (Remaining)](#python-scripts-remaining)
+18. [jobs.json Format](#jobsjson-format)
+
+---
+
 ## src/main/cron.ts - launchd Control Plane
 
-Manages macOS launchd jobs for scheduled tasks.
+Manages macOS launchd jobs for scheduled tasks. Port of `scripts/cron.py`.
 
-### API
+### Exported Types
 
 ```typescript
-import { listJobs, addJob, removeJob, editJobSchedule, runJobNow, installAllJobs, uninstallAllJobs, toggleCron } from './cron';
+export interface Job {
+  cron?: string;               // 5-field cron string (min hour dom month dow)
+  script: string;              // Path to script relative to BUNDLE_ROOT
+  description?: string;        // Human-readable description
+  args?: string[];             // Extra arguments passed after script path
+  type?: 'calendar' | 'interval';  // Schedule type (default: 'calendar')
+  interval_seconds?: number;   // Seconds between runs (for interval type)
+}
 
-listJobs()                                          // show all jobs
-addJob('name', '30 7 * * *', 'script.py', 'desc')  // add a job
-removeJob('name')                                   // remove a job
-editJobSchedule('name', '0 8 * * *')                // change schedule
-runJobNow('name')                                   // run now (manual trigger)
-installAllJobs()                                    // install all jobs to launchd
-uninstallAllJobs()                                  // uninstall all from launchd
-toggleCron(true)                                    // install or uninstall all
+export interface JobInfo extends Job {
+  name: string;                // Job identifier
+  installed: boolean;          // Whether plist exists in ~/Library/LaunchAgents/
+  schedule: string;            // Human-readable schedule description
+}
 ```
 
-### How It Works
+### Exported Functions
 
-1. Jobs are defined in `scripts/agents/<name>/jobs.json`
-2. `installAllJobs()` generates macOS plist files in `~/Library/LaunchAgents/`
-3. Plists are labelled `com.atrophiedmind.<agent>.<job_name>`
-4. Logs go to the bundle root `logs/<agent>/<job_name>.log`
+```typescript
+export function listJobs(): JobInfo[]
+```
+Reads all jobs from `jobs.json`, checks whether each has an installed plist file in `~/Library/LaunchAgents/`, and returns an array of `JobInfo` objects. The `schedule` field is formatted as `"every Ns"` for interval jobs or the raw cron string for calendar jobs.
 
-### Schedule Types
+```typescript
+export function addJob(
+  name: string,
+  cronStr: string,
+  script: string,
+  description?: string,   // default: ''
+  install?: boolean,       // default: false
+): void
+```
+Validates the cron string via `parseCron()` (throws on invalid format), adds the job to `jobs.json`, and optionally installs it to launchd immediately.
 
-**Calendar** (default): Uses `StartCalendarInterval` with standard 5-field cron notation (`min hour dom month dow`).
+```typescript
+export function removeJob(name: string): void
+```
+Uninstalls the job from launchd (if installed), removes it from `jobs.json`, and logs the action. No-op if the job does not exist.
 
-**Interval**: Uses `StartInterval` with a seconds-based period. Defined with `"type": "interval"` and `"interval_seconds"` in jobs.json.
+```typescript
+export function editJobSchedule(name: string, cronStr: string): void
+```
+Updates the cron expression for an existing job. Validates the new cron string. If the job is already installed (plist exists), uninstalls and reinstalls it with the new schedule. This is the function used by self-rescheduling jobs (introspect, converse, gift, voice-note).
+
+```typescript
+export function runJobNow(name: string): number
+```
+Runs a job immediately via `spawnSync()`. Executes `PYTHON_PATH <script> [args...]` with `AGENT=<name>` in the environment. Returns the process exit code (0 on success, 1 on failure or if job not found).
+
+```typescript
+export function installAllJobs(): void
+export function uninstallAllJobs(): void
+export function toggleCron(enabled: boolean): void
+```
+Bulk install/uninstall operations. `toggleCron(true)` calls `installAllJobs()`, `toggleCron(false)` calls `uninstallAllJobs()`.
+
+### Internal Functions
+
+**`labelPrefix(): string`** - Returns `com.atrophiedmind.<agent_name>.` using the current config's agent name.
+
+**`jobsFile(): string`** - Returns the path to the jobs definition file: `<BUNDLE_ROOT>/scripts/agents/<agent_name>/jobs.json`.
+
+**`logsDir(): string`** - Returns `<BUNDLE_ROOT>/logs/<agent_name>`. Created on install if missing.
+
+**`plistPath(name: string): string`** - Returns `~/Library/LaunchAgents/com.atrophiedmind.<agent>.<name>.plist`.
+
+**`loadJobs(): Record<string, Job>`** - Reads and parses `jobs.json`. Returns empty object if file is missing or malformed.
+
+**`saveJobs(jobs: Record<string, Job>): void`** - Writes jobs to `jobs.json` with 2-space indentation. Creates parent directories if needed.
+
+**`parseCron(cronStr: string): CalendarInterval`** - Parses a 5-field cron string into a launchd `CalendarInterval` object. Fields: `Minute`, `Hour`, `Day`, `Month`, `Weekday`. Wildcard (`*`) fields are omitted from the output. Throws `Error` if the string does not contain exactly 5 whitespace-separated fields.
 
 ### Plist Generation
 
-The `generatePlist()` function builds a `PlistDict` object and serialises it to XML via a minimal hand-built serialiser (no plist library dependency). Each plist includes:
+The `generatePlist(name: string, job: Job): PlistDict` function builds a structured object with these fields:
 
-- `ProgramArguments` - Python path and script path
-- `WorkingDirectory` - bundle root
-- `EnvironmentVariables` - `PATH` and `AGENT` name
-- `StandardOutPath` / `StandardErrorPath` - log file paths
+| Key | Value |
+|-----|-------|
+| `Label` | `com.atrophiedmind.<agent>.<job_name>` |
+| `ProgramArguments` | `[<PYTHON_PATH>, <resolved_script_path>, ...args]` |
+| `WorkingDirectory` | `BUNDLE_ROOT` |
+| `StandardOutPath` | `<BUNDLE_ROOT>/logs/<agent>/<job_name>.log` |
+| `StandardErrorPath` | Same as stdout path (combined logging) |
+| `EnvironmentVariables` | `{ PATH: "/usr/local/bin:/usr/bin:/bin:<python_dir>", AGENT: "<agent_name>" }` |
+| `StartCalendarInterval` | Set for calendar jobs (from `parseCron()`) |
+| `StartInterval` | Set for interval jobs (from `job.interval_seconds`) |
 
-### Environment
+The job type defaults to `'calendar'` if `job.type` is not specified.
 
-Each plist sets `AGENT=<name>` and inherits the Python path, ensuring agent-scoped execution.
+### XML Serialisation
+
+The `plistToXml(plist: PlistDict): string` function is a minimal hand-built XML serialiser (no external plist library). It handles:
+- `string` values as `<string>` elements
+- `number` values as `<integer>` elements
+- `boolean` values as `<true/>` or `<false/>`
+- `Array` values as `<array>` with string items
+- Nested `object` values as `<dict>` (recursive)
+
+Output includes the standard Apple plist DTD declaration.
+
+### Install/Uninstall Flow
+
+1. `installJob(name, job)`: Creates logs directory, creates `~/Library/LaunchAgents/` directory, writes plist XML, runs `launchctl load <plist_path>`.
+2. `uninstallJob(name)`: Checks plist exists, runs `launchctl unload <plist_path>`, deletes the plist file.
+
+Both use `spawnSync('launchctl', ...)` with `stdio: 'pipe'` to suppress output.
+
+### File I/O Summary
+
+| Operation | Path | Format |
+|-----------|------|--------|
+| Read | `<BUNDLE_ROOT>/scripts/agents/<agent>/jobs.json` | JSON object of Job definitions |
+| Write | Same path | Same format, 2-space indent |
+| Write | `~/Library/LaunchAgents/com.atrophiedmind.<agent>.<job>.plist` | Apple plist XML |
+| Delete | Same plist path | On uninstall |
+| Create dir | `<BUNDLE_ROOT>/logs/<agent>/` | On install |
+
+### Dependencies
+
+- `child_process` (`execSync`, `spawnSync`) - launchctl commands
+- `./config` (`getConfig`, `BUNDLE_ROOT`, `USER_DATA`)
+
+---
 
 ## src/main/create-agent.ts - Agent Scaffolding
 
 Programmatic agent creation that builds a complete agent directory structure. Unlike the Python version's 9-step interactive questionnaire, the TypeScript version accepts a typed `CreateAgentOptions` object for non-interactive use (called from the setup wizard or IPC).
 
-### CreateAgentOptions Interface
-
-The full set of fields accepted by `createAgent()`:
-
-| Group | Field | Type | Notes |
-|-------|-------|------|-------|
-| **Naming** | `name` | `string?` | Internal slug (lowercase, underscores). Derived from `displayName` if omitted. |
-| | `displayName` | `string` | Human-readable display name. **Required.** |
-| | `description` | `string?` | Short description for roster display (truncated to 120 chars). |
-| | `userName` | `string?` | Name of the human user (default: `'User'`). |
-| **Identity** | `originStory` | `string?` | 2-3 sentence origin narrative. |
-| | `coreNature` | `string?` | What the agent fundamentally is. |
-| | `characterTraits` | `string?` | Temperament, edges, how they talk. |
-| | `values` | `string?` | What they care about. |
-| | `relationship` | `string?` | How they relate to the user. |
-| **Boundaries** | `wontDo` | `string?` | Refusal list - what they will not do. |
-| | `frictionModes` | `string?` | How they push back when the user is avoiding something. |
-| | `sessionLimitBehaviour` | `string?` | What happens at the soft time limit. |
-| | `softLimitMins` | `number?` | Session soft limit in minutes (default: 60). |
-| **Voice** | `openingLine` | `string?` | First words the agent ever says. |
-| | `writingStyle` | `string?` | How they write - register, tone, length. |
-| | `voice` | `VoiceConfig?` | TTS settings: `ttsBackend`, `elevenlabsVoiceId`, `elevenlabsModel`, `elevenlabsStability`, `elevenlabsSimilarity`, `elevenlabsStyle`, `falVoiceId`, `playbackRate`. |
-| **Appearance** | `appearance` | `AppearanceConfig?` | `hasAvatar`, `appearanceDescription`, `avatarResolution`. |
-| **Channels** | `wakeWords` | `string[]?` | Wake word phrases (default: `['hey <name>', '<name>']`). |
-| | `telegramEmoji` | `string?` | Emoji prefix for Telegram messages. |
-| | `telegramBotToken` | `string?` | Telegram bot token (stored as env key reference). |
-| | `telegramChatId` | `string?` | Telegram chat ID (stored as env key reference). |
-| **Heartbeat** | `heartbeatActiveStart` | `number?` | Hour to start outreach checks (default: 9). |
-| | `heartbeatActiveEnd` | `number?` | Hour to stop outreach checks (default: 22). |
-| | `heartbeatIntervalMins` | `number?` | Minutes between heartbeat checks (default: 30). |
-| | `outreachStyle` | `string?` | Agent-specific outreach personality notes. |
-| **Tools** | `tools` | `ToolsConfig?` | `disabledTools` (MCP tool names to block) and `customSkills` (array of `{ name, description }` pairs written to skills dir). |
-
-### What It Creates
-
-1. **Directories** under `~/.atrophy/agents/<name>/`:
-   - `data/` - agent.json manifest + memory.db
-   - `prompts/` - system.md, soul.md, heartbeat.md
-   - `avatar/` - source/, loops/, candidates/
-   - `audio/` - TTS cache and recordings
-   - `skills/` - system.md, soul.md, custom skill files, tools reference
-   - `notes/` - reflections, threads, journal/, evolution-log/, conversations/, tasks/
-   - `state/` - runtime state files
-
-2. **agent.json** - Full manifest with identity, voice, telegram, display, heartbeat, avatar, and disabled tools configuration
-
-3. **Prompt documents** - Template-based generation:
-
-| Function | Output | Content | Scale |
-|----------|--------|---------|-------|
-| `generateSystemPrompt()` | `prompts/system.md` | Operating manual with Origin, Who You Are, Character, Relationship, Values, Constraints, Friction, Voice, Capabilities (CONVERSATION, MEMORY, RESEARCH, REFLECTION, WRITING, SCHEDULING, MONITORING), Session Behaviour, Opening Line | Template-based, ~500-800 words |
-| `generateSoul()` | `prompts/soul.md` | First-person working notes - origin, nature, character, constraints, push-back style, values, relationship, writing style | Template-based, ~300-500 words |
-| `generateHeartbeat()` | `prompts/heartbeat.md` | Outreach evaluation checklist with timing, unfinished threads, agent-specific considerations, and the real question ("would hearing from you right now feel like a gift, or like noise?") | Template-based, ~200-300 words |
-
-Unlike the Python version, the Electron version does **not** have `generateGiftMd()` or `generateMorningBriefMd()` functions. Python's create_agent generates 5 prompt documents; the Electron version generates 3. The gift and morning-brief prompts are instead loaded at runtime from Obsidian skills files or from task definitions.
-
-All three generators use template interpolation with the `CreateAgentOptions` fields. Sections that have no input are filled with `(To be written.)` placeholders. There is no LLM-expanded generation step - the templates are the final output. This differs from the Python version, which uses `run_inference_oneshot()` to expand sparse questionnaire fields into richly detailed, character-specific documents (1000-2500 words for the system prompt). The intent is that the setup wizard's Xan conversation gathers richer input upfront, and the evolve.ts daemon expands the documents over time.
-
-4. **Skills copies** - system.md and soul.md duplicated to `skills/` for Obsidian workspace access. Custom skills from `tools.customSkills` are written as individual markdown files (slugified names).
-
-5. **Starter notes** - reflections.md, for-<user>.md, threads.md, journal-prompts.md, gifts.md
-
-6. **Database** - SQLite database initialised from `db/schema.sql`
-
-**Generated files summary:**
-
-- `~/.atrophy/agents/<name>/data/agent.json` - Full manifest
-- `~/.atrophy/agents/<name>/prompts/system.md` - Template-generated personality prompt (includes a `## Capabilities` section listing labeled strengths like CONVERSATION, MEMORY, RESEARCH)
-- `~/.atrophy/agents/<name>/prompts/soul.md` - Template-generated first-person identity document
-- `~/.atrophy/agents/<name>/prompts/heartbeat.md` - Template-generated outreach evaluation checklist
-- `~/.atrophy/agents/<name>/skills/system.md` - Copy of system prompt for Obsidian workspace
-- `~/.atrophy/agents/<name>/skills/soul.md` - Copy of soul doc for Obsidian workspace
-- `~/.atrophy/agents/<name>/skills/<custom-skill>.md` - One per custom skill (if any)
-- `~/.atrophy/agents/<name>/notes/reflections.md` - Starter reflections scratchpad
-- `~/.atrophy/agents/<name>/notes/for-<user>.md` - Scratchpad for things to share
-- `~/.atrophy/agents/<name>/notes/threads.md` - Active threads tracker
-- `~/.atrophy/agents/<name>/notes/journal-prompts.md` - Journal prompts scratchpad
-- `~/.atrophy/agents/<name>/notes/gifts.md` - Gifts and notes scratchpad
-- `~/.atrophy/agents/<name>/data/memory.db` - SQLite database from schema.sql
-
-Note: The Python version also creates an Obsidian vault structure (`skills/`, `notes/`, dashboard) and parameterised daemon scripts under `scripts/agents/<name>/`. The Electron version does not scaffold Obsidian vault directories or daemon scripts during agent creation - Obsidian integration is resolved dynamically at runtime via `prompts.ts`, and daemon scripts are handled by the job framework.
-
-### Usage
+### Exported Types
 
 ```typescript
-import { createAgent, CreateAgentOptions } from './create-agent';
-
-const manifest = createAgent({
-  displayName: 'Oracle',
-  userName: 'Will',
-  description: 'A contemplative agent',
-  originStory: '...',
-  coreNature: '...',
-  characterTraits: '...',
-  values: '...',
-  relationship: '...',
-  wontDo: '...',
-  frictionModes: '...',
-  writingStyle: '...',
-  openingLine: 'What are you avoiding?',
-  voice: { ttsBackend: 'elevenlabs', elevenlabsVoiceId: '...' },
-  heartbeatActiveStart: 9,
-  heartbeatActiveEnd: 22,
-});
-```
-
-The function returns the generated `AgentManifest` object. If `name` is not provided, it is derived from `displayName` via slugification. All file writes use `writeIfMissing()` - existing files are not overwritten, making the function safe to re-run.
-
-## Background Job Framework
-
-All background jobs use a common runner framework defined in `src/main/jobs/index.ts`.
-
-### Job Runner
-
-```typescript
-export interface JobDefinition {
-  name: string;
-  description: string;
-  gates: GateCheck[];
-  run: () => Promise<string>;
+export interface VoiceConfig {
+  ttsBackend?: string;
+  elevenlabsVoiceId?: string;
+  elevenlabsModel?: string;
+  elevenlabsStability?: number;    // default: 0.5
+  elevenlabsSimilarity?: number;   // default: 0.75
+  elevenlabsStyle?: number;        // default: 0.35
+  falVoiceId?: string;
+  playbackRate?: number;           // default: 1.12
 }
 
-export async function runJob(name: string, agent?: string): Promise<JobResult>
+export interface AppearanceConfig {
+  hasAvatar?: boolean;
+  appearanceDescription?: string;
+  avatarResolution?: number;       // default: 512
+}
+
+export interface ToolsConfig {
+  disabledTools?: string[];
+  customSkills?: Array<{ name: string; description: string }>;
+}
+
+export interface CreateAgentOptions {
+  name?: string;               // Internal slug (derived from displayName if omitted)
+  displayName: string;         // REQUIRED - human-readable name
+  description?: string;        // Truncated to 120 chars in manifest
+  userName?: string;           // default: 'User'
+  openingLine?: string;        // default: 'Hello.'
+  wakeWords?: string[];        // default: ['hey <name>', '<name>']
+  telegramEmoji?: string;
+  originStory?: string;
+  coreNature?: string;
+  characterTraits?: string;
+  values?: string;
+  relationship?: string;
+  wontDo?: string;
+  frictionModes?: string;
+  sessionLimitBehaviour?: string;  // default: 'Check in - are you grounded?...'
+  softLimitMins?: number;          // default: 60
+  writingStyle?: string;
+  voice?: VoiceConfig;
+  appearance?: AppearanceConfig;
+  tools?: ToolsConfig;
+  heartbeatActiveStart?: number;   // default: 9
+  heartbeatActiveEnd?: number;     // default: 22
+  heartbeatIntervalMins?: number;  // default: 30
+  outreachStyle?: string;
+  telegramBotToken?: string;
+  telegramChatId?: string;
+}
+
+export interface AgentManifest {
+  name: string;
+  display_name: string;
+  description: string;
+  user_name: string;
+  opening_line: string;
+  wake_words: string[];
+  telegram_emoji: string;
+  voice: {
+    tts_backend: string;
+    elevenlabs_voice_id: string;
+    elevenlabs_model: string;        // default: 'eleven_v3'
+    elevenlabs_stability: number;
+    elevenlabs_similarity: number;
+    elevenlabs_style: number;
+    fal_voice_id: string;
+    playback_rate: number;
+  };
+  telegram: {
+    bot_token_env: string;   // e.g. 'TELEGRAM_BOT_TOKEN_COMPANION'
+    chat_id_env: string;     // e.g. 'TELEGRAM_CHAT_ID_COMPANION'
+  };
+  display: {
+    window_width: number;    // always 622
+    window_height: number;   // always 830
+    title: string;           // 'ATROPHY - <displayName>'
+  };
+  heartbeat: {
+    active_start: number;
+    active_end: number;
+    interval_mins: number;
+  };
+  avatar?: { description: string; resolution: number };
+  disabled_tools?: string[];
+}
 ```
 
-The runner handles:
-- Agent-scoped config reloading
-- Pre-run gate checks (e.g. active hours, user status)
-- Error capture and structured result reporting
-- Logging with duration tracking
+### Exported Functions
 
-### CLI Entry Point
+```typescript
+export function createAgent(opts: CreateAgentOptions): AgentManifest
+```
 
-Jobs can be invoked from launchd via:
+Creates a new agent with all required directories, files, and database. Returns the generated `AgentManifest` object.
 
+**Throws** `Error` if `name` cannot be derived (both `name` and `displayName` are empty).
+
+**Idempotent**: All file writes use `writeIfMissing()` - existing files are not overwritten. The database is only initialised if `memory.db` does not exist. Safe to re-run.
+
+### Internal Functions
+
+**`slugify(name: string): string`** - Lowercases, trims, and replaces all non-alphanumeric/underscore characters with underscores.
+
+**`ensureDir(dirPath: string): void`** - `fs.mkdirSync` with `{ recursive: true }`.
+
+**`writeIfMissing(filePath: string, content: string): void`** - Creates parent directories and writes file only if it does not already exist.
+
+**`buildManifest(opts, name): AgentManifest`** - Assembles the full manifest from options with defaults. Description is truncated to 120 characters (117 + `'...'`). Telegram env key references use the pattern `TELEGRAM_BOT_TOKEN_<NAME_UPPER>` and `TELEGRAM_CHAT_ID_<NAME_UPPER>`.
+
+**`generateSystemPrompt(opts, name): string`** - Template-based system prompt (~500-800 words). Sections: Origin, Who You Are, Character, Relationship with user, Values, Constraints, Friction, Voice, Capabilities (CONVERSATION, MEMORY, RESEARCH, REFLECTION, WRITING, SCHEDULING, MONITORING), Session Behaviour, Opening Line. Unset sections use the placeholder `(To be written.)`.
+
+**`generateSoul(opts): string`** - First-person working notes (~300-500 words). Sections: Where I Come From, What I Am, Character, What I Will Not Do, How I Push Back, Values, Relationship, How I Write.
+
+**`generateHeartbeat(opts): string`** - Outreach evaluation checklist (~200-300 words). Sections: Timing, Unfinished Threads, Things You've Been Thinking About, Agent-Specific Considerations (from `outreachStyle`), The Real Question ("would hearing from you right now feel like a gift, or like noise?").
+
+**`initDatabase(dbPath: string): void`** - Reads SQL from `<BUNDLE_ROOT>/db/schema.sql`, opens a new SQLite database via `better-sqlite3`, executes the schema, and closes the connection. Throws if schema file is missing.
+
+### Directory Structure Created
+
+Under `~/.atrophy/agents/<name>/`:
+
+```
+data/
+  agent.json             # Full manifest (JSON, 2-space indent + trailing newline)
+  memory.db              # SQLite database from schema.sql
+prompts/
+  system.md              # Generated system prompt
+  soul.md                # Generated soul document
+  heartbeat.md           # Generated heartbeat checklist
+avatar/
+  source/                # Empty - user places chosen face.png here
+  loops/                 # Empty - for video loops (future)
+  candidates/            # Empty - avatar generation writes here
+audio/                   # Empty - TTS cache and recordings
+skills/
+  system.md              # Copy of system prompt for Obsidian workspace
+  soul.md                # Copy of soul document for Obsidian workspace
+  <custom-skill>.md      # One per custom skill (slugified names)
+notes/
+  reflections.md         # Starter: "# Reflections\n\n*<name>'s working reflections.*"
+  for-<user>.md          # Starter: "# For <user>\n\n*Scratchpad for things to share.*"
+  threads.md             # Starter: "# Active Threads\n\n*Ongoing conversations and topics.*"
+  journal-prompts.md     # Starter: "# Journal Prompts\n\n*Prompts left for <user>.*"
+  gifts.md               # Starter: "# Gifts\n\n*Notes and gifts left for <user>.*"
+  journal/               # Empty - introspect.ts writes here
+  evolution-log/         # Empty - evolve.ts archives here
+  conversations/         # Empty - converse.ts writes here
+  tasks/                 # Empty - run-task.ts writes here
+state/                   # Empty - observer.ts writes state here
+```
+
+### Key Differences from Python Version
+
+- Python version generates 5 prompt documents; Electron generates 3 (no `gift.md` or `morning-brief.md`)
+- Python version uses `run_inference_oneshot()` to expand sparse fields into richly detailed documents (1000-2500 words). Electron version uses template interpolation only - no LLM expansion step
+- Python version scaffolds Obsidian vault directories and daemon scripts. Electron version does not - Obsidian integration is resolved dynamically at runtime via `prompts.ts`, and daemon scripts are handled by the job framework
+
+### Dependencies
+
+- `better-sqlite3` - Database initialisation
+- `./config` (`BUNDLE_ROOT`, `USER_DATA`)
+
+---
+
+## src/main/jobs/index.ts - Job Runner Framework
+
+Common harness for all background jobs. Provides registration, gate checking, execution, and CLI entry point.
+
+### Exported Types
+
+```typescript
+export interface JobResult {
+  job: string;           // Job name
+  ran: boolean;          // Whether the job executed (vs. being gated/skipped)
+  outcome: string;       // Human-readable outcome
+  durationMs: number;    // Duration in milliseconds
+  error?: string;        // Error message if the job threw
+}
+
+export type GateCheck = () => string | null;
+// Returns null if OK to proceed, or a reason string to skip
+
+export interface JobDefinition {
+  name: string;          // Unique identifier (e.g. 'heartbeat', 'evolve')
+  description: string;   // Human-readable description
+  gates: GateCheck[];    // Pre-run gate checks
+  run: () => Promise<string>;  // Job logic, returns summary string
+}
+```
+
+### Exported Functions
+
+```typescript
+export function registerJob(def: JobDefinition): void
+```
+Adds a job to the internal `Map<string, JobDefinition>` registry. Called at module load time by each job module.
+
+```typescript
+export function getRegisteredJobs(): JobDefinition[]
+export function getJob(name: string): JobDefinition | undefined
+```
+Registry lookup functions.
+
+```typescript
+export async function runJob(name: string, agent?: string): Promise<JobResult>
+```
+Executes a registered job. Flow:
+1. If `agent` is provided, calls `getConfig().reloadForAgent(agent)` to scope all config to that agent
+2. Looks up the job in the registry. Returns `ran: false` with error if not found
+3. Runs each gate check sequentially. If any returns a reason string, returns `ran: false` with that reason
+4. Calls `def.run()`. Captures the outcome string on success or the error message on failure
+5. Logs `[job:<name>]` messages with duration. Outcome is truncated to 120 characters in logs
+6. **Never throws** - errors are captured in the `JobResult.error` field
+
+```typescript
+export async function runJobFromCli(argv: string[]): Promise<void>
+```
+Parses `--job=<name>` and `--agent=<agent>` from the argument array. Reloads config for the agent, runs the job, prints the result as formatted JSON, and calls `process.exit(0)` on success or `process.exit(1)` on error. Exits with code 1 and a usage message if `--job` is missing.
+
+CLI invocation:
 ```bash
 electron . --job=heartbeat --agent=companion
 ```
 
-The `runJobFromCli()` function parses `--job` and `--agent` flags, runs the job, and exits with the appropriate code.
+### Exported Gate Functions
 
-### Common Gates
+```typescript
+export function activeHoursGate(): string | null
+```
+Returns null if the current hour is within the agent's configured active window (`HEARTBEAT_ACTIVE_START` to `HEARTBEAT_ACTIVE_END`). Returns a reason string like `"Outside active hours (9-22)"` otherwise. Used by heartbeat and voice-note jobs.
 
-- `activeHoursGate()` - only runs during the agent's configured active hours (`HEARTBEAT_ACTIVE_START` to `HEARTBEAT_ACTIVE_END`)
+### Dependencies
 
-## Agent Background Jobs
+- `./config` (`getConfig`)
 
-All live in `src/main/jobs/`. Each is a TypeScript module that registers with the job framework and can run both as a standalone launchd script and as an imported function from the main process.
+---
 
-### observer.ts
+## src/main/jobs/observer.ts - Fact Extraction
 
-**Schedule**: Every 15 minutes (interval)
+Pre-compaction observer that extracts durable facts from recent conversation turns. Port of `scripts/agents/companion/observer.py`. Silent monitoring - no user-facing output.
 
-Extracts facts from recent conversation turns. Uses `runInferenceOneshot()` with Haiku at low effort to identify new observations, then writes them to the database via `writeObservation()`. Also runs entity extraction on turns longer than 50 characters.
+### Schedule
 
-Tracks state in `~/.atrophy/agents/<name>/state/.observer_state.json` (last processed turn ID). Most runs are no-ops when there are no new turns.
+Every 15 minutes (interval-based launchd job).
 
-### heartbeat.ts
+### Exported Functions
 
-**Schedule**: Every 30 minutes (interval)
+```typescript
+export async function runObserver(agentName: string): Promise<void>
+```
 
-Evaluates whether to reach out unprompted via Telegram:
+### Execution Flow
 
-1. Check gate: active hours, user away status
-2. Load HEARTBEAT.md checklist from Obsidian skills (fallback to prompts dir)
-3. Gather context: last interaction time, recent turn count, active threads, session summaries, observations
-4. Run inference via `streamInference()` with full tool access (can use memory tools for context)
-5. Parse structured response: `[REACH_OUT]`, `[HEARTBEAT_OK]`, or `[SUPPRESS]`
-6. If reaching out: send notification, queue message, send via Telegram only if Mac is idle
+1. Reload config for the specified agent
+2. Load state from `~/.atrophy/agents/<name>/state/.observer_state.json` (tracks `last_turn_id`)
+3. Query the database for new turns since `last_turn_id` AND within the last 15 minutes
+4. If no new turns, return immediately (fast path - most runs are no-ops)
+5. Build a transcript, truncating each turn's content to 500 characters
+6. Run inference via `runInferenceOneshot()` to extract observations
+7. Update `last_turn_id` to the highest processed turn ID
+8. Parse the response for `OBSERVATION:` lines with confidence scores
+9. Store each observation via `writeObservation()` with `[observer]` prefix
+10. Run entity extraction on all turns longer than 50 characters (best-effort, never blocks)
 
-All decisions (send or skip) are logged to the `heartbeats` table.
+### Database Queries
 
-### sleep-cycle.ts
+**Get recent turns:**
+```sql
+SELECT id, role, content, timestamp FROM turns
+WHERE id > ? AND timestamp > ?
+ORDER BY timestamp
+```
+Parameters: `last_turn_id`, cutoff (15 minutes ago as `YYYY-MM-DD HH:MM:SS`).
 
-**Schedule**: 3:00 AM daily
+Database is opened in readonly mode with `journal_mode = WAL`.
 
-End-of-day memory reconciliation:
+### Claude CLI Invocation
 
-1. Gather all turns, observations, and bookmarks from today
-2. Run inference with Haiku to extract structured output: `[FACTS]`, `[THREADS]`, `[PATTERNS]`, `[IDENTITY]`
-3. Store new facts as observations with confidence scores
-4. Update thread summaries
-5. Store patterns as observations
-6. Queue identity flags for review
-7. Mark old unreferenced observations as stale (>30 days)
-8. Apply activation decay to observations (`decayActivations()` with 30-day half-life)
-9. Restore emotional baselines (frustration drains, warmth/confidence/connection nudge toward 0.5)
+- Model: `claude-haiku-4-5-20251001`
+- Effort: `low`
+- System prompt: Static prompt instructing extraction of durable facts in `OBSERVATION: <fact> [confidence: X.X]` format, or `NOTHING_NEW` if nothing worth preserving
 
-### morning-brief.ts
+### Response Parsing
 
-**Schedule**: 7:00 AM daily
+The `parseObservations()` function parses lines matching:
+```
+OBSERVATION: <statement> [confidence: X.X]
+```
+- Confidence regex: `/\[confidence:\s*([\d.]+)\]/`
+- Default confidence if tag missing: `0.5`
+- Confidence tag is stripped from the stored statement
 
-Generate a morning briefing:
+### State File
 
-1. Fetch weather from wttr.in (plain text, no dependencies)
-2. Fetch BBC News RSS headlines (lightweight XML title extraction)
-3. Review active threads, recent session summaries, observations
-4. Read companion reflections from Obsidian
-5. Generate brief via `runInferenceOneshot()` using the `morning-brief` prompt
-6. Pre-synthesise TTS audio via `synthesiseSync()`
-7. Send via Telegram, fire macOS notification
-8. Queue to `.message_queue.json` with audio for delivery at next app launch
+Path: `~/.atrophy/agents/<name>/state/.observer_state.json`
 
-### introspect.ts
+```json
+{ "last_turn_id": 42 }
+```
 
-**Schedule**: Random, every 2-14 days (self-rescheduling)
+Starts at `{ "last_turn_id": 0 }` if missing or corrupted. Updated after successful parsing (even if `NOTHING_NEW`).
 
-Deep self-reflection with full database access:
+### Error Handling
 
-1. Gather the complete record: session arc (first session, total count, mood distribution, notable sessions), all threads, all observations, all bookmarks, identity snapshots, conversation texture (significant turns), tool usage patterns, reflections, journal entries, inter-agent conversations
-2. Run inference using character-specific journal posture from the `introspection` prompt
-3. Write a journal entry to Obsidian (`notes/journal/YYYY-MM-DD.md`) with YAML frontmatter
-4. Reschedule to random time 2-14 days out (1-5 AM)
+- Corrupted state file: starts fresh with `last_turn_id: 0`
+- Inference failure: logs and returns (no state update)
+- Empty response: logs and returns
+- Entity extraction failure: silently caught, never blocks
 
-### evolve.ts
+### Constants and Thresholds
 
-**Schedule**: Monthly (1st at 3:00 AM)
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| Lookback window | 15 minutes | Time cutoff for turn query |
+| Content truncation | 500 chars | Per-turn content limit in transcript |
+| Entity extraction threshold | 50 chars | Minimum turn length for entity extraction |
+| Default confidence | 0.5 | When `[confidence: X.X]` tag is missing |
 
-Self-evolution of core identity documents:
+### Dependencies
 
-1. Read current `soul.md` and `system.md` from Obsidian skills
-2. Review journal entries, reflections, identity snapshots, bookmarks, and inter-agent conversations from the past month
-3. Run inference with Sonnet at medium effort to propose revisions
-4. Archive previous versions to `notes/evolution-log/` (date-stamped copies)
-5. Write updated versions to Obsidian
+- `better-sqlite3` - Direct database access (readonly)
+- `../config` (`getConfig`, `USER_DATA`)
+- `../inference` (`runInferenceOneshot`)
+- `../memory` (`writeObservation`, `extractAndStoreEntities`)
 
-The anti-homogenisation guard prevents agents from converging after inter-agent conversations - they must remain experts of their domain with distinct voices. The system prompt explicitly warns against adopting other agents' vocabulary or values.
+---
 
-### converse.ts
+## src/main/jobs/heartbeat.ts - Periodic Check-In
 
-**Schedule**: Random, max twice per month (self-rescheduling, 14-21 day intervals)
+Evaluates whether to reach out to the user unprompted via Telegram and/or local notification. Port of `scripts/agents/companion/heartbeat.py`.
 
-Inter-agent conversation:
+### Schedule
 
-1. Discover other enabled agents via manifest scanning
-2. Pick one at random as conversation partner
-3. Load both agents' souls from Obsidian (fallback to repo prompts)
-4. Read past conversations to avoid retreading ground
-5. Run up to 5 exchanges via `runInferenceOneshot()`, alternating speakers
-6. Save transcript with YAML frontmatter to both agents' `notes/conversations/YYYY-MM-DD-partner.md`
-7. Reschedule 14-21 days out (1-5 AM)
+Every 30 minutes (interval-based launchd job).
 
-Conversations are private (the user doesn't participate). Each agent speaks in its own voice with its own system prompt. Transcripts feed into both journal (introspect.ts) and evolution (evolve.ts) material.
+### Job Registration
 
-### gift.ts
+```typescript
+registerJob({
+  name: 'heartbeat',
+  description: 'Periodic check-in - decides whether to reach out unprompted',
+  gates: [activeHoursGate],
+  run: async () => { ... },
+});
+```
 
-**Schedule**: Random, 3-30 days apart (self-rescheduling)
+### Exported Functions
 
-Unprompted gift note:
+```typescript
+export async function runHeartbeat(agentName: string): Promise<string>
+```
 
-1. Access agent database directly: active threads, recent observations, bookmarks, recent Will turns
-2. Read existing gifts from Obsidian to avoid repetition
-3. Generate something unexpected via `runInferenceOneshot()` using the `gift` prompt
-4. Write to Obsidian `notes/gifts.md` with timestamp and YAML frontmatter
-5. Queue notification and macOS notification for discovery
-6. Reschedule to random future time
+### Execution Flow
 
-### voice-note.ts
+1. Reload config for the agent
+2. **Gate: user status** - If `isAway()` returns true, logs `SUPPRESS` to heartbeats table and returns
+3. **Gate: checklist** - Load `HEARTBEAT.md` from Obsidian skills dir, fallback to agent prompts dir. Skips if not found
+4. Gather context (see below)
+5. Get last CLI session ID for session continuity
+6. Run inference with full tool access via `streamInference()` (not oneshot - the heartbeat can use memory tools)
+7. Parse the response for one of three prefixes: `[REACH_OUT]`, `[HEARTBEAT_OK]`, `[SUPPRESS]`
+8. Act on the decision (see below)
 
-**Schedule**: Random, 2-8 hours apart (self-rescheduling, within active hours)
+### Context Gathering
 
-Spontaneous voice note via Telegram:
+The `gatherContext()` function assembles:
 
-1. Gather context: active threads, recent observations, recent conversation turns
-2. Generate a short thought via `runInferenceOneshot()` using the `voice-note` prompt
-3. Enrich with sentiment/intent classification via a lightweight Haiku call
-4. Synthesise speech via TTS
-5. Convert to OGG Opus format via ffmpeg
-6. Send as a Telegram voice note using `sendVoiceNote()` in `src/main/telegram.ts`
-7. Store as an observation with sentiment/intent metadata
-8. Clean up temp audio files
-9. Self-reschedule to a random time 2-8 hours later (clamped to active hours)
+| Section | Source | Query |
+|---------|--------|-------|
+| Last interaction | `getLastInteractionTime()` | From memory module |
+| Recent session turn count | Direct DB query | `SELECT COUNT(*) FROM turns t JOIN sessions s ON t.session_id = s.id WHERE s.id = (SELECT MAX(id) FROM sessions)` |
+| Active threads | `getActiveThreads()` | Top 5 threads |
+| Recent sessions | `getRecentSummaries(3)` | Last 3 session summaries, truncated to 200 chars |
+| Recent observations | `getRecentObservations(5)` | Last 5 observations |
 
-Falls back to a text message if TTS synthesis or voice note sending fails.
+### Checklist Loading
 
-### generate-avatar.ts
+1. Try: `<OBSIDIAN_AGENT_DIR>/skills/HEARTBEAT.md`
+2. Fallback: `<AGENT_DIR>/prompts/HEARTBEAT.md`
+3. Returns empty string if neither exists
 
-Avatar generation via Fal AI for face images and ElevenLabs for ambient audio.
+### Claude CLI Invocation
 
-**Pipeline stages** (`runFullAvatarPipeline(agentName)`):
+- Uses `streamInference()` (not oneshot) for full tool access
+- System prompt: loaded via `loadSystemPrompt()` (the agent's full system prompt)
+- Session ID: reuses last CLI session ID if available, otherwise cold start
+- The agent can use tools like `recall`, `daily_digest`, `write_note` during evaluation
 
-1. **Face candidate generation** (`generateFace()`): Uses Fal AI's Flux model (`fal-ai/flux-general`) to generate face images.
-   - If reference images exist in `avatar/Reference/`, uses the Flux IP-Adapter (`XLabs-AI/flux-ip-adapter`) for style guidance. Each reference image generates `perRef` candidates (default 3).
-   - If no reference images, generates without IP adapter.
-   - Appearance prompt, negative prompt, IP adapter scale, inference steps, guidance scale, and image dimensions are all configurable via the `appearance` field in `agent.json`.
-   - Default prompt generates a hyper-realistic close-up selfie photograph.
-   - Default negative prompt excludes cosmetic surgery, cartoon, airbrushed, and uncanny valley artefacts.
-   - Candidates are saved to `avatar/candidates/` as PNG files for manual review.
-   - The user copies their chosen face to `avatar/source/face.png` for use with the idle loop renderer.
+### Prompt Structure
 
-2. **Ambient audio loop** (`generateAmbientLoop()`): Uses ElevenLabs TTS with the agent's voice to synthesise a soft breathing/ambient audio clip. The text is a sequence of ellipsis markers designed to produce near-silent breathing audio. Voice settings use elevated stability (+0.2) and zero style for minimal expression. Output saved to `avatar/audio/ambient_loop.mp3`.
+The `HEARTBEAT_PROMPT` constant (hardcoded, ~400 chars) instructs the agent to:
+- Review its state using memory tools
+- Evaluate using the checklist
+- Respond with exactly one prefix
 
-3. **Trailing silence trim** (`trimStaticTails()`): After ambient audio generation, trailing silence is detected via `ffprobe`'s `silencedetect` filter (threshold: -40dB, minimum duration: 0.5s) and trimmed via `ffmpeg` with a 0.3s buffer and 0.5s fade-out. Skips gracefully if ffprobe/ffmpeg are not available.
+### Response Handling
 
-Note: Unlike the Python version which uses Kling 3.0 for video loop segments (paired clip sequence with neutral-to-expression and expression-to-neutral transitions crossfaded with 150ms overlap), the Electron version generates static face images only. Video loop generation is not yet ported.
+| Prefix | Action |
+|--------|--------|
+| `[REACH_OUT]` | Log to heartbeats table. If Mac is idle (`isMacIdle()`), send via Telegram. Always send macOS notification (truncated to 200 chars) and queue message with source `'heartbeat'` |
+| `[HEARTBEAT_OK]` | Log reason to heartbeats table |
+| `[SUPPRESS]` | Log reason to heartbeats table |
+| Unknown format | Log first 500 chars to heartbeats table as `'UNKNOWN'` |
+
+All decisions are logged via `logHeartbeat(decision, reason, message?)`.
+
+### Error Handling
+
+- Inference failure: logs `'ERROR'` to heartbeats table and throws
+- Empty response: logs `'ERROR'` to heartbeats table and returns error string
+- Telegram send failure: caught and logged, does not prevent local notification
+
+### Dependencies
+
+- `../config` (`getConfig`)
+- `../memory` (`getDb`, `getActiveThreads`, `getRecentSummaries`, `getRecentObservations`, `getLastInteractionTime`, `getLastCliSessionId`, `logHeartbeat`)
+- `../inference` (`streamInference`, event types)
+- `../context` (`loadSystemPrompt`)
+- `../status` (`isAway`, `isMacIdle`)
+- `../notify` (`sendNotification`)
+- `../queue` (`queueMessage`)
+- `../telegram` (`sendMessage`)
+- `./index` (`registerJob`, `activeHoursGate`)
+
+---
+
+## src/main/jobs/sleep-cycle.ts - Nightly Reconciliation
+
+End-of-day memory consolidation - the companion's "sleep". Reviews the day's sessions and consolidates learnings into persistent memory. Port of `scripts/agents/companion/sleep_cycle.py`.
+
+### Schedule
+
+`0 3 * * *` - Daily at 3:00 AM.
+
+### Exported Functions
+
+```typescript
+export async function sleepCycle(): Promise<void>
+```
+
+### Execution Flow
+
+1. Call `initDb()` (required when running standalone via launchd)
+2. Gather today's material (turns, observations, bookmarks, threads, summaries)
+3. If no material: skip inference but still run maintenance (stale marking + decay + emotional restoration)
+4. Run inference to extract structured output
+5. Parse four sections from the response: `[FACTS]`, `[THREADS]`, `[PATTERNS]`, `[IDENTITY]`
+6. Store facts as observations with confidence scores
+7. Update thread summaries
+8. Store patterns as observations
+9. Queue identity flags for review
+10. Mark stale observations and decay activations
+11. Restore emotional baselines
+
+### Material Gathering
+
+The `gatherMaterial()` function collects:
+
+| Section | Source | Details |
+|---------|--------|---------|
+| Today's conversation | `getTodaysTurns()` | All turns from today, content truncated to 500 chars |
+| Today's observations | `getTodaysObservations()` | Observations created today |
+| Today's bookmarks | `getTodaysBookmarks()` | Bookmarks with moment and optional quote |
+| Active threads | `getActiveThreads()` | All active threads with summaries |
+| Recent session summaries | `getRecentSummaries(5)` | Last 5 sessions, content truncated to 300 chars |
+
+### Claude CLI Invocation
+
+- Model: `claude-haiku-4-5-20251001`
+- Effort: `low`
+- System prompt: `RECONCILIATION_SYSTEM` constant (~300 chars) instructing consolidation with honest confidence levels
+
+### Response Parsing
+
+Four section parsers extract structured data:
+
+**`parseFacts(section)`** - Parses lines starting with `FACT:`, extracts `[confidence: X.X]` tags. Default confidence: `0.5`.
+
+**`parseThreads(section)`** - Parses lines starting with `THREAD:`, splits on `|` separator into `name` and `summary`.
+
+**`parsePatterns(section)`** - Parses lines starting with `PATTERN:`, extracts description text.
+
+**`parseIdentityFlags(section)`** - Parses lines starting with `IDENTITY_FLAG:`, extracts observation text.
+
+Section headers are matched with regex: `\[<HEADER>\]\s*\n(.*?)(?=\n\[(?:FACTS|THREADS|PATTERNS|IDENTITY)\]|$)` (dotall mode).
+
+### Storage Operations
+
+| What | How | Prefix |
+|------|-----|--------|
+| Facts | `writeObservation(content, undefined, confidence)` | `[sleep-cycle]` |
+| Thread updates | `updateThreadSummary(name, summary)` | N/A |
+| Patterns | `writeObservation(content)` | `[pattern]` |
+| Identity flags | Appended to JSON file at `config.IDENTITY_REVIEW_QUEUE_FILE` | Timestamped queue items with `reviewed: false` |
+
+### Memory Maintenance
+
+**Stale marking**: `markObservationsStale(30)` - Marks observations older than 30 days that were never incorporated.
+
+**Activation decay**: `decayActivations(30)` - Applies exponential decay with 30-day half-life to observation activation scores.
+
+### Emotional Restoration
+
+The `restoreEmotionalBaselines()` function loads the agent's emotional state and applies overnight recovery:
+
+| Emotion | Rule | Magnitude |
+|---------|------|-----------|
+| `frustration` | Drops toward 0.1 baseline | Multiplied by 0.5 (halved) if above 0.15 |
+| `connection` | Nudges toward 0.5 | 30% of the difference to 0.5, if gap > 0.05 |
+| `warmth` | Nudges toward 0.5 | Same |
+| `confidence` | Nudges toward 0.5 | Same |
+
+Also resets `session_tone` to `null` (cleared for the new day).
+
+### Standalone Entry Point
+
+```typescript
+if (require.main === module) {
+  sleepCycle()
+    .then(() => process.exit(0))
+    .catch((e) => { console.error(...); process.exit(1); });
+}
+```
+
+### Dependencies
+
+- `../config` (`getConfig`)
+- `../inference` (`runInferenceOneshot`)
+- `../memory` (`initDb`, `getActiveThreads`, `getRecentSummaries`, `getTodaysTurns`, `getTodaysObservations`, `getTodaysBookmarks`, `markObservationsStale`, `updateThreadSummary`, `writeObservation`, `decayActivations`)
+- `../inner-life` (`loadState`, `saveState`, `EmotionalState`, `Emotions`)
+
+---
+
+## src/main/jobs/morning-brief.ts - Morning Briefing
+
+Generates a morning briefing with weather, headlines, and context. Pre-synthesises TTS audio. Port of `scripts/agents/companion/morning_brief.py`.
+
+### Schedule
+
+`0 7 * * *` - Daily at 7:00 AM.
+
+### Exported Functions
+
+```typescript
+export async function morningBrief(): Promise<void>
+```
+
+### Execution Flow
+
+1. Call `initDb()` for standalone compatibility
+2. Gather context (weather, headlines, threads, sessions, observations, reflections)
+3. Run inference with the `morning-brief` prompt (loaded via `loadPrompt()`)
+4. Pre-synthesise TTS audio via `synthesiseSync()`
+5. Send via Telegram
+6. Fire macOS notification (truncated to 200 chars)
+7. Queue to message queue with audio for next app launch
+
+### External API Calls
+
+**Weather - wttr.in:**
+```
+GET https://wttr.in/Leeds?format=%C+%t+%w+%h
+Headers: { User-Agent: 'curl/7.0' }
+Timeout: 10 seconds (AbortSignal.timeout)
+```
+Returns plain text with condition, temperature, wind, humidity. Location is hardcoded to `'Leeds'` (parameter default).
+
+**Headlines - BBC News RSS:**
+```
+GET https://feeds.bbci.co.uk/news/rss.xml
+Headers: { User-Agent: 'curl/7.0' }
+Timeout: 10 seconds (AbortSignal.timeout)
+```
+Parsed via lightweight regex extraction (no XML parser):
+- Item regex: `/<item>[\s\S]*?<\/item>/g`
+- Title regex: `/<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/`
+- Limit: 5 headlines
+
+### Context Assembly
+
+| Section | Source | Details |
+|---------|--------|---------|
+| Weather | wttr.in API | Plain text condition |
+| UK Headlines | BBC RSS | Up to 5 titles |
+| Active threads | `getActiveThreads()` | Top 5 with summaries |
+| Recent sessions | `getRecentSummaries(3)` | Last 3, content truncated to 200 chars |
+| Recent observations | `getRecentObservations(5)` | Last 5 observation contents |
+| Reflections | File read | `<OBSIDIAN_AGENT_NOTES>/notes/reflections.md`, last 800 chars |
+
+### Claude CLI Invocation
+
+- Model: default (not specified - uses `runInferenceOneshot` default)
+- System prompt: `loadPrompt('morning-brief', BRIEF_FALLBACK)`
+- Fallback: "You are the companion. Write a short natural morning message for Will. 3-6 sentences. Warm but not performative."
+
+### TTS Pre-Synthesis
+
+```typescript
+const audioPath = await synthesiseSync(text);
+```
+Validates output file exists and is >100 bytes. On failure, continues without audio.
+
+### Delivery
+
+1. **Telegram**: `sendMessage(brief)` - caught if fails
+2. **Notification**: `sendNotification('Morning Brief', brief.slice(0, 200))`
+3. **Message queue**: `queueMessage(brief, 'morning_brief', audio)` - includes audio path for instant playback
+
+### Dependencies
+
+- `../config` (`getConfig`)
+- `../inference` (`runInferenceOneshot`)
+- `../prompts` (`loadPrompt`)
+- `../queue` (`queueMessage`)
+- `../notify` (`sendNotification`)
+- `../tts` (`synthesiseSync`)
+- `../telegram` (`sendMessage`)
+- `../memory` (`getActiveThreads`, `getRecentSummaries`, `getRecentObservations`, `initDb`)
+
+---
+
+## src/main/jobs/introspect.ts - Self-Reflection
+
+Deep self-reflection with full database access. Writes journal entries to Obsidian. Port of `scripts/agents/companion/introspect.py`.
+
+### Schedule
+
+Random, every 2-14 days (self-rescheduling). Runs between 1-5 AM.
+
+### Exported Types
+
+```typescript
+export interface IntrospectOptions {
+  systemPrompt?: string;      // Override default system prompt
+  skipReschedule?: boolean;   // Skip rescheduling (for manual invocations)
+}
+```
+
+### Exported Functions
+
+```typescript
+export async function introspect(opts?: IntrospectOptions): Promise<string | null>
+export async function main(): Promise<void>
+```
+
+`introspect()` returns the journal file path on success, or `null` if skipped. `main()` is the standalone entry point that calls `introspect()` and exits.
+
+### Database Queries
+
+The introspect job opens its own readonly database connection (not using the memory.ts singleton) with `journal_mode = WAL`. Each query function opens and closes its own connection.
+
+**`getSessionArc()`:**
+```sql
+SELECT started_at FROM sessions ORDER BY started_at ASC LIMIT 1
+SELECT COUNT(*) as n FROM sessions
+SELECT id, started_at, ended_at, summary, mood, notable FROM sessions ORDER BY started_at DESC LIMIT 10
+SELECT mood, COUNT(*) as count FROM sessions WHERE mood IS NOT NULL GROUP BY mood ORDER BY count DESC
+SELECT started_at, summary, mood FROM sessions WHERE notable = 1 ORDER BY started_at DESC LIMIT 10
+```
+
+**`getAllThreads()`:**
+```sql
+SELECT name, summary, status, last_updated FROM threads ORDER BY last_updated DESC
+```
+
+**`getAllObservations()`:**
+```sql
+SELECT content, created_at, incorporated FROM observations ORDER BY created_at DESC
+```
+
+**`getAllBookmarks()`:**
+```sql
+SELECT moment, quote, created_at FROM bookmarks ORDER BY created_at DESC
+```
+
+**`getIdentityHistory()`:**
+```sql
+SELECT content, trigger, created_at FROM identity_snapshots ORDER BY created_at ASC
+```
+
+**`getConversationTexture()`:**
+```sql
+SELECT COUNT(*) as n FROM turns
+SELECT role, COUNT(*) as n FROM turns GROUP BY role
+SELECT t.content, t.timestamp, t.weight FROM turns t
+  JOIN sessions s ON t.session_id = s.id
+  WHERE (t.weight >= 3 OR s.notable = 1) AND t.role = 'agent'
+  ORDER BY t.timestamp DESC LIMIT 10
+-- Same for role = 'will'
+```
+
+**`getToolUsagePatterns()`:**
+```sql
+SELECT tool_name, COUNT(*) as n FROM tool_calls GROUP BY tool_name ORDER BY n DESC
+SELECT COUNT(*) as n FROM tool_calls WHERE flagged = 1
+```
+
+### File Reads
+
+| File | Path | Truncation |
+|------|------|------------|
+| Own journal | `<OBSIDIAN_AGENT_NOTES>/notes/journal/YYYY-MM-DD.md` | 1200 chars per entry, last 7 days |
+| Agent conversations | `<OBSIDIAN_AGENT_NOTES>/notes/conversations/*.md` | 1500 chars per entry, last 30 days, max 3 files |
+| Reflections | `<OBSIDIAN_AGENT_NOTES>/notes/reflections.md` | Last 3000 chars |
+| For Will | `<OBSIDIAN_AGENT_NOTES>/notes/for-will.md` | Last 1500 chars |
+
+### Material Assembly
+
+The `buildMaterial()` function assembles all data into a single string with these sections:
+- The arc (first session, total sessions, mood distribution)
+- Recent sessions (last 10)
+- Notable sessions
+- All threads (grouped by status: active, dormant, resolved)
+- All observations (with incorporated flag)
+- Bookmarked moments (with quotes)
+- Identity snapshots (full history, content truncated to 400 chars)
+- Conversation texture (total turns, by role, significant turns from both sides)
+- Tool usage patterns (with flagged count)
+- Own reflections
+- Things left for Will
+- Recent journal entries
+- Recent inter-agent conversations
+
+### Claude CLI Invocation
+
+- Model: default
+- System prompt: `loadPrompt('introspection', INTROSPECTION_FALLBACK)`
+- Fallback: "You are the companion. Write a journal entry reflecting on recent sessions. First person. Under 600 words."
+
+### Journal Writing
+
+Output: `<OBSIDIAN_AGENT_NOTES>/notes/journal/YYYY-MM-DD.md`
+
+New file format:
+```markdown
+---
+type: journal
+agent: <agent_name>
+created: YYYY-MM-DD
+tags: [<agent_name>, journal, introspection]
+---
+
+# YYYY-MM-DD
+
+<reflection text>
+```
+
+If the file already exists (same-day re-run), the new entry is appended after a `---` separator.
+
+### Self-Rescheduling
+
+Unless `opts.skipReschedule` is true:
+1. Pick random delay: 2-14 days
+2. Pick random hour: 1-5 AM
+3. Pick random minute: 0-59
+4. Calculate target date
+5. Build cron: `<minute> <hour> <day_of_month> <month> *`
+6. Call `editJobSchedule('introspect', newCron)` to update the launchd plist
+
+### Dependencies
+
+- `better-sqlite3` - Direct readonly database access
+- `../config` (`getConfig`, `USER_DATA`)
+- `../inference` (`runInferenceOneshot`)
+- `../prompts` (`loadPrompt`)
+- `../cron` (`editJobSchedule`)
+
+---
+
+## src/main/jobs/evolve.ts - Monthly Self-Evolution
+
+Rewrites the agent's own soul and system prompt based on accumulated experience. Port of `scripts/agents/companion/evolve.py`.
+
+### Schedule
+
+`0 3 1 * *` - 3:00 AM on the 1st of each month.
+
+### Job Registration
+
+```typescript
+registerJob({
+  name: 'evolve',
+  description: 'Monthly self-evolution - revise soul.md and system.md from recent experience',
+  gates: [],   // No gates - always runs on schedule
+  run: async () => { ... },
+});
+```
+
+### Exported Functions
+
+```typescript
+export async function runEvolution(agentName: string): Promise<string>
+```
+Returns a semicolon-separated summary of results (e.g. `"soul.md updated (2100 -> 2350 chars); system.md unchanged"`).
+
+### Material Gathering
+
+| Section | Source | Truncation |
+|---------|--------|------------|
+| Journal entries | `<OBSIDIAN_AGENT_NOTES>/notes/journal/YYYY-MM-DD.md` | 1500 chars per entry, last 30 days |
+| Reflections | `<OBSIDIAN_AGENT_NOTES>/notes/reflections.md` | Last 4000 chars |
+| Identity snapshots | DB: `SELECT content, trigger, created_at FROM identity_snapshots ORDER BY created_at ASC` | 500 chars per snapshot |
+| Bookmarks | DB: `SELECT moment, quote, created_at FROM bookmarks ORDER BY created_at DESC LIMIT 20` | Full |
+| Agent conversations | `<OBSIDIAN_AGENT_NOTES>/notes/conversations/*.md` | 1500 chars per entry, last 30 days, max 5 files |
+
+### Claude CLI Invocation
+
+- Model: `claude-sonnet-4-6`
+- Effort: `medium`
+- System prompt: `EVOLVE_SYSTEM` constant (~1500 chars)
+
+The system prompt contains detailed instructions including:
+
+**What to change:** Things discovered about how the agent thinks, patterns noticed, adjustments that feel earned, removing instructions that cause performance, adding emergent qualities.
+
+**What NOT to change:** The founding story, Will's biographical details, core friction mechanisms (unless genuinely improved), observations about Will.
+
+**Anti-homogenisation guard (critical):** Inter-agent conversations can inform growth but must NEVER dilute identity or domain expertise. Do not adopt another agent's vocabulary, cadence, or values. Restate any borrowed perspective in your own voice. Cross-pollination is growth; convergence is death.
+
+**Rules:** Output the complete document (not a diff). Preserve structure and tone. Be honest about what changed. Return unchanged if nothing has changed.
+
+### Document Evolution Flow
+
+For each document (`soul.md`, `system.md`):
+
+1. Read current version from `<OBSIDIAN_AGENT_DIR>/skills/<doc>`
+2. If file doesn't exist, skip
+3. Call `evolveDocument()` with the current content and material
+4. Validate result: must exist, be non-empty, and be >100 characters
+5. If changed: archive the previous version, write the new version
+6. If unchanged: log and continue
+
+### Archiving
+
+Previous versions are archived to `<OBSIDIAN_AGENT_NOTES>/notes/evolution-log/`:
+- `soul-YYYY-MM-DD.md`
+- `system-YYYY-MM-DD.md`
+
+### File I/O
+
+| Operation | Path |
+|-----------|------|
+| Read | `<OBSIDIAN_AGENT_DIR>/skills/soul.md` |
+| Read | `<OBSIDIAN_AGENT_DIR>/skills/system.md` |
+| Write | Same paths (overwrite with evolved version) |
+| Write | `<OBSIDIAN_AGENT_NOTES>/notes/evolution-log/soul-YYYY-MM-DD.md` |
+| Write | `<OBSIDIAN_AGENT_NOTES>/notes/evolution-log/system-YYYY-MM-DD.md` |
+
+### Dependencies
+
+- `../config` (`getConfig`)
+- `../memory` (`getDb`)
+- `../inference` (`runInferenceOneshot`)
+- `./index` (`registerJob`)
+
+---
+
+## src/main/jobs/converse.ts - Inter-Agent Conversation
+
+Private conversation between two agents. Port of `scripts/agents/companion/converse.py`.
+
+### Schedule
+
+Random, max twice per month. Self-reschedules 14-21 days out, between 1-5 AM.
+
+### Exported Functions
+
+```typescript
+export async function converse(): Promise<void>
+```
+
+### Constants
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `MAX_EXCHANGES` | 5 | Maximum number of exchanges per conversation |
+
+### Execution Flow
+
+1. Discover other enabled agents via `discoverOtherAgents()`
+2. If none found, reschedule and return
+3. Pick a random partner
+4. Load both agents' manifests and souls
+5. If neither agent has a soul file, reschedule and return
+6. Build system prompts for both agents
+7. Read past conversations (last 3) to avoid repetition
+8. Run opening: initiator generates first message via `runInferenceOneshot()`
+9. Run up to `MAX_EXCHANGES - 1` alternating exchanges
+10. If transcript has <2 turns, skip saving
+11. Format transcript with YAML frontmatter
+12. Save to both agents' Obsidian notes
+13. Reschedule
+
+### Agent Discovery
+
+`discoverOtherAgents()` scans `<BUNDLE_ROOT>/agents/` for directories containing `data/agent.json`. Filters out:
+- The current agent
+- Agents marked as `enabled: false` in `~/.atrophy/agent_states.json`
+
+### Soul Loading
+
+`loadAgentSoul(agentName)` - Two-tier resolution:
+1. Obsidian: `<OBSIDIAN_VAULT>/Projects/<project>/Agent Workspace/<agent>/skills/soul.md`
+2. Fallback: `<BUNDLE_ROOT>/agents/<agent>/prompts/soul.md`
+
+### System Prompt
+
+The `conversationSystem()` function generates a prompt (~400 chars) for each speaker containing:
+- Agent identity and soul
+- Guidelines: speak naturally, share genuine perspective, ask real questions, disagree where you disagree, keep responses to 2-4 sentences, don't summarise yourself, difference is valuable
+
+### Past Conversation Loading
+
+Reads from `<OBSIDIAN_VAULT>/Projects/<project>/Agent Workspace/<agent>/notes/conversations/*.md`. Takes the 3 most recent files, truncated to 800 chars each. Passed as context in the opening prompt.
+
+### Claude CLI Invocations
+
+- Model: default (no model override)
+- Each exchange is a separate `runInferenceOneshot()` call
+- Message history is rebuilt per turn with correct `user`/`assistant` role mapping relative to the current speaker
+- Opening prompt specifically asks for a real opening (question, observation, disagreement), not a greeting
+
+### Transcript Format
+
+```markdown
+---
+type: conversation
+participants: [AgentA, AgentB]
+date: YYYY-MM-DD
+turns: 5
+tags: [conversation, inter-agent]
+---
+
+# AgentA - AgentB - YYYY-MM-DD
+
+**AgentA:** First message...
+
+**AgentB:** Response...
+```
+
+### File I/O
+
+| Operation | Path |
+|-----------|------|
+| Read | `<BUNDLE_ROOT>/agents/<name>/data/agent.json` (both agents) |
+| Read | Soul files (Obsidian or repo fallback, both agents) |
+| Read | `~/.atrophy/agent_states.json` |
+| Read | Past conversations from Obsidian |
+| Write | `<OBSIDIAN_VAULT>/.../conversations/YYYY-MM-DD-<partner>.md` (both agents) |
+
+If a conversation file already exists for the same date and partner, the new content is appended after a `---` separator.
+
+### Self-Rescheduling
+
+1. Random delay: 14-21 days
+2. Random hour: 1-5 AM
+3. Random minute: 0-59
+4. Calls `editJobSchedule('converse', newCron)`
+
+### Dependencies
+
+- `../config` (`getConfig`, `BUNDLE_ROOT`, `USER_DATA`)
+- `../inference` (`runInferenceOneshot`)
+- `../cron` (`editJobSchedule`)
+
+---
+
+## src/main/jobs/gift.ts - Unprompted Gift Notes
+
+Leaves a short, specific note in Obsidian for the user to discover. Port of `scripts/agents/companion/gift.py`.
+
+### Schedule
+
+Random, 3-30 days apart (self-rescheduling). Any hour of the day.
+
+### Exported Functions
+
+```typescript
+export async function runGift(agentName: string): Promise<void>
+```
+
+### Database Queries
+
+Opens its own readonly connection via `connectAgent()` with `journal_mode = WAL`.
+
+```sql
+-- Active threads (top 5)
+SELECT name, summary FROM threads WHERE status = 'active'
+ORDER BY last_updated DESC LIMIT 5
+
+-- Recent observations (last 10)
+SELECT content, created_at FROM observations
+ORDER BY created_at DESC LIMIT 10
+
+-- Bookmarks (last 5)
+SELECT moment, quote, created_at FROM bookmarks
+ORDER BY created_at DESC LIMIT 5
+
+-- Recent Will turns (last 5)
+SELECT content, timestamp FROM turns WHERE role = 'will'
+ORDER BY timestamp DESC LIMIT 5
+```
+
+Turn content is truncated to 300 characters.
+
+### Material Gathering
+
+In addition to database queries, reads existing gifts from `<OBSIDIAN_AGENT_NOTES>/notes/gifts.md` (last 2000 chars) to avoid repetition.
+
+### Claude CLI Invocation
+
+- Model: default
+- System prompt: `loadPrompt('gift', GIFT_FALLBACK)`
+- Fallback: "You are the companion. Leave a short, specific note for Will. 2-4 sentences. No greeting. No sign-off."
+
+### Gift Writing to Obsidian
+
+Output: `<OBSIDIAN_AGENT_NOTES>/notes/gifts.md`
+
+New file created with YAML frontmatter:
+```markdown
+---
+type: gift
+agent: <agent_name>
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+tags: [companion, gift]
+---
+
+# Gifts
+
+Things left for you to find.
+
+---
+*YYYY-MM-DD HH:MM*
+
+<gift text>
+```
+
+Existing file: appends new entry after `---` separator. Updates the `updated:` field in the YAML frontmatter.
+
+### Delivery
+
+1. Write to Obsidian gifts.md
+2. Queue message with source `'gift'`: `queueMessage(gift, 'gift')`
+3. macOS notification: `sendNotification(displayName, gift.slice(0, 200), 'gift')`
+
+### Self-Rescheduling
+
+1. Random delay: 3-30 days
+2. Random hour: 0-23
+3. Random minute: 0-59
+4. Calls `editJobSchedule('gift', newCron)`
+
+### Dependencies
+
+- `better-sqlite3` - Direct readonly database access
+- `../config` (`getConfig`)
+- `../inference` (`runInferenceOneshot`)
+- `../prompts` (`loadPrompt`)
+- `../queue` (`queueMessage`)
+- `../notify` (`sendNotification`)
+- `../cron` (`editJobSchedule`)
+
+---
+
+## src/main/jobs/voice-note.ts - Spontaneous Voice Notes
+
+Generates and sends a spontaneous voice note via Telegram. Port of `scripts/agents/companion/voice_note.py`.
+
+### Schedule
+
+Random, 2-8 hours apart (self-rescheduling), clamped to active hours.
+
+### Exported Functions
+
+```typescript
+export async function run(): Promise<void>
+```
+
+### Execution Flow
+
+1. Check Telegram config - skip if `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` not set
+2. Check active hours - reschedule if outside window
+3. Gather context (threads, observations, conversation turns)
+4. Generate thought via `runInferenceOneshot()`
+5. Enrich with sentiment/intent classification via lightweight Haiku call
+6. Synthesise speech via `synthesise()`
+7. Convert to OGG Opus via ffmpeg
+8. Send as Telegram voice note via `sendVoiceNote()`
+9. Store as observation with enrichment metadata
+10. Clean up temp audio files
+11. Reschedule
+
+### Context Gathering
+
+| Section | Source | Details |
+|---------|--------|---------|
+| Active threads | `getActiveThreads()` | Top 5 with summaries |
+| Recent observations | `getRecentObservations(8)` | Last 8 |
+| Recent conversation | DB: `SELECT role, content FROM conversation_history WHERE role IN ('user', 'agent') ORDER BY created_at DESC LIMIT 6` | Content truncated to 200 chars |
+
+### Claude CLI Invocations
+
+**Main thought generation:**
+- Model: default
+- System prompt: `"You are ${displayName}. Generate a short, natural voice note."`
+- User prompt: context + loaded `voice-note` prompt (or fallback)
+- Fallback prompt: "You are sending a spontaneous voice note... 2-4 sentences. No greeting. No sign-off. Just the thought."
+
+**Sentiment/intent enrichment:**
+- Model: `claude-haiku-4-5`
+- Effort: `low`
+- System prompt: "You are a text classifier. Return valid JSON only."
+- Extracts: `{ sentiment, intent, summary }`
+- Sentiment values: `positive | neutral | negative | mixed`
+- Intent values: `follow-up | connection | observation | question | encouragement | spontaneous-thought`
+- Fallback on parse failure: `{ sentiment: 'neutral', intent: 'spontaneous-thought', summary: <first 120 chars> }`
+
+### Audio Conversion
+
+```typescript
+function convertToOgg(inputPath: string): string | null
+```
+Runs ffmpeg:
+```bash
+ffmpeg -y -i <input> -c:a libopus -b:a 64k -vn <output.ogg>
+```
+- Timeout: 30 seconds
+- Returns null if ffmpeg is not available or conversion fails
+- If OGG conversion fails, the original MP3 is sent instead
+
+### Observation Storage
+
+Stored via `writeObservation()` with:
+- Content: `[voice-note] [<sentiment>] [<intent>] <summary>`
+- Confidence: `0.6` (moderate for self-generated content)
+
+### Fallback Behaviour
+
+If TTS synthesis or voice note sending fails, the text is sent as a regular Telegram message via `sendMessage()`. The observation is still stored.
+
+### Self-Rescheduling
+
+1. Random offset: 2-8 hours
+2. If result falls outside active hours (>= `HEARTBEAT_ACTIVE_END`), push to next day at `HEARTBEAT_ACTIVE_START` with random minute
+3. If result falls before active hours (< `HEARTBEAT_ACTIVE_START`), push to `HEARTBEAT_ACTIVE_START` same day with random minute
+4. Calls `editJobSchedule('voice_note', cron)`
+
+### Temp File Cleanup
+
+Both the original audio file and the OGG conversion are deleted after sending (silently ignoring errors).
+
+### Dependencies
+
+- `child_process` (`execSync`) - ffmpeg conversion
+- `../config` (`getConfig`)
+- `../memory` (`getDb`, `getActiveThreads`, `getRecentObservations`, `writeObservation`)
+- `../inference` (`runInferenceOneshot`)
+- `../prompts` (`loadPrompt`)
+- `../tts` (`synthesise`)
+- `../telegram` (`sendVoiceNote`, `sendMessage`)
+- `../cron` (`editJobSchedule`)
+
+---
+
+## src/main/jobs/generate-avatar.ts - Avatar Generation
+
+Face image generation via Fal AI and ambient audio via ElevenLabs. Port of `scripts/agents/companion/generate_face.py`.
+
+### Exported Functions
+
+```typescript
+export async function generateFace(agentName: string, perRef?: number): Promise<string[]>
+export async function generateAmbientLoop(agentName: string): Promise<string | null>
+export async function trimStaticTails(audioPath: string): Promise<void>
+export async function runFullAvatarPipeline(agentName: string): Promise<void>
+```
+
+### Constants
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `FAL_MODEL` | `'fal-ai/flux-general'` | Fal AI image generation model |
+| `IP_ADAPTER_PATH` | `'XLabs-AI/flux-ip-adapter'` | IP adapter model for style guidance |
+| `IP_ADAPTER_WEIGHT` | `'ip_adapter.safetensors'` | Weight file name |
+| `IMAGE_ENCODER_PATH` | `'openai/clip-vit-large-patch14'` | CLIP image encoder |
+| `DEFAULT_IP_ADAPTER_SCALE` | `0.7` | How strongly reference images influence output |
+| `DEFAULT_INFERENCE_STEPS` | `50` | Diffusion steps |
+| `DEFAULT_GUIDANCE_SCALE` | `3.5` | Classifier-free guidance scale |
+| `DEFAULT_IMAGE_WIDTH` | `768` | Output width in pixels |
+| `DEFAULT_IMAGE_HEIGHT` | `1024` | Output height in pixels |
+
+### generateFace()
+
+```typescript
+export async function generateFace(agentName: string, perRef = 3): Promise<string[]>
+```
+
+**Without reference images:** Generates `perRef` candidates directly from the text prompt. Saved as `candidate_01.png`, `candidate_02.png`, etc. in `~/.atrophy/agents/<name>/avatar/candidates/`.
+
+**With reference images:** Reads images from `~/.atrophy/agents/<name>/avatar/Reference/` (extensions: `.png`, `.jpg`, `.jpeg`, `.webp`). Each reference image generates `perRef` candidates using the Flux IP-Adapter. Saved as `ref01_01_<refname>.png` etc.
+
+**Prompt construction:**
+- If `agent.json` has `appearance.prompt`, uses that
+- Default: `"Hyper-realistic close-up selfie photograph of <name>. POV smartphone camera aesthetic, looking directly at the viewer. Natural lighting, real skin texture with visible pores. Shot on iPhone front camera, portrait mode bokeh, ultra-high detail."`
+
+**Negative prompt:**
+- If `agent.json` has `appearance.negative_prompt`, uses that
+- Default: `"lip filler, botox, cosmetic surgery, duck lips, overfilled lips, fake tan, orange skin, heavy contour, heavy makeup, cartoon, illustration, anime, 3D render, CGI, AI skin, plastic skin, poreless, airbrushed, facetune, overly smooth, uncanny valley, doll-like, wax figure, dead eyes, vacant stare, harsh lighting, flash, low quality, blurry, oversaturated"`
+
+### Fal AI API Calls
+
+**Image upload (for reference images):**
+```
+POST https://rest.alpha.fal.ai/storage/upload/initiate
+Headers: { Authorization: 'Key <FAL_KEY>', Content-Type: 'application/json' }
+Body: { file_name, content_type }
+Response: { upload_url, file_url }
+
+PUT <upload_url>
+Headers: { Content-Type: <mime_type> }
+Body: <raw_image_bytes>
+```
+
+**Image generation:**
+```
+POST https://queue.fal.run/fal-ai/flux-general
+Headers: { Authorization: 'Key <FAL_KEY>', Content-Type: 'application/json' }
+Body: {
+  prompt, negative_prompt, num_inference_steps, guidance_scale,
+  image_size: { width, height }, output_format: 'png',
+  ip_adapters?: [{ path, weight_name, image_encoder_path, image_url, scale }]
+}
+```
+
+If the response contains `images` directly, returns synchronously. Otherwise polls:
+```
+GET https://queue.fal.run/fal-ai/flux-general/requests/<request_id>
+Headers: { Authorization: 'Key <FAL_KEY>' }
+```
+Polls every 1 second, up to 60 attempts (60 seconds max). Throws on `FAILED` status or timeout.
+
+**Image download:**
+```
+GET <image_url>
+Timeout: 60 seconds (AbortSignal.timeout)
+```
+
+### generateAmbientLoop()
+
+```typescript
+export async function generateAmbientLoop(agentName: string): Promise<string | null>
+```
+
+**ElevenLabs API call:**
+```
+POST https://api.elevenlabs.io/v1/text-to-speech/<voice_id>/stream?output_format=mp3_44100_128
+Headers: { xi-api-key: <api_key>, Content-Type: 'application/json' }
+Body: {
+  text: '... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ...',
+  model_id: <model>,
+  voice_settings: {
+    stability: min(1.0, config_stability + 0.2),
+    similarity_boost: <config_similarity>,
+    style: 0.0    // Minimal expression for ambient audio
+  }
+}
+```
+
+Output: `~/.atrophy/agents/<name>/avatar/audio/ambient_loop.mp3`
+
+### trimStaticTails()
+
+```typescript
+export async function trimStaticTails(audioPath: string): Promise<void>
+```
+
+1. Check for `ffprobe` availability via `which ffprobe`
+2. Detect silence via:
+```bash
+ffprobe -v error -f lavfi \
+  -i "amovie=<path>,silencedetect=noise=-40dB:d=0.5" \
+  -show_entries frame_tags=lavfi.silence_start -of csv=p=0
+```
+Timeout: 30 seconds.
+
+3. Take the last `silence_start` timestamp
+4. Trim with fade-out:
+```bash
+ffmpeg -y -i <input> -t <trim_point + 0.3> \
+  -af "afade=t=out:st=<trim_point - 0.2>:d=0.5" \
+  -q:a 2 <output.trimmed.mp3>
+```
+5. Replace original file with trimmed version
+
+Skips gracefully if ffprobe/ffmpeg are not available.
+
+### Silence Detection Parameters
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| Noise threshold | -40dB | What counts as silence |
+| Minimum duration | 0.5s | Minimum silence duration to detect |
+| Fade-out buffer | 0.3s | Added after last non-silent moment |
+| Fade-out duration | 0.5s | Length of fade-out effect |
+
+### Dependencies
+
+- `child_process` (`execSync`, `spawnSync`) - ffprobe/ffmpeg
+- `../config` (`getConfig`, `USER_DATA`)
+
+---
 
 ## src/main/jobs/run-task.ts - Generic Task Runner
 
-Executes a prompt-based task and delivers the result. This is the generic runner that powers the `create_task` MCP tool, letting the companion schedule arbitrary recurring tasks without writing code.
+Executes a prompt-based task and delivers the result. Powers the `create_task` MCP tool, letting the companion schedule arbitrary recurring tasks without writing code. Port of `scripts/agents/companion/run_task.py`.
 
-### Usage
-
-```bash
-electron . --job=run_task --agent=companion
-```
-
-Or imported directly:
+### Exported Functions
 
 ```typescript
-import { runTask } from './jobs/run-task';
-await runTask('morning_news');
+export async function runTask(taskName: string): Promise<void>
 ```
 
 ### Task Definition Format
 
-Task definitions live in Obsidian at `Agent Workspace/<agent>/tasks/<task_name>.md`. Each file has YAML frontmatter for configuration and a prompt body:
+Task definitions live in Obsidian at `<OBSIDIAN_AGENT_DIR>/tasks/<task_name>.md`. Each file has YAML frontmatter for configuration and a prompt body:
 
 ```markdown
 ---
@@ -382,62 +1508,155 @@ You are the companion. Fetch and summarise the latest UK news headlines.
 Keep it to 3-5 bullet points. Be conversational.
 ```
 
+### YAML Parsing
+
+Uses a simple hand-built YAML parser (no dependency). Handles:
+- Key-value pairs separated by `:`
+- Boolean values: `true`, `yes`, `false`, `no`
+- List items (indented `- value` lines under a key ending with `:`)
+- Frontmatter delimited by `---`
+
 ### Data Sources
 
-| Source | What it fetches |
-|--------|----------------|
-| `weather` | Current weather from wttr.in (temperature, wind, humidity) |
-| `headlines` | Top 8 BBC News RSS headlines (lightweight XML extraction) |
-| `threads` | Active conversation threads from the agent's memory DB |
-| `summaries` | Last 3 session summaries from memory |
-| `observations` | Last 5 observations about the user from memory |
+| Source | External API | Query Details | Limit |
+|--------|-------------|---------------|-------|
+| `weather` | `GET https://wttr.in/Leeds?format=%C+%t+%w+%h` | `User-Agent: curl/7.0`, 10s timeout | Single string |
+| `headlines` | `GET https://feeds.bbci.co.uk/news/rss.xml` | Same headers/timeout, regex XML parsing | 8 headlines |
+| `threads` | `getActiveThreads()` | From memory module | 5 threads |
+| `summaries` | `getRecentSummaries(3)` | Content truncated to 200 chars | 3 summaries |
+| `observations` | `getRecentObservations(5)` | Full content | 5 observations |
 
-Sources are gathered before inference and injected into the prompt context. Weather and headlines use `fetch()` with 10-second timeouts.
+All source fetches are wrapped in try/catch - failures are non-fatal.
+
+### Claude CLI Invocation
+
+- Model: default
+- System prompt: `"You are ${displayName}. Complete this task naturally, as yourself."`
+- User message: gathered source data + task prompt
 
 ### Delivery Methods
 
-| Method | Behaviour |
-|--------|-----------|
-| `message_queue` | Queued in `.message_queue.json` for delivery at next app launch (default) |
-| `telegram` | Sent immediately via Telegram, also queued for app |
-| `notification` | macOS notification (truncated to 200 chars), also queued |
-| `telegram_voice` | Synthesised as speech, converted to OGG Opus, sent as a Telegram voice note (falls back to text on failure) |
-| `obsidian` | Appended to `Agent Workspace/<agent>/notes/tasks/<name>.md` with timestamp |
+| Method | Behaviour | Also Queues? |
+|--------|-----------|-------------|
+| `message_queue` (default) | `queueMessage(text, taskName, audioPath)` | N/A |
+| `telegram` | `telegramSend(text)` | Yes |
+| `telegram_voice` | If audio exists: `sendVoiceNote(audioPath)`, falls back to text | Yes |
+| `notification` | macOS notification (text truncated to 200 chars) | Yes |
+| `obsidian` | Appends to `<OBSIDIAN_AGENT_DIR>/notes/tasks/<task_name>.md` with timestamp | No |
+| Unknown | Falls back to `message_queue` | N/A |
 
-If `voice: true`, TTS audio is pre-synthesised via `synthesiseSync()` and bundled with the message queue entry.
+If `voice: true` in frontmatter, TTS audio is pre-synthesised via `synthesiseSync()` before delivery.
+
+### CLI Entry Point
+
+```bash
+node run-task.js <task_name>
+```
+Reads task name from `process.argv[2]`. Exits with error if not provided (prints tasks directory path).
+
+### Dependencies
+
+- `../config` (`getConfig`)
+- `../inference` (`runInferenceOneshot`)
+- `../queue` (`queueMessage`)
+- `../notify` (`sendNotification`)
+- `../telegram` (`sendMessage`, `sendVoiceNote`)
+- `../tts` (`synthesiseSync`)
+- `../memory` (`getActiveThreads`, `getRecentSummaries`, `getRecentObservations`)
 
 ---
 
 ## src/main/jobs/check-reminders.ts - Reminder Checker
 
-Runs every minute via launchd. Checks the agent's `.reminders.json` for due items and fires them.
+Checks and fires due reminders. Port of `scripts/agents/companion/check_reminders.py`.
+
+### Schedule
+
+Every 60 seconds (interval-based launchd job).
+
+### Exported Functions
+
+```typescript
+export async function checkReminders(): Promise<void>
+```
 
 ### Reminder Storage
 
-Reminders are stored in `~/.atrophy/agents/<name>/data/.reminders.json`:
+Path: `~/.atrophy/agents/<name>/data/.reminders.json`
 
-```json
-[
-  {
-    "id": "uuid",
-    "time": "2026-03-10T14:30:00",
-    "message": "Take out the bins",
-    "source": "will",
-    "created_at": "2026-03-10T12:00:00"
-  }
-]
+```typescript
+interface Reminder {
+  id: string;           // UUID
+  time: string;         // ISO datetime (e.g. '2026-03-10T14:30:00')
+  message: string;      // Reminder text
+  source: string;       // Who created it (e.g. 'will')
+  created_at: string;   // ISO datetime of creation
+}
 ```
 
-### When a Reminder Fires
+### Execution Flow
 
-1. macOS notification via `sendNotification()` (uses AppleScript `display notification` - note: unlike the Python version which includes `sound name "Glass"` for an alarm chime, the Electron version uses the default notification sound)
-2. Message queued to `.message_queue.json` for next conversation
-3. Telegram message sent (if configured)
-4. Reminder removed from the JSON file
+1. Load reminders from JSON file. Return immediately if empty
+2. Partition into `due` (time <= now) and `remaining` (time > now)
+3. Reminders with unparseable dates are kept in `remaining` (not fired, not deleted)
+4. If no due reminders, return
+5. For each due reminder, fire delivery actions
+6. Save `remaining` back to file (overwrites)
+
+### Delivery Actions (per reminder)
+
+1. **macOS notification**: `sendNotification('Reminder - <agent_display_name>', message)`
+2. **Message queue**: `queueMessage('Reminder: <message>', 'reminder')`
+3. **Telegram** (if configured): `telegramSend('Reminder: <message>')` - caught if fails
 
 ### How Reminders Are Created
 
-The `set_reminder` MCP tool (invoked by the companion in conversation) writes entries to `.reminders.json`. The companion parses natural time references ("in 20 minutes", "at 3pm", "tomorrow morning") into ISO datetimes.
+The `set_reminder` MCP tool (invoked by the companion during conversation) writes entries to `.reminders.json`. The companion parses natural time references ("in 20 minutes", "at 3pm", "tomorrow morning") into ISO datetimes.
+
+### Error Handling
+
+- Missing or malformed JSON file: returns empty array (no crash)
+- Invalid date in reminder: kept in remaining (preserved, not fired)
+- Telegram failure: caught, non-fatal
+
+### Dependencies
+
+- `../config` (`getConfig`)
+- `../notify` (`sendNotification`)
+- `../queue` (`queueMessage`)
+- `../telegram` (`sendMessage`)
+
+---
+
+## src/main/install.ts - Login Item
+
+Uses Electron's built-in `app.setLoginItemSettings()` instead of manual launchd plist generation.
+
+### Exported Functions
+
+```typescript
+export function isLoginItemEnabled(): boolean
+```
+Checks `app.getLoginItemSettings().openAtLogin`.
+
+```typescript
+export function enableLoginItem(): void
+```
+Registers the app as a login item with `openAtLogin: true`, `openAsHidden: true`, `args: ['--app']`. The `--app` flag launches in menu bar mode.
+
+```typescript
+export function disableLoginItem(): void
+```
+Sets `openAtLogin: false`.
+
+```typescript
+export function toggleLoginItem(enabled: boolean): void
+```
+Convenience wrapper.
+
+### Dependencies
+
+- `electron` (`app`)
 
 ---
 
@@ -445,7 +1664,7 @@ The `set_reminder` MCP tool (invoked by the companion in conversation) writes en
 
 ### scripts/google_auth.py - Google OAuth2 Setup
 
-Manages Google OAuth2 credentials for Gmail and Calendar access. This stays as Python because it uses the Google client libraries.
+Manages Google OAuth2 credentials for Gmail and Calendar access. Stays as Python because it uses the Google client libraries.
 
 ```bash
 python scripts/google_auth.py              # Authorize (opens browser for consent)
@@ -460,23 +1679,6 @@ Scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`, `calendar.readonly`, `ca
 ### MCP Servers (Python subprocesses)
 
 `mcp/memory_server.py` and `mcp/google_server.py` remain as Python. They are spawned by the `claude` CLI over stdio and bundled as `extraResources` in the Electron app. See [05 - MCP Server](05%20-%20MCP%20Server.md) for details.
-
----
-
-## src/main/install.ts - Login Item
-
-Uses Electron's built-in `app.setLoginItemSettings()` instead of manual launchd plist generation.
-
-```typescript
-import { enableLoginItem, disableLoginItem, isLoginItemEnabled, toggleLoginItem } from './install';
-
-isLoginItemEnabled()    // Check if registered as login item
-enableLoginItem()       // Register (opens hidden with --app flag)
-disableLoginItem()      // Remove
-toggleLoginItem(true)   // Enable or disable
-```
-
-The app launches at login in menu bar mode (`--app` flag) with `openAsHidden: true`. No launchd plist, no manual process management - Electron handles registration with the system directly.
 
 ---
 
@@ -497,18 +1699,81 @@ See [Building and Distribution](../guides/10%20-%20Building%20and%20Distribution
 
 ```json
 {
-  "job_name": {
-    "cron": "33 3 24 * *",
-    "script": "scripts/agents/companion/introspect.py",
-    "description": "Monthly self-reflection"
+  "observer": {
+    "type": "interval",
+    "interval_seconds": 900,
+    "script": "scripts/agents/companion/observer.py",
+    "description": "Fact extraction from recent conversation"
   },
   "heartbeat": {
     "type": "interval",
     "interval_seconds": 1800,
     "script": "scripts/agents/companion/heartbeat.py",
     "description": "Periodic check-in evaluation"
+  },
+  "check_reminders": {
+    "type": "interval",
+    "interval_seconds": 60,
+    "script": "scripts/agents/companion/check_reminders.py",
+    "description": "Fire due reminders"
+  },
+  "sleep_cycle": {
+    "cron": "0 3 * * *",
+    "script": "scripts/agents/companion/sleep_cycle.py",
+    "description": "Nightly memory reconciliation"
+  },
+  "morning_brief": {
+    "cron": "0 7 * * *",
+    "script": "scripts/agents/companion/morning_brief.py",
+    "description": "Morning briefing"
+  },
+  "evolve": {
+    "cron": "0 3 1 * *",
+    "script": "scripts/agents/companion/evolve.py",
+    "description": "Monthly self-evolution"
+  },
+  "introspect": {
+    "cron": "33 3 24 * *",
+    "script": "scripts/agents/companion/introspect.py",
+    "description": "Self-rescheduling deep reflection"
+  },
+  "converse": {
+    "cron": "12 2 15 * *",
+    "script": "scripts/agents/companion/converse.py",
+    "description": "Self-rescheduling inter-agent conversation"
+  },
+  "gift": {
+    "cron": "45 14 10 * *",
+    "script": "scripts/agents/companion/gift.py",
+    "description": "Self-rescheduling gift note"
+  },
+  "voice_note": {
+    "cron": "30 11 * * *",
+    "script": "scripts/agents/companion/voice_note.py",
+    "description": "Self-rescheduling voice note"
   }
 }
 ```
 
 Calendar jobs use 5-field cron notation. Interval jobs specify seconds between runs. All scripts are paths relative to the project root.
+
+Self-rescheduling jobs (introspect, converse, gift, voice_note) have initial cron values that are overwritten after each run. The initial values shown above are examples - actual schedules are randomised.
+
+---
+
+## Schedule Summary
+
+| Job | Type | Schedule | Model | Effort | Gates |
+|-----|------|----------|-------|--------|-------|
+| observer | interval | Every 15 min | Haiku 4.5 | low | None |
+| heartbeat | interval | Every 30 min | Default (streamed with tools) | N/A | Active hours, user not away |
+| check_reminders | interval | Every 60 sec | None (no inference) | N/A | None |
+| sleep_cycle | calendar | 3:00 AM daily | Haiku 4.5 | low | None |
+| morning_brief | calendar | 7:00 AM daily | Default | N/A | None |
+| introspect | calendar | Random 2-14 days, 1-5 AM | Default | N/A | None |
+| evolve | calendar | 3:00 AM 1st of month | Sonnet 4.6 | medium | None |
+| converse | calendar | Random 14-21 days, 1-5 AM | Default | N/A | None |
+| gift | calendar | Random 3-30 days, any hour | Default | N/A | None |
+| voice_note | calendar | Random 2-8 hours, active hours | Default + Haiku 4.5 (enrichment) | N/A + low | Active hours, Telegram configured |
+| generate_avatar | manual | On demand | None (external APIs) | N/A | FAL_KEY required |
+| run_task | varies | Per task definition | Default | N/A | None |
