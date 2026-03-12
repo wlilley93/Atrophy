@@ -162,12 +162,14 @@
       </p>
     </div>
 
-    <!-- Continue button -->
-    {#if showContinue}
-      <button class="continue-btn" onclick={onContinue}>
-        Continue
-      </button>
-    {/if}
+    <!-- Continue button - always in DOM, fades in after last line -->
+    <button
+      class="continue-btn"
+      style="opacity: {showContinue ? 1 : 0}; pointer-events: {showContinue ? 'auto' : 'none'}"
+      onclick={onContinue}
+    >
+      Continue
+    </button>
   </div>
 
   <!-- Progress bar - always at bottom -->
@@ -279,7 +281,7 @@
     font-family: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     font-size: 15px;
     cursor: pointer;
-    transition: background 0.2s, border-color 0.2s;
+    transition: opacity 0.8s ease, background 0.2s, border-color 0.2s;
   }
 
   .continue-btn:hover {
