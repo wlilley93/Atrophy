@@ -27,6 +27,7 @@ import { listJobs, installAllJobs, uninstallAllJobs, toggleCron } from './cron';
 import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
 import { getAppIcon, getTrayIcon, TrayState } from './icon';
+import { initAutoUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater';
 
 // ---------------------------------------------------------------------------
 // State
@@ -507,6 +508,20 @@ function registerIpcHandlers(): void {
   ipcMain.handle('install:toggle', (_event, enabled: boolean) => {
     toggleLoginItem(enabled);
   });
+
+  // ── Auto-updater ──
+
+  ipcMain.handle('updater:check', () => {
+    checkForUpdates();
+  });
+
+  ipcMain.handle('updater:download', () => {
+    downloadUpdate();
+  });
+
+  ipcMain.handle('updater:quitAndInstall', () => {
+    quitAndInstall();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -593,6 +608,11 @@ app.whenReady().then(() => {
 
   // Create window
   mainWindow = createWindow();
+
+  // Initialise auto-updater
+  if (mainWindow) {
+    initAutoUpdater(mainWindow);
+  }
 
   if (isMenuBarMode) {
     createTray();
