@@ -6,24 +6,11 @@
     downloading: boolean;
     /** Download progress 0-100 */
     downloadPercent: number;
-    /** Update check status */
-    updateStatus: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error';
-    /** Available update version string */
-    updateVersion: string;
-    /** Update download progress 0-100 */
-    updatePercent: number;
     /** Call this when splash should dismiss */
     onComplete: () => void;
   }
 
-  let {
-    downloading,
-    downloadPercent = 0,
-    updateStatus = 'idle',
-    updateVersion = '',
-    updatePercent = 0,
-    onComplete,
-  }: Props = $props();
+  let { downloading, downloadPercent = 0, onComplete }: Props = $props();
 
   const api = (window as any).atrophy;
 
@@ -179,30 +166,8 @@
         <div class="progress-fill" style="width: {downloadPercent}%"></div>
       </div>
       <span class="progress-label">downloading avatar... {downloadPercent}%</span>
-    {:else if updateStatus === 'downloading'}
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: {updatePercent}%"></div>
-      </div>
-      <span class="progress-label">downloading update {updateVersion}... {Math.round(updatePercent)}%</span>
-    {:else if updateStatus === 'checking'}
-      <div class="progress-bar">
-        <div class="progress-fill pulse" style="width: 30%"></div>
-      </div>
-      <span class="progress-label">checking for updates...</span>
-    {:else if updateStatus === 'available'}
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: 100%"></div>
-      </div>
-      <span class="progress-label">update available: {updateVersion}</span>
-    {:else if updateStatus === 'downloaded'}
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: 100%"></div>
-      </div>
-      <span class="progress-label">update ready - will install on restart</span>
-    {:else if updateStatus === 'up-to-date'}
-      <span class="progress-label">up to date</span>
-    {:else if updateStatus === 'error'}
-      <span class="progress-label">update check failed</span>
+    {:else if downloadPercent >= 100}
+      <span class="progress-label">ready</span>
     {/if}
   </div>
 </div>
@@ -315,14 +280,6 @@
     transition: width 0.4s ease;
   }
 
-  .progress-fill.pulse {
-    animation: pulse-width 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse-width {
-    0%, 100% { width: 15%; opacity: 0.4; }
-    50% { width: 45%; opacity: 0.7; }
-  }
 
   .progress-label {
     font-family: var(--font-sans);

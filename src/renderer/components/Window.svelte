@@ -22,6 +22,18 @@
 
   const api = (window as any).atrophy;
 
+  // Brain frames for update check screen
+  const brainFramePaths: string[] = [];
+  const brainModules = import.meta.glob(
+    '../../../resources/icons/brain_frames/brain_*.png',
+    { eager: true, query: '?url', import: 'default' }
+  );
+  for (const key of Object.keys(brainModules).sort()) {
+    brainFramePaths.push(brainModules[key] as string);
+  }
+  let updateBrainFrame = $state(0);
+  let updateBrainTimer: ReturnType<typeof setInterval> | null = null;
+
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
@@ -33,13 +45,16 @@
   let needsSetup = $state(false);
   let mirrorSetupVisible = $state(false);
 
-  // Splash screen
-  let splashVisible = $state(true);
-  let avatarDownloading = $state(false);
-  let avatarDownloadPercent = $state(0);
+  // Update check phase (before splash)
+  let updateCheckVisible = $state(true);
   let updateStatus = $state<'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'>('idle');
   let updateVersion = $state('');
   let updatePercent = $state(0);
+
+  // Splash screen
+  let splashVisible = $state(false);
+  let avatarDownloading = $state(false);
+  let avatarDownloadPercent = $state(0);
 
   // Shutdown screen
   let shutdownVisible = $state(false);
@@ -140,6 +155,70 @@
 
   let bootRan = false;
 
+  /** Run update check - resolves when check is done (up-to-date, error, or downloaded) */
+  async function runUpdateCheck(): Promise<void> {
+    if (!api) return;
+
+    // Start brain frame cycling
+    updateBrainFrame = 0;
+    updateBrainTimer = setInterval(() => {
+      updateBrainFrame = (updateBrainFrame + 1) % brainFramePaths.length;
+    }, 400);
+
+    return new Promise<void>((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (!resolved) {
+          resolved = true;
+          if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
+          resolve();
+        }
+      };
+
+      // Timeout - don't block boot forever (8 seconds max)
+      const timeout = setTimeout(done, 8000);
+
+      api.onUpdateAvailable?.((info: { version: string }) => {
+        updateStatus = 'available';
+        updateVersion = info.version;
+        api.downloadUpdate?.();
+        updateStatus = 'downloading';
+      });
+
+      api.onUpdateNotAvailable?.(() => {
+        updateStatus = 'up-to-date';
+        clearTimeout(timeout);
+        // Brief pause so user sees "up to date"
+        setTimeout(done, 1200);
+      });
+
+      api.onUpdateProgress?.((progress: { percent: number }) => {
+        updateStatus = 'downloading';
+        updatePercent = progress.percent;
+      });
+
+      api.onUpdateDownloaded?.((info: { version: string }) => {
+        updateStatus = 'downloaded';
+        updateVersion = info.version;
+        clearTimeout(timeout);
+        // Auto quit-and-install after brief pause
+        setTimeout(() => {
+          api.quitAndInstall?.();
+        }, 1500);
+        // Don't resolve - app is restarting
+      });
+
+      api.onUpdateError?.(() => {
+        updateStatus = 'error';
+        clearTimeout(timeout);
+        setTimeout(done, 800);
+      });
+
+      updateStatus = 'checking';
+      api.checkForUpdates?.();
+    });
+  }
+
   async function runBootSequence() {
     if (bootRan) return;
     bootRan = true;
@@ -161,34 +240,12 @@
       avatarDownloading = false;
     });
 
-    // Listen for auto-updater events
-    api.onUpdateAvailable?.((info: { version: string }) => {
-      updateStatus = 'available';
-      updateVersion = info.version;
-      // Auto-start download
-      api.downloadUpdate?.();
-      updateStatus = 'downloading';
-    });
-    api.onUpdateNotAvailable?.(() => {
-      updateStatus = 'up-to-date';
-    });
-    api.onUpdateProgress?.((progress: { percent: number }) => {
-      updateStatus = 'downloading';
-      updatePercent = progress.percent;
-    });
-    api.onUpdateDownloaded?.((info: { version: string }) => {
-      updateStatus = 'downloaded';
-      updateVersion = info.version;
-    });
-    api.onUpdateError?.(() => {
-      if (updateStatus === 'checking') {
-        updateStatus = 'error';
-      }
-    });
+    // ── Update check phase (blocks before splash) ──
+    await runUpdateCheck();
 
-    // Trigger update check immediately (main process also checks after 5s delay)
-    updateStatus = 'checking';
-    api.checkForUpdates?.();
+    // Transition from update check to splash
+    updateCheckVisible = false;
+    splashVisible = true;
 
     // Load config and agent list
     try {
@@ -980,7 +1037,7 @@
 <div class="window">
   <!-- Background orb / avatar layer -->
   {#if avatarVisible}
-    <OrbAvatar pip={showArtefact} ambientMode={splashVisible || setupActive} />
+    <OrbAvatar pip={showArtefact} ambientMode={updateCheckVisible || splashVisible || setupActive} />
   {/if}
 
   <!-- Warm vignette overlay (shows during audio playback) -->
@@ -989,14 +1046,41 @@
     style="opacity: {audio.vignetteOpacity}"
   ></div>
 
+  <!-- Update check phase (before splash) -->
+  {#if updateCheckVisible}
+    <div class="update-check-overlay">
+      <div class="update-check-content">
+        {#if brainFramePaths[updateBrainFrame]}
+          <img
+            class="update-brain"
+            src={brainFramePaths[updateBrainFrame]}
+            alt=""
+            draggable="false"
+          />
+        {/if}
+        {#if updateStatus === 'checking'}
+          <span class="update-label">Checking for updates...</span>
+        {:else if updateStatus === 'downloading'}
+          <div class="update-progress-bar">
+            <div class="update-progress-fill" style="width: {updatePercent}%"></div>
+          </div>
+          <span class="update-label">Downloading {updateVersion}... {Math.round(updatePercent)}%</span>
+        {:else if updateStatus === 'downloaded'}
+          <span class="update-label">Installing update...</span>
+        {:else if updateStatus === 'up-to-date'}
+          <span class="update-label">Up to date</span>
+        {:else if updateStatus === 'error'}
+          <span class="update-label">Offline</span>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   <!-- Splash screen - cinematic intro + download progress -->
   {#if splashVisible}
     <SplashScreen
       downloading={avatarDownloading}
       downloadPercent={avatarDownloadPercent}
-      {updateStatus}
-      {updateVersion}
-      {updatePercent}
       onComplete={onSplashComplete}
     />
   {/if}
@@ -1080,7 +1164,7 @@
   {/if}
 
   <!-- Top bar: agent name - hidden during splash/setup -->
-  <div class="top-bar" class:hidden={splashVisible || setupActive || needsSetup}>
+  <div class="top-bar" class:hidden={updateCheckVisible || splashVisible || setupActive || needsSetup}>
     <AgentName
       name={agents.displayName}
       direction={agents.switchDirection}
@@ -1091,7 +1175,7 @@
   </div>
 
   <!-- Mode buttons (top-right) - hidden during splash/setup -->
-  <div class="mode-buttons" class:hidden={splashVisible || setupActive || needsSetup} data-no-drag>
+  <div class="mode-buttons" class:hidden={updateCheckVisible || splashVisible || setupActive || needsSetup} data-no-drag>
     <!-- Eye: toggle avatar -->
     <button
       class="mode-btn"
@@ -1695,6 +1779,54 @@
 
   .journal-nudge:hover .journal-nudge-text {
     opacity: 0.9;
+  }
+
+  /* ── Update check overlay ── */
+  .update-check-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .update-check-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .update-brain {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .update-label {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.3);
+    text-transform: lowercase;
+  }
+
+  .update-progress-bar {
+    width: 200px;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .update-progress-fill {
+    height: 100%;
+    background: rgba(100, 140, 255, 0.5);
+    transition: width 0.3s ease;
   }
 </style>
 
