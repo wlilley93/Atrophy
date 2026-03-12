@@ -14,9 +14,10 @@
     "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
     "test": "vitest run",
     "test:watch": "vitest",
-    "pack": "pnpm build && electron-builder --dir",
+    "pack": "pnpm build && electron-builder --dir && pnpm resign",
     "dist": "pnpm build && electron-builder",
-    "dist:mac": "pnpm build && electron-builder --mac"
+    "dist:mac": "pnpm build && electron-builder --mac",
+    "resign": "xattr -cr dist/mac-arm64/Atrophy.app 2>/dev/null; codesign --deep --force --sign - dist/mac-arm64/Atrophy.app 2>/dev/null; xattr -cr dist/mac/Atrophy.app 2>/dev/null; codesign --deep --force --sign - dist/mac/Atrophy.app 2>/dev/null; true"
   },
   "author": "Will Lilley",
   "license": "UNLICENSED",
