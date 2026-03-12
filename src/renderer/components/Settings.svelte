@@ -227,7 +227,6 @@
       AVATAR_ENABLED: avatarEnabled,
       AVATAR_RESOLUTION: avatarResolution,
       TTS_BACKEND: ttsBackend,
-      ELEVENLABS_API_KEY: elevenlabsApiKey,
       ELEVENLABS_VOICE_ID: elevenlabsVoiceId,
       ELEVENLABS_MODEL: elevenlabsModel,
       ELEVENLABS_STABILITY: elevenlabsStability,
@@ -255,7 +254,6 @@
       HEARTBEAT_ACTIVE_END: heartbeatActiveEnd,
       HEARTBEAT_INTERVAL_MINS: heartbeatIntervalMins,
       OBSIDIAN_VAULT: obsidianVault,
-      TELEGRAM_BOT_TOKEN: telegramBotToken,
       TELEGRAM_CHAT_ID: telegramChatId,
     };
   }
@@ -264,6 +262,13 @@
     if (!api) return;
     try {
       await api.updateConfig(gatherUpdates());
+      // Save changed secrets to .env (not config.json)
+      if (elevenlabsApiKey && elevenlabsApiKey !== '***') {
+        await api.saveSecret('ELEVENLABS_API_KEY', elevenlabsApiKey);
+      }
+      if (telegramBotToken && telegramBotToken !== '***') {
+        await api.saveSecret('TELEGRAM_BOT_TOKEN', telegramBotToken);
+      }
       saveStatus = 'Applied';
       setTimeout(() => saveStatus = '', 2000);
     } catch {

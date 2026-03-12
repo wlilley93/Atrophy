@@ -678,7 +678,27 @@
 
   <!-- Setup wizard (shown on first launch) -->
   {#if needsSetup}
-    <SetupWizard onComplete={() => needsSetup = false} />
+    <SetupWizard onComplete={async () => {
+      needsSetup = false;
+      // Reload config and agent list after setup (agent may have been created/switched)
+      if (api) {
+        try {
+          const [cfg, agentList] = await Promise.all([
+            api.getConfig(),
+            api.getAgents(),
+          ]);
+          agents.current = cfg.agentName || '';
+          agents.displayName = cfg.agentDisplayName || cfg.agentName || '';
+          agents.list = agentList || [];
+          // Fetch opening line for the new agent
+          const opening = await api.getOpeningLine();
+          if (opening) {
+            addMessage('agent', opening);
+            completeLast();
+          }
+        } catch { /* continue with defaults */ }
+      }
+    }} />
   {/if}
 </div>
 

@@ -207,10 +207,13 @@
             const parsed = JSON.parse(configMatch[1]);
             const agentConfig = parsed.AGENT_CONFIG;
             if (agentConfig && agentConfig.display_name) {
-              // Create the agent
+              // Create the agent and switch to it
               isInferring = true;
               conversationLog.push({ role: 'agent', text: `Creating ${agentConfig.display_name}...` });
-              await api.createAgent(agentConfig);
+              const manifest = await api.createAgent(agentConfig);
+              if (manifest && manifest.name) {
+                await api.switchAgent(manifest.name);
+              }
               phase = 'done';
               finishSetup();
             }
@@ -385,7 +388,7 @@
           />
         </div>
         <button class="wizard-btn skip-btn" onclick={nextPhase}>
-          Skip to services
+          Skip agent creation
         </button>
       </div>
 

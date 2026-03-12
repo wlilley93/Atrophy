@@ -177,7 +177,7 @@ function registerIpcHandlers(): void {
       disabledTools: c.DISABLED_TOOLS,
       // Voice
       ttsBackend: c.TTS_BACKEND,
-      elevenlabsApiKey: c.ELEVENLABS_API_KEY,
+      elevenlabsApiKey: c.ELEVENLABS_API_KEY ? '***' : '',
       elevenlabsVoiceId: c.ELEVENLABS_VOICE_ID,
       elevenlabsModel: c.ELEVENLABS_MODEL,
       elevenlabsStability: c.ELEVENLABS_STABILITY,
@@ -210,7 +210,7 @@ function registerIpcHandlers(): void {
       heartbeatActiveEnd: c.HEARTBEAT_ACTIVE_END,
       heartbeatIntervalMins: c.HEARTBEAT_INTERVAL_MINS,
       // Telegram
-      telegramBotToken: c.TELEGRAM_BOT_TOKEN,
+      telegramBotToken: c.TELEGRAM_BOT_TOKEN ? '***' : '',
       telegramChatId: c.TELEGRAM_CHAT_ID,
       // Notifications
       notificationsEnabled: c.NOTIFICATIONS_ENABLED,
@@ -255,7 +255,7 @@ function registerIpcHandlers(): void {
         'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL', 'ELEVENLABS_STABILITY',
         'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
         'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
-        'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
+        'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
         'DISABLED_TOOLS',
       ]);
       if (agentKeys.has(key)) {
