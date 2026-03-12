@@ -27,6 +27,7 @@ import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
 import { getAppIcon, getTrayIcon, TrayState } from './icon';
 import { initAutoUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater';
+import { ensureAvatarAssets } from './avatar-downloader';
 import { createLogger } from './logger';
 
 const log = createLogger('main');
@@ -852,6 +853,11 @@ app.whenReady().then(() => {
   if (mainWindow) {
     initAutoUpdater(mainWindow);
   }
+
+  // Download avatar assets on first launch (non-blocking)
+  ensureAvatarAssets(config.AGENT_NAME, mainWindow).catch(() => {
+    /* non-critical */
+  });
 
   if (isMenuBarMode) {
     createTray();

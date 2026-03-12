@@ -73,6 +73,10 @@ export interface AtrophyAPI {
 
   // Avatar
   getAvatarVideoPath: (colour?: string, clip?: string) => Promise<string | null>;
+  onAvatarDownloadStart: (cb: () => void) => () => void;
+  onAvatarDownloadProgress: (cb: (data: { percent: number; transferred: number; total: number }) => void) => () => void;
+  onAvatarDownloadComplete: (cb: () => void) => () => void;
+  onAvatarDownloadError: (cb: (message: string) => void) => () => void;
 
   // Usage & activity
   getUsage: (days?: number) => Promise<unknown>;
@@ -167,6 +171,10 @@ const api: AtrophyAPI = {
 
   // Avatar
   getAvatarVideoPath: (colour, clip) => ipcRenderer.invoke('avatar:getVideoPath', colour, clip),
+  onAvatarDownloadStart: createListener('avatar:download-start') as AtrophyAPI['onAvatarDownloadStart'],
+  onAvatarDownloadProgress: createListener('avatar:download-progress') as AtrophyAPI['onAvatarDownloadProgress'],
+  onAvatarDownloadComplete: createListener('avatar:download-complete') as AtrophyAPI['onAvatarDownloadComplete'],
+  onAvatarDownloadError: createListener('avatar:download-error') as AtrophyAPI['onAvatarDownloadError'],
 
   // Usage & activity
   getUsage: (days) => ipcRenderer.invoke('usage:all', days),
@@ -191,6 +199,8 @@ const api: AtrophyAPI = {
       'updater:available', 'updater:not-available', 'updater:progress',
       'updater:downloaded', 'updater:error',
       'canvas:updated', 'artefact:updated',
+      'avatar:download-start', 'avatar:download-progress',
+      'avatar:download-complete', 'avatar:download-error',
     ]);
     if (!ALLOWED_CHANNELS.has(channel)) {
       console.warn(`IPC channel not allowed: ${channel}`);

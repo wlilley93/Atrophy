@@ -36,6 +36,7 @@ mac:
       to: agents
       filter:
         - "**/*"
+        - "!**/avatar/**"
     - from: db/
       to: db
       filter:

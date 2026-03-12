@@ -47,6 +47,10 @@
   let agentSwitchActive = $state(false);
   let agentSwitchClip = $state('circle(0% at 50% 50%)');
 
+  // Avatar download progress
+  let avatarDownloading = $state(false);
+  let avatarDownloadPercent = $state(0);
+
   // Agent deferral (codec-style handoff)
   let deferralActive = $state(false);
   let deferralTarget = $state('');
@@ -204,6 +208,14 @@
   onMount(() => {
     runBootSequence();
     resetSilenceTimer();
+
+    // Listen for avatar download progress
+    if (api) {
+      api.onAvatarDownloadStart?.(() => { avatarDownloading = true; avatarDownloadPercent = 0; });
+      api.onAvatarDownloadProgress?.((data: { percent: number }) => { avatarDownloadPercent = data.percent; });
+      api.onAvatarDownloadComplete?.(() => { avatarDownloading = false; });
+      api.onAvatarDownloadError?.(() => { avatarDownloading = false; });
+    }
 
     // Listen for deferral requests from main process
     if (api && typeof api.on === 'function') {
@@ -482,6 +494,13 @@
       {#if deferralProgress === 1}
         <span class="deferral-label">Handing off to {deferralTarget}...</span>
       {/if}
+    </div>
+  {/if}
+
+  <!-- Avatar download progress bar -->
+  {#if avatarDownloading}
+    <div class="avatar-dl-bar">
+      <div class="avatar-dl-fill" style="width: {avatarDownloadPercent}%"></div>
     </div>
   {/if}
 
@@ -852,6 +871,24 @@
   .mode-btn.wake-active {
     color: rgba(120, 255, 140, 0.9);
     background: rgba(30, 80, 40, 0.82);
+  }
+
+  /* -- Avatar download progress bar -- */
+
+  .avatar-dl-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .avatar-dl-fill {
+    height: 100%;
+    background: rgba(100, 140, 255, 0.6);
+    transition: width 0.4s ease;
   }
 
   /* Artefact badge */
