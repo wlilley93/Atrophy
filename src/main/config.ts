@@ -637,9 +637,15 @@ export class Config {
     this.WINDOW_WIDTH = agentCfg('WINDOW_WIDTH', 622);
     this.WINDOW_HEIGHT = agentCfg('WINDOW_HEIGHT', 830);
 
-    // Avatar
+    // Avatar (user data > bundled fallback)
     this.AVATAR_ENABLED = cfg('AVATAR_ENABLED', false);
-    this.AVATAR_DIR = path.join(USER_DATA, 'agents', name, 'avatar');
+    const userAvatarDir = path.join(USER_DATA, 'agents', name, 'avatar');
+    const bundleAvatarDir = path.join(BUNDLE_ROOT, 'agents', name, 'avatar');
+    this.AVATAR_DIR = fs.existsSync(path.join(userAvatarDir, 'loops'))
+      ? userAvatarDir
+      : fs.existsSync(path.join(bundleAvatarDir, 'loops'))
+        ? bundleAvatarDir
+        : userAvatarDir;
     this.SOURCE_IMAGE = avatarPath(name, 'source/face.png');
     this.IDLE_LOOPS_DIR = path.join(this.AVATAR_DIR, 'loops');
     this.IDLE_LOOP = path.join(this.AVATAR_DIR, 'ambient_loop.mp4');

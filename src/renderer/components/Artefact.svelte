@@ -30,7 +30,7 @@
   let activeFilter = $state('all');
 
   // Webview/iframe ref for memory cleanup
-  let iframeRef: HTMLIFrameElement | null = null;
+  let iframeRef = $state<HTMLIFrameElement | null>(null);
 
   const FILTER_OPTIONS = ['All', 'HTML', 'Code', 'Image', 'Video'] as const;
   const BADGE_COLORS: Record<string, string> = {
@@ -164,14 +164,14 @@
 
 <div class="artefact-overlay" class:visible data-no-drag>
   <div class="artefact-header">
-    <button class="gallery-btn" onclick={() => showGallery = !showGallery}>
+    <button class="gallery-btn" onclick={() => showGallery = !showGallery} aria-label="Toggle gallery">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
         <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
       </svg>
     </button>
 
-    <button class="close-btn" onclick={handleClose}>
+    <button class="close-btn" onclick={handleClose} aria-label="Close artefact">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
       </svg>

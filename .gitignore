@@ -16,9 +16,12 @@ out/
 *.db-wal
 *.db-shm
 
-# Avatar assets (large binaries)
-agents/*/avatar/
+# Avatar assets (large binaries) - tracked for bundled agents like xan
+# Only ignore for dynamically created agents in user data
 agents/*/audio/
+
+# Personal agents (not shipped)
+agents-personal/
 
 # Models
 vendor/whisper.cpp/

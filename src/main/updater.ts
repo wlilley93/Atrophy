@@ -5,7 +5,8 @@
  * In dev mode, update checks are skipped.
  */
 
-import { autoUpdater, UpdateInfo } from 'electron-updater';
+import pkg from 'electron-updater';
+const { autoUpdater } = pkg;
 import { BrowserWindow } from 'electron';
 
 let win: BrowserWindow | null = null;
@@ -19,7 +20,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('update-available', (info: UpdateInfo) => {
+  autoUpdater.on('update-available', (info: any) => {
     win?.webContents.send('updater:available', {
       version: info.version,
       releaseNotes: info.releaseNotes,
@@ -39,7 +40,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     });
   });
 
-  autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+  autoUpdater.on('update-downloaded', (info: any) => {
     win?.webContents.send('updater:downloaded', {
       version: info.version,
     });

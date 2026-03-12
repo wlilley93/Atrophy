@@ -9,17 +9,17 @@ All configuration flows through `src/main/config.ts`, which reads from four sour
 
 Environment variables win outright. For agent-specific settings (voice, heartbeat, telegram, display), the agent manifest takes priority over user config and defaults. The user config file at `~/.atrophy/config.json` replaces the old `.env`-based persistence for non-secret settings.
 
-The `Config` class is a singleton, accessed via `getConfig()`. It provides typed properties for every configuration value. Call `reloadForAgent(name)` when switching agents to re-resolve all agent-specific settings.
+The `Config` class is a singleton, accessed via `getConfig()`. It provides typed properties for every configuration value. Call `reloadForAgent(name)` when switching agents to re-resolve all agent-specific settings. The singleton is instantiated lazily on the first `getConfig()` call, and its `load()` method runs the full initialization sequence: loading the `.env` file, reading user config, resolving the version, resolving the agent, and detecting the Python path.
 
 ---
 
 ## Resolution Functions
 
-Two internal helpers drive the resolution:
+Two internal helpers drive the resolution. These functions are not exported - they are used inside the `Config` class constructor and `_resolveAgent()` method to determine the effective value of each setting. Understanding how they work is essential for predicting which source a value will come from.
 
 ### `cfg<T>(key, fallback)`
 
-Standard resolution for user-level settings:
+Standard resolution for user-level settings. This function checks sources in the order that gives the user the most control - environment variables first, then saved preferences, then agent defaults, and finally the hardcoded fallback:
 
 1. Check `process.env[key]` - if set, coerce to the fallback's type (number, boolean, or string)
 2. Check `_userCfg[key]` (from `~/.atrophy/config.json`)
@@ -28,7 +28,7 @@ Standard resolution for user-level settings:
 
 ### `agentCfg<T>(key, fallback)`
 
-Agent-first resolution for per-agent settings (voice, heartbeat, display):
+Agent-first resolution for per-agent settings (voice, heartbeat, display). This function gives the agent manifest the highest priority, allowing each agent to define its own voice, timing, and display preferences that override even environment variables:
 
 1. Check `_agentManifest[key]` - if set and not null/undefined, return it
 2. Fall through to `cfg(key, fallback)` (env -> user config -> default)
@@ -37,7 +37,9 @@ This means agent manifest values take priority over environment variables for th
 
 ### Resolution Example
 
-For `TTS_PLAYBACK_RATE` (default `1.12`):
+These examples illustrate the resolution order for two different settings. The first uses `agentCfg()` (agent-first), and the second uses `cfg()` (user-first):
+
+For `TTS_PLAYBACK_RATE` (default `1.12`), the agent manifest wins because this is a per-agent setting resolved through `agentCfg()`:
 
 ```
 agentCfg('TTS_PLAYBACK_RATE', 1.12)
@@ -47,7 +49,7 @@ agentCfg('TTS_PLAYBACK_RATE', 1.12)
   4. (if not anywhere) -> returns 1.12
 ```
 
-For `CLAUDE_BIN` (default `'claude'`):
+For `CLAUDE_BIN` (default `'claude'`), environment variables win because this is a user-level setting resolved through `cfg()`:
 
 ```
 cfg('CLAUDE_BIN', 'claude')
@@ -60,6 +62,8 @@ cfg('CLAUDE_BIN', 'claude')
 ---
 
 ## Environment Variables
+
+These variables can be set in your shell before launching the app, or placed in `~/.atrophy/.env` for persistence. The Resolution column indicates which helper function reads the variable, which determines its priority relative to other sources. Variables marked "Direct" are read once at startup and do not participate in the tiered resolution system.
 
 | Variable | Default | Resolution | Description |
 |----------|---------|------------|-------------|
@@ -93,15 +97,16 @@ cfg('CLAUDE_BIN', 'claude')
 
 ## .env File (`~/.atrophy/.env`)
 
-Secrets are loaded from this file into `process.env` on startup via `loadEnvFile()`. The parser:
+Secrets are loaded from this file into `process.env` on startup via `loadEnvFile()`. This is a custom parser, not the `dotenv` npm package. The parser applies the following rules when reading each line:
+
 - Skips empty lines and `#` comments
-- Splits on the first `=` sign
+- Splits on the first `=` sign (keys cannot contain `=`, but values can)
 - Strips surrounding single or double quotes from values
-- Only sets variables that are not already in `process.env` (env vars take priority)
+- Only sets variables that are not already in `process.env` (real env vars take priority over the file)
 
 ### Allowed Secret Keys
 
-Only these keys can be written via `saveEnvVar()` (the setup wizard's `setup:saveSecret` handler):
+Only these keys can be written via `saveEnvVar()` (the setup wizard's `setup:saveSecret` handler). Any attempt to write a key not in this whitelist is silently ignored, which prevents the setup wizard or any other code path from accidentally persisting arbitrary environment variables.
 
 | Key | Purpose |
 |-----|---------|
@@ -111,13 +116,15 @@ Only these keys can be written via `saveEnvVar()` (the setup wizard's `setup:sav
 | `OPENAI_API_KEY` | OpenAI API (unused in current code but reserved) |
 | `ANTHROPIC_API_KEY` | Anthropic API (unused in current code but reserved) |
 
-The `.env` file is written with mode `0o600` (owner read/write only). The `saveEnvVar()` function updates or appends the key, removes trailing blank lines, and ensures a final newline.
+The `.env` file is written with mode `0o600` (owner read/write only). The `saveEnvVar()` function updates or appends the key, removes trailing blank lines, and ensures a final newline. It also sets the value in `process.env` immediately so the running process sees the change without a restart.
 
 ---
 
 ## User Config (`~/.atrophy/config.json`)
 
-Persistent settings saved via the GUI settings panel. Same keys as environment variables but stored in JSON. Created automatically on first run with empty `{}`.
+Persistent settings saved via the GUI settings panel. This file uses the same keys as environment variables but stored in JSON format. It is created automatically on first run with empty `{}` and grows as you change settings through the GUI.
+
+The following example shows a typical `config.json` after the setup wizard completes and a few settings have been adjusted:
 
 ```json
 {
@@ -133,6 +140,8 @@ Settings here are overridden by environment variables but take precedence over a
 
 ### Save Mechanism
 
+The `saveUserConfig()` function deep-merges updates into the existing `config.json`. It reads the current file, merges recursively, writes back, and reloads the in-memory cache so subsequent `cfg()` calls see the new values immediately:
+
 ```typescript
 export function saveUserConfig(updates: Record<string, unknown>): void
 ```
@@ -141,20 +150,23 @@ Deep-merges `updates` into the existing `config.json`. Plain objects are merged 
 
 ### Special Keys
 
+These keys have special meaning beyond the normal configuration resolution. They control app-level behavior that is not tied to any specific agent.
+
 | Key | Type | Description |
 |-----|------|-------------|
 | `setup_complete` | boolean | Set to `true` after the first-launch setup wizard completes. Reset to `false` (or remove) to re-run the wizard |
-| `USER_NAME` | string | The user's name, set during setup |
+| `USER_NAME` | string | The user's name, set during setup. Used in prompts and turn labeling |
 
 ---
 
 ## Agent Manifest (`agent.json`)
 
-The agent manifest lives at `agents/<name>/data/agent.json` (in the bundle or `~/.atrophy/agents/<name>/data/agent.json` for user-installed agents).
+The agent manifest defines an agent's identity, voice, and behavioral settings. It lives at `agents/<name>/data/agent.json` (in the bundle or `~/.atrophy/agents/<name>/data/agent.json` for user-installed agents). The manifest is the primary source of truth for per-agent settings and is the first thing loaded when an agent is activated.
 
 ### Manifest Loading
 
-`loadAgentManifest(name)` searches two locations in order:
+`loadAgentManifest(name)` searches two locations in order, returning the first valid JSON file it finds. User data takes precedence so that user-modified agents override the bundled defaults:
+
 1. `~/.atrophy/agents/<name>/data/agent.json` (user data)
 2. `<BUNDLE_ROOT>/agents/<name>/data/agent.json` (bundle)
 
@@ -162,14 +174,15 @@ First found wins.
 
 ### Agent Directory Resolution
 
-`findAgentDir(name)` resolves the agent's root directory:
+`findAgentDir(name)` resolves the agent's root directory. This determines where prompts, avatar assets, and other agent files are loaded from. The resolution prefers user data to allow user modifications:
+
 1. Check `~/.atrophy/agents/<name>/data/agent.json` - if exists, return user dir
 2. Check `<BUNDLE_ROOT>/agents/<name>/data/agent.json` - if exists, return bundle dir
-3. Default to user dir (for new agents)
+3. Default to user dir (for new agents that do not yet have a manifest)
 
 ### Properties Read from Manifest
 
-These properties are read directly from the manifest (not through `cfg()`/`agentCfg()`):
+These properties are read directly from the manifest object, not through the `cfg()`/`agentCfg()` resolution system. They are identity-level fields that only make sense at the agent level and have no corresponding environment variable:
 
 | Manifest Key | Config Property | Type | Default |
 |--------------|----------------|------|---------|
@@ -181,7 +194,7 @@ These properties are read directly from the manifest (not through `cfg()`/`agent
 
 ### Properties Using `agentCfg()` (Manifest-First)
 
-These are resolved with agent manifest taking priority:
+These are resolved with the agent manifest taking priority over environment variables and user config. They represent settings that should be customizable per agent - each agent can have its own voice, its own heartbeat schedule, and its own window dimensions:
 
 | Manifest Key | Config Property | Type | Default |
 |--------------|----------------|------|---------|
@@ -204,6 +217,8 @@ These are resolved with agent manifest taking priority:
 
 ### Agent Config Save
 
+When the user modifies agent-specific settings through the GUI, changes are saved to the user data copy of the manifest. This function performs a shallow merge into the existing file, creating the directory structure if needed:
+
 ```typescript
 export function saveAgentConfig(agentName: string, updates: Record<string, unknown>): void
 ```
@@ -212,7 +227,7 @@ Shallow-merges updates into `~/.atrophy/agents/<name>/data/agent.json`. Creates 
 
 ### Config Update Routing
 
-When the renderer calls `config:update`, the IPC handler classifies each key:
+When the renderer calls `config:update`, the IPC handler in `src/main/index.ts` classifies each key to determine which file it should be saved to. This routing ensures that agent-specific settings stay with the agent and user-level settings stay in the global config.
 
 **Agent-specific keys** (saved to `agent.json`):
 `AGENT_DISPLAY_NAME`, `OPENING_LINE`, `TTS_BACKEND`, `TTS_PLAYBACK_RATE`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`, `ELEVENLABS_STABILITY`, `ELEVENLABS_SIMILARITY`, `ELEVENLABS_STYLE`, `FAL_VOICE_ID`, `HEARTBEAT_ACTIVE_START`, `HEARTBEAT_ACTIVE_END`, `HEARTBEAT_INTERVAL_MINS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `WINDOW_WIDTH`, `WINDOW_HEIGHT`, `DISABLED_TOOLS`
@@ -223,7 +238,7 @@ When the renderer calls `config:update`, the IPC handler classifies each key:
 
 ## Derived Config Values
 
-These are computed at construction time and available as instance properties:
+These are computed at construction time and available as instance properties on the `Config` singleton. They are derived from the agent name, bundle root, and user data directory rather than being directly configurable. Many of these are path computations that adjust automatically when you switch agents.
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -255,7 +270,7 @@ These are computed at construction time and available as instance properties:
 
 ### Per-Agent State File Paths
 
-These are all in `<DATA_DIR>` (i.e. `~/.atrophy/agents/<name>/data/`):
+Each agent maintains several JSON state files in its data directory. These files track runtime state that persists between sessions but is specific to one agent. They are all dot-prefixed to keep them out of casual directory listings.
 
 | Property | Filename | Purpose |
 |----------|----------|---------|
@@ -270,6 +285,8 @@ These are all in `<DATA_DIR>` (i.e. `~/.atrophy/agents/<name>/data/`):
 
 ### Per-Agent Avatar Paths
 
+Avatar assets follow a user-then-bundle resolution pattern. The app checks the user data directory first, allowing users to replace avatar files without modifying the bundle. If no user version exists, the bundled default is used.
+
 | Property | Path | Purpose |
 |----------|------|---------|
 | `AVATAR_DIR` | `~/.atrophy/agents/<name>/avatar/` | Avatar root |
@@ -283,27 +300,31 @@ These are all in `<DATA_DIR>` (i.e. `~/.atrophy/agents/<name>/data/`):
 
 ## Google Auth Detection
 
-`googleConfigured()` checks two methods:
+`googleConfigured()` checks two methods at config load time. This function runs synchronously during config initialization and determines whether the Google MCP server should be included in the MCP config.
 
-1. **Legacy OAuth tokens**: checks if `~/.atrophy/.google/token.json` exists
-2. **gws CLI auth**: finds the `gws` binary via `which gws`, runs `gws auth status` with a 5-second timeout, parses the JSON output, returns `true` if `auth_method` is not `'none'`
+1. **Legacy OAuth tokens**: checks if `~/.atrophy/.google/token.json` exists. If the file is present, Google is considered configured regardless of whether the tokens are still valid.
+2. **gws CLI auth**: finds the `gws` binary via `which gws`, runs `gws auth status` with a 5-second timeout, parses the JSON output, returns `true` if `auth_method` is not `'none'`. If the `gws` binary is not found or the command times out, this method returns `false` without error.
 
 ---
 
 ## Data Migration
 
-`migrateAgentData()` runs once on startup via `ensureUserData()`. For each agent in `<BUNDLE_ROOT>/agents/`:
+`migrateAgentData()` runs once on startup via `ensureUserData()`. Its purpose is to populate the user data directory with bundled agent files on first run, ensuring the app can function even if the user has not manually configured anything.
 
-1. **Data files**: copies files from `bundle/agents/<name>/data/` to `~/.atrophy/agents/<name>/data/`, skipping `agent.json` (manifest stays in bundle) and any file that already exists at destination.
-2. **Avatar tree**: recursively copies the `avatar/` tree from bundle to user data using `copyTreeIfMissing()`, which only copies files that don't already exist (preserving user modifications).
+For each agent in `<BUNDLE_ROOT>/agents/`:
+
+1. **Data files**: copies files from `bundle/agents/<name>/data/` to `~/.atrophy/agents/<name>/data/`, skipping `agent.json` (manifest stays in bundle) and any file that already exists at destination. This preserves user modifications while ensuring new bundled files are available.
+2. **Avatar tree**: recursively copies the `avatar/` tree from bundle to user data using `copyTreeIfMissing()`, which only copies files that don't already exist (preserving user modifications like custom avatar images).
 
 ---
 
 ## Constants
 
-These are hardcoded in the `Config` class constructor and not configurable through environment variables:
+These are hardcoded in the `Config` class constructor and not configurable through environment variables. They represent values that are either dictated by external requirements (whisper expects 16kHz audio) or are considered stable enough that runtime configuration is unnecessary.
 
 ### Voice Input
+
+Audio capture settings are tuned for whisper.cpp compatibility. The sample rate and channel count must match what the whisper model expects, and the push-to-talk key and recording limits control the user interaction pattern.
 
 | Property | Value | Type | Description |
 |----------|-------|------|-------------|
@@ -315,6 +336,8 @@ These are hardcoded in the `Config` class constructor and not configurable throu
 
 ### Memory and Context
 
+These constants control how much context the agent can draw on during inference. The context summaries count determines how many recent session summaries are injected, while the max context tokens sets the hard ceiling for the Claude CLI context window. The vector search weight balances semantic similarity against keyword matching when searching memory.
+
 | Property | Value | Type | Description |
 |----------|-------|------|-------------|
 | `CONTEXT_SUMMARIES` | `3` | number | Recent session summaries injected into context |
@@ -325,11 +348,15 @@ These are hardcoded in the `Config` class constructor and not configurable throu
 
 ### Session
 
+The session soft limit triggers a check-in prompt after extended conversation. It does not end the session - the user can continue, but the agent will acknowledge the elapsed time.
+
 | Property | Value | Type | Description |
 |----------|-------|------|-------------|
 | `SESSION_SOFT_LIMIT_MINS` | `60` | number | Soft limit before check-in prompt |
 
 ### Display
+
+The avatar resolution controls the default size of procedural avatar rendering. Higher values produce sharper avatars but require more GPU work per frame.
 
 | Property | Value | Type | Description |
 |----------|-------|------|-------------|
@@ -339,9 +366,9 @@ These are hardcoded in the `Config` class constructor and not configurable throu
 
 ## Settings Panel (GUI)
 
-When running in GUI mode, the settings panel provides live configuration. Open with the gear icon or Cmd+,.
+When running in GUI mode, the settings panel provides live configuration of all adjustable parameters. Open it with the gear icon or Cmd+,. The panel is designed to surface every setting in the config system through a visual interface, so you never need to edit JSON files manually.
 
-The panel is organised into sections:
+The panel is organised into sections, each grouping related settings. Sections are rendered as collapsible groups in the settings overlay:
 
 | Section | Settings |
 |---------|----------|
@@ -361,18 +388,22 @@ The panel is organised into sections:
 | **Telegram** | Bot token, chat ID |
 | **About** | Version, install path, Check for Updates / Update Now, Reset Setup Wizard |
 
-Two actions at the bottom:
+Two actions at the bottom of the panel control how changes are persisted:
 
-- **Apply** - applies changes to the running session immediately (in-memory only, lost on restart)
-- **Save** - applies changes AND writes them to `~/.atrophy/config.json` (for general settings) and `agent.json` (for agent-specific settings)
+- **Apply** - applies changes to the running session immediately (in-memory only, lost on restart). This is useful for experimenting with settings before committing to them.
+- **Save** - applies changes AND writes them to `~/.atrophy/config.json` (for general settings) and `agent.json` (for agent-specific settings). The routing logic described in the Config Update Routing section determines which file receives each key.
 
 ---
 
 ## Per-Agent Paths
 
-All per-agent paths are derived from the agent name. For an agent named `oracle`:
+All per-agent paths are derived from the agent name. The two-tier structure (bundle paths for read-only defaults, user data paths for mutable state) ensures that the bundle remains clean while user modifications are preserved across updates.
+
+For an agent named `oracle`:
 
 ### Bundle paths (repo / app bundle)
+
+These files ship with the application and are read-only at runtime. They define the agent's default identity, prompts, and avatar assets:
 
 | Path | Description |
 |------|-------------|
@@ -385,6 +416,8 @@ All per-agent paths are derived from the agent name. For an agent named `oracle`
 | `scripts/agents/oracle/` | Agent-specific scripts |
 
 ### User data paths (`~/.atrophy/`)
+
+These files are created at runtime and contain mutable state. They are never overwritten by updates - if a file already exists, the migration process leaves it untouched:
 
 | Path | Description |
 |------|-------------|
@@ -401,7 +434,9 @@ All per-agent paths are derived from the agent name. For an agent named `oracle`
 
 ## Telegram Per-Agent Configuration
 
-Each agent can have its own Telegram bot. The manifest specifies environment variable *names*, not values:
+Each agent can have its own Telegram bot, allowing multiple agents to reach the user through separate Telegram channels. The manifest specifies environment variable *names*, not values, so that secrets stay out of the agent definition files.
+
+This example manifest fragment shows how an agent named Oracle references its Telegram credentials indirectly:
 
 ```json
 {
@@ -412,7 +447,7 @@ Each agent can have its own Telegram bot. The manifest specifies environment var
 }
 ```
 
-Then set the actual values in `~/.atrophy/.env`:
+The actual token and chat ID values are set in `~/.atrophy/.env`, where they are protected by restrictive file permissions:
 
 ```
 TELEGRAM_BOT_TOKEN_ORACLE=123456:ABC-DEF...
@@ -423,7 +458,7 @@ TELEGRAM_CHAT_ID_ORACLE=987654321
 
 ## Prompt Resolution (Four-Tier)
 
-`src/main/prompts.ts` resolves skill/prompt files through four directories in order:
+`src/main/prompts.ts` resolves skill/prompt files through four directories in order. This tiered approach lets users customize prompts at multiple levels - from the Obsidian vault (for cross-project skill sharing) down to the bundled defaults (for out-of-the-box behavior). First match wins, so a prompt file in the Obsidian vault overrides the same-named file everywhere else.
 
 1. **Obsidian vault** - `Agent Workspace/<agent>/skills/{name}.md`
 2. **Local skills** - `~/.atrophy/agents/<agent>/skills/{name}.md`
@@ -436,9 +471,11 @@ First match wins.
 
 ## Google Integration
 
-Google tools are enabled automatically when OAuth2 credentials are present. The system checks at config load time via `googleConfigured()`.
+Google tools are enabled automatically when OAuth2 credentials are present. The system checks at config load time via `googleConfigured()`, which runs synchronously during the Config constructor. If Google is configured, the Google MCP server is included in the MCP config passed to the Claude CLI.
 
 ### Setup
+
+Three commands handle the full lifecycle of Google credentials. The auth script opens a browser for the OAuth consent flow, while the check and revoke subcommands manage existing credentials:
 
 ```bash
 python scripts/google_auth.py              # Authorize (opens browser)
@@ -448,6 +485,8 @@ python scripts/google_auth.py --revoke     # Revoke and delete
 
 ### Credential Storage
 
+Google OAuth tokens are stored in a dedicated directory with strict permissions. The OAuth client credentials (bundled with the app) are read-only, while the user's tokens are written with owner-only access:
+
 | Path | Permissions | Contents |
 |------|-------------|----------|
 | `config/google_oauth.json` | - | Bundled OAuth2 client credentials |
@@ -455,6 +494,8 @@ python scripts/google_auth.py --revoke     # Revoke and delete
 | `~/.atrophy/.google/token.json` | `0600` | OAuth2 refresh + access tokens |
 
 ### Per-Agent Disabling
+
+Individual agents can have Google tools disabled through the `disabled_tools` field in their manifest. This is useful for agents that should not have access to email or calendar data. You can disable all Google tools with a wildcard pattern or target specific tools by name:
 
 ```json
 {

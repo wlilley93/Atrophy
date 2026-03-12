@@ -723,9 +723,9 @@ app.whenReady().then(() => {
     app.dock?.hide();
   } else {
     // Set dock icon - prefers .icns brain icon, falls back to procedural orb
+    // macOS Retina docks render up to 1024px; never downsample below 512
     const appIcon = getAppIcon();
-    const resized = appIcon.resize({ width: 128, height: 128 });
-    app.dock?.setIcon(resized);
+    app.dock?.setIcon(appIcon);
   }
 
   // Initialize

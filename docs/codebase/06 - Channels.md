@@ -1,10 +1,12 @@
 # Channels
 
-External communication channels beyond the direct conversation interface.
+External communication channels beyond the direct conversation interface. The channel system enables the companion to communicate with the user through Telegram, serving as an always-available messaging layer that works independently of the GUI window. This is the primary mechanism for autonomous outreach - heartbeat messages, morning briefs, voice notes, and agent-to-agent routing all flow through the Telegram channel.
 
 ## Architecture
 
-All agents share a single Telegram bot. A central daemon polls for messages, routes them to the right agent(s), and dispatches responses sequentially. This eliminates race conditions - no two agents ever run concurrently.
+All agents share a single Telegram bot. A central daemon polls for messages, routes them to the right agent(s), and dispatches responses sequentially. This eliminates race conditions - no two agents ever run inference concurrently, which prevents database corruption, context window conflicts, and garbled multi-agent responses.
+
+The architecture follows a strict pipeline: messages arrive from Telegram, pass through the router for classification, and are dispatched one at a time to target agents. Each agent's response is sent back through the same Telegram bot with an emoji prefix to identify the speaker.
 
 ```
 Telegram Bot API
@@ -22,23 +24,29 @@ src/main/telegram.ts          (send with emoji prefix)
 
 ## src/main/telegram.ts - Bot API Client
 
-Telegram Bot API integration. Pure HTTP via `fetch()` (Node built-in undici) - no third-party Telegram libraries.
+This module implements the Telegram Bot API integration using pure HTTP via `fetch()` (Node built-in undici). There are no third-party Telegram libraries - all API calls are handwritten HTTP requests. This keeps the dependency footprint minimal and gives full control over timeout, error handling, and multipart form construction.
+
+The module provides three layers of functionality: low-level API helpers, message sending/receiving primitives, and high-level convenience methods for common interaction patterns.
 
 ### Internal API Helper
+
+The `apiUrl` function constructs Telegram API URLs from the configured bot token and a method name. It reads the token from the current config, meaning it automatically uses the correct token after an agent switch.
 
 ```typescript
 function apiUrl(method: string): string
 ```
 
-Constructs `https://api.telegram.org/bot<TOKEN>/<method>` from the current config's `TELEGRAM_BOT_TOKEN`.
+The `post` function is the generic POST helper used by all Bot API calls. It handles the complete request lifecycle - checking that the bot token is configured, sending the JSON payload, parsing the response, and returning the result. All calls use a 15-second timeout via `AbortSignal.timeout(15_000)` to prevent the app from hanging on network issues. Errors are logged but never thrown, so callers always get a clean return value (the result object on success, or `null` on failure).
 
 ```typescript
 async function post(method: string, payload: Record<string, unknown>): Promise<unknown | null>
 ```
 
-Generic POST helper for all Bot API calls. Checks that `TELEGRAM_BOT_TOKEN` is configured, sends JSON payload, parses the response, and returns `result` on success or `null` on failure. All calls have a 15-second timeout (`AbortSignal.timeout(15_000)`). Errors are logged but never thrown - the function always returns cleanly.
-
 ### Sending
+
+The module provides three sending methods, each handling a different message type. All three support optional emoji-prefixed agent identification.
+
+The `sendMessage` function sends a plain Markdown-formatted text message. When `prefix=true` (the default), it prepends the agent's emoji and display name (e.g. "moon *Xan*") so the recipient knows which agent is speaking. This prefix is the visual cue that distinguishes messages from different agents in the same Telegram chat.
 
 ```typescript
 export async function sendMessage(
@@ -48,7 +56,7 @@ export async function sendMessage(
 ): Promise<boolean>
 ```
 
-Send a plain Markdown message. When `prefix=true` (default), prepends the agent's emoji and display name (e.g. "moon *Xan*") so the recipient knows which agent is speaking. Uses `parse_mode: 'Markdown'`. Returns `true` on success.
+The `sendButtons` function sends a message with an inline keyboard - rows of tappable buttons that appear below the message. This is used for confirmation prompts (Yes/No) and permission requests. It returns the `message_id` for tracking which message the user responds to.
 
 ```typescript
 export async function sendButtons(
@@ -59,12 +67,13 @@ export async function sendButtons(
 ): Promise<number | null>
 ```
 
-Send a message with an inline keyboard. Each inner array is a row of buttons. Returns the `message_id` for tracking replies. Uses `reply_markup: { inline_keyboard: buttons }`.
+Each inner array represents a row of buttons. The following example creates a single row with two buttons side by side.
 
-Button format example:
 ```typescript
 [[{ text: 'Yes', callback_data: 'yes' }, { text: 'No', callback_data: 'no' }]]
 ```
+
+The `sendVoiceNote` function sends an audio file as a Telegram voice note. It reads the file into a `Buffer` and determines the correct API method based on the file extension. This distinction matters because Telegram treats voice messages (`.ogg`) differently from audio files in the UI - voice messages get a waveform player, while audio files get a standard media player.
 
 ```typescript
 export async function sendVoiceNote(
@@ -75,19 +84,24 @@ export async function sendVoiceNote(
 ): Promise<boolean>
 ```
 
-Send an audio file as a Telegram voice note. Reads the file into a `Buffer`, determines the API method based on file extension:
+The function handles the API method selection as follows:
+
 - `.ogg` / `.oga` files: uses `sendVoice` API with field name `voice` and content type `audio/ogg`
 - All other files: uses `sendAudio` API with field name `audio` and content type `audio/mpeg`
 
-Builds multipart form data manually using `Buffer.concat()` with a generated boundary string. Has a 30-second timeout. Used by the `voice-note.ts` job and the `telegram_voice` delivery method in `run-task.ts`.
+Multipart form data is built manually using `Buffer.concat()` with a generated boundary string, since the built-in `fetch` does not support `FormData` with file uploads in Node.js. The upload timeout is extended to 30 seconds to accommodate larger audio files. This function is used by the `voice-note.ts` job and the `telegram_voice` delivery method in `run-task.ts`.
 
 ### Receiving
+
+The receiving functions use Telegram's long-polling approach rather than webhooks. Long-polling is simpler to set up (no public URL or SSL certificate required) and works behind NATs and firewalls.
+
+The `flushOldUpdates` function consumes all pending updates from the Telegram API without processing them. This is called before any polling operation to ensure the poller only sees fresh messages, preventing stale responses from previous sessions.
 
 ```typescript
 async function flushOldUpdates(): Promise<void>
 ```
 
-Consumes all pending updates from the Telegram API without processing them. Used before polling operations to avoid stale responses.
+The `pollCallback` function long-polls for an inline keyboard callback. It polls in 30-second windows until a `callback_query` from the target user (matched by `from.id`) is received. When a callback arrives, it automatically answers the callback query via `answerCallbackQuery` (which removes the loading spinner in the Telegram client). Returns the `callback_data` string or `null` on timeout.
 
 ```typescript
 export async function pollCallback(
@@ -96,9 +110,9 @@ export async function pollCallback(
 ): Promise<string | null>
 ```
 
-Long-poll for an inline keyboard callback. Polls in 30-second windows until a `callback_query` from the target user (matched by `from.id`) is received. Automatically answers the callback query via `answerCallbackQuery` (removes the loading spinner in Telegram). Returns `callback_data` or `null` on timeout.
+If the API returns null (network error), the function waits 2 seconds before retrying. This prevents tight retry loops during transient network outages.
 
-If the API returns null (network error), waits 2 seconds before retrying.
+The `pollReply` function long-polls for a text message reply. It uses the same polling pattern as `pollCallback` but filters for `message` updates instead of `callback_query` updates. Returns the message text or `null` on timeout. Both polling functions match messages by `from.id` to ensure they only accept responses from the correct user.
 
 ```typescript
 export async function pollReply(
@@ -107,9 +121,11 @@ export async function pollReply(
 ): Promise<string | null>
 ```
 
-Long-poll for a text message reply. Same polling pattern as `pollCallback` but uses `allowed_updates: ['message']`. Returns message text or `null` on timeout. Matches messages by `from.id`.
-
 ### High-Level Convenience Methods
+
+These methods combine sending and receiving into complete interaction patterns. They handle the full lifecycle of an interactive exchange - flushing stale updates, sending the prompt, and polling for the response.
+
+The `askConfirm` function sends a confirmation prompt with Yes/No buttons and waits for the user to tap one. It flushes old updates first, sends the buttons, and polls for a callback. Returns `true` (yes), `false` (no), or `null` (timeout). This is the standard pattern for permission and confirmation requests from background jobs.
 
 ```typescript
 export async function askConfirm(
@@ -118,7 +134,7 @@ export async function askConfirm(
 ): Promise<boolean | null>
 ```
 
-Send a confirmation prompt with Yes/No buttons. Flushes old updates first, sends buttons, polls for callback. Returns `true` (yes), `false` (no), or `null` (timeout).
+The `askQuestion` function sends a question and waits for a free-text reply. It flushes old updates first, sends the message, and polls for a reply. Returns the reply text or `null` on timeout.
 
 ```typescript
 export async function askQuestion(
@@ -127,34 +143,31 @@ export async function askQuestion(
 ): Promise<string | null>
 ```
 
-Send a question and wait for a text reply. Flushes old updates first, sends message, polls for reply.
-
 ### Bot Command Registration
+
+Bot command registration makes agent names appear in Telegram's autocomplete menu. When the user types `/` in the chat, they see a list of all agents with their descriptions, making it easy to address a specific agent.
+
+The `registerBotCommands` function scans all discovered agents via `discoverAgents()` and builds a command list. Each agent gets a `/<agent_name>` command with its description from the manifest (truncated to Telegram's 256-character limit). Two utility commands are appended: `/status` (show active agents) and `/mute` (toggle agent muting). The full list is sent to the Telegram API via `setMyCommands`.
 
 ```typescript
 export async function registerBotCommands(): Promise<boolean>
 ```
 
-Scans all discovered agents via `discoverAgents()` and builds a command list:
-- One `/agent_name` command per agent (description from manifest, truncated to 256 chars)
-- `/status` - "Show which agents are active"
-- `/mute` - "Mute/unmute the current agent"
-
-Calls `setMyCommands` API. Commands appear in Telegram's autocomplete menu.
+The `clearBotCommands` function removes all bot commands via `deleteMyCommands` API. This is used during cleanup or when the agent roster changes significantly.
 
 ```typescript
 export async function clearBotCommands(): Promise<boolean>
 ```
 
-Removes all bot commands via `deleteMyCommands` API.
-
 ### Update ID Tracking
 
-The module maintains a module-level `_lastUpdateId` variable that tracks the highest processed update ID. This prevents re-processing old messages. The variable is shared between the telegram module and the daemon via `setLastUpdateId()`.
+The module maintains a module-level `_lastUpdateId` variable that tracks the highest processed update ID. This prevents re-processing old messages after a restart or reconnection. The variable is shared between the telegram module and the daemon via `setLastUpdateId()`, ensuring both components agree on which updates have been processed.
+
+When calling `getUpdates`, the offset is set to `_lastUpdateId + 1`, telling the Telegram API to only return updates newer than the last processed one. This is a standard Telegram pattern that ensures exactly-once processing of messages.
 
 ### Configuration
 
-Per-agent from `agent.json`:
+Each agent's Telegram configuration comes from its `agent.json` manifest. The env var names themselves are configurable, allowing multiple agents to use different Telegram bots if needed (though the standard setup uses a single shared bot).
 
 ```json
 {
@@ -166,37 +179,41 @@ Per-agent from `agent.json`:
 }
 ```
 
-The env var names themselves are configurable, allowing multiple agents to use different Telegram bots. The `telegram_emoji` appears before the agent's name in all outgoing messages.
+The `telegram_emoji` appears before the agent's name in all outgoing messages. This visual identifier is essential in a multi-agent setup where messages from different agents appear in the same chat thread.
 
 ### Usage
 
-The Telegram channel is used by:
+The Telegram channel is used by multiple components throughout the system. Understanding which components use it helps explain why the channel needs to be robust and handle concurrent access gracefully.
 
-- **Telegram daemon**: Receives and dispatches routed messages
-- **`ask_will` MCP tool**: Sends questions during conversation and blocks for a reply
-- **`send_telegram` MCP tool**: Proactive outreach (rate limited to 5/day)
-- **`heartbeat` job**: Evaluates whether to reach out and sends messages
-- **`gift` job**: Delivers unprompted notes
-- **`voice-note` job**: Sends spontaneous voice notes (OGG Opus via `sendVoiceNote()`)
-- **`run-task` job**: `telegram_voice` delivery method sends task output as voice notes
+- **Telegram daemon**: Receives and dispatches routed messages - the main incoming message handler
+- **`ask_will` MCP tool**: Sends questions during conversation and blocks for a reply - used when the agent needs user input mid-task
+- **`send_telegram` MCP tool**: Proactive outreach (rate limited to 5/day) - used for unprompted messages
+- **`heartbeat` job**: Evaluates whether to reach out and sends messages - periodic check-in
+- **`gift` job**: Delivers unprompted notes - monthly creative outreach
+- **`voice-note` job**: Sends spontaneous voice notes (OGG Opus via `sendVoiceNote()`) - audio-based outreach
+- **`run-task` job**: `telegram_voice` delivery method sends task output as voice notes - scheduled task delivery
 
 ### Implementation Notes
 
-- Uses `fetch()` (Node built-in undici) - no `requests`, `urllib`, or `telegram` library dependency
-- Long-polling with `getUpdates` (no webhooks)
-- Tracks `_lastUpdateId` globally to avoid re-processing old updates
-- `flushOldUpdates()` consumes pending updates before any polling operation
-- All API calls have a 15-second timeout (`AbortSignal.timeout(15_000)`)
-- Errors are logged but don't throw - functions return `null`/`false` on failure
-- Multipart form data is built manually with `Buffer` for voice note uploads (30-second timeout)
+The implementation makes several deliberate technical choices that affect reliability and simplicity. These notes capture the reasoning behind the design decisions.
+
+- Uses `fetch()` (Node built-in undici) - no `requests`, `urllib`, or `telegram` library dependency. This avoids version conflicts and keeps the module self-contained.
+- Long-polling with `getUpdates` (no webhooks). Simpler infrastructure requirements - no public URL, SSL certificate, or reverse proxy needed.
+- Tracks `_lastUpdateId` globally to avoid re-processing old updates. Shared between the telegram module and daemon via setter function.
+- `flushOldUpdates()` consumes pending updates before any polling operation, preventing stale responses from interfering with fresh interactions.
+- All API calls have a 15-second timeout (`AbortSignal.timeout(15_000)`). Long enough for normal API calls, short enough to detect network issues quickly.
+- Errors are logged but don't throw - functions return `null`/`false` on failure. This fail-soft approach prevents a Telegram API error from crashing the entire application.
+- Multipart form data is built manually with `Buffer` for voice note uploads (30-second timeout). The extended timeout accommodates audio files that can be several hundred kilobytes.
 
 ---
 
 ## src/main/router.ts - Message Router
 
-Two-tier routing system that decides which agent(s) should handle an incoming Telegram message.
+The router is a two-tier routing system that decides which agent(s) should handle an incoming Telegram message. The first tier uses pattern matching (free, instant), and the second tier uses a lightweight LLM call (costs one Haiku inference). This tiered approach means most messages are routed without any LLM cost, while ambiguous messages still get intelligent routing.
 
 ### Types
+
+The router defines two key types. `AgentInfo` represents a routable agent with its metadata, and `RoutingDecision` captures the routing outcome including which agents were selected, how they were selected, and the cleaned message text.
 
 ```typescript
 interface AgentInfo {
@@ -214,17 +231,20 @@ export interface RoutingDecision {
 }
 ```
 
+The `tier` field records how the routing decision was made: `explicit` means pattern matching, `agent` means the LLM routing agent decided, `single` means there was only one available agent (no routing needed), and `none` means no agents were available.
+
 ### Agent Registry
 
-`loadAgentRegistry()` builds the routing registry by:
-1. Calling `discoverAgents()` to get all agents
-2. Filtering out disabled and muted agents (via `getAgentState()`)
-3. Loading each agent's manifest from `USER_DATA` then `BUNDLE_ROOT`
-4. Extracting `display_name`, `description`, `wake_words`, and `telegram_emoji`
+The `loadAgentRegistry()` function builds the routing registry fresh on every call. This ensures the registry always reflects the current agent state, including recently muted or disabled agents. The building process is:
+
+1. Calling `discoverAgents()` to get all agents from both `USER_DATA` and `BUNDLE_ROOT`
+2. Filtering out disabled and muted agents (via `getAgentState()`). Muted agents are excluded from routing so they do not receive messages.
+3. Loading each agent's manifest from `USER_DATA` then `BUNDLE_ROOT` (same two-tier resolution as the rest of the system)
+4. Extracting `display_name`, `description`, `wake_words`, and `telegram_emoji` for routing metadata
 
 ### Tier 1: Explicit Routing (Free)
 
-`checkExplicit(text, agents)` performs pattern matching with no LLM call:
+The `checkExplicit(text, agents)` function performs pattern matching with no LLM call. It checks five patterns in order, returning the first match. This tier handles the majority of messages in practice, since users quickly learn to prefix their messages with an agent name.
 
 | Pattern | Example | Behaviour |
 |---------|---------|-----------|
@@ -234,53 +254,60 @@ export interface RoutingDecision {
 | Wake word | `hey darling` | Route to agent with matching wake word |
 | Multiple names | `companion and monty, debate this` | Route to all named agents |
 
-Matching details:
-- `/command` prefix: extracts the first word after `/`, matches against `agent.name` or `agent.display_name.toLowerCase()`
-- `@mention`: uses regex `/@(\w+)/g` to find all mentions, matches each against agent names
-- `name:` prefix: checks if message starts with `<name>:` or `<display_name>:` (case-insensitive)
-- Wake words: checks if message starts with any wake word (case-insensitive)
-- Multi-agent: if two or more agent names/display names appear anywhere in the message, routes to all of them
+The matching logic for each pattern works as follows:
 
-Returns the matched agent name(s) as an array, or `null` if no explicit match.
+- `/command` prefix: extracts the first word after `/`, matches against `agent.name` or `agent.display_name.toLowerCase()`. This follows the Telegram bot command convention.
+- `@mention`: uses regex `/@(\w+)/g` to find all mentions, matches each against agent names. Multiple mentions route to multiple agents.
+- `name:` prefix: checks if message starts with `<name>:` or `<display_name>:` (case-insensitive). This is a natural addressing pattern.
+- Wake words: checks if message starts with any wake word (case-insensitive). Wake words are configured per-agent in the manifest.
+- Multi-agent: if two or more agent names/display names appear anywhere in the message, routes to all of them. This enables "debate" or "discuss" patterns.
+
+Returns the matched agent name(s) as an array, or `null` if no explicit match was found (falling through to Tier 2).
 
 ### Tier 2: Routing Agent (Haiku)
+
+When no explicit match is found, a lightweight LLM call classifies the message. This tier handles ambiguous messages where the user did not explicitly name an agent. The routing agent is a separate inference call that costs minimal tokens.
 
 ```typescript
 async function routeViaAgent(text: string, agents: AgentInfo[]): Promise<string[]>
 ```
 
-When no explicit match is found, a lightweight LLM call classifies the message. Uses `runInferenceOneshot()` with:
-- Model: `claude-haiku-4-5-20251001`
-- Effort: `low`
-- System prompt: instructs the routing agent to return ONLY a JSON array of agent slugs
+The routing call uses `runInferenceOneshot()` with the following parameters:
 
-The system prompt includes:
-- A list of valid agent slugs
-- Instructions to route to ONE agent unless multiple perspectives are genuinely needed
-- The rule to pick the personality that best fits for casual/general messages
+- Model: `claude-haiku-4-5-20251001` (cheapest and fastest model)
+- Effort: `low` (minimal processing)
+- System prompt: instructs the routing agent to return ONLY a JSON array of agent slugs, with no explanation or commentary
 
-The response is parsed with `result.match(/\[.*?\]/s)` to extract the JSON array. Valid slugs are filtered. Falls back to the first agent on failure.
+The system prompt includes a list of valid agent slugs with their descriptions, an instruction to route to ONE agent unless multiple perspectives are genuinely needed, and the rule to pick the personality that best fits for casual/general messages.
+
+The response is parsed with `result.match(/\[.*?\]/s)` to extract the JSON array from the response. Valid slugs are filtered against the known agent list, and any invalid slugs are dropped. If parsing fails entirely or no valid slugs are found, the function falls back to routing to the first agent in the registry.
 
 ### Main Router
+
+The `routeMessage` function is the main entry point for all routing decisions. It orchestrates the two tiers and handles edge cases where routing is not needed.
 
 ```typescript
 export async function routeMessage(text: string): Promise<RoutingDecision>
 ```
 
-Decision flow:
+The decision flow proceeds through these steps:
+
 1. Load agent registry (filters disabled/muted agents)
-2. If no agents available: return `tier: 'none'`
-3. If exactly one agent: return `tier: 'single'` (skip routing entirely)
+2. If no agents available: return `tier: 'none'` (the daemon will log this and skip the message)
+3. If exactly one agent: return `tier: 'single'` (skip routing entirely - no need to decide)
 4. Try explicit routing. If matched, clean the text (strip `/prefix` or `name:` prefix) and return `tier: 'explicit'`
 5. Fall through to routing agent. Return `tier: 'agent'`
 
-Text cleaning for explicit routes:
+Text cleaning for explicit routes strips the addressing prefix so the agent sees the actual question rather than the routing syntax:
+
 - If starts with `/`, take everything after the first space
 - If contains `:` within the first 30 characters, take everything after the colon
 
+The 30-character limit on colon detection prevents false matches on messages that contain colons in their body text (like URLs or time references).
+
 ### Routing Queue (File-Based IPC)
 
-The router includes a file-based queue at `~/.atrophy/.telegram_routes.json` for daemon coordination:
+The router includes a file-based queue at `~/.atrophy/.telegram_routes.json` for daemon coordination. This queue serves as a persistent record of routing decisions and enables multi-process coordination when the daemon and GUI need to share routing state.
 
 ```typescript
 interface RouteEntry {
@@ -295,100 +322,114 @@ export function enqueueRoute(messageId: number, text: string, decision: RoutingD
 export function dequeueRoute(agentName: string): RouteEntry | null
 ```
 
-`enqueueRoute()` appends a route entry and keeps only the last 50 entries. `dequeueRoute()` finds the first entry containing the agent name, removes the agent from the entry's agent list, and deletes the entry entirely if no agents remain.
+The `enqueueRoute` function appends a route entry and keeps only the last 50 entries, preventing unbounded growth. The `dequeueRoute` function finds the first entry containing the given agent name, removes the agent from the entry's agent list (since that agent has now handled the message), and deletes the entry entirely if no agents remain. This consumption pattern supports multi-agent routing where each agent independently dequeues its portion of the work.
 
 ---
 
 ## src/main/telegram-daemon.ts - Polling Daemon
 
-Single-process daemon that polls for Telegram messages, routes them, and dispatches to agents sequentially.
+The polling daemon is the single-process component responsible for receiving Telegram messages, routing them, and dispatching them to agents. It runs as either a managed timer within the Electron main process or as a standalone launchd agent. The key architectural decision is sequential dispatch - agents process messages one at a time, never concurrently.
 
 ### How It Works
 
+The daemon's poll cycle is a six-step pipeline that runs on every interval tick. Each step builds on the previous one, and failures at any step are caught and logged without stopping the daemon.
+
 1. **Poll** - Long-polls `getUpdates` with 30-second timeout, `allowed_updates: ['message']`
-2. **Filter** - Only accepts messages from the configured `TELEGRAM_CHAT_ID` (matches both `from.id` and `chat.id`)
-3. **Intercept utility commands** - `/status`, `/mute` handled directly
-4. **Route** - Passes message through `routeMessage()`
+2. **Filter** - Only accepts messages from the configured `TELEGRAM_CHAT_ID` (matches both `from.id` and `chat.id` to handle both private and group messages)
+3. **Intercept utility commands** - `/status`, `/mute` handled directly without routing or dispatch
+4. **Route** - Passes message through `routeMessage()` to determine target agent(s)
 5. **Dispatch** - Invokes each target agent one at a time via `dispatchToAgent()`
 6. **Respond** - Sends each agent's response to Telegram with emoji prefix
-7. **Persist** - Saves `_lastUpdateId` to state file after each poll
+7. **Persist** - Saves `_lastUpdateId` to state file after each poll cycle
 
 ### Agent Dispatch
+
+The `dispatchToAgent` function handles the complex process of temporarily switching the application's context to a different agent, running inference, and switching back. This is necessary because the config, database, and prompt system are all agent-scoped - you cannot run inference for agent B while agent A's config is loaded.
 
 ```typescript
 async function dispatchToAgent(agentName: string, text: string): Promise<string | null>
 ```
 
-The dispatch function:
-1. Saves the current agent name
-2. Calls `config.reloadForAgent(agentName)` and `memory.initDb()` to switch context
-3. Loads the system prompt via `loadSystemPrompt()`
-4. Gets the last CLI session ID from memory for session continuity
-5. Prepends `[Telegram message from Will]` to the message text
-6. Runs `streamInference()` and collects the full response
-7. Restores the original agent config
+The dispatch sequence is:
+
+1. Saves the current agent name for later restoration
+2. Calls `config.reloadForAgent(agentName)` and `memory.initDb()` to switch context to the target agent
+3. Loads the system prompt via `loadSystemPrompt()` using the target agent's prompts
+4. Gets the last CLI session ID from memory for session continuity (so the agent resumes its existing conversation context)
+5. Prepends `[Telegram message from Will]` to the message text so the agent knows the message came from Telegram
+6. Runs `streamInference()` and collects the full response (tool calls are logged but the streaming events are not forwarded to the renderer)
+7. Restores the original agent config via `config.reloadForAgent(originalAgent)` and `memory.initDb()`
 8. Returns the response text or `null`
+
+The `sendAgentResponse` function loads the agent's manifest to get `telegram_emoji` and `display_name`, prepends them to the response, and sends via `sendMessage()` with `prefix=false` (to avoid double-prefixing, since the function manually adds the prefix).
 
 ```typescript
 function sendAgentResponse(agentName: string, text: string): void
 ```
 
-Loads the agent's manifest to get `telegram_emoji` and `display_name`, prepends them to the response, and sends via `sendMessage()` with `prefix=false` (to avoid double-prefixing).
-
 ### Race Condition Prevention
 
-Sequential dispatch is the core safety mechanism:
+Sequential dispatch is the core safety mechanism that makes multi-agent Telegram routing possible. Without it, two agents could simultaneously write to the same database, compete for the Claude CLI session, or produce interleaved responses.
 
-- **No concurrent agents** - agent A completes all tool calls before agent B starts
-- **Instance lock** - `O_EXLOCK` on macOS (with pid-check fallback on other platforms) prevents two daemon instances from running simultaneously
-- **Single poller** - one process owns the update offset, no contention on `getUpdates`
-- **Isolated memory** - each agent has its own SQLite database (no cross-agent writes)
+- **No concurrent agents** - agent A completes all tool calls and inference before agent B starts. This is enforced by `await` on each dispatch.
+- **Instance lock** - `O_EXLOCK` on macOS (with pid-check fallback on other platforms) prevents two daemon instances from running simultaneously. Only one process can hold the lock.
+- **Single poller** - one process owns the update offset, preventing contention on `getUpdates` that could cause duplicate message processing.
+- **Isolated memory** - each agent has its own SQLite database, so there are no cross-agent write conflicts. The config switch changes which database is active.
 
-The only concurrent Telegram activity is cron jobs (heartbeat, morning brief) sending messages independently. This is safe because they're independent fire-and-forget POSTs to different conversations.
+The only concurrent Telegram activity is cron jobs (heartbeat, morning brief) sending messages independently. This is safe because they're independent fire-and-forget POSTs that don't read from or write to the shared update offset.
 
 ### Instance Locking
+
+The instance lock prevents duplicate daemon processes, which would cause messages to be processed multiple times and responses to be sent in duplicate.
 
 ```typescript
 export function acquireLock(): boolean
 ```
 
-Opens `~/.atrophy/.telegram_daemon.lock` with `O_WRONLY | O_CREAT | O_EXLOCK | O_NONBLOCK`:
-- `O_EXLOCK` (0x20): macOS advisory exclusive lock on open
-- `O_NONBLOCK` (0x4000): fail immediately if lock is held
+The lock function opens `~/.atrophy/.telegram_daemon.lock` with `O_WRONLY | O_CREAT | O_EXLOCK | O_NONBLOCK`. The flags work as follows:
 
-On success, writes the current PID to the lock file. On `EAGAIN`/`EWOULDBLOCK`, another instance holds the lock - returns false.
+- `O_EXLOCK` (0x20): macOS advisory exclusive lock acquired atomically on open
+- `O_NONBLOCK` (0x4000): fail immediately if lock is held (instead of blocking)
 
-If `O_EXLOCK` is not supported (Linux), falls back to `acquireLockFallback()`:
+On success, writes the current PID to the lock file so operators can identify which process holds the lock. On `EAGAIN`/`EWOULDBLOCK`, another instance holds the lock and the function returns false.
+
+If `O_EXLOCK` is not supported (Linux), the function falls back to `acquireLockFallback()`, which uses a simpler strategy:
+
 1. Read the PID from the lock file
 2. Check if that process is alive via `process.kill(pid, 0)`
 3. If dead (or file corrupt), reclaim by writing own PID
 4. Open the file with `O_RDONLY` to keep a reference
 
+This fallback is not race-free (two processes could both find the lock stale simultaneously), but it is acceptable for a single-user daemon where the race window is extremely narrow.
+
+The `releaseLock` function closes the lock file descriptor and unlinks the lock file. It is safe to call even if no lock is held, since both operations are wrapped in try/catch blocks.
+
 ```typescript
 export function releaseLock(): void
 ```
 
-Closes the lock file descriptor and unlinks the lock file. Safe to call even if no lock is held.
-
 ### Utility Commands
+
+The daemon intercepts two utility commands before they reach the router. These commands are handled directly by the daemon without invoking any agent inference.
 
 | Command | Action |
 |---------|--------|
-| `/status` | Lists all agents with emoji, display name, slash command, and state (active/muted/disabled) |
-| `/mute` | Toggles mute on the default agent |
-| `/mute agent_name` | Toggles mute on a specific agent (matches by name or display_name, case-insensitive) |
+| `/status` | Lists all agents with emoji, display name, slash command, and state (active/muted/disabled). Sends the list as a formatted Markdown message. |
+| `/mute` | Toggles mute on the default agent. With an argument (`/mute agent_name`), toggles mute on a specific agent matched by name or display_name (case-insensitive). Sends a confirmation message. |
 
 ### State Persistence
 
-The daemon tracks `last_update_id` in `~/.atrophy/.telegram_daemon_state.json`:
+The daemon tracks its position in the Telegram update stream using a state file at `~/.atrophy/.telegram_daemon_state.json`. This file contains a single field - the last processed update ID.
 
 ```json
 {"last_update_id": 123456789}
 ```
 
-Loaded on daemon start, saved after each poll cycle. This prevents re-processing old messages after a daemon restart or system reboot.
+The state is loaded on daemon start and saved after each poll cycle. This ensures the daemon does not re-process old messages after a restart or system reboot. If the state file is missing or corrupt, the daemon starts from update ID 0, which means it will process any pending messages in the Telegram queue.
 
 ### Daemon Control
+
+Three functions control the daemon's lifecycle. They are called from the Electron main process via IPC handlers or from the command-line entry point.
 
 ```typescript
 export function startDaemon(intervalMs?: number): boolean  // default 10000
@@ -396,28 +437,32 @@ export function stopDaemon(): void
 export function isDaemonRunning(): boolean
 ```
 
-`startDaemon()`:
-1. Checks if already running
+The `startDaemon` function performs a complete startup sequence:
+
+1. Checks if already running (returns true immediately if so)
 2. Acquires the instance lock (returns false if another instance is running)
 3. Loads the last update ID from state file
-4. Sets the module-level `_lastUpdateId` and syncs to the telegram module
-5. Runs an initial poll
-6. Sets up recurring `setInterval` polls
+4. Sets the module-level `_lastUpdateId` and syncs to the telegram module via `setLastUpdateId()`
+5. Runs an initial poll immediately (to process any messages that arrived while the daemon was stopped)
+6. Sets up recurring `setInterval` polls at the configured interval
 
-`stopDaemon()`:
+The `stopDaemon` function performs the reverse:
+
 1. Clears the poll timer
 2. Sets running flag to false
 3. Releases the instance lock
 
 ### Operating Modes
 
-The daemon can run in three modes:
+The daemon can run in three modes depending on how it is started. All three modes use the same polling and dispatch logic - they differ only in lifecycle management.
 
-- **Managed** - started from within the Electron main process via `startDaemon()`, polls on a configurable interval (default 10 seconds)
-- **Continuous** - as a launchd agent with `KeepAlive: true`, launched via `--telegram-daemon` flag
-- **Single poll** - one-shot execution for testing or cron-triggered runs
+- **Managed** - started from within the Electron main process via `startDaemon()`, polls on a configurable interval (default 10 seconds). This is the standard mode when the app is running. The daemon stops when the app quits.
+- **Continuous** - as a launchd agent with `KeepAlive: true`, launched via `--telegram-daemon` flag. This mode keeps the daemon running even when the GUI is closed, ensuring Telegram messages are always processed.
+- **Single poll** - one-shot execution for testing or cron-triggered runs. Useful for debugging routing behavior without starting the full daemon loop.
 
 ### launchd Management
+
+The daemon can be installed as a macOS launchd agent for continuous operation. The launchd plist is generated programmatically with the correct paths and environment variables.
 
 ```typescript
 export function installLaunchd(electronBin: string): void
@@ -425,19 +470,22 @@ export function uninstallLaunchd(): void
 export function isLaunchdInstalled(): boolean
 ```
 
-The launchd plist is:
+The launchd plist is configured with the following properties:
+
 - Label: `com.atrophiedmind.telegram-daemon`
 - Path: `~/Library/LaunchAgents/com.atrophiedmind.telegram-daemon.plist`
-- `KeepAlive: true` and `RunAtLoad: true`
+- `KeepAlive: true` and `RunAtLoad: true` - the daemon starts at login and restarts if it crashes
 - Stdout: `~/.atrophy/logs/telegram_daemon.log`
 - Stderr: `~/.atrophy/logs/telegram_daemon.err`
-- Environment: `PATH` is inherited from the current process
+- Environment: `PATH` is inherited from the current process, ensuring Node.js and Python are findable
 
-`installLaunchd()` unloads the existing plist if present, writes the new one, and loads it via `launchctl`. The plist XML is hand-built with proper escaping via `escapeXml()`.
+The `installLaunchd` function unloads the existing plist if present, writes the new one, and loads it via `launchctl`. The plist XML is hand-built with proper escaping via `escapeXml()` to handle special characters in file paths.
 
 ### Error Recovery
 
-- API poll errors are caught and logged but do not stop the daemon
-- Individual message dispatch failures are caught per-agent and do not block other agents
-- If the Telegram API returns null (network error), the poll is skipped and retried on the next interval
-- The daemon continues running even if all agents fail to respond
+The daemon is designed to be resilient against transient failures. No single error - whether from the Telegram API, agent inference, or database access - should stop the daemon from processing future messages.
+
+- API poll errors are caught and logged but do not stop the daemon. The next interval tick retries the poll.
+- Individual message dispatch failures are caught per-agent and do not block other agents from processing the same message.
+- If the Telegram API returns null (network error), the poll is skipped and retried on the next interval.
+- The daemon continues running even if all agents fail to respond, logging the failures for debugging.

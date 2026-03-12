@@ -1,10 +1,12 @@
 # Building and Distribution
 
-The Electron app is built using `electron-vite` for compilation and `electron-builder` for packaging. The result is a self-contained macOS `.app` bundle with auto-update support via GitHub Releases.
+The Electron app is built using `electron-vite` for compilation and `electron-builder` for packaging. The result is a self-contained macOS `.app` bundle with auto-update support via GitHub Releases. This guide covers the full build pipeline from source compilation through DMG creation, code signing, auto-update configuration, and common troubleshooting scenarios.
 
 ---
 
 ## Quick Start
+
+The build system exposes four primary commands through `package.json` scripts. Each command builds on the previous one, so `dist` includes both compilation and packaging in a single invocation.
 
 ```bash
 pnpm build                    # Compile TypeScript + bundle renderer
@@ -13,11 +15,15 @@ pnpm dist                     # Build + create DMG + ZIP
 pnpm dist:mac                 # Same as dist, explicitly targeting macOS
 ```
 
+For day-to-day development, `pnpm dev` (covered in the Development Workflow section below) is the primary command. The build commands above are used when preparing a release or verifying that the packaged app behaves correctly.
+
 ---
 
 ## Architecture
 
-The `.app` bundle is a full Electron application. It contains:
+The `.app` bundle is a full Electron application containing everything needed to run without external dependencies (aside from the system Python for MCP servers). Understanding what goes into the bundle helps diagnose size issues, missing resources, and runtime path resolution problems.
+
+The bundle contains the following components:
 
 - Compiled TypeScript (main process, preload, renderer) in `out/`
 - The Electron runtime (Chromium + Node.js)
@@ -25,7 +31,7 @@ The `.app` bundle is a full Electron application. It contains:
 - Bundled resources (MCP servers, scripts, agents, database schema)
 - The app icon (`TheAtrophiedMind.icns`)
 
-Runtime user data lives in `~/.atrophy/`:
+Runtime user data lives in `~/.atrophy/`, separate from the bundle itself. This separation means the bundle is read-only after installation, while all mutable state (databases, config, secrets, models) lives in the user's home directory. The following table lists every user data path and its purpose:
 
 | Path | Purpose |
 |------|---------|
@@ -37,21 +43,27 @@ Runtime user data lives in `~/.atrophy/`:
 | `~/.atrophy/server_token` | HTTP API auth token (mode 0600) |
 | `~/.atrophy/agent_states.json` | Per-agent muted/enabled state |
 
+The `ensureUserData()` function in `src/main/config.ts` creates this directory structure on first launch, and `migrateAgentData()` copies bundled agent definitions into it so agents can be customised without modifying the bundle.
+
 ---
 
 ## Build Process
 
+The build pipeline has two distinct steps: compilation (turning TypeScript and Svelte into JavaScript) and packaging (wrapping the compiled output into a distributable `.app` bundle). These steps are separate because compilation is needed during development too, while packaging is only needed for distribution.
+
 ### Step 1: Compile (`pnpm build`)
 
-The `build` script runs two separate build steps:
+The `build` script runs two separate build steps because of an electron-vite 5 bug that drops Svelte plugins during its config resolution pipeline. The workaround uses a standalone `vite.renderer.config.ts` for the renderer while electron-vite handles the main process and preload.
 
 ```bash
 electron-vite build -c electron-vite.config.ts && vite build --config vite.renderer.config.ts
 ```
 
-This is split into two commands because of an electron-vite 5 bug that drops Svelte plugins during its config resolution pipeline. The workaround uses a standalone `vite.renderer.config.ts` for the renderer.
+This two-command approach is a temporary workaround. If electron-vite fixes the Svelte plugin issue in a future release, both builds could be consolidated into a single `electron-vite build` invocation.
 
 #### Main process and preload (`electron-vite.config.ts`)
+
+The main process and preload script are compiled together by electron-vite. The configuration below defines their entry points and externalisation strategy.
 
 ```typescript
 export default defineConfig({
@@ -74,13 +86,16 @@ export default defineConfig({
 });
 ```
 
-`externalizeDepsPlugin()` ensures Node.js built-ins and `node_modules` dependencies (like `better-sqlite3`, `electron-updater`) are not bundled into the output - they remain as external requires resolved at runtime.
+The `externalizeDepsPlugin()` is critical for the main process build. It ensures that Node.js built-ins and `node_modules` dependencies (like `better-sqlite3`, `electron-updater`) are not bundled into the output - they remain as external requires resolved at runtime from the `node_modules` directory inside the packaged app. Without this, native modules would fail because Rollup cannot bundle compiled C++ addons.
 
-Output:
+This step produces two output files:
+
 - `out/main/index.js` - compiled main process
 - `out/preload/index.mjs` - compiled preload script
 
 #### Renderer (`vite.renderer.config.ts`)
+
+The renderer is compiled separately using a standalone Vite config. Unlike the main process, the renderer bundles all of its dependencies (Svelte runtime, component code, styles) into a single output since it runs in a browser-like environment.
 
 ```typescript
 export default defineConfig({
@@ -98,20 +113,22 @@ export default defineConfig({
 });
 ```
 
-Key settings:
-- `target: 'chrome130'` - targets Electron's Chromium version (Electron 34 ships Chromium 130)
-- `modulePreload: { polyfill: false }` - Electron's Chromium supports native module preload
-- `minify: false` - keeps output readable for debugging
-- `base: './'` - relative paths for loading from the file system
-- `envPrefix` - only `RENDERER_VITE_` and `VITE_` prefixed env vars are exposed to the renderer
+Each setting in this config serves a specific purpose in the Electron context:
 
-Output:
+- `target: 'chrome130'` - targets Electron's Chromium version (Electron 34 ships Chromium 130), enabling modern JS features without polyfills
+- `modulePreload: { polyfill: false }` - Electron's Chromium supports native module preload, so the Vite polyfill is unnecessary overhead
+- `minify: false` - keeps output readable for debugging; the app is not served over a network, so bundle size matters less than debuggability
+- `base: './'` - uses relative paths for loading from the file system, since the renderer loads via `file://` protocol in production
+- `envPrefix` - only `RENDERER_VITE_` and `VITE_` prefixed env vars are exposed to the renderer, preventing accidental leakage of secrets
+
+This step produces the renderer output:
+
 - `out/renderer/index.html` - the renderer entry point
 - `out/renderer/assets/` - bundled CSS, JS, images
 
 ### Step 2: Package (`pnpm pack` or `pnpm dist`)
 
-`electron-builder` takes the compiled output and creates the distributable:
+After compilation, `electron-builder` takes the compiled output and creates the distributable. The packaging step performs several operations that transform the development output into a standalone macOS application.
 
 1. **Copies compiled code** from `out/` into the `.app` bundle
 2. **Bundles extra resources** - MCP Python servers, scripts, agent definitions, database schema are copied into `Contents/Resources/`
@@ -120,11 +137,13 @@ Output:
 5. **Signs the app** with hardened runtime entitlements (required for macOS notarization)
 6. **Creates installers** - DMG with custom background and Applications symlink, plus a ZIP for auto-update
 
+The distinction between `pnpm pack` and `pnpm dist` is that `pack` creates only the unpacked `.app` directory (useful for quick verification), while `dist` also generates the DMG and ZIP installers.
+
 ---
 
 ## Full electron-builder.yml Reference
 
-The build configuration lives at `electron-builder.yml` in the project root:
+The build configuration lives at `electron-builder.yml` in the project root. This file controls everything from the app identifier and icon to the packaging targets and update publishing. Every field is documented inline below.
 
 ```yaml
 appId: com.atrophiedmind.app
@@ -191,7 +210,7 @@ publish:
 
 ### Extra Resources
 
-These directories are copied into the `.app` bundle's `Contents/Resources/` and are accessible at runtime via `process.resourcesPath`:
+These directories are copied into the `.app` bundle's `Contents/Resources/` during packaging and are accessible at runtime via `process.resourcesPath`. They contain the Python and data files that the Electron app needs but does not compile from TypeScript.
 
 | Source | Destination | Filter | Contents |
 |--------|------------|--------|----------|
@@ -200,7 +219,7 @@ These directories are copied into the `.app` bundle's `Contents/Resources/` and 
 | `agents/` | `agents/` | `**/*` | Default agent definitions (`agent.json`, prompts, avatar source) |
 | `db/` | `db/` | `**/*.sql` | Database schema (`schema.sql`) |
 
-At runtime, `BUNDLE_ROOT` in `src/main/config.ts` resolves these:
+At runtime, `BUNDLE_ROOT` in `src/main/config.ts` resolves these paths differently depending on whether the app is running in development or as a packaged bundle. This dual-path resolution is what allows the same code to work in both contexts.
 
 ```typescript
 // In packaged app:
@@ -210,11 +229,11 @@ const BUNDLE_ROOT = process.resourcesPath;  // Contents/Resources/
 const BUNDLE_ROOT = path.resolve(__dirname, '..', '..');  // Project root
 ```
 
-So `path.join(BUNDLE_ROOT, 'mcp', 'memory_server.py')` works in both contexts.
+With this resolution in place, `path.join(BUNDLE_ROOT, 'mcp', 'memory_server.py')` correctly locates the MCP server script regardless of whether the code is running from `pnpm dev` or from the installed `.app`.
 
 #### Whisper.cpp (currently commented out)
 
-When whisper.cpp is ready to bundle, uncomment the whisper entry:
+The whisper.cpp binary is not yet bundled because the STT pipeline is still in development. When whisper.cpp is ready to bundle, the following entry should be uncommented in `electron-builder.yml`:
 
 ```yaml
     - from: vendor/whisper.cpp
@@ -223,13 +242,13 @@ When whisper.cpp is ready to bundle, uncomment the whisper entry:
         - "**/*"
 ```
 
-This copies the built whisper binary and model into `Contents/Resources/whisper/`. The config paths (`WHISPER_BIN`, `WHISPER_MODEL`) will need to be updated to resolve from `process.resourcesPath` in packaged mode.
+This will copy the built whisper binary and model into `Contents/Resources/whisper/`. The config paths (`WHISPER_BIN`, `WHISPER_MODEL`) will need to be updated to resolve from `process.resourcesPath` in packaged mode.
 
 ---
 
 ## DMG Customization
 
-The DMG is created automatically as part of `pnpm dist`. The installer window shows:
+The DMG is created automatically as part of `pnpm dist`. The installer window provides a standard macOS drag-to-install experience with a custom background image and pre-positioned icons. The layout is designed so the user sees the app icon on the left and the Applications folder shortcut on the right, with a visual arrow guiding the drag action.
 
 ```
 +-----------------------------------------------+
@@ -242,28 +261,30 @@ The DMG is created automatically as part of `pnpm dist`. The installer window sh
 +-----------------------------------------------+
 ```
 
-Configuration details:
+The following table documents each DMG configuration setting and its effect on the installer appearance:
 
 | Setting | Value | Description |
 |---------|-------|-------------|
-| `title` | `Atrophy` | Window title |
+| `title` | `Atrophy` | Window title shown in the Finder title bar |
 | `artifactName` | `${productName}-${version}-${arch}.${ext}` | Output filename (e.g. `Atrophy-0.1.2-arm64.dmg`) |
 | `background` | `resources/dmg-background.png` | Custom background image (660x400 px recommended) |
 | `iconSize` | `80` | Size of icons in the DMG window |
-| `window.width` | `660` | DMG window width |
-| `window.height` | `400` | DMG window height |
-| App position | `(180, 200)` | Left side of window |
-| Applications link | `(480, 200)` | Right side of window |
+| `window.width` | `660` | DMG window width in pixels |
+| `window.height` | `400` | DMG window height in pixels |
+| App position | `(180, 200)` | Left side of window, where the app icon appears |
+| Applications link | `(480, 200)` | Right side of window, where the Applications symlink appears |
 
-The background image should be placed at `resources/dmg-background.png`. If missing, electron-builder uses a default white background.
+The background image should be placed at `resources/dmg-background.png`. If missing, electron-builder uses a default white background. For Retina displays, consider providing a `@2x` version at 1320x800 pixels.
 
 ---
 
 ## Code Signing
 
+Code signing is required for macOS distribution. Without it, users see "unidentified developer" warnings and Gatekeeper may block the app entirely. The signing process involves two components: hardened runtime entitlements and a developer certificate.
+
 ### Hardened Runtime
 
-The app uses macOS hardened runtime, configured via an entitlements plist at `build/entitlements.mac.plist`:
+The app uses macOS hardened runtime, which restricts the app's capabilities to only those explicitly declared. The entitlements are configured via a plist file at `build/entitlements.mac.plist`. Each entitlement is required for a specific Electron or application feature.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -289,7 +310,7 @@ The app uses macOS hardened runtime, configured via an entitlements plist at `bu
 </plist>
 ```
 
-Entitlement breakdown:
+The following table explains why each entitlement is necessary. Removing any of these would break a specific feature of the application:
 
 | Entitlement | Why it is needed |
 |-------------|-----------------|
@@ -301,22 +322,22 @@ Entitlement breakdown:
 | `network.server` | Inbound HTTP for the `--server` mode API |
 | `files.user-selected.read-write` | File system access for `~/.atrophy/` user data directory |
 
-The same plist is used for both `entitlements` (main process) and `entitlementsInherit` (child processes like whisper.cpp and Python MCP servers).
+The same plist is used for both `entitlements` (main process) and `entitlementsInherit` (child processes like whisper.cpp and Python MCP servers). This means child processes inherit the same capability set, which is necessary because the Python MCP servers need network and file access to function.
 
 ### Signing for distribution
 
-To sign for distribution (required for notarization), set these environment variables before running `pnpm dist`:
+To sign the app for distribution (required for notarization and clean Gatekeeper passage), you need an Apple Developer certificate. Set these environment variables before running `pnpm dist` so that electron-builder can locate your signing identity:
 
 ```bash
 export CSC_LINK="path/to/certificate.p12"   # or base64-encoded
 export CSC_KEY_PASSWORD="certificate-password"
 ```
 
-electron-builder will use these to sign the `.app` and DMG. Without them, the app is built unsigned (fine for local development but macOS will show warnings).
+electron-builder will use these to sign the `.app` and DMG. Without them, the app is built unsigned, which is fine for local development but will trigger macOS warnings when other users try to open it.
 
 ### Notarization
 
-For notarization with Apple's notary service, configure:
+For notarization with Apple's notary service (which removes the "downloaded from the internet" quarantine warning), configure these additional environment variables:
 
 ```bash
 export APPLE_ID="your@email.com"
@@ -324,15 +345,17 @@ export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 export APPLE_TEAM_ID="XXXXXXXXXX"
 ```
 
-electron-builder handles notarization automatically when these are set and `hardenedRuntime: true` is configured.
+electron-builder handles notarization automatically when these are set and `hardenedRuntime: true` is configured. The notarization process uploads the signed app to Apple's servers, which scan it for malware and return a ticket that is stapled to the app. This is a one-time process per build.
 
 ---
 
 ## Auto-Update Flow
 
-Auto-update is handled by `electron-updater` (v6.8.3) with GitHub Releases as the update provider. The implementation is in `src/main/updater.ts`.
+Auto-update is handled by `electron-updater` (v6.8.3) with GitHub Releases as the update provider. The implementation lives in `src/main/updater.ts` and follows a four-phase lifecycle: check, notify, download, and install. The user has full control over when downloads and installations happen - nothing is forced.
 
 ### Configuration
+
+The publish configuration in `electron-builder.yml` tells `electron-updater` where to look for new releases. The `provider`, `owner`, and `repo` fields must match the GitHub repository where release artifacts are uploaded.
 
 ```yaml
 # In electron-builder.yml
@@ -344,15 +367,17 @@ publish:
 
 ### Initialization
 
-`initAutoUpdater()` is called after the main window is created. It:
+`initAutoUpdater()` is called after the main window is created. It configures the updater's behavior and registers event handlers that bridge the update lifecycle to the renderer process via IPC. The function takes the following steps:
 
-1. Skips initialization entirely if `ELECTRON_RENDERER_URL` is set (dev mode)
-2. Disables auto-download (`autoDownload = false`) - the user must explicitly choose to download
-3. Enables auto-install on quit (`autoInstallOnAppQuit = true`)
-4. Registers event handlers that forward update events to the renderer via IPC
-5. Triggers an initial update check after a 5-second delay
+1. Skips initialization entirely if `ELECTRON_RENDERER_URL` is set (dev mode), because checking for updates during development is pointless and would hit the GitHub API unnecessarily
+2. Disables auto-download (`autoDownload = false`) - the user must explicitly choose to download, preventing surprise bandwidth usage
+3. Enables auto-install on quit (`autoInstallOnAppQuit = true`), so a downloaded update is applied next time the user quits naturally
+4. Registers event handlers that forward update events to the renderer via IPC for display in the UI
+5. Triggers an initial update check after a 5-second delay, giving the app time to finish startup
 
 ### Update lifecycle
+
+The update lifecycle follows four phases. Each phase involves communication between the main process (which manages the updater) and the renderer process (which displays UI feedback to the user).
 
 ```
 1. CHECK
@@ -379,17 +404,23 @@ publish:
    Or: app quits normally -> autoInstallOnAppQuit kicks in
 ```
 
+The key design decision here is that the download phase is always user-initiated. The app never downloads an update in the background without the user's knowledge. This keeps bandwidth usage predictable and avoids surprises on metered connections.
+
 ### IPC events sent to renderer
+
+The following events flow from the main process to the renderer, allowing the UI to display update status, progress bars, and action buttons:
 
 | Event | Payload | Description |
 |-------|---------|-------------|
 | `updater:available` | `{ version: string, releaseNotes: string }` | A newer version is available |
 | `updater:not-available` | (none) | Current version is up to date |
-| `updater:progress` | `{ percent: number, bytesPerSecond: number, transferred: number, total: number }` | Download progress |
+| `updater:progress` | `{ percent: number, bytesPerSecond: number, transferred: number, total: number }` | Download progress for UI progress bars |
 | `updater:downloaded` | `{ version: string }` | Update downloaded and ready to install |
 | `updater:error` | `string` (error message) | Update check or download failed |
 
 ### IPC handlers (renderer to main)
+
+These channels allow the renderer to trigger update actions in response to user interaction (clicking "Download" or "Install" buttons):
 
 | Channel | Action |
 |---------|--------|
@@ -399,32 +430,37 @@ publish:
 
 ### Error handling
 
-All update operations (check, download) use `.catch(() => {})` to silently swallow errors. Update failures are non-critical - the app continues running normally and the error is forwarded to the renderer as `updater:error`.
+All update operations (check, download) use `.catch(() => {})` to silently swallow errors. This is intentional - update failures are non-critical, and the app should continue running normally regardless of whether GitHub is reachable or the update manifest is malformed. The error is still forwarded to the renderer as `updater:error` so the UI can display it if desired.
 
 ### Creating a release
 
-1. Update the version in `package.json`:
-   ```json
-   "version": "0.2.0"
-   ```
+Releasing a new version involves updating the version number, building the distributables, and uploading them to a GitHub Release. The process is manual to keep full control over what gets published.
 
-2. Build the distributable:
-   ```bash
-   pnpm dist:mac
-   ```
+First, update the version in `package.json`. This version string becomes the release tag and is embedded in the `latest-mac.yml` manifest that `electron-updater` checks.
 
-3. Create a GitHub Release with the version tag (e.g. `v0.2.0`)
+```json
+"version": "0.2.0"
+```
 
-4. Upload the artifacts from `dist/`:
-   - `Atrophy-0.2.0-arm64.dmg` - the installer
-   - `Atrophy-0.2.0-arm64-mac.zip` - used by electron-updater
-   - `latest-mac.yml` - the update manifest (generated automatically by electron-builder)
+Then build the distributable artifacts. This compiles TypeScript, bundles the renderer, packages the `.app`, creates the DMG and ZIP, and generates the update manifest.
 
-`electron-updater` uses the ZIP artifact for updates (differential download is not supported - the full ZIP is downloaded each time). The `latest-mac.yml` file contains the version, file hash, and download URL.
+```bash
+pnpm dist:mac
+```
+
+Next, create a GitHub Release with the version tag (e.g. `v0.2.0`). Upload the following artifacts from `dist/`:
+
+- `Atrophy-0.2.0-arm64.dmg` - the installer for new users
+- `Atrophy-0.2.0-arm64-mac.zip` - used by electron-updater for in-app updates
+- `latest-mac.yml` - the update manifest (generated automatically by electron-builder)
+
+`electron-updater` uses the ZIP artifact for updates because differential download is not supported - the full ZIP is downloaded each time. The `latest-mac.yml` file contains the version, file hash, and download URL, which the updater checks against the currently installed version.
 
 ---
 
 ## Native Dependencies
+
+The project has four runtime dependencies. Only one (`better-sqlite3`) is a native C++ module that requires compilation against Electron's Node.js headers. The others are either pure JavaScript or WASM-based and work without any native compilation step.
 
 | Package | Version | Type | Rebuild Required | Notes |
 |---------|---------|------|-----------------|-------|
@@ -435,24 +471,27 @@ All update operations (check, download) use `.catch(() => {})` to silently swall
 
 ### Rebuilding native modules
 
-The `rebuild` script in `package.json` runs:
+The `rebuild` script in `package.json` recompiles `better-sqlite3` against the Electron Node.js headers. This is necessary because Electron ships its own version of Node.js, which may have a different ABI (Application Binary Interface) than the system Node.js used during `pnpm install`.
 
 ```bash
 electron-rebuild -f -w better-sqlite3
 ```
 
-This must be run:
-- After `pnpm install` (first time)
-- After upgrading Electron to a new major version
-- After upgrading `better-sqlite3`
+The `-f` flag forces a rebuild even if the module appears up to date, which is useful when switching Electron versions. The `-w` flag targets only `better-sqlite3`, skipping other dependencies that do not need native compilation.
 
-The `-f` flag forces a rebuild even if the module appears up to date. The `-w` flag targets only `better-sqlite3`.
+This command must be run in three situations:
+
+- After `pnpm install` (first time setup)
+- After upgrading Electron to a new major version (ABI may change)
+- After upgrading `better-sqlite3` (new native code needs compilation)
 
 ---
 
 ## Login Item
 
-The Electron app uses Electron's built-in login item management rather than launchd plists:
+The Python version of the app used launchd plists to configure start-at-login behavior. The Electron rewrite uses Electron's built-in login item management instead, which is simpler and does not require generating or loading plist files.
+
+The following code shows how login item management works at the Electron API level:
 
 ```typescript
 import { app } from 'electron';
@@ -465,11 +504,12 @@ const settings = app.getLoginItemSettings();
 console.log(settings.openAtLogin); // true or false
 ```
 
-This is exposed via IPC:
-- `install:isEnabled` - returns `boolean`
-- `install:toggle` - accepts `boolean` to enable/disable
+This functionality is exposed to the renderer via two IPC channels, allowing the Settings panel to display and toggle the login item state:
 
-The login item can be toggled from the Settings panel.
+- `install:isEnabled` - returns `boolean` indicating whether the app is configured to start at login
+- `install:toggle` - accepts `boolean` to enable or disable start-at-login
+
+The login item can be toggled from the Settings panel under the General tab.
 
 ---
 
@@ -477,20 +517,24 @@ The login item can be toggled from the Settings panel.
 
 ### Dev mode with HMR
 
+During development, the app runs with hot module replacement for the renderer, enabling instant feedback on UI changes without restarting the entire Electron process.
+
 ```bash
 pnpm dev
 ```
 
-The dev script (`scripts/dev.ts`) starts two processes:
+The dev script (`scripts/dev.ts`) orchestrates two parallel processes that work together to provide the development experience:
 
-1. **Renderer Vite server** on port 5173 with hot module replacement
-2. **electron-vite** for main/preload compilation + Electron launch
+1. **Renderer Vite server** on port 5173 with hot module replacement - serves the Svelte renderer and pushes updates to the running app when component files change
+2. **electron-vite** for main/preload compilation + Electron launch - watches for changes in main process files and restarts Electron when they change
 
-The `ELECTRON_RENDERER_URL` environment variable is set to `http://localhost:5173/` so the main process loads the renderer from the dev server instead of the built HTML file. This enables instant Svelte component updates without restarting Electron.
+The `ELECTRON_RENDERER_URL` environment variable is set to `http://localhost:5173/` so the main process loads the renderer from the dev server instead of the built HTML file. This enables instant Svelte component updates without restarting Electron. The auto-updater detects this variable and skips initialization in dev mode.
 
-Main process changes require a full restart (kill and re-run `pnpm dev`).
+Main process changes require a full restart (kill and re-run `pnpm dev`) because the main process runs in Node.js, not in a browser that can hot-swap modules.
 
 ### Type checking
+
+Type checking verifies the TypeScript code without producing output. The project uses two separate `tsconfig` files because the main process targets Node.js APIs while the renderer targets browser APIs, and these have different type definitions.
 
 ```bash
 pnpm typecheck                # Check both main (node) and renderer (web) TypeScript
@@ -500,6 +544,8 @@ pnpm typecheck:web            # Renderer only (tsconfig.web.json)
 
 ### Testing
 
+Tests use Vitest, which shares the same Vite configuration as the build system. This means test module resolution, TypeScript compilation, and path aliases all work identically to the production build.
+
 ```bash
 pnpm test                     # Run Vitest tests (single run)
 pnpm test:watch               # Watch mode (re-runs on file changes)
@@ -507,11 +553,13 @@ pnpm test:watch               # Watch mode (re-runs on file changes)
 
 ### Build verification
 
+When you need to verify the packaged app works correctly without creating a full DMG, use `pnpm pack` to create an unpacked `.app` directory. This is faster than `pnpm dist` because it skips DMG and ZIP creation.
+
 ```bash
 pnpm pack                     # Build + create unpacked .app (fast, no DMG)
 ```
 
-The unpacked `.app` is output to `dist/mac-arm64/` (or `dist/mac/` on Intel). You can run it directly:
+The unpacked `.app` is output to `dist/mac-arm64/` (or `dist/mac/` on Intel). You can run it directly to test the packaged behavior:
 
 ```bash
 open dist/mac-arm64/Atrophy.app
@@ -521,7 +569,11 @@ open dist/mac-arm64/Atrophy.app
 
 ## Build Output Structure
 
+Understanding the build output helps with debugging path issues, verifying that resources are correctly bundled, and estimating distribution sizes.
+
 ### After `pnpm build`
+
+The `out/` directory contains the compiled source code, organized by process. This is the intermediate output that gets packaged into the `.app` bundle.
 
 ```
 out/
@@ -537,6 +589,8 @@ out/
 ```
 
 ### After `pnpm dist`
+
+The `dist/` directory contains everything produced by electron-builder. The unpacked `.app` directory is useful for inspecting the bundle contents, while the DMG and ZIP are the actual distribution artifacts.
 
 ```
 dist/
@@ -561,10 +615,12 @@ dist/
 
 ### File sizes (approximate)
 
+The following sizes are typical for an arm64 build. The uncompressed `.app` is large because it includes the full Chromium and Node.js runtimes. The DMG and ZIP are significantly smaller due to compression.
+
 | Artifact | Size | Notes |
 |----------|------|-------|
 | Unpacked `.app` | ~250 MB | Includes Chromium, Node.js, native modules |
-| DMG | ~90 MB | Compressed |
+| DMG | ~90 MB | Compressed disk image |
 | ZIP | ~85 MB | Compressed, used for auto-update |
 
 ---
@@ -573,25 +629,25 @@ dist/
 
 ### "better-sqlite3 was compiled against a different Node.js version"
 
-Run `pnpm rebuild` to recompile the native module for the current Electron version.
+This error occurs when `better-sqlite3` was compiled against the system Node.js but Electron needs it compiled against its own Node.js headers. The ABI versions do not match, so the native module fails to load. Run `pnpm rebuild` to recompile the native module for the current Electron version.
 
 ### DMG background not showing
 
-Ensure `resources/dmg-background.png` exists and is 660x400 pixels. Retina displays may need a `@2x` version.
+Ensure `resources/dmg-background.png` exists and is 660x400 pixels. Retina displays may need a `@2x` version at 1320x800 pixels. If the file is missing, electron-builder silently falls back to a plain white background rather than failing the build.
 
 ### Build fails with code signing errors
 
-For local development, you can skip signing:
+For local development, you can skip signing entirely by setting the `CSC_IDENTITY_AUTO_DISCOVERY` environment variable to false:
 
 ```bash
 CSC_IDENTITY_AUTO_DISCOVERY=false pnpm dist:mac
 ```
 
-This builds an unsigned app. macOS will show "unidentified developer" warnings when opening it.
+This builds an unsigned app. macOS will show "unidentified developer" warnings when opening it, but it is fully functional for local testing.
 
 ### electron-builder can't find the icon
 
-The icon path is `resources/icons/TheAtrophiedMind.icns`. Ensure this file exists. You can generate `.icns` from a 1024x1024 PNG using:
+The icon path is `resources/icons/TheAtrophiedMind.icns`. Ensure this file exists. If you need to generate an `.icns` file from a source PNG, the following commands create the required iconset directory and convert it:
 
 ```bash
 mkdir icon.iconset
@@ -602,7 +658,7 @@ iconutil -c icns icon.iconset -o TheAtrophiedMind.icns
 
 ### Source maps in production build
 
-Source maps are excluded from the package via the `files` filter in `electron-builder.yml`:
+Source maps are excluded from the package via the `files` filter in `electron-builder.yml`. This keeps the bundle smaller while still generating maps during the build for local debugging.
 
 ```yaml
 files:
@@ -610,4 +666,4 @@ files:
   - "!out/**/*.map"
 ```
 
-This keeps the bundle smaller while still generating maps during the build for debugging.
+The maps remain in the `out/` directory after `pnpm build`, so you can still use them for debugging the compiled output locally. They are only excluded from the packaged `.app` and its installers.
