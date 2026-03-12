@@ -48,6 +48,7 @@ dmg:
   background: build/dmg-background.png
   icon: resources/icons/TheAtrophiedMind.icns
   iconSize: 80
+  iconTextSize: 12
   contents:
     - x: 130
       y: 150
