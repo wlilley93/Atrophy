@@ -30,7 +30,7 @@ import { isLoginItemEnabled, toggleLoginItem } from './install';
 import { registerCallHandlers } from './call';
 import { getAppIcon, getTrayIcon, TrayState } from './icon';
 import { initAutoUpdater, checkForUpdates, downloadUpdate, quitAndInstall } from './updater';
-import { ensureAvatarAssets } from './avatar-downloader';
+import { ensureAvatarAssets, ensureAmbientVideo, getAmbientVideoPath } from './avatar-downloader';
 import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSourcePhoto } from './jobs/generate-mirror-avatar';
 import type { MirrorAvatarProgress } from './jobs/generate-mirror-avatar';
 import { parseArtifacts } from './artifact-parser';
@@ -662,6 +662,18 @@ Output EXACTLY this format - a single fenced JSON block:
     return saveEnvVar(key, value);
   });
 
+  // Synthesise and play text during setup - resolves when playback completes
+  ipcMain.handle('setup:speak', async (_event, text: string) => {
+    try {
+      const audioPath = await synthesise(text);
+      if (audioPath) {
+        await playAudio(audioPath);
+      }
+    } catch (err) {
+      log.error('[setup:speak] TTS failed:', err);
+    }
+  });
+
   ipcMain.handle('setup:createAgent', (_event, agentConfig: Record<string, string>) => {
     const { createAgent } = require('./create-agent');
     const userName = getConfig().USER_NAME || 'User';
@@ -744,93 +756,98 @@ Output EXACTLY this format - a single fenced JSON block:
     setActive();
     resetJournalNudgeTimer();
 
-    // Ensure session exists
-    if (!currentSession) {
-      currentSession = new Session();
-      currentSession.start();
-    }
-
-    // Load system prompt once per session
-    if (!systemPrompt) {
-      systemPrompt = loadSystemPrompt();
-    }
-
-    // Record user turn
-    currentSession.addTurn('will', text);
-
-    // Detect mood shift
-    if (detectMoodShift(text)) {
-      currentSession.updateMood('heavy');
-    }
-
-    // Stream inference
-    const emitter = streamInference(
-      text,
-      systemPrompt,
-      currentSession.cliSessionId,
-    );
-
-    let fullText = '';
-
-    emitter.on('event', (evt: InferenceEvent) => {
-      if (!mainWindow) return;
-
-      switch (evt.type) {
-        case 'TextDelta':
-          mainWindow.webContents.send('inference:textDelta', evt.text);
-          break;
-
-        case 'SentenceReady':
-          // Synthesise TTS in background, send sentence to renderer immediately
-          mainWindow.webContents.send('inference:sentenceReady', evt.sentence, '');
-          if (config.TTS_BACKEND !== 'off') {
-            synthesise(evt.sentence).then((audioPath) => {
-              if (audioPath) {
-                enqueueAudio(audioPath, evt.index);
-              }
-            }).catch(() => { /* TTS non-critical */ });
-          }
-          break;
-
-        case 'ToolUse':
-          mainWindow.webContents.send('inference:toolUse', evt.name);
-          break;
-
-        case 'Compacting':
-          mainWindow.webContents.send('inference:compacting');
-          break;
-
-        case 'StreamDone':
-          fullText = evt.fullText;
-          // Store CLI session ID after first inference
-          if (currentSession && !currentSession.cliSessionId) {
-            currentSession.setCliSessionId(evt.sessionId);
-          } else if (currentSession && evt.sessionId !== currentSession.cliSessionId) {
-            currentSession.setCliSessionId(evt.sessionId);
-          }
-          // Record agent turn (full text including artifact blocks for history)
-          if (currentSession && fullText) {
-            currentSession.addTurn('agent', fullText);
-          }
-
-          // Parse inline artifacts from response
-          const { text: cleanedText, artifacts } = parseArtifacts(fullText);
-          if (artifacts.length > 0) {
-            for (const art of artifacts) {
-              mainWindow.webContents.send('inference:artifact', art);
-            }
-            // Send cleaned text (artifact blocks replaced with placeholders)
-            mainWindow.webContents.send('inference:done', cleanedText);
-          } else {
-            mainWindow.webContents.send('inference:done', fullText);
-          }
-          break;
-
-        case 'StreamError':
-          mainWindow.webContents.send('inference:error', evt.message);
-          break;
+    try {
+      // Ensure session exists
+      if (!currentSession) {
+        currentSession = new Session();
+        currentSession.start();
       }
-    });
+
+      // Load system prompt once per session
+      if (!systemPrompt) {
+        systemPrompt = loadSystemPrompt();
+      }
+
+      // Record user turn
+      currentSession.addTurn('will', text);
+
+      // Detect mood shift
+      if (detectMoodShift(text)) {
+        currentSession.updateMood('heavy');
+      }
+
+      // Stream inference
+      const emitter = streamInference(
+        text,
+        systemPrompt,
+        currentSession.cliSessionId,
+      );
+
+      let fullText = '';
+
+      emitter.on('event', (evt: InferenceEvent) => {
+        if (!mainWindow) return;
+
+        switch (evt.type) {
+          case 'TextDelta':
+            mainWindow.webContents.send('inference:textDelta', evt.text);
+            break;
+
+          case 'SentenceReady':
+            // Synthesise TTS in background, send sentence to renderer immediately
+            mainWindow.webContents.send('inference:sentenceReady', evt.sentence, '');
+            if (config.TTS_BACKEND !== 'off') {
+              synthesise(evt.sentence).then((audioPath) => {
+                if (audioPath) {
+                  enqueueAudio(audioPath, evt.index);
+                }
+              }).catch(() => { /* TTS non-critical */ });
+            }
+            break;
+
+          case 'ToolUse':
+            mainWindow.webContents.send('inference:toolUse', evt.name);
+            break;
+
+          case 'Compacting':
+            mainWindow.webContents.send('inference:compacting');
+            break;
+
+          case 'StreamDone':
+            fullText = evt.fullText;
+            // Store CLI session ID after first inference
+            if (currentSession && !currentSession.cliSessionId) {
+              currentSession.setCliSessionId(evt.sessionId);
+            } else if (currentSession && evt.sessionId !== currentSession.cliSessionId) {
+              currentSession.setCliSessionId(evt.sessionId);
+            }
+            // Record agent turn (full text including artifact blocks for history)
+            if (currentSession && fullText) {
+              currentSession.addTurn('agent', fullText);
+            }
+
+            // Parse inline artifacts from response
+            const { text: cleanedText, artifacts } = parseArtifacts(fullText);
+            if (artifacts.length > 0) {
+              for (const art of artifacts) {
+                mainWindow.webContents.send('inference:artifact', art);
+              }
+              // Send cleaned text (artifact blocks replaced with placeholders)
+              mainWindow.webContents.send('inference:done', cleanedText);
+            } else {
+              mainWindow.webContents.send('inference:done', fullText);
+            }
+            break;
+
+          case 'StreamError':
+            mainWindow.webContents.send('inference:error', evt.message);
+            break;
+        }
+      });
+    } catch (err) {
+      log.error('[inference:send] failed to start inference:', err);
+      mainWindow.webContents.send('inference:error', `Inference failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   });
 
   ipcMain.handle('inference:stop', () => {
@@ -999,9 +1016,12 @@ Output EXACTLY this format - a single fenced JSON block:
     // Also check loops/ambient_loop.mp4 as fallback
     const loopAmbient = path.join(avatarDir, 'loops', 'ambient_loop.mp4');
     if (fs.existsSync(loopAmbient)) return loopAmbient;
-    // Bundled fallback - resources/xan_ambient.mp4
-    const bundled = path.join(c.BUNDLE_ROOT, 'resources', 'xan_ambient.mp4');
-    if (fs.existsSync(bundled)) return bundled;
+    // Downloaded ambient video (first-boot download to ~/.atrophy/assets/)
+    const downloaded = getAmbientVideoPath();
+    if (fs.existsSync(downloaded)) return downloaded;
+    // Dev fallback - resources/xan_ambient.mp4 (not bundled in production)
+    const devFallback = path.join(c.BUNDLE_ROOT, 'resources', 'xan_ambient.mp4');
+    if (fs.existsSync(devFallback)) return devFallback;
     return null;
   });
 
@@ -1541,8 +1561,11 @@ app.whenReady().then(() => {
     initAutoUpdater(mainWindow);
   }
 
-  // Download avatar assets on first launch (non-blocking)
-  ensureAvatarAssets(config.AGENT_NAME, mainWindow).catch(() => {
+  // Download avatar assets and ambient video on first launch (non-blocking)
+  Promise.all([
+    ensureAvatarAssets(config.AGENT_NAME, mainWindow),
+    ensureAmbientVideo(mainWindow),
+  ]).catch(() => {
     /* non-critical */
   });
 

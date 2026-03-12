@@ -76,10 +76,9 @@
 
   // Pre-baked opening paragraphs - streamed one at a time during setup
   const SETUP_PARAGRAPHS = [
-    "I'm Xan. I ship with the system - protector, first contact, always on.",
+    "I'm Xan. I ship with the system. Protector, first contact, always on.",
     "You already have me. But the real power is in creating something yours - a companion with its own edges, its own voice, someone shaped by you for a specific purpose.",
-    "This is the last you'll hear of my voice until you've added your ElevenLabs API key, which I will ask you to do in a moment.",
-    "First, we need to set up your system. Let's get started.",
+    "First, we need to connect some services. Let's get started.",
   ];
 
   // Paragraph streaming timing (ms between each paragraph appearing)
@@ -232,7 +231,8 @@
         // Replace last message content with the growing text
         const msgs = transcript.messages;
         if (msgs.length > 0) {
-          msgs[msgs.length - 1].text = cumulativeText;
+          msgs[msgs.length - 1].content = cumulativeText;
+          msgs[msgs.length - 1].revealed = cumulativeText.length;
         }
       }
     }
@@ -253,7 +253,60 @@
     'GitHub',
   ];
 
-  function onSetupServiceSaved(key: string) {
+  // Narration text for each service transition (spoken by Xan when ElevenLabs is active)
+  const SETUP_NARRATIONS: Record<number, string> = {
+    1: "Good. Now - your visual presence. Fal handles image and video generation for your avatar.",
+    2: "Messaging. This lets your companion reach you directly - check-ins, reminders, morning briefs.",
+    3: "Google Workspace. Calendar, email, drive - if you use Google, this gives your companion eyes on your schedule.",
+    4: "Last one. GitHub. Repos, issues, pull requests.",
+  };
+
+  /** Whether ElevenLabs was saved during this setup (enables TTS for remaining steps) */
+  let setupVoiceEnabled = $state(false);
+
+  /** Stream narration text word-by-word into chat, optionally voiced via TTS */
+  async function streamNarration(text: string, voiced: boolean): Promise<void> {
+    addMessage('agent', '');
+    const words = text.split(' ');
+    const msgs = transcript.messages;
+
+    if (voiced && api?.setupSpeak) {
+      // Start TTS in background - don't await it, let it play while text streams
+      const ttsPromise = api.setupSpeak(text).catch(() => {});
+
+      // Stream words with timing that roughly matches speech cadence
+      const msPerWord = 120; // ~150 wpm
+      let accumulated = '';
+      for (let i = 0; i < words.length; i++) {
+        accumulated += (i > 0 ? ' ' : '') + words[i];
+        if (msgs.length > 0) {
+          msgs[msgs.length - 1].content = accumulated;
+        msgs[msgs.length - 1].revealed = accumulated.length;
+        }
+        await new Promise(r => setTimeout(r, msPerWord));
+      }
+
+      // Wait for TTS to finish before proceeding
+      await ttsPromise;
+      // Small buffer after TTS ends
+      await new Promise(r => setTimeout(r, 400));
+    } else {
+      // No voice - stream text quickly
+      let accumulated = '';
+      for (let i = 0; i < words.length; i++) {
+        accumulated += (i > 0 ? ' ' : '') + words[i];
+        if (msgs.length > 0) {
+          msgs[msgs.length - 1].content = accumulated;
+        msgs[msgs.length - 1].revealed = accumulated.length;
+        }
+        await new Promise(r => setTimeout(r, 40));
+      }
+      await new Promise(r => setTimeout(r, 600));
+    }
+    completeLast();
+  }
+
+  async function onSetupServiceSaved(key: string) {
     setupServicesSaved.push(key);
 
     // Show confirmation in chat
@@ -261,15 +314,15 @@
     addMessage('system', `${title} saved.`);
     completeLast();
 
-    // Play confirmation audio for ElevenLabs
+    // Enable voice for remaining steps if ElevenLabs was just saved
     if (key === 'ELEVENLABS_API_KEY') {
-      api?.playAgentAudio?.('elevenlabs_saved.mp3');
+      setupVoiceEnabled = true;
     }
 
-    advanceSetupService();
+    await advanceSetupService();
   }
 
-  function onSetupServiceSkipped(key: string) {
+  async function onSetupServiceSkipped(key: string) {
     setupServicesSkipped.push(key);
 
     // Show skip in chat
@@ -277,29 +330,45 @@
     addMessage('system', `${title} skipped.`);
     completeLast();
 
-    // Play farewell if ElevenLabs was skipped (last chance for pre-baked audio)
-    if (key === 'ELEVENLABS_API_KEY') {
-      api?.playAgentAudio?.('voice_farewell.mp3');
-      addMessage('agent',
-        "This is the last you'll hear of my voice. If you change your " +
-        "mind later, you can add your API key in Settings - it'll appear " +
-        "after this setup flow."
-      );
-      completeLast();
-    }
-
-    advanceSetupService();
+    await advanceSetupService();
   }
 
-  function advanceSetupService() {
-    setupServiceStep++;
-    setupShowServiceCard = setupServiceStep < SETUP_SERVICE_TITLES.length;
+  async function advanceSetupService() {
+    const nextStep = setupServiceStep + 1;
+    const narration = SETUP_NARRATIONS[nextStep];
 
-    if (setupServiceStep >= SETUP_SERVICE_TITLES.length) {
-      // All services done - transition to AI agent creation in chat
-      api?.playAgentAudio?.('service_complete.mp3');
-      addMessage('agent', 'System configured. Now - who do you want to create?');
-      completeLast();
+    setupServiceStep = nextStep;
+
+    if (nextStep >= SETUP_SERVICE_TITLES.length) {
+      // All services done
+      setupShowServiceCard = false;
+
+      const noVoiceKey = setupServicesSkipped.includes('ELEVENLABS_API_KEY');
+      if (noVoiceKey) {
+        // No ElevenLabs - play pre-baked farewell, then transition
+        api?.playAgentAudio?.('voice_farewell.mp3');
+        addMessage('agent',
+          "System configured. This is the last you'll hear of my voice " +
+          "until you add an ElevenLabs API key in Settings. Now - who " +
+          "do you want to create?"
+        );
+        completeLast();
+      } else if (setupVoiceEnabled) {
+        // ElevenLabs active - stream with live TTS
+        await streamNarration('System configured. Now - who do you want to create?', true);
+      } else {
+        // Fallback
+        api?.playAgentAudio?.('service_complete.mp3');
+        addMessage('agent', 'System configured. Now - who do you want to create?');
+        completeLast();
+      }
+    } else if (narration) {
+      // Hide card, stream narration, then show next card
+      setupShowServiceCard = false;
+      await streamNarration(narration, setupVoiceEnabled);
+      setupShowServiceCard = true;
+    } else {
+      setupShowServiceCard = true;
     }
   }
 

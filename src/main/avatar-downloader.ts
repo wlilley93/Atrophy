@@ -17,7 +17,10 @@ const log = createLogger('avatar-downloader');
 
 const DEFAULT_AVATAR_URL =
   'https://github.com/wlilley93/Atrophy/releases/download/avatar-assets-v1/xan-avatar-v1.tar.gz';
+const AMBIENT_VIDEO_URL =
+  'https://github.com/wlilley93/Atrophy/releases/download/avatar-assets-v1/xan_ambient.mp4';
 const MARKER = '.avatar-complete';
+const AMBIENT_MARKER = '.ambient-complete';
 
 /** Check if avatar assets are already present for the given agent. */
 export function isAvatarComplete(agentName: string): boolean {
@@ -140,5 +143,80 @@ export async function ensureAvatarAssets(
     win?.webContents.send('avatar:download-error', msg);
     // Cleanup partial tar
     try { fs.unlinkSync(tarPath); } catch { /* ignore */ }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ambient video download (xan_ambient.mp4)
+// ---------------------------------------------------------------------------
+
+/** Path where the ambient video is stored after download. */
+export function getAmbientVideoPath(): string {
+  return path.join(USER_DATA, 'assets', 'xan_ambient.mp4');
+}
+
+/** Check if ambient video is already downloaded. */
+export function isAmbientVideoReady(): boolean {
+  const assetsDir = path.join(USER_DATA, 'assets');
+  return fs.existsSync(path.join(assetsDir, AMBIENT_MARKER));
+}
+
+/**
+ * Download the ambient video if not already present.
+ * Reuses the same progress events as avatar download.
+ */
+export async function ensureAmbientVideo(
+  win: BrowserWindow | null,
+): Promise<void> {
+  if (isAmbientVideoReady()) return;
+
+  const assetsDir = path.join(USER_DATA, 'assets');
+  fs.mkdirSync(assetsDir, { recursive: true });
+  const outPath = getAmbientVideoPath();
+
+  log.info('downloading ambient video...');
+  win?.webContents.send('avatar:download-start');
+
+  try {
+    const res = await fetch(AMBIENT_VIDEO_URL, { redirect: 'follow' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const total = parseInt(res.headers.get('content-length') || '0', 10);
+    let transferred = 0;
+    let lastEmit = 0;
+
+    const fileStream = fs.createWriteStream(outPath);
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('no response body');
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      fileStream.write(value);
+      transferred += value.byteLength;
+
+      const now = Date.now();
+      if (total > 0 && now - lastEmit > 500) {
+        const percent = Math.round((transferred / total) * 100);
+        win?.webContents.send('avatar:download-progress', { percent, transferred, total });
+        lastEmit = now;
+      }
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      fileStream.end(() => resolve());
+      fileStream.on('error', reject);
+    });
+
+    // Write marker
+    fs.writeFileSync(path.join(assetsDir, AMBIENT_MARKER), new Date().toISOString());
+    log.info('ambient video ready');
+    win?.webContents.send('avatar:download-complete');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error(`ambient video download failed: ${msg}`);
+    win?.webContents.send('avatar:download-error', msg);
+    // Cleanup partial download
+    try { fs.unlinkSync(outPath); } catch { /* ignore */ }
   }
 }

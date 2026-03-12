@@ -45,6 +45,7 @@ export interface AtrophyAPI {
   wizardInference: (text: string) => Promise<string>;
   createAgent: (config: Record<string, string>) => Promise<Record<string, unknown>>;
   saveSecret: (key: string, value: string) => Promise<void>;
+  setupSpeak: (text: string) => Promise<void>;
   startGoogleOAuth: (wantWorkspace: boolean, wantExtra: boolean) => Promise<string>;
 
   // Window
@@ -200,6 +201,7 @@ const api: AtrophyAPI = {
   wizardInference: (text) => ipcRenderer.invoke('setup:inference', text),
   createAgent: (config) => ipcRenderer.invoke('setup:createAgent', config),
   saveSecret: (key, value) => ipcRenderer.invoke('setup:saveSecret', key, value),
+  setupSpeak: (text) => ipcRenderer.invoke('setup:speak', text),
   startGoogleOAuth: (wantWorkspace, wantExtra) => ipcRenderer.invoke('setup:googleOAuth', wantWorkspace, wantExtra),
 
   // Window

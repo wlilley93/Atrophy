@@ -241,13 +241,13 @@
 
   // Push-to-talk: Ctrl key detection
   function onGlobalKeydown(e: KeyboardEvent) {
-    if (e.key === 'Control' && !isRecording && !callActive && session.inferenceState === 'idle') {
+    if (e.key === 'Alt' && !isRecording && !callActive && session.inferenceState === 'idle') {
       startRecording();
     }
   }
 
   function onGlobalKeyup(e: KeyboardEvent) {
-    if (e.key === 'Control' && isRecording) {
+    if (e.key === 'Alt' && isRecording) {
       stopRecording();
     }
   }
