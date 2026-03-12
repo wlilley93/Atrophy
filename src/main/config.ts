@@ -5,6 +5,7 @@
 
 import { app } from 'electron';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { execSync } from 'child_process';
 
@@ -625,8 +626,19 @@ export class Config {
     this.WHISPER_BIN = path.join(this.WHISPER_PATH, 'build', 'bin', 'whisper-cli');
     this.WHISPER_MODEL = path.join(this.WHISPER_PATH, 'models', 'ggml-tiny.en.bin');
 
-    // Claude CLI
-    this.CLAUDE_BIN = cfg('CLAUDE_BIN', 'claude');
+    // Claude CLI - resolve full path so packaged app finds it
+    const claudeDefault = (() => {
+      const candidates = [
+        path.join(os.homedir(), '.local', 'bin', 'claude'),
+        '/usr/local/bin/claude',
+        '/opt/homebrew/bin/claude',
+      ];
+      for (const c of candidates) {
+        if (fs.existsSync(c)) return c;
+      }
+      return 'claude';
+    })();
+    this.CLAUDE_BIN = cfg('CLAUDE_BIN', claudeDefault);
     this.CLAUDE_EFFORT = cfg('CLAUDE_EFFORT', 'medium');
     this.ADAPTIVE_EFFORT = cfg('ADAPTIVE_EFFORT', true);
 

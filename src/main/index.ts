@@ -219,38 +219,50 @@ function rebuildTrayMenu(): void {
 }
 
 function createTray(): void {
-  // Prefer the hand-crafted menu bar brain icon (template image for macOS
-  // light/dark auto-adaptation). Fall back to a procedural orb icon.
-  const iconDir = app.isPackaged
-    ? path.join(process.resourcesPath, 'icons')
-    : path.join(__dirname, '..', '..', 'resources', 'icons');
+  try {
+    // Prefer the hand-crafted menu bar brain icon (template image for macOS
+    // light/dark auto-adaptation). Fall back to a procedural orb icon.
+    const iconDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'icons')
+      : path.join(__dirname, '..', '..', 'resources', 'icons');
 
-  const icon2x = path.join(iconDir, 'menubar_brain@2x.png');
-  const icon1x = path.join(iconDir, 'menubar_brain.png');
-  const brainPath = fs.existsSync(icon2x) ? icon2x : fs.existsSync(icon1x) ? icon1x : '';
+    log.info(`[tray] iconDir=${iconDir} exists=${fs.existsSync(iconDir)}`);
 
-  let trayIcon: Electron.NativeImage;
-  if (brainPath) {
-    trayIcon = nativeImage.createFromPath(brainPath);
-    trayIcon.setTemplateImage(true);
-  } else {
-    // Procedural orb fallback (44px for @2x tray)
-    trayIcon = getTrayIcon('active');
-  }
+    const icon2x = path.join(iconDir, 'menubar_brain@2x.png');
+    const icon1x = path.join(iconDir, 'menubar_brain.png');
+    const brainPath = fs.existsSync(icon2x) ? icon2x : fs.existsSync(icon1x) ? icon1x : '';
 
-  tray = new Tray(trayIcon);
-  rebuildTrayMenu();
+    log.info(`[tray] brainPath=${brainPath || 'NONE'}`);
 
-  tray.on('click', () => {
-    if (mainWindow) {
-      if (mainWindow.isVisible()) {
-        mainWindow.hide();
-      } else {
-        mainWindow.show();
-        mainWindow.focus();
-      }
+    let trayIcon: Electron.NativeImage;
+    if (brainPath) {
+      trayIcon = nativeImage.createFromPath(brainPath);
+      trayIcon.setTemplateImage(true);
+      log.info(`[tray] loaded brain icon: ${trayIcon.getSize().width}x${trayIcon.getSize().height} empty=${trayIcon.isEmpty()}`);
+    } else {
+      // Procedural orb fallback (44px for @2x tray)
+      trayIcon = getTrayIcon('active');
+      log.info(`[tray] using procedural fallback`);
     }
-  });
+
+    tray = new Tray(trayIcon);
+    rebuildTrayMenu();
+
+    tray.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isVisible()) {
+          mainWindow.hide();
+        } else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    });
+
+    log.info('[tray] created successfully');
+  } catch (err) {
+    log.error('[tray] failed to create:', err);
+  }
 }
 
 /**

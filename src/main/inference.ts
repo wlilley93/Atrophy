@@ -97,6 +97,17 @@ function cleanEnv(): NodeJS.ProcessEnv {
       delete env[key];
     }
   }
+  // Ensure PATH includes common binary locations (packaged Electron has limited PATH)
+  const extraPaths = [
+    path.join(os.homedir(), '.local', 'bin'),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+  ];
+  const currentPath = env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin';
+  const missing = extraPaths.filter(p => !currentPath.includes(p));
+  if (missing.length > 0) {
+    env.PATH = [...missing, currentPath].join(':');
+  }
   return env;
 }
 
