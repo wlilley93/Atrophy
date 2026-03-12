@@ -53,16 +53,12 @@
     if (brainTimer) { clearInterval(brainTimer); brainTimer = null; }
   }
 
-  // Brain decay animation: 0 -> 9 at 800ms per frame
+  // Brain cycling animation: loops through all frames continuously
   function startBrainDecay() {
     currentFrame = 0;
     brainTimer = setInterval(() => {
-      if (currentFrame < LAST) {
-        currentFrame++;
-      } else {
-        if (brainTimer) { clearInterval(brainTimer); brainTimer = null; }
-      }
-    }, 800);
+      currentFrame = (currentFrame + 1) % (LAST + 1);
+    }, 400);
   }
 
   // Cinematic text sequence - timed to match intro.mp3 voiceover (15.5s)

@@ -118,10 +118,19 @@ function createWindow(): BrowserWindow {
 
   // Intercept close to show shutdown animation
   let allowClose = false;
+  let shutdownTimer: ReturnType<typeof setTimeout> | null = null;
   win.on('close', (e) => {
     if (!allowClose) {
       e.preventDefault();
       win.webContents.send('app:shutdownRequested');
+      // Safety timeout - force quit if renderer doesn't respond in 5s
+      if (!shutdownTimer) {
+        shutdownTimer = setTimeout(() => {
+          allowClose = true;
+          win.close();
+          app.quit();
+        }, 5000);
+      }
     }
   });
 
@@ -132,6 +141,7 @@ function createWindow(): BrowserWindow {
   // Allow actual close after shutdown animation (called from IPC)
   try { ipcMain.removeHandler('app:shutdown'); } catch { /* first time */ }
   ipcMain.handle('app:shutdown', () => {
+    if (shutdownTimer) { clearTimeout(shutdownTimer); shutdownTimer = null; }
     allowClose = true;
     win.close();
     app.quit();

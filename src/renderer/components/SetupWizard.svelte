@@ -151,13 +151,13 @@
     position: relative;
     z-index: 2;
     width: 100%;
-    height: 100%;
     max-width: 460px;
     padding: var(--pad);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    pointer-events: none;
+  }
+
+  .wizard-content > * {
+    pointer-events: auto;
   }
 
   .wizard-center {
