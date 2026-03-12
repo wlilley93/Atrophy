@@ -7,6 +7,8 @@ review active threads.
 
 Protocol: JSON-RPC 2.0 over stdio (MCP standard transport).
 """
+from __future__ import annotations
+
 import json
 import os
 import sqlite3
@@ -14,7 +16,11 @@ import sys
 from pathlib import Path
 
 _version_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "VERSION")
-_APP_VERSION = open(_version_file).read().strip() if os.path.exists(_version_file) else "0.0.0"
+if os.path.exists(_version_file):
+    with open(_version_file, "r", encoding="utf-8") as f:
+        _APP_VERSION = f.read().strip()
+else:
+    _APP_VERSION = "0.0.0"
 
 DB_PATH = os.environ.get("COMPANION_DB", "companion.db")
 DATA_DIR = os.path.dirname(DB_PATH)  # agents/<name>/data/
@@ -1491,6 +1497,8 @@ def _ask_via_gui(question, action_type, timeout_secs=120, **kwargs):
                     resp = json.load(f)
                 os.unlink(resp_path)
                 if resp.get("request_id") == request_id:
+                    if resp.get("destination_failed"):
+                        return {"_destination_failed": True}
                     return resp.get("response")
             except Exception:
                 pass
@@ -1533,6 +1541,14 @@ def handle_ask_user(args):
     # Try GUI first (Electron app file-based IPC)
     gui_response = _ask_via_gui(question, action_type, **extra)
     if gui_response is not None:
+        # Check for destination save failure
+        if isinstance(gui_response, dict) and gui_response.get("_destination_failed"):
+            return (
+                f"Failed to save value for {label or 'requested field'} to {destination}. "
+                f"The key may not be in the allowed secrets whitelist. "
+                f"Allowed secret keys: ELEVENLABS_API_KEY, FAL_KEY, TELEGRAM_BOT_TOKEN, "
+                f"OPENAI_API_KEY, ANTHROPIC_API_KEY. Use config: prefix for other keys."
+            )
         if action_type == "secure_input":
             # For secure_input with destination, main process handles saving.
             # Never return the secret value to the AI.
@@ -1821,7 +1837,8 @@ def handle_write_note(args):
     try:
         if mode == "append" and os.path.isfile(full):
             # Update the 'updated' timestamp in frontmatter if present
-            existing = open(full, "r").read()
+            with open(full, "r", encoding="utf-8") as f:
+                existing = f.read()
             if existing.startswith("---"):
                 from datetime import datetime
                 today = datetime.now().strftime("%Y-%m-%d")
@@ -2211,7 +2228,8 @@ def handle_set_reminder(args):
     reminders = []
     if os.path.isfile(reminders_file):
         try:
-            reminders = json.loads(open(reminders_file).read())
+            with open(reminders_file, "r", encoding="utf-8") as f:
+                reminders = json.loads(f.read())
         except Exception:
             reminders = []
 
@@ -2946,7 +2964,8 @@ def handle_self_status(args):
         mpath = os.path.join(base, "data", "agent.json")
         if os.path.exists(mpath):
             try:
-                manifest = json.loads(open(mpath).read())
+                with open(mpath, "r", encoding="utf-8") as f:
+                    manifest = json.loads(f.read())
             except Exception:
                 pass
             break
@@ -2965,7 +2984,8 @@ def handle_self_status(args):
     )
     if os.path.exists(state_file):
         try:
-            state = json.loads(open(state_file).read())
+            with open(state_file, "r", encoding="utf-8") as f:
+                state = json.loads(f.read())
             emotions = state.get("emotions", {})
             trust = state.get("trust", {})
             sections.append("\n## Emotional State")
@@ -3247,7 +3267,8 @@ def handle_edit_tool(args):
     handler_path = os.path.join(tool_dir, "handler.py")
 
     try:
-        tool_def = json.loads(open(definition_path).read())
+        with open(definition_path, "r", encoding="utf-8") as f:
+            tool_def = json.loads(f.read())
     except Exception:
         return f"Error reading tool definition for '{bare_name}'."
 

@@ -7,9 +7,9 @@ import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, s
 import * as path from 'path';
 import * as fs from 'fs';
 import { execFile, execSync, spawn } from 'child_process';
-import { ensureUserData, getConfig, saveUserConfig, saveAgentConfig, saveEnvVar, BUNDLE_ROOT, USER_DATA } from './config';
+import { ensureUserData, getConfig, saveUserConfig, saveAgentConfig, saveEnvVar, isAllowedEnvKey, BUNDLE_ROOT, USER_DATA } from './config';
 import { initDb, closeAll as closeAllDbs, writeObservation } from './memory';
-import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from './inference';
+import { streamInference, stopInference, stopAllInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
 import { Session } from './session';
 import { setActive } from './status';
@@ -585,7 +585,7 @@ Output EXACTLY this format - a single fenced JSON block:
   });
 
   ipcMain.handle('setup:saveSecret', (_event, key: string, value: string) => {
-    saveEnvVar(key, value);
+    return saveEnvVar(key, value);
   });
 
   ipcMain.handle('setup:createAgent', (_event, agentConfig: Record<string, string>) => {
@@ -607,8 +607,11 @@ Output EXACTLY this format - a single fenced JSON block:
     return manifest;
   });
 
+  let googleAuthInProgress = false;
   ipcMain.handle('setup:googleOAuth', async (_event, wantWorkspace: boolean, wantExtra: boolean) => {
     if (!wantWorkspace && !wantExtra) return 'skipped';
+    if (googleAuthInProgress) return 'in_progress';
+    googleAuthInProgress = true;
 
     const { execFile } = require('child_process');
     const { promisify } = require('util');
@@ -653,6 +656,8 @@ Output EXACTLY this format - a single fenced JSON block:
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return `error: ${msg}`;
+    } finally {
+      googleAuthInProgress = false;
     }
   });
 
@@ -768,8 +773,8 @@ Output EXACTLY this format - a single fenced JSON block:
     currentSession = null;
     systemPrompt = null;
 
-    // Stop any running inference before switching
-    stopInference();
+    // Stop ALL running inference processes before switching (not just active)
+    stopAllInference();
     clearAudioQueue();
 
     // Switch agent config
@@ -1059,6 +1064,8 @@ Output EXACTLY this format - a single fenced JSON block:
       const done = (result: { success: boolean; error?: string }) => {
         if (resolved) return;
         resolved = true;
+        clearTimeout(stdinTimer);
+        clearTimeout(timeoutTimer);
         resolve(result);
       };
 
@@ -1077,7 +1084,7 @@ Output EXACTLY this format - a single fenced JSON block:
 
       // gh may still prompt - pipe newlines to accept defaults
       proc.stdin?.write('\n');
-      setTimeout(() => { try { proc.stdin?.write('\n'); } catch { /* closed */ } }, 1000);
+      const stdinTimer = setTimeout(() => { try { proc.stdin?.write('\n'); } catch { /* closed */ } }, 1000);
 
       proc.on('close', (code) => {
         done(code === 0
@@ -1089,7 +1096,7 @@ Output EXACTLY this format - a single fenced JSON block:
       });
 
       // Timeout after 5 minutes
-      setTimeout(() => {
+      const timeoutTimer = setTimeout(() => {
         try { proc.kill(); } catch { /* already dead */ }
         done({ success: false, error: 'Timed out waiting for browser auth' });
       }, 300_000);
@@ -1124,36 +1131,41 @@ Output EXACTLY this format - a single fenced JSON block:
 
   ipcMain.handle('deferral:complete', async (_event, data: { target: string; context: string; user_question: string }) => {
     if (!/^[a-zA-Z0-9_-]+$/.test(data.target)) throw new Error('Invalid agent name');
-    // Suspend current agent's session
-    if (currentSession && currentSession.cliSessionId) {
-      suspendAgentSession(currentAgentName!, currentSession.cliSessionId, currentSession.turnHistory);
+    try {
+      // Suspend current agent's session
+      if (currentSession && currentSession.cliSessionId) {
+        suspendAgentSession(currentAgentName!, currentSession.cliSessionId, currentSession.turnHistory);
+      }
+
+      // Switch to target agent
+      const config = getConfig();
+      config.reloadForAgent(data.target);
+      initDb();
+      resetMcpConfig();
+      currentAgentName = data.target;
+      setLastActiveAgent(data.target);
+      clearAudioQueue();
+
+      // Resume or create new session for target agent
+      const resumed = resumeAgentSession(data.target);
+      currentSession = new Session();
+      currentSession.start();
+      if (resumed) {
+        currentSession.setCliSessionId(resumed.cliSessionId);
+        currentSession.turnHistory = resumed.turnHistory as typeof currentSession.turnHistory;
+      }
+      systemPrompt = null; // Force reload for new agent
+
+      resetDeferralCounter();
+
+      return {
+        agentName: config.AGENT_NAME,
+        agentDisplayName: config.AGENT_DISPLAY_NAME,
+      };
+    } catch (err) {
+      log.error(`deferral:complete failed: ${err}`);
+      throw err;
     }
-
-    // Switch to target agent
-    const config = getConfig();
-    config.reloadForAgent(data.target);
-    initDb();
-    resetMcpConfig();
-    currentAgentName = data.target;
-    setLastActiveAgent(data.target);
-    clearAudioQueue();
-
-    // Resume or create new session for target agent
-    const resumed = resumeAgentSession(data.target);
-    currentSession = new Session();
-    currentSession.start();
-    if (resumed) {
-      currentSession.setCliSessionId(resumed.cliSessionId);
-      currentSession.turnHistory = resumed.turnHistory as typeof currentSession.turnHistory;
-    }
-    systemPrompt = null; // Force reload for new agent
-
-    resetDeferralCounter();
-
-    return {
-      agentName: config.AGENT_NAME,
-      agentDisplayName: config.AGENT_DISPLAY_NAME,
-    };
   });
 
   // ── Agent message queues ──
@@ -1172,17 +1184,21 @@ Output EXACTLY this format - a single fenced JSON block:
 
   ipcMain.handle('ask:respond', (_event, requestId: string, response: string | boolean | null) => {
     // If a destination was set (secure_input), route the value before writing the response
+    let destinationFailed = false;
     if (pendingAskDestination && typeof response === 'string' && response) {
       const dest = pendingAskDestination;
       if (dest.startsWith('secret:')) {
         const key = dest.slice('secret:'.length);
-        saveEnvVar(key, response);
+        if (!saveEnvVar(key, response)) {
+          log.warn(`ask:respond - secret key rejected by whitelist: ${key}`);
+          destinationFailed = true;
+        }
       } else if (dest.startsWith('config:')) {
         const key = dest.slice('config:'.length);
         saveUserConfig({ [key]: response });
       }
     }
-    writeAskResponse(requestId, response);
+    writeAskResponse(requestId, response, destinationFailed);
     pendingAskId = null;
     pendingAskDestination = null;
   });
@@ -1203,13 +1219,17 @@ Output EXACTLY this format - a single fenced JSON block:
   ipcMain.handle('artefact:getContent', (_event, filePath: string) => {
     // Security: only allow reading from artefacts directory
     const config = getConfig();
-    const artefactsBase = path.join(path.dirname(config.DATA_DIR), 'artefacts');
-    const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(artefactsBase)) {
+    const artefactsBase = fs.realpathSync(path.join(path.dirname(config.DATA_DIR), 'artefacts'));
+    let resolved: string;
+    try {
+      resolved = fs.realpathSync(path.resolve(filePath));
+    } catch {
+      return null; // Path doesn't exist or can't be resolved
+    }
+    if (!resolved.startsWith(artefactsBase + path.sep) && resolved !== artefactsBase) {
       log.warn(`artefact:getContent blocked path traversal: ${filePath}`);
       return null;
     }
-    if (!fs.existsSync(resolved)) return null;
     try {
       return fs.readFileSync(resolved, 'utf-8');
     } catch {
@@ -1451,6 +1471,7 @@ app.on('will-quit', () => {
   if (deferralTimer) clearInterval(deferralTimer);
   if (askUserTimer) clearInterval(askUserTimer);
   if (artefactTimer) clearInterval(artefactTimer);
+  stopAllInference();
   stopWakeWordListener(() => mainWindow);
   disableKeepAwake();
   stopDaemon();

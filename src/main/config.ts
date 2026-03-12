@@ -76,9 +76,14 @@ const ALLOWED_ENV_KEYS = new Set([
   'ANTHROPIC_API_KEY',
 ]);
 
-/** Save a secret to ~/.atrophy/.env. Updates or appends the key. */
-export function saveEnvVar(key: string, value: string): void {
-  if (!ALLOWED_ENV_KEYS.has(key)) return;
+/** Check if a key is in the allowed env keys whitelist. */
+export function isAllowedEnvKey(key: string): boolean {
+  return ALLOWED_ENV_KEYS.has(key);
+}
+
+/** Save a secret to ~/.atrophy/.env. Updates or appends the key. Returns false if key not in whitelist. */
+export function saveEnvVar(key: string, value: string): boolean {
+  if (!ALLOWED_ENV_KEYS.has(key)) return false;
   // Strip newlines to prevent env injection
   value = value.replace(/[\r\n]/g, '');
   const envPath = path.join(USER_DATA, '.env');
@@ -103,6 +108,7 @@ export function saveEnvVar(key: string, value: string): void {
   fs.writeFileSync(envPath, lines.join('\n') + '\n', { mode: 0o600 });
   // Also set in current process
   process.env[key] = value;
+  return true;
 }
 
 // ---------------------------------------------------------------------------

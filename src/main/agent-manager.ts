@@ -114,7 +114,10 @@ function loadStates(): Record<string, unknown> {
 
 function saveStates(states: Record<string, unknown>): void {
   const config = getConfig();
-  fs.writeFileSync(config.AGENT_STATES_FILE, JSON.stringify(states, null, 2) + '\n');
+  // Atomic write via tmp + rename to prevent corruption from concurrent updates
+  const tmp = config.AGENT_STATES_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(states, null, 2) + '\n');
+  fs.renameSync(tmp, config.AGENT_STATES_FILE);
 }
 
 export function getAgentState(agentName: string): AgentState {
@@ -317,6 +320,7 @@ export interface AskResponse {
   request_id: string;
   response: string | boolean | null;
   timestamp: number;
+  destination_failed?: boolean;
 }
 
 function askRequestPath(): string {
@@ -349,7 +353,7 @@ export function checkAskRequest(): AskRequest | null {
 }
 
 /** Write the user's response for MCP to pick up. */
-export function writeAskResponse(requestId: string, response: string | boolean | null): void {
+export function writeAskResponse(requestId: string, response: string | boolean | null, destinationFailed = false): void {
   const respPath = askResponsePath();
   const dir = path.dirname(respPath);
   fs.mkdirSync(dir, { recursive: true });
@@ -358,6 +362,7 @@ export function writeAskResponse(requestId: string, response: string | boolean |
     request_id: requestId,
     response,
     timestamp: Date.now(),
+    ...(destinationFailed ? { destination_failed: true } : {}),
   };
 
   // Atomic write via tmp + rename

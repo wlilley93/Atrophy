@@ -1,6 +1,6 @@
 # Security Model
 
-This document describes the security architecture of The Atrophied Mind companion agent system. The system is an Electron desktop application running locally on macOS, communicates with external services over outbound HTTPS only, and stores all persistent data in per-agent SQLite databases. The security model is designed to give the companion enough capability to be genuinely useful while preventing it from causing harm, leaking secrets, or being manipulated by untrusted external content.
+This document describes the security architecture of Atrophy companion agent system. The system is an Electron desktop application running locally on macOS, communicates with external services over outbound HTTPS only, and stores all persistent data in per-agent SQLite databases. The security model is designed to give the companion enough capability to be genuinely useful while preventing it from causing harm, leaking secrets, or being manipulated by untrusted external content.
 
 ---
 

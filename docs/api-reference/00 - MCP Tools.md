@@ -564,7 +564,7 @@ Review the audit log of all tool calls the companion has made. Reads from the `t
 
 ### create_agent
 
-Create a new agent for The Atrophied Mind. Accepts a complete configuration as JSON and scaffolds everything: repo directories, agent.json manifest, prompts (soul, system, heartbeat), Obsidian workspace (skills, notes, dashboard), memory database, scheduled job scripts, and cron jobs.json. Optionally downloads a source face image and video clips for the avatar.
+Create a new agent for Atrophy. Accepts a complete configuration as JSON and scaffolds everything: repo directories, agent.json manifest, prompts (soul, system, heartbeat), Obsidian workspace (skills, notes, dashboard), memory database, scheduled job scripts, and cron jobs.json. Optionally downloads a source face image and video clips for the avatar.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
