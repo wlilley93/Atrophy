@@ -47,6 +47,11 @@
   let agentSwitchActive = $state(false);
   let agentSwitchClip = $state('circle(0% at 50% 50%)');
 
+  // Agent deferral (codec-style handoff)
+  let deferralActive = $state(false);
+  let deferralTarget = $state('');
+  let deferralProgress = $state(0);
+
   // Silence timer - prompts after 5 minutes idle
   let lastInputTime = $state(Date.now());
   let silencePromptVisible = $state(false);
@@ -154,6 +159,54 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Agent deferral (codec-style handoff)
+  // ---------------------------------------------------------------------------
+
+  async function handleDeferralRequest(data: { target: string; context: string; user_question: string }) {
+    if (deferralActive || !api) return;
+
+    deferralActive = true;
+    deferralTarget = data.target;
+
+    // Stop any ongoing inference
+    if (api.stopInference) {
+      api.stopInference();
+    }
+
+    // Kill audio
+    if (api.clearAudioQueue) {
+      api.clearAudioQueue();
+    }
+
+    // Iris wipe animation (fast, codec-style)
+    deferralProgress = 0;
+    requestAnimationFrame(() => {
+      deferralProgress = 1;
+    });
+
+    // At peak black - switch agent
+    setTimeout(async () => {
+      try {
+        const result = await api.completeDeferral(data);
+        agents.current = result.agentName;
+        agents.displayName = result.agentDisplayName;
+        deferralTarget = '';
+        
+        // Iris open animation
+        deferralProgress = 2;
+        setTimeout(() => {
+          deferralActive = false;
+          deferralProgress = 0;
+        }, 300);
+      } catch (err) {
+        console.error('[deferral] failed:', err);
+        deferralActive = false;
+        deferralProgress = 0;
+      }
+    }, 250);
+  }
+
+  // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 
@@ -163,11 +216,9 @@
     runBootSequence();
     resetSilenceTimer();
 
-    // Listen for agent:switched events from main process
-    if (api && typeof api.onDone === 'function') {
-      // Re-use IPC listener pattern - listen for agent switch events
-      // The agent switch IPC is handled inline in cycleAgent,
-      // so we trigger the animation from there directly.
+    // Listen for deferral requests from main process
+    if (api && typeof api.on === 'function') {
+      api.on('deferral:request', handleDeferralRequest);
     }
   });
 
@@ -296,6 +347,23 @@
       class="agent-switch-overlay"
       style="clip-path: {agentSwitchClip}"
     ></div>
+  {/if}
+
+  <!-- Agent deferral iris wipe (codec-style handoff) -->
+  {#if deferralActive}
+    <div
+      class="deferral-overlay"
+      style="
+        clip-path: circle(
+          {deferralProgress === 0 ? '150%' : deferralProgress === 1 ? '0%' : '150%'}
+          at 50% 50%
+        )
+      "
+    >
+      {#if deferralProgress === 1}
+        <span class="deferral-label">Handing off to {deferralTarget}...</span>
+      {/if}
+    </div>
   {/if}
 
   <!-- Top bar: agent name + thinking indicator -->
@@ -468,7 +536,7 @@
 
   <!-- Setup wizard (shown on first launch) -->
   {#if needsSetup}
-    <SetupWizard />
+    <SetupWizard onComplete={() => needsSetup = false} />
   {/if}
 </div>
 
@@ -527,6 +595,27 @@
     background: var(--bg);
     pointer-events: none;
     transition: clip-path 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* -- Agent deferral iris wipe (codec-style handoff) -- */
+
+  .deferral-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 80;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: clip-path 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .deferral-label {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--text-secondary);
+    letter-spacing: 0.5px;
+    opacity: 0.7;
   }
 
   /* -- Silence prompt -- */

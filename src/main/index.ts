@@ -13,17 +13,16 @@ import { loadSystemPrompt } from './context';
 import { Session } from './session';
 import { setActive } from './status';
 import { detectMoodShift } from './agency';
-import { synthesise, enqueueAudio, setPlaybackCallbacks, clearAudioQueue, stripProsodyTags } from './tts';
+import { synthesise, enqueueAudio, setPlaybackCallbacks, clearAudioQueue } from './tts';
 import { registerAudioHandlers } from './audio';
-import { registerWakeWordHandlers, startWakeWordListener, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
-import { discoverAgents, cycleAgent, getAgentState, setAgentState, setLastActiveAgent, getLastActiveAgent } from './agent-manager';
+import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
+import { discoverAgents, cycleAgent, getAgentState, setAgentState, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, resetDeferralCounter, suspendAgentSession, resumeAgentSession } from './agent-manager';
 import { runCoherenceCheck } from './sentinel';
-import { drainQueue } from './queue';
+import { drainQueue, drainAgentQueue, drainAllAgentQueues } from './queue';
 import { getAllAgentsUsage, getAllActivity } from './usage';
-import { sendNotification } from './notify';
 import { startServer, stopServer } from './server';
 import { startDaemon, stopDaemon } from './telegram-daemon';
-import { listJobs, installAllJobs, uninstallAllJobs, toggleCron } from './cron';
+import { listJobs, toggleCron } from './cron';
 import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
 import { getAppIcon, getTrayIcon, TrayState } from './icon';
@@ -40,6 +39,8 @@ let currentSession: Session | null = null;
 let systemPrompt: string | null = null;
 let sentinelTimer: ReturnType<typeof setInterval> | null = null;
 let queueTimer: ReturnType<typeof setInterval> | null = null;
+let deferralTimer: ReturnType<typeof setInterval> | null = null;
+let currentAgentName: string | null = null;
 
 // ---------------------------------------------------------------------------
 // Window creation
@@ -322,13 +323,40 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('setup:check', () => {
-    const cfgPath = path.join(getConfig().DATA_DIR, '..', '..', '..', 'config.json');
+    const cfgPath = path.join(USER_DATA, 'config.json');
     try {
       const userCfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
       return !userCfg.setup_complete;
     } catch {
       return true;
     }
+  });
+
+  ipcMain.handle('setup:inference', async (_event, text: string) => {
+    // Wizard inference - uses Claude CLI to drive agent creation conversation.
+    // The wizard prompt instructs the model to help the user design a companion.
+    const wizardPrompt = [
+      'You are Xan, an agent creation assistant.',
+      'Help the user design a new AI companion agent.',
+      'Ask about personality, interests, communication style, and name.',
+      'Keep responses under 3 sentences. Be warm but concise.',
+      'When you have enough info (name, personality, style), output a JSON block:',
+      '```json\n{"name": "...", "display_name": "...", "description": "...", "personality": "...", "opening_line": "..."}\n```',
+    ].join(' ');
+
+    return new Promise<string>((resolve) => {
+      const emitter = streamInference(text, wizardPrompt, undefined);
+      let fullText = '';
+      emitter.on('event', (evt: InferenceEvent) => {
+        if (evt.type === 'TextDelta') {
+          fullText += evt.text;
+        } else if (evt.type === 'StreamDone') {
+          resolve(evt.fullText || fullText);
+        } else if (evt.type === 'StreamError') {
+          resolve('Something went wrong. Try again.');
+        }
+      });
+    });
   });
 
   // ── Inference ──
@@ -522,6 +550,48 @@ function registerIpcHandlers(): void {
   ipcMain.handle('updater:quitAndInstall', () => {
     quitAndInstall();
   });
+
+  // ── Agent deferral ──
+
+  ipcMain.handle('deferral:complete', async (_event, data: { target: string; context: string; user_question: string }) => {
+    // Suspend current agent's session
+    if (currentSession && currentSession.cliSessionId) {
+      suspendAgentSession(currentAgentName!, currentSession.cliSessionId, currentSession.turnHistory);
+    }
+
+    // Switch to target agent
+    const config = getConfig();
+    config.reloadForAgent(data.target);
+    initDb();
+    resetMcpConfig();
+    currentAgentName = data.target;
+    setLastActiveAgent(data.target);
+    clearAudioQueue();
+
+    // Resume or create new session for target agent
+    const resumed = resumeAgentSession(data.target);
+    if (resumed && currentSession) {
+      currentSession.setCliSessionId(resumed.cliSessionId);
+      currentSession.turnHistory = resumed.turnHistory as typeof currentSession.turnHistory;
+    }
+
+    resetDeferralCounter();
+
+    return {
+      agentName: config.AGENT_NAME,
+      agentDisplayName: config.AGENT_DISPLAY_NAME,
+    };
+  });
+
+  // ── Agent message queues ──
+
+  ipcMain.handle('queue:drainAgent', (_event, agentName: string) => {
+    return drainAgentQueue(agentName);
+  });
+
+  ipcMain.handle('queue:drainAll', () => {
+    return drainAllAgentQueues();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -548,6 +618,7 @@ app.whenReady().then(() => {
   const config = getConfig();
   initDb();
 
+  currentAgentName = config.AGENT_NAME;
   console.log(`[atrophy] v${config.VERSION} | agent: ${config.AGENT_NAME} | db: ${config.DB_PATH}`);
 
   // Register IPC
@@ -599,6 +670,25 @@ app.whenReady().then(() => {
     }
   }, 10_000);
 
+  // Deferral watcher - check for agent handoff requests every 2s
+  deferralTimer = setInterval(() => {
+    if (!mainWindow || !currentAgentName) return;
+    const request = checkDeferralRequest();
+    if (!request) return;
+
+    // Validate against anti-loop protection
+    if (!validateDeferralRequest(request.target, currentAgentName)) {
+      return;
+    }
+
+    // Notify renderer to start deferral transition
+    mainWindow.webContents.send('deferral:request', {
+      target: request.target,
+      context: request.context,
+      user_question: request.user_question,
+    });
+  }, 2_000);
+
   // Server mode - no window
   if (isServerMode) {
     const port = parseInt(args[args.indexOf('--port') + 1] || '5000', 10);
@@ -648,6 +738,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (sentinelTimer) clearInterval(sentinelTimer);
   if (queueTimer) clearInterval(queueTimer);
+  if (deferralTimer) clearInterval(deferralTimer);
   stopWakeWordListener(() => mainWindow);
   stopDaemon();
   stopServer();

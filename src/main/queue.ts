@@ -8,7 +8,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig } from './config';
+import { getConfig, USER_DATA } from './config';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -160,4 +160,59 @@ export function drainQueue(): QueuedMessage[] {
     fs.writeFileSync(queueFile, '[]');
     return queue;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Per-agent queue draining (for multi-agent message delivery)
+// ---------------------------------------------------------------------------
+
+/**
+ * Drain message queue for a specific agent.
+ * Used during boot and agent switching to deliver pending messages.
+ */
+export function drainAgentQueue(agentName: string): QueuedMessage[] {
+  const queueFile = path.join(
+    USER_DATA,
+    'agents',
+    agentName,
+    'data',
+    '.message_queue.json',
+  );
+
+  if (!fs.existsSync(queueFile)) return [];
+
+  return withLock(queueFile, () => {
+    let queue: QueuedMessage[] = [];
+    try {
+      queue = JSON.parse(fs.readFileSync(queueFile, 'utf-8'));
+    } catch {
+      return [];
+    }
+
+    if (queue.length === 0) return [];
+
+    // Clear the queue file
+    fs.writeFileSync(queueFile, '[]');
+    return queue;
+  });
+}
+
+/**
+ * Drain all agents' queues. Returns a map of agent name to messages.
+ */
+export function drainAllAgentQueues(): Record<string, QueuedMessage[]> {
+  const agentsDir = path.join(USER_DATA, 'agents');
+  const result: Record<string, QueuedMessage[]> = {};
+
+  if (!fs.existsSync(agentsDir)) return result;
+
+  const agents = fs.readdirSync(agentsDir);
+  for (const agent of agents) {
+    const messages = drainAgentQueue(agent);
+    if (messages.length > 0) {
+      result[agent] = messages;
+    }
+  }
+
+  return result;
 }

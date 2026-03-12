@@ -229,3 +229,60 @@ export function getAgentRoster(exclude?: string): AgentInfo[] {
     return getAgentState(a.name).enabled;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Agent deferral (codec-style handoff)
+// ---------------------------------------------------------------------------
+
+const DEFERRAL_FILE = path.join(USER_DATA, '.deferral_request.json');
+const ANTI_LOOP_WINDOW_MS = 60_000;
+const MAX_DEFERRALS_PER_WINDOW = 3;
+
+interface DeferralRequest {
+  target: string;
+  context: string;
+  user_question: string;
+  timestamp?: number;
+}
+
+let deferralCount = 0;
+let deferralWindowStart = 0;
+
+/** Check for pending deferral requests (called periodically by main process). */
+export function checkDeferralRequest(): DeferralRequest | null {
+  if (!fs.existsSync(DEFERRAL_FILE)) return null;
+  try {
+    const data = fs.readFileSync(DEFERRAL_FILE, 'utf-8');
+    const request = JSON.parse(data) as DeferralRequest;
+    fs.unlinkSync(DEFERRAL_FILE);
+    return request;
+  } catch {
+    return null;
+  }
+}
+
+/** Validate deferral request against anti-loop protection. */
+export function validateDeferralRequest(target: string, currentAgent: string): boolean {
+  // Don't defer to self
+  if (target === currentAgent) return false;
+
+  // Anti-loop: max 3 deferrals in 60 seconds
+  const now = Date.now();
+  if (now - deferralWindowStart > ANTI_LOOP_WINDOW_MS) {
+    deferralCount = 0;
+    deferralWindowStart = now;
+  }
+  deferralCount++;
+  if (deferralCount > MAX_DEFERRALS_PER_WINDOW) {
+    console.log('[deferral] suppressed - too many in 60s');
+    return false;
+  }
+
+  return true;
+}
+
+/** Reset deferral counter (called after successful deferral). */
+export function resetDeferralCounter(): void {
+  deferralCount = 0;
+  deferralWindowStart = Date.now();
+}

@@ -58,12 +58,33 @@ export interface AtrophyAPI {
   isLoginItemEnabled: () => Promise<boolean>;
   toggleLoginItem: (enabled: boolean) => Promise<void>;
 
+  // Auto-updater
+  checkForUpdates: () => Promise<void>;
+  downloadUpdate: () => Promise<void>;
+  quitAndInstall: () => Promise<void>;
+  onUpdateAvailable: (cb: (info: { version: string; releaseNotes: unknown }) => void) => () => void;
+  onUpdateNotAvailable: (cb: () => void) => () => void;
+  onUpdateProgress: (cb: (progress: { percent: number; bytesPerSecond: number; transferred: number; total: number }) => void) => () => void;
+  onUpdateDownloaded: (cb: (info: { version: string }) => void) => () => void;
+  onUpdateError: (cb: (message: string) => void) => () => void;
+
   // Avatar
   getAvatarVideoPath: (colour?: string, clip?: string) => Promise<string | null>;
 
   // Usage & activity
   getUsage: (days?: number) => Promise<unknown>;
   getActivity: (days?: number, limit?: number) => Promise<unknown>;
+
+  // Agent deferral
+  completeDeferral: (data: { target: string; context: string; user_question: string }) => Promise<{ agentName: string; agentDisplayName: string }>;
+  onDeferralRequest: (cb: (data: { target: string; context: string; user_question: string }) => void) => () => void;
+
+  // Agent message queues
+  drainAgentQueue: (agentName: string) => Promise<unknown[]>;
+  drainAllAgentQueues: () => Promise<Record<string, unknown[]>>;
+
+  // Generic listener
+  on: (channel: string, cb: (...args: unknown[]) => void) => () => void;
 }
 
 function createListener(channel: string) {
@@ -128,12 +149,37 @@ const api: AtrophyAPI = {
   isLoginItemEnabled: () => ipcRenderer.invoke('install:isEnabled'),
   toggleLoginItem: (enabled) => ipcRenderer.invoke('install:toggle', enabled),
 
+  // Auto-updater
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  quitAndInstall: () => ipcRenderer.invoke('updater:quitAndInstall'),
+  onUpdateAvailable: createListener('updater:available') as AtrophyAPI['onUpdateAvailable'],
+  onUpdateNotAvailable: createListener('updater:not-available') as AtrophyAPI['onUpdateNotAvailable'],
+  onUpdateProgress: createListener('updater:progress') as AtrophyAPI['onUpdateProgress'],
+  onUpdateDownloaded: createListener('updater:downloaded') as AtrophyAPI['onUpdateDownloaded'],
+  onUpdateError: createListener('updater:error') as AtrophyAPI['onUpdateError'],
+
   // Avatar
   getAvatarVideoPath: (colour, clip) => ipcRenderer.invoke('avatar:getVideoPath', colour, clip),
 
   // Usage & activity
   getUsage: (days) => ipcRenderer.invoke('usage:all', days),
   getActivity: (days, limit) => ipcRenderer.invoke('activity:all', days, limit),
+
+  // Agent deferral
+  completeDeferral: (data) => ipcRenderer.invoke('deferral:complete', data),
+  onDeferralRequest: createListener('deferral:request') as AtrophyAPI['onDeferralRequest'],
+
+  // Agent message queues
+  drainAgentQueue: (agentName: string) => ipcRenderer.invoke('queue:drainAgent', agentName),
+  drainAllAgentQueues: () => ipcRenderer.invoke('queue:drainAll'),
+
+  // Generic listener for any channel
+  on: (channel, cb) => {
+    const handler = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => cb(...args);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
 };
 
 contextBridge.exposeInMainWorld('atrophy', api);

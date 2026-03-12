@@ -177,6 +177,8 @@
   // Finish
   // ---------------------------------------------------------------------------
 
+  let { onComplete }: { onComplete?: () => void } = $props();
+
   async function finishSetup() {
     const api = (window as any).atrophy;
     if (api) {
@@ -189,6 +191,11 @@
       if (telegramChatId.trim()) updates.TELEGRAM_CHAT_ID = telegramChatId.trim();
       await api.updateConfig(updates);
     }
+
+    // Auto-dismiss after a moment
+    setTimeout(() => {
+      onComplete?.();
+    }, 2000);
   }
 
   // ---------------------------------------------------------------------------
