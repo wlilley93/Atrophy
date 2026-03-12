@@ -78,6 +78,14 @@ export interface AtrophyAPI {
   onAvatarDownloadComplete: (cb: () => void) => () => void;
   onAvatarDownloadError: (cb: (message: string) => void) => () => void;
 
+  // Intro audio
+  playIntroAudio: () => Promise<void>;
+  stopPlayback: () => Promise<void>;
+
+  // Shutdown
+  requestShutdown: () => Promise<void>;
+  onShutdownRequested: (cb: () => void) => () => void;
+
   // Usage & activity
   getUsage: (days?: number) => Promise<unknown>;
   getActivity: (days?: number, limit?: number) => Promise<unknown>;
@@ -176,6 +184,14 @@ const api: AtrophyAPI = {
   onAvatarDownloadComplete: createListener('avatar:download-complete') as AtrophyAPI['onAvatarDownloadComplete'],
   onAvatarDownloadError: createListener('avatar:download-error') as AtrophyAPI['onAvatarDownloadError'],
 
+  // Intro audio
+  playIntroAudio: () => ipcRenderer.invoke('audio:playIntro'),
+  stopPlayback: () => ipcRenderer.invoke('audio:stopPlayback'),
+
+  // Shutdown
+  requestShutdown: () => ipcRenderer.invoke('app:shutdown'),
+  onShutdownRequested: createListener('app:shutdownRequested') as AtrophyAPI['onShutdownRequested'],
+
   // Usage & activity
   getUsage: (days) => ipcRenderer.invoke('usage:all', days),
   getActivity: (days, limit) => ipcRenderer.invoke('activity:all', days, limit),
@@ -201,6 +217,7 @@ const api: AtrophyAPI = {
       'canvas:updated', 'artefact:updated',
       'avatar:download-start', 'avatar:download-progress',
       'avatar:download-complete', 'avatar:download-error',
+      'app:shutdownRequested',
     ]);
     if (!ALLOWED_CHANNELS.has(channel)) {
       console.warn(`IPC channel not allowed: ${channel}`);

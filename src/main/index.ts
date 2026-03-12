@@ -65,7 +65,7 @@ function createWindow(): BrowserWindow {
     backgroundColor: '#00000000',
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'index.mjs'),
+      preload: path.join(__dirname, '..', 'preload', 'index.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -97,8 +97,23 @@ function createWindow(): BrowserWindow {
     }
   });
 
+  // Intercept close to show shutdown animation
+  let allowClose = false;
+  win.on('close', (e) => {
+    if (!allowClose) {
+      e.preventDefault();
+      win.webContents.send('app:shutdownRequested');
+    }
+  });
+
   win.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Allow actual close after shutdown animation (called from IPC)
+  ipcMain.handle('app:shutdown', () => {
+    allowClose = true;
+    win.close();
   });
 
   return win;
@@ -670,6 +685,21 @@ Output EXACTLY this format - a single fenced JSON block:
       return ambient;
     }
     return null;
+  });
+
+  // ── Intro audio ──
+
+  ipcMain.handle('audio:playIntro', () => {
+    const c = getConfig();
+    const introPath = path.join(BUNDLE_ROOT, 'agents', c.AGENT_NAME, 'audio', 'intro.mp3');
+    if (fs.existsSync(introPath)) {
+      const { playAudio } = require('./tts') as typeof import('./tts');
+      playAudio(introPath).catch(() => {});
+    }
+  });
+
+  ipcMain.handle('audio:stopPlayback', () => {
+    clearAudioQueue();
   });
 
   // ── Login item ──

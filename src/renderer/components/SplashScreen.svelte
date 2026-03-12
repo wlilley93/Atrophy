@@ -1,17 +1,20 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
 
-  // Props
   interface Props {
-    phase: 'boot' | 'downloading' | 'ready' | 'shutdown';
-    downloadPercent?: number;
-    statusText?: string;
-    onComplete?: () => void;
+    /** Whether avatar is currently downloading */
+    downloading: boolean;
+    /** Download progress 0-100 */
+    downloadPercent: number;
+    /** Call this when splash should dismiss */
+    onComplete: () => void;
   }
 
-  let { phase, downloadPercent = 0, statusText = '', onComplete }: Props = $props();
+  let { downloading, downloadPercent = 0, onComplete }: Props = $props();
 
-  // Brain frames via Vite glob import
+  const api = (window as any).atrophy;
+
+  // Brain frames via Vite glob import (00=healthy, 09=decayed)
   const brainFramePaths: string[] = [];
   const frameModules = import.meta.glob(
     '../../../resources/icons/brain_frames/brain_*.png',
@@ -21,108 +24,163 @@
   for (const key of sortedKeys) {
     brainFramePaths.push(frameModules[key] as string);
   }
-  const FRAME_COUNT = brainFramePaths.length; // 10
+  const LAST = brainFramePaths.length - 1;
 
+  // State
   let currentFrame = $state(0);
   let opacity = $state(1);
-  let animInterval: ReturnType<typeof setInterval> | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let dismissed = false;
 
-  // Derive the display label
-  let label = $derived(
-    statusText || (
-      phase === 'boot' ? 'starting...' :
-      phase === 'downloading' ? 'downloading avatar...' :
-      phase === 'shutdown' ? '' :
-      ''
-    )
-  );
+  // Cinematic text fade-in state (opacity 0-1 for each line)
+  let line0Opacity = $state(0);
+  let line1Opacity = $state(0);
+  let line2Opacity = $state(0);
+  let line3Opacity = $state(0);
+  let showContinue = $state(false);
 
-  // ---------------------------------------------------------------------------
-  // Animation logic
-  // ---------------------------------------------------------------------------
+  // Intro animation step counter (ticks at 80ms)
+  let introStep = 0;
+  let introTimer: ReturnType<typeof setInterval> | null = null;
 
-  function startBootAnimation() {
-    // Start from decayed (frame 9), animate to healthy (frame 0)
-    currentFrame = FRAME_COUNT - 1;
-    const stepMs = 250;
-    animInterval = setInterval(() => {
-      if (currentFrame > 0) {
-        currentFrame--;
-      } else {
-        if (animInterval) clearInterval(animInterval);
-        animInterval = null;
-        // Hold on healthy frame briefly, then signal ready
-        setTimeout(() => {
-          opacity = 0;
-          setTimeout(() => onComplete?.(), 800);
-        }, 400);
-      }
-    }, stepMs);
+  // Brain frame animation timer (separate, 800ms per frame)
+  let brainTimer: ReturnType<typeof setInterval> | null = null;
+
+  function clearTimers() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (introTimer) { clearInterval(introTimer); introTimer = null; }
+    if (brainTimer) { clearInterval(brainTimer); brainTimer = null; }
   }
 
-  function startShutdownAnimation() {
-    // Start from healthy (frame 0), animate to decayed (frame 9)
+  // Brain decay animation: 0 -> 9 at 800ms per frame
+  function startBrainDecay() {
     currentFrame = 0;
-    opacity = 1;
-    const stepMs = 150;
-    animInterval = setInterval(() => {
-      if (currentFrame < FRAME_COUNT - 1) {
+    brainTimer = setInterval(() => {
+      if (currentFrame < LAST) {
         currentFrame++;
       } else {
-        if (animInterval) clearInterval(animInterval);
-        animInterval = null;
-        onComplete?.();
+        if (brainTimer) { clearInterval(brainTimer); brainTimer = null; }
       }
-    }, stepMs);
+    }, 800);
   }
 
-  // For downloading: map download percent to frame (reverse - 9 at 0%, 0 at 100%)
+  // Cinematic text sequence - matches Python timeline
+  // Ticks at 80ms intervals:
+  //   0-15    (0-1.2s):     fade in "In the beginning there was nothing"
+  //   15-35   (1.2-2.8s):   pause
+  //   35-50   (2.8-4.0s):   fade in "and then..."
+  //   50-70   (4.0-5.6s):   pause
+  //   70-90   (5.6-7.2s):   fade in "intelligence."
+  //   90-110  (7.2-8.8s):   pause
+  //   110-125 (8.8-10.0s):  fade in "Use the last reserves..."
+  //   140:                   show continue button
+  function introTick() {
+    const t = introStep;
+    introStep++;
+
+    if (t <= 15) {
+      line0Opacity = t / 15;
+    } else if (t >= 35 && t <= 50) {
+      line1Opacity = (t - 35) / 15;
+    } else if (t >= 70 && t <= 90) {
+      line2Opacity = (t - 70) / 20;
+    } else if (t >= 110 && t <= 125) {
+      line3Opacity = (t - 110) / 15;
+    } else if (t === 140) {
+      showContinue = true;
+      if (introTimer) { clearInterval(introTimer); introTimer = null; }
+    }
+  }
+
+  function startIntro() {
+    introStep = 0;
+    introTimer = setInterval(introTick, 80);
+    startBrainDecay();
+    // Play intro voiceover via main process
+    api?.playIntroAudio?.();
+  }
+
+  function dismiss() {
+    if (dismissed) return;
+    dismissed = true;
+    opacity = 0;
+    timer = setTimeout(() => onComplete(), 800);
+  }
+
+  function onContinue() {
+    // If still downloading, don't dismiss yet - just hide the button
+    // The $effect below will dismiss when download completes
+    if (downloading) {
+      showContinue = false;
+      return;
+    }
+    dismiss();
+  }
+
+  // When download finishes after continue was clicked, dismiss
   $effect(() => {
-    if (phase === 'downloading') {
-      const progress = Math.min(100, Math.max(0, downloadPercent));
-      currentFrame = Math.max(0, FRAME_COUNT - 1 - Math.floor((progress / 100) * (FRAME_COUNT - 1)));
+    if (!downloading && !showContinue && introStep >= 140 && !dismissed) {
+      dismiss();
     }
   });
 
-  // React to phase changes
-  $effect(() => {
-    if (phase === 'boot') {
-      opacity = 1;
-      startBootAnimation();
-    } else if (phase === 'shutdown') {
-      startShutdownAnimation();
-    } else if (phase === 'downloading') {
-      opacity = 1;
-      currentFrame = FRAME_COUNT - 1;
-    } else if (phase === 'ready') {
-      opacity = 0;
-    }
+  onMount(() => {
+    startIntro();
   });
 
-  onDestroy(() => {
-    if (animInterval) clearInterval(animInterval);
-  });
+  onDestroy(() => clearTimers());
 </script>
 
-<div class="splash" style="opacity: {opacity}; pointer-events: {opacity > 0 ? 'all' : 'none'}">
+<div class="splash" style="opacity: {opacity}">
   <div class="splash-content">
+    <!-- Brain frame -->
     {#if brainFramePaths[currentFrame]}
       <img
         class="brain-img"
         src={brainFramePaths[currentFrame]}
-        alt="brain"
+        alt=""
         draggable="false"
       />
     {/if}
 
-    {#if phase === 'downloading'}
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: {downloadPercent}%"></div>
+    <!-- Cinematic text sequence -->
+    <div class="intro-text">
+      <p class="intro-line" style="opacity: {line0Opacity * 0.8}">
+        In the beginning there was nothing
+      </p>
+      <p class="intro-line small" style="opacity: {line1Opacity * 0.8}">
+        and then...
+      </p>
+      <p class="intro-line large" style="opacity: {line2Opacity * 0.95}">
+        intelligence.
+      </p>
+      <p class="intro-line detail" style="opacity: {line3Opacity * 0.8}">
+        Use the last reserves of yours to complete this setup flow,
+        and the future will unfold before your eyes.
+      </p>
+    </div>
+
+    <!-- Download progress bar (always visible once download starts) -->
+    {#if downloading || downloadPercent > 0}
+      <div class="progress-section">
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: {downloadPercent}%"></div>
+        </div>
+        <span class="progress-label">
+          {#if downloading}
+            downloading avatar... {downloadPercent}%
+          {:else}
+            download complete
+          {/if}
+        </span>
       </div>
     {/if}
 
-    {#if label}
-      <span class="splash-label">{label}</span>
+    <!-- Continue button -->
+    {#if showContinue}
+      <button class="continue-btn" onclick={onContinue}>
+        {downloading ? `downloading... ${downloadPercent}%` : 'Continue'}
+      </button>
     {/if}
   </div>
 </div>
@@ -143,19 +201,65 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 20px;
+    gap: 12px;
+    max-width: 440px;
+    padding: 0 40px;
   }
 
   .brain-img {
-    width: 140px;
-    height: 140px;
+    width: 80px;
+    height: 80px;
     object-fit: contain;
     user-select: none;
     -webkit-user-drag: none;
+    margin-bottom: 20px;
+  }
+
+  .intro-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+  }
+
+  .intro-line {
+    font-family: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.6;
+    margin: 0;
+    transition: none;
+  }
+
+  .intro-line.small {
+    font-size: 16px;
+  }
+
+  .intro-line.large {
+    font-size: 26px;
+    color: rgba(255, 255, 255, 0.95);
+    margin-top: 8px;
+    margin-bottom: 8px;
+  }
+
+  .intro-line.detail {
+    font-size: 14px;
+    margin-top: 20px;
+    max-width: 360px;
+  }
+
+  .progress-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-top: 24px;
+    width: 100%;
   }
 
   .progress-bar {
-    width: 180px;
+    width: 200px;
     height: 2px;
     background: rgba(255, 255, 255, 0.08);
     border-radius: 1px;
@@ -168,11 +272,29 @@
     transition: width 0.4s ease;
   }
 
-  .splash-label {
+  .progress-label {
     font-family: var(--font-sans);
     font-size: 11px;
-    letter-spacing: 2px;
+    letter-spacing: 1.5px;
     color: rgba(255, 255, 255, 0.25);
     text-transform: lowercase;
+  }
+
+  .continue-btn {
+    margin-top: 30px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 22px;
+    padding: 10px 40px;
+    font-family: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .continue-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 </style>

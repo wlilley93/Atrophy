@@ -11,6 +11,7 @@
   import Settings from './Settings.svelte';
   import SetupWizard from './SetupWizard.svelte';
   import SplashScreen from './SplashScreen.svelte';
+  import ShutdownScreen from './ShutdownScreen.svelte';
   import { session } from '../stores/session.svelte';
   import { audio } from '../stores/audio.svelte';
   import { agents } from '../stores/agents.svelte';
@@ -30,10 +31,12 @@
   let needsSetup = $state(false);
 
   // Splash screen
-  let splashPhase = $state<'boot' | 'downloading' | 'ready' | 'shutdown'>('boot');
-  let splashDownloadPercent = $state(0);
-  let splashStatus = $state('');
   let splashVisible = $state(true);
+  let avatarDownloading = $state(false);
+  let avatarDownloadPercent = $state(0);
+
+  // Shutdown screen
+  let shutdownVisible = $state(false);
 
   // Mode toggles
   let avatarVisible = $state(true);
@@ -70,30 +73,21 @@
     if (bootRan) return;
     bootRan = true;
 
-    if (!api) {
-      splashPhase = 'ready';
-      splashVisible = false;
-      return;
-    }
+    if (!api) return; // Splash will dismiss itself after decay animation
 
     // Listen for avatar download events
     api.onAvatarDownloadStart?.(() => {
-      splashPhase = 'downloading';
-      splashDownloadPercent = 0;
-      splashStatus = 'downloading avatar...';
+      avatarDownloading = true;
+      avatarDownloadPercent = 0;
     });
     api.onAvatarDownloadProgress?.((data: { percent: number }) => {
-      splashDownloadPercent = data.percent;
+      avatarDownloadPercent = data.percent;
     });
     api.onAvatarDownloadComplete?.(() => {
-      // Download done - transition back to boot completion
-      splashPhase = 'boot';
-      splashStatus = '';
+      avatarDownloading = false;
     });
     api.onAvatarDownloadError?.(() => {
-      // Download failed - continue without avatar
-      splashPhase = 'boot';
-      splashStatus = '';
+      avatarDownloading = false;
     });
 
     // Load config and agent list
@@ -116,37 +110,33 @@
       needsSetup = false;
     }
 
-    if (needsSetup) {
-      // Let splash animation finish then show wizard
-      splashPhase = 'ready';
-      return;
-    }
-
-    // Fetch opening line
-    try {
-      const opening = await api.getOpeningLine();
-      if (opening) {
-        addMessage('agent', opening);
-        completeLast();
+    if (!needsSetup) {
+      // Fetch opening line
+      try {
+        const opening = await api.getOpeningLine();
+        if (opening) {
+          addMessage('agent', opening);
+          completeLast();
+        }
+      } catch {
+        // use default
       }
-    } catch {
-      // use default
     }
-
-    // If avatar is downloading, wait for it to finish before dismissing splash
-    if (splashPhase === 'downloading') {
-      // The download complete/error handlers above will set phase back to 'boot',
-      // and the splash will auto-dismiss via onComplete
-      return;
-    }
-
-    // Boot animation plays, then splash dismisses itself via onComplete
-    splashPhase = 'boot';
+    // Splash dismisses itself via onComplete when decay finishes + download done
   }
 
   function onSplashComplete() {
     splashVisible = false;
-    splashPhase = 'ready';
+  }
+
+  function onShutdownComplete() {
+    // Tell main process to actually quit
+    api?.requestShutdown?.();
+  }
+
+  function startShutdown() {
+    if (shutdownVisible) return;
+    shutdownVisible = true;
   }
 
   // ---------------------------------------------------------------------------
@@ -243,6 +233,11 @@
         showCanvas = true;
       });
     }
+
+    // Listen for shutdown signal from main process
+    api?.onShutdownRequested?.(() => {
+      startShutdown();
+    });
   });
 
   onDestroy(() => {
@@ -480,14 +475,18 @@
     style="opacity: {audio.vignetteOpacity}"
   ></div>
 
-  <!-- Splash screen - brain decay animation with progress -->
+  <!-- Splash screen - cinematic intro + download progress -->
   {#if splashVisible}
     <SplashScreen
-      phase={splashPhase}
-      downloadPercent={splashDownloadPercent}
-      statusText={splashStatus}
+      downloading={avatarDownloading}
+      downloadPercent={avatarDownloadPercent}
       onComplete={onSplashComplete}
     />
+  {/if}
+
+  <!-- Shutdown screen - reverse brain decay -->
+  {#if shutdownVisible}
+    <ShutdownScreen onComplete={onShutdownComplete} />
   {/if}
 
   <!-- Agent switch clip-path reveal animation -->
