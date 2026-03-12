@@ -51,6 +51,7 @@
       placeholder: '',
       url: 'https://github.com/settings/tokens',
       urlLabel: 'GitHub settings',
+      skipWarning: "No coding this time. Okay. You can connect GitHub later in Settings.",
     },
   ];
 
