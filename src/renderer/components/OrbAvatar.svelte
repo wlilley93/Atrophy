@@ -6,13 +6,13 @@
 
   const api = (window as any).atrophy;
 
-  let videoEl: HTMLVideoElement;
+  let videoEl = $state<HTMLVideoElement>(null!);
   let videoSrc = $state('');
   let videoReady = $state(false);
   let videoError = $state(false);
 
   // Fallback canvas
-  let canvas: HTMLCanvasElement;
+  let canvas = $state<HTMLCanvasElement>(null!);
   let ctx: CanvasRenderingContext2D | null = null;
   let time = 0;
   let animFrame = 0;
@@ -57,8 +57,8 @@
     const frust = emotionalState.frustration;
 
     let h = 220 + (warm - 0.5) * -40 + (play - 0.3) * 20;
-    let s = 40 + conn * 30;
-    let l = 15 + warm * 10;
+    let s = 55 + conn * 25;
+    let l = 25 + warm * 15;
 
     if (frust > 0.3) {
       h = h + (frust - 0.3) * 100;
@@ -95,14 +95,15 @@
     const breathAmp = isThinking ? 0.06 : 0.03;
     const breath = 1 + Math.sin(time * breathRate) * breathAmp;
 
-    const baseR = Math.min(w, h) * 0.18;
+    const baseR = Math.min(w, h) * 0.22;
     const r = baseR * breath;
 
+    // Outer glow layers
     for (let i = 3; i >= 0; i--) {
       const glowR = r * (1 + i * 0.5);
-      const alpha = 0.04 - i * 0.008;
+      const alpha = 0.12 - i * 0.02;
       const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
-      grad.addColorStop(0, `hsla(${color.h}, ${color.s}%, ${color.l + 10}%, ${alpha})`);
+      grad.addColorStop(0, `hsla(${color.h}, ${color.s + 10}%, ${color.l + 15}%, ${alpha})`);
       grad.addColorStop(1, 'transparent');
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -110,34 +111,37 @@
       ctx.fill();
     }
 
+    // Core orb
     const coreGrad = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, 0, cx, cy, r);
-    coreGrad.addColorStop(0, `hsla(${color.h}, ${color.s + 15}%, ${color.l + 20}%, 0.6)`);
-    coreGrad.addColorStop(0.5, `hsla(${color.h}, ${color.s}%, ${color.l}%, 0.3)`);
-    coreGrad.addColorStop(1, `hsla(${color.h}, ${color.s}%, ${color.l - 5}%, 0.05)`);
+    coreGrad.addColorStop(0, `hsla(${color.h}, ${color.s + 20}%, ${color.l + 30}%, 0.85)`);
+    coreGrad.addColorStop(0.4, `hsla(${color.h}, ${color.s + 10}%, ${color.l + 10}%, 0.5)`);
+    coreGrad.addColorStop(1, `hsla(${color.h}, ${color.s}%, ${color.l}%, 0.08)`);
     ctx.fillStyle = coreGrad;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
 
-    const hlR = r * 0.4;
+    // Specular highlight
+    const hlR = r * 0.45;
     const hlGrad = ctx.createRadialGradient(cx - r * 0.15, cy - r * 0.2, 0, cx - r * 0.15, cy - r * 0.2, hlR);
-    hlGrad.addColorStop(0, `hsla(${color.h}, ${color.s}%, 90%, 0.12)`);
+    hlGrad.addColorStop(0, `hsla(${color.h}, ${color.s}%, 95%, 0.25)`);
     hlGrad.addColorStop(1, 'transparent');
     ctx.fillStyle = hlGrad;
     ctx.beginPath();
     ctx.arc(cx - r * 0.15, cy - r * 0.2, hlR, 0, Math.PI * 2);
     ctx.fill();
 
-    const particleCount = isThinking ? 12 : 5;
+    // Orbiting particles
+    const particleCount = isThinking ? 12 : 6;
     for (let i = 0; i < particleCount; i++) {
       const angle = (time * 0.3 + i * (Math.PI * 2 / particleCount));
       const dist = r * (1.2 + Math.sin(time * 0.5 + i) * 0.4);
       const px = cx + Math.cos(angle) * dist;
       const py = cy + Math.sin(angle) * dist;
-      const pAlpha = 0.08 + Math.sin(time + i * 2) * 0.04;
-      const pR = 1 + Math.sin(time * 2 + i) * 0.5;
+      const pAlpha = 0.18 + Math.sin(time + i * 2) * 0.08;
+      const pR = 1.5 + Math.sin(time * 2 + i) * 0.8;
 
-      ctx.fillStyle = `hsla(${color.h}, ${color.s}%, ${color.l + 30}%, ${pAlpha})`;
+      ctx.fillStyle = `hsla(${color.h}, ${color.s + 10}%, ${color.l + 35}%, ${pAlpha})`;
       ctx.beginPath();
       ctx.arc(px, py, pR, 0, Math.PI * 2);
       ctx.fill();

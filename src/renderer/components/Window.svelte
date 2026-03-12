@@ -144,18 +144,7 @@
   // ---------------------------------------------------------------------------
 
   function playAgentSwitchAnimation() {
-    agentSwitchActive = true;
-    agentSwitchClip = 'circle(0% at 50% 50%)';
-
-    // Force a reflow so the start state registers
-    requestAnimationFrame(() => {
-      agentSwitchClip = 'circle(150% at 50% 50%)';
-    });
-
-    // Clean up after transition
-    setTimeout(() => {
-      agentSwitchActive = false;
-    }, 700);
+    // No-op - clip-path eye blink removed per user preference
   }
 
   // ---------------------------------------------------------------------------
