@@ -43,22 +43,24 @@ mac:
         - "**/*.sql"
 
 dmg:
-  title: ""
+  title: "Atrophy"
   artifactName: "${productName}-${version}-${arch}.${ext}"
-  background: resources/dmg-background.png
+  background: build/dmg-background.png
   icon: resources/icons/TheAtrophiedMind.icns
   iconSize: 80
   contents:
-    - x: 180
-      y: 220
+    - x: 130
+      y: 150
       type: file
-    - x: 480
-      y: 220
+    - x: 390
+      y: 150
       type: link
       path: /Applications
   window:
-    width: 660
-    height: 400
+    x: 400
+    y: 200
+    width: 520
+    height: 320
 
 publish:
   provider: github
