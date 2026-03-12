@@ -654,9 +654,9 @@
 
   <!-- Silence prompt - subtle nudge after 5 minutes idle -->
   {#if silencePromptVisible}
-    <div class="silence-prompt" onclick={dismissSilencePrompt}>
+    <button class="silence-prompt" onclick={dismissSilencePrompt}>
       <span class="silence-text">Still here?</span>
-    </div>
+    </button>
   {/if}
 
   <!-- Overlays (conditionally rendered) -->
