@@ -6,13 +6,36 @@ Both servers communicate over JSON-RPC 2.0 via stdio. Memory tools are namespace
 
 Server info: `companion-memory` (version from `VERSION` file), protocol version `2024-11-05`.
 
-The memory server exposes **41 tools** across the following categories: Memory & Recall (4), Threads (2), Observations & Bookmarks (4), Analytical Tools (3), Obsidian Integration (5), Telegram (2), Inner State (3), Display (2), Avatar (1), Scheduling & Audit (2), Agent Management (2), Reminders & Timers (2), Tasks (1), Artefacts (1), System Documentation (3), and Custom Tool Building (4).
+The memory server exposes **9 tools** (7 grouped + 2 standalone) that route to 43 actions via an `action` parameter. This consolidation reduces token overhead from tool definitions by ~80% while preserving all functionality. The grouped tools are: `memory` (5 actions), `threads` (5 actions), `reflect` (8 actions), `notes` (6 actions), `interact` (6 actions), `display` (5 actions), `tools` (4 actions). The standalone tools are `review_audit` and `self_status`.
 
-The Google server exposes **10 tools** across two categories: Gmail (4) and Google Calendar (6). The Google server is only loaded if `GOOGLE_CONFIGURED` is true (i.e. `~/.atrophy/.google/token.json` exists).
+**Tool routing:** Each grouped tool accepts an `action` parameter that selects the specific operation. For example, `memory` with `action: "remember"` calls the same handler as the old standalone `remember` tool. Invalid actions return an error listing valid options.
+
+The Google server exposes **1 tool** (`github`) that routes to 17 actions, plus **4 standalone Google tools** (`gws`, `youtube`, `google_photos`, `search_console`). The Google server is only loaded if `GOOGLE_CONFIGURED` is true (i.e. `~/.atrophy/.google/token.json` exists).
 
 ---
 
-## Memory & Recall
+## Grouped Tool Architecture
+
+As of v1.1.3, MCP tools use action-based routing to reduce token overhead. Instead of 43 separate tool definitions (each with full JSON schema sent to the LLM), the memory server exposes 9 tools. Seven are grouped tools that accept an `action` parameter to select the operation:
+
+```json
+{
+  "name": "memory",
+  "arguments": {
+    "action": "remember",
+    "query": "their feelings about writing",
+    "limit": 5
+  }
+}
+```
+
+The two standalone tools (`review_audit`, `self_status`) work exactly as before. All handler functions are unchanged - only the dispatch layer changed. The sections below document each action grouped under its parent tool.
+
+---
+
+## memory tool
+
+Actions: `remember`, `recall_session`, `recall_other_agent`, `search_similar`, `daily_digest`
 
 ### remember
 
@@ -119,7 +142,9 @@ Returns "No digest available" if no data exists.
 
 ---
 
-## Threads
+## threads tool
+
+Actions: `get_threads`, `track_thread`, `manage_schedule`, `set_reminder`, `create_task`
 
 ### get_threads
 
@@ -169,7 +194,9 @@ Create or update a conversation thread. If a thread with the given name already 
 
 ---
 
-## Observations & Bookmarks
+## reflect tool
+
+Actions: `observe`, `bookmark`, `review_observations`, `retire_observation`, `check_contradictions`, `detect_avoidance`, `compare_growth`, `prompt_journal`
 
 ### observe
 
@@ -253,8 +280,6 @@ Delete an observation that no longer holds true. Use after `review_observations`
 
 ---
 
-## Analytical Tools
-
 ### check_contradictions
 
 Search memory for what the user has previously said about a topic, to notice if their position has shifted. Searches both turns (the user's side only) and observations.
@@ -292,7 +317,9 @@ Compare old and recent mentions of a topic to notice how the user has changed ov
 
 ---
 
-## Obsidian Integration
+## notes tool
+
+Actions: `read_note`, `write_note`, `search_notes`, `read_docs`, `search_docs`, `list_docs`
 
 ### read_note
 
@@ -376,7 +403,9 @@ Leave a journal prompt for the user in Obsidian at `{AGENT_NOTES}/notes/journal-
 
 ---
 
-## Telegram
+## interact tool
+
+Actions: `ask_user`, `send_telegram`, `defer_to_agent`, `create_agent`, `update_emotional_state`, `update_trust`
 
 ### ask_user
 
@@ -423,8 +452,6 @@ Send a proactive Telegram message to the user. Rate-limited to 5 messages per da
 
 ---
 
-## Inner State
-
 ### update_emotional_state
 
 Update the companion's emotional state with explicit deltas. Use for nuanced shifts beyond what automatic detection catches.
@@ -454,7 +481,9 @@ Adjust trust in a specific domain. Trust changes slowly -- the delta is clamped 
 
 ---
 
-## Display
+## display tool
+
+Actions: `render_canvas`, `render_memory_graph`, `set_timer`, `add_avatar_loop`, `create_artefact`
 
 ### render_canvas
 
@@ -486,8 +515,6 @@ Generate and render a visual graph of active threads and recent observations in 
 
 ---
 
-## Avatar
-
 ### add_avatar_loop
 
 Request generation of a new ambient video loop segment for the agent's avatar. The loop is generated asynchronously in the background using Kling 3.0 via Fal. Each segment is a paired clip sequence (neutral → expression → neutral) with crossfade transitions.
@@ -517,9 +544,9 @@ Request generation of a new ambient video loop segment for the agent's avatar. T
 
 ---
 
-## Scheduling & Audit
+## Standalone tools
 
-### manage_schedule
+### manage_schedule (threads tool)
 
 View or modify the companion's scheduled tasks (cron jobs). Delegates to `scripts/cron.py`.
 
@@ -547,7 +574,7 @@ View or modify the companion's scheduled tasks (cron jobs). Delegates to `script
 
 ---
 
-### review_audit
+### review_audit (standalone)
 
 Review the audit log of all tool calls the companion has made. Reads from the `tool_calls` table.
 
@@ -560,9 +587,7 @@ Review the audit log of all tool calls the companion has made. Reads from the `t
 
 ---
 
-## Agent Management
-
-### create_agent
+### create_agent (interact tool)
 
 Create a new agent for Atrophy. Accepts a complete configuration as JSON and scaffolds everything: repo directories, agent.json manifest, prompts (soul, system, heartbeat), Obsidian workspace (skills, notes, dashboard), memory database, scheduled job scripts, and cron jobs.json. Optionally downloads a source face image and video clips for the avatar.
 
@@ -576,7 +601,7 @@ Create a new agent for Atrophy. Accepts a complete configuration as JSON and sca
 
 ---
 
-### defer_to_agent
+### defer_to_agent (interact tool)
 
 Hand off the current conversation to another agent who is better suited to respond. The current agent's session is suspended, the target agent receives the user's question along with context notes, and the GUI transitions to the new agent.
 
@@ -590,7 +615,7 @@ Hand off the current conversation to another agent who is better suited to respo
 
 ---
 
-### self_status
+### self_status (standalone)
 
 Get a full snapshot of the companion's current state — identity, available tools, scheduled jobs, emotional state, active threads, session history, and configuration. Takes no parameters.
 
@@ -602,9 +627,7 @@ Get a full snapshot of the companion's current state — identity, available too
 
 ---
 
-## Reminders & Timers
-
-### set_reminder
+### set_reminder (threads tool)
 
 Set a reminder for the user at a specific time. When the time arrives, a macOS notification fires with sound, the message is queued for the next conversation, and a Telegram message is sent (if configured).
 
@@ -630,7 +653,7 @@ Set a reminder for the user at a specific time. When the time arrives, a macOS n
 
 ---
 
-### set_timer
+### set_timer (display tool)
 
 Start a visual countdown timer in the app. The timer runs locally with zero inference latency — just a clock and a sound. The timer appears as a floating overlay in the top-right corner.
 
@@ -654,9 +677,7 @@ Start a visual countdown timer in the app. The timer runs locally with zero infe
 
 ---
 
-## Tasks
-
-### create_task
+### create_task (threads tool)
 
 Create a recurring task that runs on a schedule. Writes a prompt definition to Obsidian and schedules a cron job pointing to the generic task runner. No code writing needed.
 
@@ -687,9 +708,7 @@ Create a recurring task that runs on a schedule. Writes a prompt definition to O
 
 ---
 
-## Artefacts
-
-### create_artefact
+### create_artefact (display tool)
 
 Create a visual artefact — an interactive visualisation, chart, map, image, or video that appears on-screen overlaying the ambient video.
 
@@ -726,9 +745,7 @@ Create a visual artefact — an interactive visualisation, chart, map, image, or
 
 ---
 
-## System Documentation
-
-Tools for reading the system's own documentation. Use these to understand architecture, configuration, capabilities, and how everything works.
+## notes tool (continued)
 
 ### list_docs
 
@@ -769,7 +786,9 @@ Search all documentation files for a keyword or phrase.
 
 ---
 
-## Custom Tool Building
+## tools tool
+
+Actions: `create_tool`, `list_tools`, `edit_tool`, `delete_tool`
 
 Agents can create their own tools that persist across sessions. Custom tools are Python scripts that run as subprocesses, stored at `~/.atrophy/agents/<name>/tools/<tool_name>/`.
 

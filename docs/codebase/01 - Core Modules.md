@@ -725,23 +725,29 @@ This is the main streaming inference function and the heart of the module. It sp
 
 **Adaptive effort** dynamically adjusts the Claude CLI's effort level based on message complexity. If `ADAPTIVE_EFFORT` is true and base effort is `'medium'`, calls `classifyEffort()` from `thinking.ts` to get `'low'`, `'medium'`, or `'high'`. This reduces latency and cost for simple messages (greetings, acknowledgments) while preserving deep reasoning for complex questions.
 
-**Agency context** is a dynamic block injected into every turn via `buildAgencyContext(userMessage)`. It assembles real-time behavioral guidance by calling into multiple modules:
-- `detectEmotionalSignals()` - updates inner life state based on user message content
+**Agency context** is a dynamic block injected via `buildAgencyContext(userMessage)`. It uses a two-tier injection strategy to reduce token usage on follow-up turns:
+
+**Every turn** (dynamic content that changes per message):
 - `timeOfDayContext()` - register guidance (e.g., "late night, keep it gentle")
 - `formatForContext()` - current emotional state as markdown
-- `getStatus()` - was user away? How long?
-- `sessionPatternNote()` - weekly session timing patterns
 - `detectMoodShift()`, `detectValidationSeeking()`, `detectCompulsiveModelling()` - behavioral flags
-- `timeGapNote()` - days since last session
-- Active threads awareness
-- Morning digest nudge (5am-10am)
-- Obsidian vault instructions (if available)
-- Cross-agent awareness (other agents' recent summaries)
 - `energyNote()` - message length calibration
 - `detectDrift()` - agreeableness check
+- Session mood tracking
+
+**First turn only** (static content injected once per session, gated by `_sessionStartInjected`):
+- `getStatus()` - was user away? How long?
+- `sessionPatternNote()` - weekly session timing patterns
+- `timeGapNote()` - days since last session
+- Memory tool nudges and Obsidian vault instructions
+- Active threads awareness
+- Cross-agent awareness (other agents' recent summaries)
+- Morning digest nudge (5am-10am)
 - `shouldPromptJournal()` - 10% chance
 - Security/prompt-injection defense block
 - Thread tracking reminder
+
+The `resetAgencyState()` function resets the turn counter and injection flag. It is called automatically in `streamInference()` when starting a new CLI session (no existing `cliSessionId`).
 
 **Sentence splitting** enables early TTS synthesis by detecting sentence boundaries in the streaming text. Text deltas accumulate in `sentenceBuffer`. Split on `SENTENCE_RE` (`.!?` followed by space). If buffer exceeds `CLAUSE_SPLIT_THRESHOLD` (120 chars), fallback split on `CLAUSE_RE` (`,;-` followed by space). Remaining text flushed on stream close. This means TTS can begin speaking the first sentence while the model is still generating the rest.
 
@@ -850,7 +856,7 @@ The `shouldSoftLimit()` method is polled periodically by the main process. When 
 
 ## context.ts
 
-The context module assembles the system prompt that defines who the agent is and what it knows. It combines the base system prompt (loaded from the four-tier prompt resolution chain), skill files, agent roster, and memory context into a single string passed to the Claude CLI. This module is the bridge between the prompt system, memory layer, and inference engine. It is a port of `core/context.py` at 158 lines.
+The context module assembles the system prompt that defines who the agent is and what it knows. It combines the base system prompt (loaded from the four-tier prompt resolution chain), a lazy-load instruction for skill files, agent roster, and memory context into a single string passed to the Claude CLI. This module is the bridge between the prompt system, memory layer, and inference engine. It is a port of `core/context.py` at 184 lines.
 
 With the resume-based flow, the system prompt is only sent once when the CLI session is created. The companion uses MCP memory tools for active recall instead of passive injection. The `assembleContext()` function is preserved for the SDK fallback path and for summary generation where MCP tools are not available.
 
@@ -863,10 +869,11 @@ This function builds the complete system prompt through a layered assembly proce
 1. Loads `system.md` via `loadPrompt()` (four-tier resolution)
 2. Falls back to `<AGENT_DIR>/prompts/system_prompt.md`
 3. Falls back to `'You are a companion. Be genuine, direct, and honest.'`
-4. Appends all skill files via `loadSkillFiles()` - these add capabilities like timer management, canvas control, and artefact display
-5. Appends agent roster (excluding current agent) with deferral instructions that explain when and how to hand off to another agent
+4. Appends a lazy-load instruction for skill files - instead of appending all skill file contents (which added ~5K tokens), a single sentence tells the agent to use `read_note` to access them when needed
+5. Appends agent roster (excluding current agent) with deferral instructions
+6. Appends inline artifact emission instructions
 
-The triple fallback chain for the base prompt ensures the agent always has some identity, even if all prompt files are missing. The skill file append mechanism means new capabilities can be added simply by dropping a markdown file into the agent's skills directory.
+The triple fallback chain ensures the agent always has some identity. Skill files are lazy-loaded rather than embedded to reduce first-turn token usage - the agent reads them via MCP tools only when the situation calls for it.
 
 ```typescript
 export function assembleContext(

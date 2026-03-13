@@ -323,26 +323,46 @@ The same plist is used for both `entitlements` (main process) and `entitlementsI
 
 ### Signing for distribution
 
-To sign the app for distribution (required for notarization and clean Gatekeeper passage), you need an Apple Developer certificate. Set these environment variables before running `pnpm dist` so that electron-builder can locate your signing identity:
+The app is signed with a Developer ID Application certificate from Apple. The signing identity is resolved by `CSC_NAME` (just the name and team ID, without the "Developer ID Application:" prefix - electron-builder adds that automatically).
+
+Signing environment variables are stored in `~/.atrophy/signing/.env.signing` and sourced before builds:
 
 ```bash
-export CSC_LINK="path/to/certificate.p12"   # or base64-encoded
-export CSC_KEY_PASSWORD="certificate-password"
+source ~/.atrophy/signing/.env.signing
+pnpm dist
 ```
 
-electron-builder will use these to sign the `.app` and DMG. Without them, the app is built unsigned, which is fine for local development but will trigger macOS warnings when other users try to open it.
-
-### Notarization
-
-For notarization with Apple's notary service (which removes the "downloaded from the internet" quarantine warning), configure these additional environment variables:
+The `.env.signing` file contains:
 
 ```bash
 export APPLE_ID="your@email.com"
 export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 export APPLE_TEAM_ID="XXXXXXXXXX"
+export CSC_NAME="Your Name (TEAMID)"
 ```
 
-electron-builder handles notarization automatically when these are set and `hardenedRuntime: true` is configured. The notarization process uploads the signed app to Apple's servers, which scan it for malware and return a ticket that is stapled to the app. This is a one-time process per build.
+`CSC_NAME` must **not** include the "Developer ID Application:" prefix - electron-builder detects the certificate type automatically and rejects the prefixed form.
+
+If building without a certificate (local development only), skip signing entirely:
+
+```bash
+CSC_IDENTITY_AUTO_DISCOVERY=false pnpm dist:mac
+```
+
+### Notarization
+
+Notarization is enabled via `notarize: true` in `electron-builder.yml`. When the `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` environment variables are set, electron-builder automatically submits the signed app to Apple's notary service after signing. The notarization process uploads the app, Apple scans it for malware, and the ticket is stapled to the app. This typically takes 1-3 minutes.
+
+### Certificate setup
+
+If setting up signing from scratch:
+
+1. Enroll in the Apple Developer Program
+2. Create a Developer ID Application certificate in the Apple Developer portal
+3. Download the `.cer` file and your private key, combine into a `.p12` bundle
+4. Import the `.p12` into your macOS keychain (use `openssl pkcs12 -export -legacy` if using openssl 3.x - the `-legacy` flag is required for macOS keychain compatibility)
+5. Download and import Apple's Developer ID G2 intermediate certificate
+6. Verify with `security find-identity -v -p codesigning` - should show your identity
 
 ---
 

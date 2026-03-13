@@ -130,7 +130,7 @@ The system uses multiple MCP servers, each namespaced to avoid tool name collisi
 
 | Server | Namespace | Purpose |
 |--------|-----------|---------|
-| `memory` | `mcp__memory__*` | Memory, agency, communication - 41 tools |
+| `memory` | `mcp__memory__*` | Memory, agency, communication - 9 grouped tools (43 actions) |
 | `puppeteer` | `mcp__puppeteer__*` | Web browsing via headless Chrome (proxied through `mcp/puppeteer_proxy.py` for injection scanning) |
 | `fal` | `mcp__fal__*` | Image and video generation via Fal.ai |
 
@@ -275,6 +275,44 @@ YouTube, Photos, and Search Console share a single OAuth2 token stored at `~/.at
 5. Returns the access token string for use in API request headers
 
 If the token file is missing, raises an error instructing the user to run `python scripts/google_auth.py`, which performs the interactive OAuth browser flow.
+
+---
+
+## Tool Architecture (v1.1.3+)
+
+As of v1.1.3, the memory server uses action-based routing to reduce token overhead. Instead of 43 individual tool definitions (each with full JSON schema), tools are consolidated into 9 definitions: 7 grouped tools that accept an `action` parameter, plus 2 standalone tools.
+
+### Routing
+
+The `_ACTION_ROUTES` dict maps each group name to its actions and handler functions. The `_route_grouped()` function dispatches calls by reading the `action` parameter:
+
+```python
+_ACTION_ROUTES = {
+    "memory": {"remember": handle_remember, "recall_session": handle_recall_session, ...},
+    "threads": {"get_threads": handle_get_threads, "track_thread": handle_track_thread, ...},
+    "reflect": {"observe": handle_observe, "bookmark": handle_bookmark, ...},
+    "notes": {"read_note": handle_read_note, "write_note": handle_write_note, ...},
+    "interact": {"ask_user": handle_ask_user, "send_telegram": handle_send_telegram, ...},
+    "display": {"render_canvas": handle_render_canvas, "set_timer": handle_set_timer, ...},
+    "tools": {"create_tool": handle_create_tool, "list_tools": handle_list_tools, ...},
+}
+```
+
+All original handler functions are preserved unchanged. The routing layer is purely additive.
+
+### Tool groups
+
+| Tool | Actions | Purpose |
+|------|---------|---------|
+| `memory` | remember, recall_session, recall_other_agent, search_similar, daily_digest | Memory recall and search |
+| `threads` | get_threads, track_thread, manage_schedule, set_reminder, create_task | Thread tracking, scheduling, tasks |
+| `reflect` | observe, bookmark, review_observations, retire_observation, check_contradictions, detect_avoidance, compare_growth, prompt_journal | Observations, analysis, journaling |
+| `notes` | read_note, write_note, search_notes, read_docs, search_docs, list_docs | Obsidian and docs access |
+| `interact` | ask_user, send_telegram, defer_to_agent, create_agent, update_emotional_state, update_trust | Communication and agent management |
+| `display` | render_canvas, render_memory_graph, set_timer, add_avatar_loop, create_artefact | Visual output and UI |
+| `tools` | create_tool, list_tools, edit_tool, delete_tool | Custom tool management |
+| `review_audit` | (standalone) | Audit log review |
+| `self_status` | (standalone) | Full state snapshot |
 
 ---
 
