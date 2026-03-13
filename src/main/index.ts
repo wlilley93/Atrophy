@@ -12,7 +12,7 @@ import { initDb, closeAll as closeAllDbs, writeObservation } from './memory';
 import { streamInference, stopInference, stopAllInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
 import { Session } from './session';
-import { setActive } from './status';
+import { setActive, setAway, isAway, isMacIdle, getStatus, detectAwayIntent, IDLE_TIMEOUT_SECS } from './status';
 import { detectMoodShift } from './agency';
 import { synthesise, enqueueAudio, setPlaybackCallbacks, clearAudioQueue, playAudio, stopCurrentPlayback, setMuted, isMuted } from './tts';
 import { registerAudioHandlers } from './audio';
@@ -23,7 +23,7 @@ import { drainQueue, drainAgentQueue, drainAllAgentQueues } from './queue';
 import { getAllAgentsUsage, getAllActivity } from './usage';
 import { startServer, stopServer } from './server';
 import { startDaemon, stopDaemon, isDaemonRunning } from './telegram-daemon';
-import { registerBotCommands } from './telegram';
+import { registerBotCommands, discoverChatId, sendMessage as sendTelegramMessage } from './telegram';
 import { listJobs, toggleCron } from './cron';
 import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
@@ -57,6 +57,7 @@ let pendingAskDestination: string | null = null; // destination for secure_input
 let artefactTimer: ReturnType<typeof setInterval> | null = null;
 let currentAgentName: string | null = null;
 let keepAwakeBlockerId: number | null = null;
+let statusTimer: ReturnType<typeof setInterval> | null = null;
 
 // Journal nudge - silence-based, once per session
 let journalNudgeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,7 +80,7 @@ function createWindow(): BrowserWindow {
     minHeight: 480,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
-    vibrancy: 'ultra-dark',
+    vibrancy: 'under-window',
     visualEffectState: 'active',
     backgroundColor: '#00000000',
     show: false,
@@ -191,10 +192,22 @@ function rebuildTrayMenu(): void {
   if (!tray) return;
 
   const awake = isKeepAwakeActive();
+  const config = getConfig();
+  const status = getStatus();
+  const agents = discoverAgents();
 
-  const contextMenu = Menu.buildFromTemplate([
+  const statusLabel = status.status === 'active' ? 'Online' : 'Away';
+  const statusIcon = status.status === 'active' ? '🟢' : '🟡';
+
+  const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: 'Show',
+      label: `${statusIcon} ${config.AGENT_DISPLAY_NAME} - ${statusLabel}`,
+      enabled: false,
+    },
+    { type: 'separator' },
+    {
+      label: 'Show Window',
+      accelerator: 'CommandOrControl+Shift+Space',
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -202,20 +215,99 @@ function rebuildTrayMenu(): void {
         }
       },
     },
+    {
+      label: 'Settings',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+          mainWindow.webContents.send('app:openSettings');
+        }
+      },
+    },
+    { type: 'separator' },
+    // Status controls
+    {
+      label: 'Set Online',
+      type: 'radio',
+      checked: status.status === 'active',
+      click: () => {
+        setActive();
+        updateTrayState('active');
+        mainWindow?.webContents.send('status:changed', 'active');
+        rebuildTrayMenu();
+      },
+    },
+    {
+      label: 'Set Away',
+      type: 'radio',
+      checked: status.status === 'away',
+      click: () => {
+        setAway('manual');
+        updateTrayState('away');
+        mainWindow?.webContents.send('status:changed', 'away');
+        rebuildTrayMenu();
+      },
+    },
+    { type: 'separator' },
+    // Agent switching
+    {
+      label: 'Switch Agent',
+      submenu: agents.map((agent) => ({
+        label: agent.display_name || agent.name,
+        type: 'radio' as const,
+        checked: agent.name === config.AGENT_NAME,
+        click: async () => {
+          if (agent.name === config.AGENT_NAME) return;
+          // End current session
+          if (currentSession && systemPrompt) {
+            await currentSession.end(systemPrompt);
+          }
+          currentSession = null;
+          systemPrompt = null;
+          stopAllInference();
+          clearAudioQueue();
+
+          config.reloadForAgent(agent.name);
+          initDb();
+          resetMcpConfig();
+          currentAgentName = agent.name;
+          setLastActiveAgent(agent.name);
+
+          // Notify renderer
+          if (mainWindow) {
+            mainWindow.webContents.send('agent:switched', {
+              agentName: config.AGENT_NAME,
+              agentDisplayName: config.AGENT_DISPLAY_NAME,
+            });
+          }
+          rebuildTrayMenu();
+        },
+      })),
+    },
     { type: 'separator' },
     {
-      label: awake ? 'Keep Awake (on)' : 'Keep Awake (off)',
+      label: 'Keep Awake',
       type: 'checkbox',
       checked: awake,
-      click: () => toggleKeepAwake(),
+      click: () => {
+        toggleKeepAwake();
+        rebuildTrayMenu();
+      },
     },
     { type: 'separator' },
     {
       label: 'Quit',
+      accelerator: 'CommandOrControl+Q',
       click: () => app.quit(),
     },
-  ]);
+  ];
+
+  const contextMenu = Menu.buildFromTemplate(template);
   tray.setContextMenu(contextMenu);
+
+  // Update tray tooltip
+  tray.setToolTip(`Atrophy - ${config.AGENT_DISPLAY_NAME} (${statusLabel})`);
 }
 
 function createTray(): void {
@@ -272,10 +364,9 @@ function createTray(): void {
  */
 export function updateTrayState(state: TrayState): void {
   if (!tray) return;
-  const current = tray.getImage();
-  // If using template image (hand-crafted brain), skip procedural updates
-  if (current.isTemplateImage()) return;
   tray.setImage(getTrayIcon(state));
+  // Always rebuild menu to update status dot text
+  rebuildTrayMenu();
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +512,7 @@ function registerIpcHandlers(): void {
     for (const [key, value] of Object.entries(updates)) {
       if (!safeKeys.has(key)) continue;
       if (key in c) {
-        (c as Record<string, unknown>)[key] = value;
+        (c as unknown as Record<string, unknown>)[key] = value;
       }
     }
   });
@@ -437,7 +528,7 @@ function registerIpcHandlers(): void {
     for (const [key, value] of Object.entries(updates)) {
       if (!safeKeys.has(key)) continue;
       if (key in c) {
-        (c as Record<string, unknown>)[key] = value;
+        (c as unknown as Record<string, unknown>)[key] = value;
       }
       if (agentKeys.has(key)) {
         agentUpdates[key] = value;
@@ -527,7 +618,7 @@ function registerIpcHandlers(): void {
       log.info('[opening] Using cached opening');
       // Pre-generate next opening in background
       if (systemPrompt) {
-        cacheNextOpening(systemPrompt, currentSession?.cliSessionId);
+        cacheNextOpening(systemPrompt, currentSession?.cliSessionId ?? undefined);
       }
       return cached.text;
     }
@@ -537,10 +628,10 @@ function registerIpcHandlers(): void {
       try {
         const result = await generateOpening(
           systemPrompt,
-          currentSession?.cliSessionId,
+          currentSession?.cliSessionId ?? undefined,
         );
         // Cache next opening in background for next launch
-        cacheNextOpening(systemPrompt, currentSession?.cliSessionId);
+        cacheNextOpening(systemPrompt, currentSession?.cliSessionId ?? undefined);
         return result.text;
       } catch (err) {
         log.error('[opening] Generation failed, falling back to static:', err);
@@ -819,6 +910,15 @@ Output EXACTLY this format - a single fenced JSON block:
         currentSession.updateMood('heavy');
       }
 
+      // Detect away intent (e.g. "goodnight", "heading out")
+      const awayIntent = detectAwayIntent(text);
+      if (awayIntent) {
+        setAway(awayIntent);
+        updateTrayState('away');
+        mainWindow.webContents.send('status:changed', 'away');
+        log.info(`Away intent detected: "${awayIntent}"`);
+      }
+
       // Stream inference
       const emitter = streamInference(
         text,
@@ -839,12 +939,12 @@ Output EXACTLY this format - a single fenced JSON block:
           case 'SentenceReady':
             // Synthesise TTS in background, send sentence to renderer immediately
             mainWindow.webContents.send('inference:sentenceReady', evt.sentence, '');
-            if (config.TTS_BACKEND !== 'off') {
+            if (config.TTS_BACKEND !== 'off' && !isMuted()) {
               synthesise(evt.sentence).then((audioPath) => {
                 if (audioPath) {
                   enqueueAudio(audioPath, evt.index);
                 }
-              }).catch(() => { /* TTS non-critical */ });
+              }).catch((e) => { log.warn(`[tts] synthesise error: ${e}`); });
             }
             break;
 
@@ -895,6 +995,23 @@ Output EXACTLY this format - a single fenced JSON block:
 
   ipcMain.handle('inference:stop', () => {
     stopInference();
+  });
+
+  // ── Status ──
+
+  ipcMain.handle('status:get', () => {
+    return getStatus();
+  });
+
+  ipcMain.handle('status:set', (_event, status: 'active' | 'away', reason?: string) => {
+    if (status === 'active') {
+      setActive();
+      updateTrayState('active');
+    } else {
+      setAway(reason || 'manual');
+      updateTrayState('away');
+    }
+    mainWindow?.webContents.send('status:changed', status);
   });
 
   // ── Agent switching (extended) ──
@@ -1029,6 +1146,18 @@ Output EXACTLY this format - a single fenced JSON block:
     return isDaemonRunning();
   });
 
+  ipcMain.handle('telegram:discoverChatId', async (_event, botToken: string) => {
+    const result = await discoverChatId(botToken);
+    if (result) {
+      // Auto-save the discovered chat ID
+      saveEnvVar('TELEGRAM_CHAT_ID', result.chatId);
+      process.env.TELEGRAM_CHAT_ID = result.chatId;
+      const c = getConfig();
+      (c as unknown as Record<string, unknown>).TELEGRAM_CHAT_ID = result.chatId;
+    }
+    return result;
+  });
+
   // ── Server ──
 
   ipcMain.handle('server:start', (_event, port?: number) => {
@@ -1063,7 +1192,7 @@ Output EXACTLY this format - a single fenced JSON block:
     const downloaded = getAmbientVideoPath();
     if (fs.existsSync(downloaded)) return downloaded;
     // Dev fallback - resources/xan_ambient.mp4 (not bundled in production)
-    const devFallback = path.join(c.BUNDLE_ROOT, 'resources', 'xan_ambient.mp4');
+    const devFallback = path.join(BUNDLE_ROOT, 'resources', 'xan_ambient.mp4');
     if (fs.existsSync(devFallback)) return devFallback;
     return null;
   });
@@ -1141,11 +1270,17 @@ Output EXACTLY this format - a single fenced JSON block:
 
   ipcMain.handle('audio:playIntro', async () => {
     const c = getConfig();
-    const introPath = path.join(BUNDLE_ROOT, 'agents', c.AGENT_NAME, 'audio', 'intro.mp3');
-    if (fs.existsSync(introPath)) {
-      try {
-        await playAudio(introPath, undefined, false);
-      } catch { /* non-critical */ }
+    const introCandidates = [
+      path.join(USER_DATA, 'agents', c.AGENT_NAME, 'audio', 'intro.mp3'),
+      path.join(BUNDLE_ROOT, 'agents', c.AGENT_NAME, 'audio', 'intro.mp3'),
+    ];
+    for (const introPath of introCandidates) {
+      if (fs.existsSync(introPath)) {
+        try {
+          await playAudio(introPath, undefined, false);
+        } catch { /* non-critical */ }
+        break;
+      }
     }
   });
 
@@ -1154,11 +1289,18 @@ Output EXACTLY this format - a single fenced JSON block:
     // Validate filename to prevent path traversal
     if (!/^[a-zA-Z0-9_-]+\.(mp3|wav|m4a)$/.test(filename)) return;
     const c = getConfig();
-    const audioPath = path.join(BUNDLE_ROOT, 'agents', c.AGENT_NAME, 'audio', filename);
-    if (fs.existsSync(audioPath)) {
-      try {
-        await playAudio(audioPath, undefined, false);
-      } catch { /* non-critical */ }
+    // Check user data first, then bundle
+    const candidates = [
+      path.join(USER_DATA, 'agents', c.AGENT_NAME, 'audio', filename),
+      path.join(BUNDLE_ROOT, 'agents', c.AGENT_NAME, 'audio', filename),
+    ];
+    for (const audioPath of candidates) {
+      if (fs.existsSync(audioPath)) {
+        try {
+          await playAudio(audioPath, undefined, false);
+        } catch { /* non-critical */ }
+        break;
+      }
     }
   });
 
@@ -1514,6 +1656,26 @@ app.whenReady().then(() => {
     });
   }, 2_000);
 
+  // Status timer - check macOS idle state every 60s, set away if idle > 10min
+  statusTimer = setInterval(() => {
+    const wasAway = isAway();
+    if (isMacIdle(IDLE_TIMEOUT_SECS)) {
+      if (!wasAway) {
+        setAway('idle');
+        log.info('User idle - setting away');
+        updateTrayState('away');
+        mainWindow?.webContents.send('status:changed', 'away');
+      }
+    } else {
+      if (wasAway) {
+        setActive();
+        log.info('User active - setting online');
+        updateTrayState('active');
+        mainWindow?.webContents.send('status:changed', 'active');
+      }
+    }
+  }, 60_000);
+
   // Ask-user watcher - check for MCP ask_user requests every 1s
   cleanupAskFiles();
   askUserTimer = setInterval(() => {
@@ -1615,19 +1777,65 @@ app.whenReady().then(() => {
   // Always create tray icon (brain in macOS menu bar)
   createTray();
 
-  if (isMenuBarMode) {
-    // Global shortcut: Cmd+Shift+Space to toggle
-    globalShortcut.register('CommandOrControl+Shift+Space', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-          mainWindow.focus();
-        }
+  // Global shortcuts
+  // Cmd+Shift+Space - toggle window visibility
+  globalShortcut.register('CommandOrControl+Shift+Space', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
       }
-    });
-  }
+    }
+  });
+
+  // Cmd+Shift+] / [ - cycle agents
+  globalShortcut.register('CommandOrControl+Shift+]', () => {
+    const next = cycleAgent(1, config.AGENT_NAME);
+    if (next && next !== config.AGENT_NAME) {
+      stopAllInference();
+      clearAudioQueue();
+      if (currentSession && systemPrompt) {
+        currentSession.end(systemPrompt).catch(() => {});
+      }
+      currentSession = null;
+      systemPrompt = null;
+      config.reloadForAgent(next);
+      initDb();
+      resetMcpConfig();
+      currentAgentName = next;
+      setLastActiveAgent(next);
+      mainWindow?.webContents.send('agent:switched', {
+        agentName: config.AGENT_NAME,
+        agentDisplayName: config.AGENT_DISPLAY_NAME,
+      });
+      rebuildTrayMenu();
+    }
+  });
+
+  globalShortcut.register('CommandOrControl+Shift+[', () => {
+    const prev = cycleAgent(-1, config.AGENT_NAME);
+    if (prev && prev !== config.AGENT_NAME) {
+      stopAllInference();
+      clearAudioQueue();
+      if (currentSession && systemPrompt) {
+        currentSession.end(systemPrompt).catch(() => {});
+      }
+      currentSession = null;
+      systemPrompt = null;
+      config.reloadForAgent(prev);
+      initDb();
+      resetMcpConfig();
+      currentAgentName = prev;
+      setLastActiveAgent(prev);
+      mainWindow?.webContents.send('agent:switched', {
+        agentName: config.AGENT_NAME,
+        agentDisplayName: config.AGENT_DISPLAY_NAME,
+      });
+      rebuildTrayMenu();
+    }
+  });
 });
 
 app.on('window-all-closed', () => {
@@ -1651,6 +1859,7 @@ app.on('will-quit', () => {
   if (deferralTimer) clearInterval(deferralTimer);
   if (askUserTimer) clearInterval(askUserTimer);
   if (artefactTimer) clearInterval(artefactTimer);
+  if (statusTimer) clearInterval(statusTimer);
   stopAllInference();
   stopWakeWordListener(() => mainWindow);
   disableKeepAwake();

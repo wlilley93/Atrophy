@@ -375,6 +375,110 @@ export async function clearBotCommands(): Promise<boolean> {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Chat ID auto-discovery
+// ---------------------------------------------------------------------------
+
+/**
+ * Discover the user's chat ID by polling for incoming messages.
+ *
+ * After the user pastes a bot token, they need to send any message to the bot
+ * (e.g. /start) so we can capture their chat ID. This polls getUpdates for up
+ * to `timeoutSecs` waiting for the first message, then returns the sender's
+ * chat ID.
+ *
+ * Also sends a greeting once the chat ID is captured so the user knows it worked.
+ */
+export async function discoverChatId(
+  botToken: string,
+  timeoutSecs = 120,
+): Promise<{ chatId: string; username?: string } | null> {
+  const url = (method: string) => `https://api.telegram.org/bot${botToken}/${method}`;
+
+  // Flush old updates first
+  let offset = 0;
+  try {
+    const flushResp = await fetch(url('getUpdates'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ offset: 0, timeout: 0 }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const flushData = await flushResp.json() as { ok: boolean; result?: { update_id: number }[] };
+    if (flushData.ok && flushData.result?.length) {
+      offset = Math.max(...flushData.result.map((u) => u.update_id)) + 1;
+    }
+  } catch { /* proceed with offset 0 */ }
+
+  // Poll for new messages
+  const deadline = Date.now() + timeoutSecs * 1000;
+
+  while (Date.now() < deadline) {
+    const remaining = Math.max(1, Math.floor((deadline - Date.now()) / 1000));
+    const pollTime = Math.min(remaining, 30);
+
+    try {
+      const resp = await fetch(url('getUpdates'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          offset,
+          timeout: pollTime,
+          allowed_updates: ['message'],
+        }),
+        signal: AbortSignal.timeout((pollTime + 5) * 1000),
+      });
+
+      const data = await resp.json() as {
+        ok: boolean;
+        result?: {
+          update_id: number;
+          message?: {
+            from?: { id: number; username?: string; first_name?: string };
+            chat?: { id: number };
+            text?: string;
+          };
+        }[];
+      };
+
+      if (!data.ok || !data.result) continue;
+
+      for (const update of data.result) {
+        offset = Math.max(offset, update.update_id + 1);
+
+        const msg = update.message;
+        if (msg?.from?.id) {
+          const chatId = String(msg.chat?.id || msg.from.id);
+          const username = msg.from.username || msg.from.first_name || '';
+
+          // Send a greeting to confirm the connection
+          try {
+            await fetch(url('sendMessage'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: `Connected. Chat ID captured: \`${chatId}\``,
+                parse_mode: 'Markdown',
+              }),
+              signal: AbortSignal.timeout(10_000),
+            });
+          } catch { /* greeting is non-critical */ }
+
+          log.info(`Chat ID discovered: ${chatId} (user: ${username})`);
+          return { chatId, username };
+        }
+      }
+    } catch {
+      // Network error - wait and retry
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+
+  log.warn('Chat ID discovery timed out');
+  return null;
+}
+
 // Export for daemon access
 export { post as _post, _lastUpdateId };
 export function setLastUpdateId(id: number): void {

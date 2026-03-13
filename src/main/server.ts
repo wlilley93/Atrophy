@@ -292,6 +292,153 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
   });
 }
 
+async function handleChatStreamJson(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  if (!checkAuth(req)) { sendJson(res, { error: 'unauthorized' }, 401); return; }
+
+  const body = await parseBody(req);
+  let data: { message?: string };
+  try {
+    data = JSON.parse(body);
+  } catch {
+    sendJson(res, { error: 'invalid json' }, 400);
+    return;
+  }
+
+  const message = (data.message || '').trim();
+  if (!message) {
+    sendJson(res, { error: 'empty message' }, 400);
+    return;
+  }
+
+  if (inferLock) {
+    sendJson(res, { error: 'inference in progress' }, 429);
+    return;
+  }
+
+  inferLock = true;
+
+  // NDJSON - one JSON object per line, compatible with Claude CLI stream-json format
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  if (!session) {
+    session = new Session();
+    session.start();
+  }
+  if (!systemPrompt) {
+    systemPrompt = loadSystemPrompt();
+  }
+
+  session.addTurn('will', message);
+
+  let fullText = '';
+  let sessionId = session.cliSessionId || '';
+
+  const emitter = streamInference(message, systemPrompt, session.cliSessionId);
+  let streamEnded = false;
+
+  function finalize() {
+    if (streamEnded) return;
+    streamEnded = true;
+    inferLock = false;
+  }
+
+  res.on('close', () => {
+    if (!streamEnded) {
+      finalize();
+      emitter.removeAllListeners();
+      stopInference();
+    }
+  });
+
+  emitter.on('event', (evt: InferenceEvent) => {
+    if (streamEnded) return;
+
+    switch (evt.type) {
+      case 'TextDelta':
+        res.write(JSON.stringify({
+          type: 'assistant',
+          subtype: 'text_delta',
+          text: evt.text,
+        }) + '\n');
+        break;
+      case 'SentenceReady':
+        res.write(JSON.stringify({
+          type: 'assistant',
+          subtype: 'sentence',
+          text: evt.sentence,
+          index: evt.index,
+        }) + '\n');
+        break;
+      case 'ToolUse':
+        res.write(JSON.stringify({
+          type: 'tool_use',
+          name: evt.name,
+        }) + '\n');
+        break;
+      case 'Compacting':
+        res.write(JSON.stringify({
+          type: 'system',
+          subtype: 'compacting',
+        }) + '\n');
+        break;
+      case 'StreamDone':
+        fullText = evt.fullText;
+        if (evt.sessionId) sessionId = evt.sessionId;
+
+        if (sessionId && sessionId !== session!.cliSessionId) {
+          session!.setCliSessionId(sessionId);
+        }
+        if (fullText) {
+          session!.addTurn('agent', fullText);
+        }
+
+        finalize();
+        res.write(JSON.stringify({
+          type: 'result',
+          subtype: 'success',
+          text: fullText,
+          session_id: sessionId,
+        }) + '\n');
+        res.end();
+        break;
+      case 'StreamError':
+        finalize();
+        res.write(JSON.stringify({
+          type: 'result',
+          subtype: 'error',
+          error: evt.message,
+        }) + '\n');
+        res.end();
+        break;
+    }
+  });
+}
+
+async function handleStatus(_req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  // No auth required for basic status check (like /health but with more info)
+  const config = getConfig();
+  const { getStatus } = await import('./status');
+  const userStatus = getStatus();
+  sendJson(res, {
+    status: 'ok',
+    agent: config.AGENT_NAME,
+    display_name: config.AGENT_DISPLAY_NAME,
+    user_status: userStatus.status,
+    since: userStatus.since,
+  });
+}
+
+async function handleAgents(_req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  if (!checkAuth(_req)) { sendJson(res, { error: 'unauthorized' }, 401); return; }
+  const { discoverAgents } = await import('./agent-manager');
+  const agents = discoverAgents();
+  sendJson(res, { agents });
+}
+
 async function handleMemorySearch(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   if (!checkAuth(req)) { sendJson(res, { error: 'unauthorized' }, 401); return; }
 
@@ -353,6 +500,12 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
         await handleChat(req, res);
       } else if (pathname === '/chat/stream' && method === 'POST') {
         await handleChatStream(req, res);
+      } else if (pathname === '/chat/stream-json' && method === 'POST') {
+        await handleChatStreamJson(req, res);
+      } else if (pathname === '/status' && method === 'GET') {
+        await handleStatus(req, res);
+      } else if (pathname === '/agents' && method === 'GET') {
+        await handleAgents(req, res);
       } else if (pathname === '/memory/search' && method === 'GET') {
         await handleMemorySearch(req, res);
       } else if (pathname === '/memory/threads' && method === 'GET') {
@@ -377,7 +530,7 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
     log.info(`http://${host}:${port}`);
     log.info(`Token: ${serverToken.slice(0, 8)}...${serverToken.slice(-4)}`);
     log.info(`Token file: ${TOKEN_PATH}`);
-    log.info(`Endpoints: /health, /chat, /chat/stream, /memory/search, /memory/threads, /session`);
+    log.info(`Endpoints: /health, /chat, /chat/stream, /chat/stream-json, /status, /agents, /memory/search, /memory/threads, /session`);
     log.info(`Auth: Bearer token required on all endpoints except /health`);
   });
 }

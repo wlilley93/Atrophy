@@ -240,10 +240,7 @@
 
     // ── Update check phase (blocks before splash) ──
     await runUpdateCheck();
-
-    // Transition from update check to splash
     updateCheckVisible = false;
-    splashVisible = true;
 
     // Load config and agent list
     try {
@@ -272,10 +269,12 @@
     }
 
     if (needsSetup) {
-      // Show welcome overlay (name input)
+      // First launch - show cinematic splash then welcome overlay
+      splashVisible = true;
       setupWizardPhase = 'welcome';
     } else {
-      // Normal boot - fetch opening line
+      // Normal boot - skip splash, go straight to chat
+      splashVisible = false;
       try {
         const opening = await api.getOpeningLine();
         if (opening) {

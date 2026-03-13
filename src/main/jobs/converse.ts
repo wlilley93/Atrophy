@@ -50,7 +50,6 @@ interface TranscriptTurn {
 function discoverOtherAgents(): AgentPartner[] {
   const config = getConfig();
   const agents: AgentPartner[] = [];
-  const agentsDir = path.join(BUNDLE_ROOT, 'agents');
   const statesFile = path.join(USER_DATA, 'agent_states.json');
 
   let states: Record<string, { enabled?: boolean }> = {};
@@ -60,37 +59,47 @@ function discoverOtherAgents(): AgentPartner[] {
     }
   } catch { /* use empty states */ }
 
-  if (!fs.existsSync(agentsDir) || !fs.statSync(agentsDir).isDirectory()) {
-    return agents;
-  }
+  // Scan both bundle and user data agent directories
+  const seen = new Set<string>();
+  const agentsDirs = [
+    path.join(BUNDLE_ROOT, 'agents'),
+    path.join(USER_DATA, 'agents'),
+  ];
 
-  for (const entry of fs.readdirSync(agentsDir).sort()) {
-    const dirPath = path.join(agentsDir, entry);
-    if (!fs.statSync(dirPath).isDirectory() || entry === config.AGENT_NAME) {
+  for (const agentsDir of agentsDirs) {
+    if (!fs.existsSync(agentsDir) || !fs.statSync(agentsDir).isDirectory()) {
       continue;
     }
 
-    const manifestPath = path.join(dirPath, 'data', 'agent.json');
-    if (!fs.existsSync(manifestPath)) continue;
+    for (const entry of fs.readdirSync(agentsDir).sort()) {
+      if (seen.has(entry) || entry === config.AGENT_NAME) continue;
+      const dirPath = path.join(agentsDir, entry);
+      if (!fs.statSync(dirPath).isDirectory()) continue;
 
-    let manifest: Record<string, unknown>;
-    try {
-      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-    } catch {
-      continue;
+      const manifestPath = path.join(dirPath, 'data', 'agent.json');
+      if (!fs.existsSync(manifestPath)) continue;
+
+      let manifest: Record<string, unknown>;
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      } catch {
+        continue;
+      }
+
+      seen.add(entry);
+
+      // Skip disabled agents
+      const agentState = states[entry];
+      if (agentState && agentState.enabled === false) {
+        continue;
+      }
+
+      agents.push({
+        name: entry,
+        displayName: (manifest.display_name as string) || entry.charAt(0).toUpperCase() + entry.slice(1),
+        description: (manifest.description as string) || '',
+      });
     }
-
-    // Skip disabled agents
-    const agentState = states[entry];
-    if (agentState && agentState.enabled === false) {
-      continue;
-    }
-
-    agents.push({
-      name: entry,
-      displayName: (manifest.display_name as string) || entry.charAt(0).toUpperCase() + entry.slice(1),
-      description: (manifest.description as string) || '',
-    });
   }
 
   return agents;
@@ -113,23 +122,35 @@ function loadAgentSoul(agentName: string): string {
     return fs.readFileSync(obsidianPath, 'utf-8').trim();
   }
 
-  // Fallback: repo
-  const repoPath = path.join(BUNDLE_ROOT, 'agents', agentName, 'prompts', 'soul.md');
-  if (fs.existsSync(repoPath)) {
-    return fs.readFileSync(repoPath, 'utf-8').trim();
+  // Fallback: user data then bundle
+  const soulPaths = [
+    path.join(USER_DATA, 'agents', agentName, 'prompts', 'soul.md'),
+    path.join(BUNDLE_ROOT, 'agents', agentName, 'prompts', 'soul.md'),
+  ];
+  for (const p of soulPaths) {
+    if (fs.existsSync(p)) {
+      return fs.readFileSync(p, 'utf-8').trim();
+    }
   }
 
   return '';
 }
 
 function loadAgentManifest(agentName: string): Record<string, unknown> {
-  const manifestPath = path.join(BUNDLE_ROOT, 'agents', agentName, 'data', 'agent.json');
-  if (fs.existsSync(manifestPath)) {
-    try {
-      return JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-    } catch { /* fall through */ }
+  // Check both bundle and user data, merge like config.ts does
+  const paths = [
+    path.join(BUNDLE_ROOT, 'agents', agentName, 'data', 'agent.json'),
+    path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json'),
+  ];
+  let result: Record<string, unknown> = {};
+  for (const p of paths) {
+    if (fs.existsSync(p)) {
+      try {
+        result = { ...result, ...JSON.parse(fs.readFileSync(p, 'utf-8')) };
+      } catch { /* fall through */ }
+    }
   }
-  return {};
+  return result;
 }
 
 // ---------------------------------------------------------------------------

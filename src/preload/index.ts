@@ -127,6 +127,7 @@ export interface AtrophyAPI {
   startTelegramDaemon: () => Promise<boolean>;
   stopTelegramDaemon: () => Promise<void>;
   isTelegramDaemonRunning: () => Promise<boolean>;
+  discoverTelegramChatId: (botToken: string) => Promise<{ chatId: string; username?: string } | null>;
 
   // Mirror setup
   mirrorUploadPhoto: (photoData: ArrayBuffer, filename: string) => Promise<string>;
@@ -148,6 +149,11 @@ export interface AtrophyAPI {
   setCallMuted: (muted: boolean) => Promise<void>;
   sendCallChunk: (buffer: ArrayBuffer) => void;
   onCallStatusChanged: (cb: (status: string) => void) => () => void;
+
+  // Status (active/away)
+  getStatus: () => Promise<{ status: string; reason: string; since: string }>;
+  setStatus: (status: 'active' | 'away', reason?: string) => Promise<void>;
+  onStatusChanged: (cb: (status: string) => void) => () => void;
 
   // Generic listener
   on: (channel: string, cb: (...args: unknown[]) => void) => () => void;
@@ -284,6 +290,7 @@ const api: AtrophyAPI = {
   startTelegramDaemon: () => ipcRenderer.invoke('telegram:startDaemon'),
   stopTelegramDaemon: () => ipcRenderer.invoke('telegram:stopDaemon'),
   isTelegramDaemonRunning: () => ipcRenderer.invoke('telegram:isRunning'),
+  discoverTelegramChatId: (botToken) => ipcRenderer.invoke('telegram:discoverChatId', botToken),
 
   // Mirror setup
   mirrorUploadPhoto: (photoData, filename) => ipcRenderer.invoke('mirror:uploadPhoto', photoData, filename),
@@ -306,6 +313,11 @@ const api: AtrophyAPI = {
   sendCallChunk: (buffer) => ipcRenderer.send('call:chunk', buffer),
   onCallStatusChanged: createListener('call:statusChanged') as AtrophyAPI['onCallStatusChanged'],
 
+  // Status (active/away)
+  getStatus: () => ipcRenderer.invoke('status:get'),
+  setStatus: (status, reason) => ipcRenderer.invoke('status:set', status, reason),
+  onStatusChanged: createListener('status:changed') as AtrophyAPI['onStatusChanged'],
+
   // Channel listener with allowlist
   on: (channel, cb) => {
     const ALLOWED_CHANNELS = new Set([
@@ -318,7 +330,7 @@ const api: AtrophyAPI = {
       'updater:downloaded', 'updater:error',
       'canvas:updated', 'artefact:updated', 'artefact:loading', 'ask:request',
       'inference:artifact', 'inference:contextUsage',
-      'journal:nudge',
+      'journal:nudge', 'status:changed',
       'avatar:download-start', 'avatar:download-progress',
       'avatar:download-complete', 'avatar:download-error',
       'mirror:avatarProgress',

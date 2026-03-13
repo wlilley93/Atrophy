@@ -47,19 +47,19 @@ describe('formatForContext', () => {
   it('produces a string with all emotion keys', () => {
     const state = makeState();
     const output = formatForContext(state);
-    expect(output).toContain('## Inner State');
-    expect(output).toContain('connection');
-    expect(output).toContain('curiosity');
-    expect(output).toContain('confidence');
-    expect(output).toContain('warmth');
-    expect(output).toContain('frustration');
-    expect(output).toContain('playfulness');
+    expect(output).toContain('## Internal State');
+    expect(output).toContain('Connection');
+    expect(output).toContain('Curiosity');
+    expect(output).toContain('Confidence');
+    expect(output).toContain('Warmth');
+    expect(output).toContain('Frustration');
+    expect(output).toContain('Playfulness');
   });
 
   it('produces a string with all trust keys', () => {
     const state = makeState();
     const output = formatForContext(state);
-    expect(output).toContain('## Trust');
+    expect(output).toContain('Trust:');
     expect(output).toContain('emotional');
     expect(output).toContain('intellectual');
     expect(output).toContain('creative');
@@ -104,7 +104,7 @@ describe('formatForContext', () => {
       emotions: { connection: 0.5, curiosity: 0.6, confidence: 0.5, warmth: 0.5, frustration: 0.1, playfulness: 0.3 },
     });
     const output = formatForContext(state);
-    expect(output).toContain('attentive');
+    expect(output).toContain('steady');
   });
 
   it('uses correct label for low connection (< 0.4)', () => {
@@ -112,7 +112,7 @@ describe('formatForContext', () => {
       emotions: { connection: 0.2, curiosity: 0.6, confidence: 0.5, warmth: 0.5, frustration: 0.1, playfulness: 0.3 },
     });
     const output = formatForContext(state);
-    expect(output).toContain('distant');
+    expect(output).toContain('withdrawn');
   });
 
   it('uses "frustrated" label for high frustration (>= 0.6)', () => {

@@ -5,6 +5,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "npx tsx scripts/dev.ts",
+    "dev:puppeteer": "npx tsx scripts/dev.ts --puppeteer",
     "dev:electron-vite": "electron-vite dev -c electron-vite.config.ts",
     "build": "electron-vite build -c electron-vite.config.ts && vite build --config vite.renderer.config.ts",
     "preview": "electron-vite preview -c electron-vite.config.ts",
@@ -17,7 +18,8 @@
     "pack": "pnpm build && electron-builder --dir && pnpm resign",
     "dist": "pnpm build && electron-builder",
     "dist:mac": "pnpm build && electron-builder --mac",
-    "resign": "xattr -cr dist/mac-arm64/Atrophy.app 2>/dev/null; codesign --deep --force --sign - dist/mac-arm64/Atrophy.app 2>/dev/null; xattr -cr dist/mac/Atrophy.app 2>/dev/null; codesign --deep --force --sign - dist/mac/Atrophy.app 2>/dev/null; true"
+    "resign": "xattr -cr dist/mac-arm64/Atrophy.app 2>/dev/null; codesign --deep --force --sign - dist/mac-arm64/Atrophy.app 2>/dev/null; xattr -cr dist/mac/Atrophy.app 2>/dev/null; codesign --deep --force --sign - dist/mac/Atrophy.app 2>/dev/null; true",
+    "cli": "npx tsx src/cli.ts"
   },
   "author": "Will Lilley",
   "license": "UNLICENSED",
@@ -35,6 +37,7 @@
     "electron": "^34.5.8",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
+    "puppeteer-core": "^24.39.0",
     "svelte": "^5.53.10",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

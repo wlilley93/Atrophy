@@ -120,6 +120,8 @@
   let telegramBotToken = $state('');
   let telegramChatId = $state('');
   let telegramDaemonRunning = $state(false);
+  let telegramDiscovering = $state(false);
+  let telegramDiscoverStatus = $state('');
 
   // About
   let version = $state('0.0.0');
@@ -849,6 +851,32 @@
             <span class="field-label">Chat ID</span>
             <input type="text" bind:value={telegramChatId} class="field-input" />
           </label>
+          {#if telegramBotToken && telegramBotToken !== '***' && !telegramChatId}
+            <div class="field row">
+              <span class="field-label"></span>
+              <div class="daemon-control">
+                <span class="field-info">{telegramDiscoverStatus || 'Send any message to the bot to link'}</span>
+                <button
+                  class="daemon-btn"
+                  disabled={telegramDiscovering}
+                  onclick={async () => {
+                    telegramDiscovering = true;
+                    telegramDiscoverStatus = 'Waiting for message...';
+                    const result = await api?.discoverTelegramChatId(telegramBotToken);
+                    telegramDiscovering = false;
+                    if (result) {
+                      telegramChatId = result.chatId;
+                      telegramDiscoverStatus = `Linked${result.username ? ` (@${result.username})` : ''}`;
+                    } else {
+                      telegramDiscoverStatus = 'Timed out - try again';
+                    }
+                  }}
+                >
+                  {telegramDiscovering ? 'Listening...' : 'Auto-detect'}
+                </button>
+              </div>
+            </div>
+          {/if}
           <div class="field row">
             <span class="field-label">Polling Daemon</span>
             <div class="daemon-control">

@@ -6,7 +6,7 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig, USER_DATA } from './config';
+import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
 import { embed, vectorToBlob as embVectorToBlob } from './embeddings';
 import { createLogger } from './logger';
 
@@ -1060,15 +1060,20 @@ export function getOtherAgentsRecentSummaries(
     const dbPath = path.join(agentsDir, agent, 'data', 'memory.db');
     if (!fs.existsSync(dbPath)) continue;
 
-    // Read display_name from agent manifest
+    // Read display_name from agent manifest (check user data then bundle)
     let displayName = agent.charAt(0).toUpperCase() + agent.slice(1);
-    try {
-      const manifestPath = path.join(agentsDir, agent, 'data', 'agent.json');
-      if (fs.existsSync(manifestPath)) {
-        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-        if (manifest.display_name) displayName = manifest.display_name;
-      }
-    } catch { /* use fallback */ }
+    const manifestPaths = [
+      path.join(agentsDir, agent, 'data', 'agent.json'),
+      path.join(BUNDLE_ROOT, 'agents', agent, 'data', 'agent.json'),
+    ];
+    for (const manifestPath of manifestPaths) {
+      try {
+        if (fs.existsSync(manifestPath)) {
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+          if (manifest.display_name) { displayName = manifest.display_name; break; }
+        }
+      } catch { /* use fallback */ }
+    }
 
     try {
       const db = connect(dbPath);

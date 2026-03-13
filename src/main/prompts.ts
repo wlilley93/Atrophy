@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig } from './config';
+import { getConfig, BUNDLE_ROOT } from './config';
 
 // ---------------------------------------------------------------------------
 // Search directories (resolved lazily)
@@ -30,8 +30,11 @@ function getSearchDirs(): string[] {
   if (fs.existsSync(userPrompts)) dirs.push(userPrompts);
 
   // Tier 4: Bundle prompts (agents/<name>/prompts/)
-  const bundlePrompts = path.join(config.AGENT_DIR, 'prompts');
-  if (fs.existsSync(bundlePrompts)) dirs.push(bundlePrompts);
+  // AGENT_DIR may be the user dir if user has agent.json, so also check BUNDLE_ROOT
+  const agentDirPrompts = path.join(config.AGENT_DIR, 'prompts');
+  if (fs.existsSync(agentDirPrompts)) dirs.push(agentDirPrompts);
+  const bundlePrompts = path.join(BUNDLE_ROOT, 'agents', config.AGENT_NAME, 'prompts');
+  if (bundlePrompts !== agentDirPrompts && fs.existsSync(bundlePrompts)) dirs.push(bundlePrompts);
 
   return dirs;
 }

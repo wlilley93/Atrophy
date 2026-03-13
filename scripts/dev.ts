@@ -29,7 +29,15 @@ async function main() {
 
   // 2. Launch electron-vite dev (main/preload only, no renderer)
   //    Set ELECTRON_RENDERER_URL so the main process loads from the dev server
-  const child = spawn('npx', ['electron-vite', 'dev', '-c', 'electron-vite.config.ts'], {
+  const puppeteer = process.argv.includes('--puppeteer');
+  const debugPort = puppeteer ? '9222' : process.env.REMOTE_DEBUGGING_PORT;
+
+  const evArgs = ['electron-vite', 'dev', '-c', 'electron-vite.config.ts'];
+  if (debugPort) {
+    evArgs.push('--', `--remote-debugging-port=${debugPort}`);
+  }
+
+  const child = spawn('npx', evArgs, {
     cwd: ROOT,
     stdio: 'inherit',
     env: {
@@ -37,6 +45,10 @@ async function main() {
       ELECTRON_RENDERER_URL: rendererUrl,
     },
   });
+
+  if (debugPort) {
+    console.log(`  Remote debugging on port ${debugPort} (puppeteer-core can connect)\n`);
+  }
 
   child.on('close', async (code) => {
     await server.close();

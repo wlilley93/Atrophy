@@ -73,6 +73,7 @@ const ALLOWED_ENV_KEYS = new Set([
   'ELEVENLABS_API_KEY',
   'FAL_KEY',
   'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_CHAT_ID',
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
 ]);
@@ -117,27 +118,67 @@ export function saveEnvVar(key: string, value: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Deep merge helper
+// ---------------------------------------------------------------------------
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Recursively merge source into target. Plain objects are merged key-by-key;
+ * all other values (arrays, primitives, null) are overwritten from source.
+ * Returns a new object - does not mutate either input.
+ */
+function deepMerge(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...target };
+  for (const key of Object.keys(source)) {
+    const srcVal = source[key];
+    const tgtVal = result[key];
+    if (isPlainObject(srcVal) && isPlainObject(tgtVal)) {
+      result[key] = deepMerge(
+        tgtVal as Record<string, unknown>,
+        srcVal as Record<string, unknown>,
+      );
+    } else {
+      result[key] = srcVal;
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Agent manifest
 // ---------------------------------------------------------------------------
 
 let _agentManifest: Record<string, unknown> = {};
 
 function loadAgentManifest(name: string): void {
-  const dirs = [
-    path.join(USER_DATA, 'agents', name, 'data', 'agent.json'),
-    path.join(BUNDLE_ROOT, 'agents', name, 'data', 'agent.json'),
-  ];
-  for (const p of dirs) {
-    try {
-      if (fs.existsSync(p)) {
-        _agentManifest = JSON.parse(fs.readFileSync(p, 'utf-8'));
-        return;
-      }
-    } catch {
-      continue;
+  // Load bundle manifest as base, then merge user overrides on top.
+  // This ensures bundle defaults (voice, display, heartbeat, telegram)
+  // are preserved unless the user explicitly overrides them.
+  const bundlePath = path.join(BUNDLE_ROOT, 'agents', name, 'data', 'agent.json');
+  const userPath = path.join(USER_DATA, 'agents', name, 'data', 'agent.json');
+
+  let bundle: Record<string, unknown> = {};
+  let user: Record<string, unknown> = {};
+
+  try {
+    if (fs.existsSync(bundlePath)) {
+      bundle = JSON.parse(fs.readFileSync(bundlePath, 'utf-8'));
     }
-  }
-  _agentManifest = {};
+  } catch { /* ignore */ }
+
+  try {
+    if (fs.existsSync(userPath)) {
+      user = JSON.parse(fs.readFileSync(userPath, 'utf-8'));
+    }
+  } catch { /* ignore */ }
+
+  _agentManifest = deepMerge(bundle, user);
 }
 
 // ---------------------------------------------------------------------------
@@ -154,19 +195,10 @@ function cfg<T>(key: string, fallback: T): T {
   }
   // Tier 2: user config
   if (key in _userCfg) return _userCfg[key] as T;
-  // Tier 3: agent manifest
-  if (key in _agentManifest) return _agentManifest[key] as T;
-  // Tier 4: default
+  // Tier 3: default
+  // (Agent manifest values are read directly via nested accessors in _resolveAgent,
+  // not through this function - the manifest uses snake_case nested objects.)
   return fallback;
-}
-
-function agentCfg<T>(key: string, fallback: T): T {
-  // Agent-specific: manifest first, then user config, then env
-  if (key in _agentManifest) {
-    const v = _agentManifest[key];
-    if (v !== undefined && v !== null) return v as T;
-  }
-  return cfg(key, fallback);
 }
 
 // ---------------------------------------------------------------------------
@@ -587,29 +619,29 @@ export class Config {
     this.DATA_DIR = agentDataDir(name);
     this.DB_PATH = path.join(this.DATA_DIR, 'memory.db');
 
-    // Identity
-    this.AGENT_DISPLAY_NAME = agentCfg(
-      'AGENT_DISPLAY_NAME',
-      (_agentManifest.display_name as string) || name.charAt(0).toUpperCase() + name.slice(1),
-    );
-    this.USER_NAME = cfg('USER_NAME', (_agentManifest.user_name as string) || 'User');
-    this.OPENING_LINE = agentCfg('OPENING_LINE', 'Hello.');
-    const defaultWakeWords = (_agentManifest.wake_words as string[]) || [`hey ${name}`, name];
-    this.WAKE_WORDS = agentCfg('WAKE_WORDS', defaultWakeWords);
+    // Identity (matching Python: AGENT.get("display_name", ...) etc.)
+    this.AGENT_DISPLAY_NAME = (_agentManifest.display_name as string)
+      || name.charAt(0).toUpperCase() + name.slice(1);
+    this.USER_NAME = (_userCfg.user_name as string)
+      || (_userCfg.USER_NAME as string)
+      || (_agentManifest.user_name as string)
+      || 'User';
+    this.OPENING_LINE = (_agentManifest.opening_line as string) || 'Hello.';
+    this.WAKE_WORDS = (_agentManifest.wake_words as string[]) || [`hey ${name}`, name];
     this.TELEGRAM_EMOJI = (_agentManifest.telegram_emoji as string) || '';
-    const defaultDisabledTools = (_agentManifest.disabled_tools as string[]) || [];
-    this.DISABLED_TOOLS = agentCfg('DISABLED_TOOLS', defaultDisabledTools);
+    this.DISABLED_TOOLS = (_agentManifest.disabled_tools as string[]) || [];
 
-    // TTS (per-agent)
-    this.TTS_BACKEND = agentCfg('TTS_BACKEND', 'elevenlabs');
+    // TTS (per-agent from manifest voice object, matching Python's AGENT.get("voice", {}))
+    const voice = (_agentManifest.voice as Record<string, unknown>) || {};
+    this.TTS_BACKEND = (voice.tts_backend as string) ?? cfg('TTS_BACKEND', 'elevenlabs');
     this.ELEVENLABS_API_KEY = cfg('ELEVENLABS_API_KEY', '');
-    this.ELEVENLABS_VOICE_ID = agentCfg('ELEVENLABS_VOICE_ID', '');
-    this.ELEVENLABS_MODEL = agentCfg('ELEVENLABS_MODEL', 'eleven_v3');
-    this.ELEVENLABS_STABILITY = agentCfg('ELEVENLABS_STABILITY', 0.5);
-    this.ELEVENLABS_SIMILARITY = agentCfg('ELEVENLABS_SIMILARITY', 0.75);
-    this.ELEVENLABS_STYLE = agentCfg('ELEVENLABS_STYLE', 0.35);
-    this.TTS_PLAYBACK_RATE = agentCfg('TTS_PLAYBACK_RATE', 1.12);
-    this.FAL_VOICE_ID = agentCfg('FAL_VOICE_ID', '');
+    this.ELEVENLABS_VOICE_ID = (voice.elevenlabs_voice_id as string) ?? cfg('ELEVENLABS_VOICE_ID', '');
+    this.ELEVENLABS_MODEL = (voice.elevenlabs_model as string) ?? cfg('ELEVENLABS_MODEL', 'eleven_v3');
+    this.ELEVENLABS_STABILITY = (voice.elevenlabs_stability as number) ?? cfg('ELEVENLABS_STABILITY', 0.5);
+    this.ELEVENLABS_SIMILARITY = (voice.elevenlabs_similarity as number) ?? cfg('ELEVENLABS_SIMILARITY', 0.75);
+    this.ELEVENLABS_STYLE = (voice.elevenlabs_style as number) ?? cfg('ELEVENLABS_STYLE', 0.35);
+    this.TTS_PLAYBACK_RATE = (voice.playback_rate as number) ?? cfg('TTS_PLAYBACK_RATE', 1.12);
+    this.FAL_VOICE_ID = (voice.fal_voice_id as string) ?? cfg('FAL_VOICE_ID', '');
 
     // Audio
     this.INPUT_MODE = cfg('INPUT_MODE', 'dual');
@@ -673,10 +705,11 @@ export class Config {
     // Session
     this.SESSION_SOFT_LIMIT_MINS = cfg('SESSION_SOFT_LIMIT_MINS', 60);
 
-    // Heartbeat (per-agent)
-    this.HEARTBEAT_ACTIVE_START = agentCfg('HEARTBEAT_ACTIVE_START', 9);
-    this.HEARTBEAT_ACTIVE_END = agentCfg('HEARTBEAT_ACTIVE_END', 22);
-    this.HEARTBEAT_INTERVAL_MINS = agentCfg('HEARTBEAT_INTERVAL_MINS', 30);
+    // Heartbeat (per-agent from manifest heartbeat object)
+    const hb = (_agentManifest.heartbeat as Record<string, unknown>) || {};
+    this.HEARTBEAT_ACTIVE_START = (hb.active_start as number) ?? cfg('HEARTBEAT_ACTIVE_START', 9);
+    this.HEARTBEAT_ACTIVE_END = (hb.active_end as number) ?? cfg('HEARTBEAT_ACTIVE_END', 22);
+    this.HEARTBEAT_INTERVAL_MINS = (hb.interval_mins as number) ?? cfg('HEARTBEAT_INTERVAL_MINS', 30);
 
     // Telegram (per-agent) - supports env var indirection via manifest
     // The agent manifest can specify telegram.bot_token_env and telegram.chat_id_env
@@ -684,8 +717,8 @@ export class Config {
     const telegramCfg = (_agentManifest.telegram as Record<string, unknown>) || {};
     const botTokenEnv = (telegramCfg.bot_token_env as string) || 'TELEGRAM_BOT_TOKEN';
     const chatIdEnv = (telegramCfg.chat_id_env as string) || 'TELEGRAM_CHAT_ID';
-    this.TELEGRAM_BOT_TOKEN = process.env[botTokenEnv] || agentCfg('TELEGRAM_BOT_TOKEN', '');
-    this.TELEGRAM_CHAT_ID = process.env[chatIdEnv] || agentCfg('TELEGRAM_CHAT_ID', '');
+    this.TELEGRAM_BOT_TOKEN = process.env[botTokenEnv] || cfg('TELEGRAM_BOT_TOKEN', '');
+    this.TELEGRAM_CHAT_ID = process.env[chatIdEnv] || cfg('TELEGRAM_CHAT_ID', '');
 
     // Notifications
     this.NOTIFICATIONS_ENABLED = cfg('NOTIFICATIONS_ENABLED', true);
@@ -698,9 +731,10 @@ export class Config {
     this.EYE_MODE_DEFAULT = cfg('EYE_MODE_DEFAULT', false);
     this.MUTE_BY_DEFAULT = cfg('MUTE_BY_DEFAULT', false);
 
-    // Display (per-agent)
-    this.WINDOW_WIDTH = agentCfg('WINDOW_WIDTH', 622);
-    this.WINDOW_HEIGHT = agentCfg('WINDOW_HEIGHT', 830);
+    // Display (per-agent from manifest display object)
+    const disp = (_agentManifest.display as Record<string, unknown>) || {};
+    this.WINDOW_WIDTH = (disp.window_width as number) ?? cfg('WINDOW_WIDTH', 622);
+    this.WINDOW_HEIGHT = (disp.window_height as number) ?? cfg('WINDOW_HEIGHT', 830);
 
     // Avatar (user data > bundled fallback)
     this.AVATAR_ENABLED = cfg('AVATAR_ENABLED', false);
@@ -750,34 +784,33 @@ export function saveUserConfig(updates: Record<string, unknown>): void {
   loadUserConfig();
 }
 
-/**
- * Recursively merge source into target. Plain objects are merged key-by-key;
- * all other values (arrays, primitives, null) are overwritten from source.
- * Returns a new object - does not mutate either input.
- */
-function deepMerge(
-  target: Record<string, unknown>,
-  source: Record<string, unknown>,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = { ...target };
-  for (const key of Object.keys(source)) {
-    const srcVal = source[key];
-    const tgtVal = result[key];
-    if (isPlainObject(srcVal) && isPlainObject(tgtVal)) {
-      result[key] = deepMerge(
-        tgtVal as Record<string, unknown>,
-        srcVal as Record<string, unknown>,
-      );
-    } else {
-      result[key] = srcVal;
-    }
-  }
-  return result;
-}
+// Maps flat Config keys to their nested manifest paths.
+// Keys not listed here are written at root level with lowercase conversion.
+const AGENT_KEY_NESTING: Record<string, { object: string; key: string }> = {
+  TTS_BACKEND: { object: 'voice', key: 'tts_backend' },
+  ELEVENLABS_VOICE_ID: { object: 'voice', key: 'elevenlabs_voice_id' },
+  ELEVENLABS_MODEL: { object: 'voice', key: 'elevenlabs_model' },
+  ELEVENLABS_STABILITY: { object: 'voice', key: 'elevenlabs_stability' },
+  ELEVENLABS_SIMILARITY: { object: 'voice', key: 'elevenlabs_similarity' },
+  ELEVENLABS_STYLE: { object: 'voice', key: 'elevenlabs_style' },
+  TTS_PLAYBACK_RATE: { object: 'voice', key: 'playback_rate' },
+  FAL_VOICE_ID: { object: 'voice', key: 'fal_voice_id' },
+  HEARTBEAT_ACTIVE_START: { object: 'heartbeat', key: 'active_start' },
+  HEARTBEAT_ACTIVE_END: { object: 'heartbeat', key: 'active_end' },
+  HEARTBEAT_INTERVAL_MINS: { object: 'heartbeat', key: 'interval_mins' },
+  WINDOW_WIDTH: { object: 'display', key: 'window_width' },
+  WINDOW_HEIGHT: { object: 'display', key: 'window_height' },
+};
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+// Maps flat Config keys to their root-level manifest key names.
+const AGENT_KEY_ROOT: Record<string, string> = {
+  AGENT_DISPLAY_NAME: 'display_name',
+  USER_NAME: 'user_name',
+  OPENING_LINE: 'opening_line',
+  WAKE_WORDS: 'wake_words',
+  TELEGRAM_EMOJI: 'telegram_emoji',
+  DISABLED_TOOLS: 'disabled_tools',
+};
 
 export function saveAgentConfig(
   agentName: string,
@@ -788,7 +821,21 @@ export function saveAgentConfig(
   try {
     existing = JSON.parse(fs.readFileSync(agentJsonPath, 'utf-8'));
   } catch { /* empty */ }
-  Object.assign(existing, updates);
+
+  // Nest flat keys into the correct manifest structure
+  for (const [key, value] of Object.entries(updates)) {
+    const nested = AGENT_KEY_NESTING[key];
+    if (nested) {
+      const obj = (existing[nested.object] as Record<string, unknown>) || {};
+      obj[nested.key] = value;
+      existing[nested.object] = obj;
+    } else {
+      // Use lowercase root key if mapped, otherwise write as-is
+      const rootKey = AGENT_KEY_ROOT[key] || key;
+      existing[rootKey] = value;
+    }
+  }
+
   fs.mkdirSync(path.dirname(agentJsonPath), { recursive: true });
   fs.writeFileSync(agentJsonPath, JSON.stringify(existing, null, 2), { mode: 0o600 });
 }

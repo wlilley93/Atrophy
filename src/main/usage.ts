@@ -9,7 +9,7 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import { USER_DATA } from './config';
+import { USER_DATA, BUNDLE_ROOT } from './config';
 import { getDb } from './memory';
 
 // ---------------------------------------------------------------------------
@@ -137,14 +137,20 @@ export function getAllAgentsUsage(days?: number): UsageSummary[] {
     const dbPath = path.join(agentsDir, name, 'data', 'memory.db');
     if (!fs.existsSync(dbPath)) continue;
 
-    // Load display name
+    // Load display name (check user data then bundle)
     let displayName = name.charAt(0).toUpperCase() + name.slice(1);
-    try {
-      const manifest = JSON.parse(
-        fs.readFileSync(path.join(agentsDir, name, 'data', 'agent.json'), 'utf-8'),
-      );
-      displayName = manifest.display_name || displayName;
-    } catch { /* use default */ }
+    const manifestPaths = [
+      path.join(agentsDir, name, 'data', 'agent.json'),
+      path.join(BUNDLE_ROOT, 'agents', name, 'data', 'agent.json'),
+    ];
+    for (const mp of manifestPaths) {
+      try {
+        if (fs.existsSync(mp)) {
+          const manifest = JSON.parse(fs.readFileSync(mp, 'utf-8'));
+          if (manifest.display_name) { displayName = manifest.display_name; break; }
+        }
+      } catch { /* use default */ }
+    }
 
     const summary = getUsageSummary(dbPath, days);
     results.push({

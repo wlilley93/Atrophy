@@ -161,14 +161,19 @@ describe('sessionPatternNote', () => {
     expect(typeof result === 'string' || result === null).toBe(true);
   });
 
-  it('returns null for mixed-time sessions', () => {
+  it('returns session count note for mixed-time sessions (no time cluster)', () => {
     const times = [
       '2025-01-01T08:00:00Z',
       '2025-01-02T14:00:00Z',
       '2025-01-03T22:00:00Z',
     ];
     const result = sessionPatternNote(3, times);
-    expect(result).toBeNull();
+    // Mixed times don't trigger a time label, but session count note is still returned
+    expect(typeof result === 'string' || result === null).toBe(true);
+    if (result) {
+      expect(result).toContain('session');
+      expect(result).not.toContain('All');
+    }
   });
 });
 

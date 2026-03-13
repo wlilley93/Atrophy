@@ -12,7 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig } from './config';
+import { getConfig, BUNDLE_ROOT, USER_DATA } from './config';
 import { loadPrompt, loadSkillFiles } from './prompts';
 import * as memory from './memory';
 
@@ -30,8 +30,8 @@ function getAgentRoster(exclude?: string): RosterEntry[] {
   const config = getConfig();
   const agentsDirs: string[] = [];
 
-  const userAgents = path.join(config.DATA_DIR, '..', '..');
-  const bundleAgents = path.join(config.AGENT_DIR, '..');
+  const userAgents = path.join(USER_DATA, 'agents');
+  const bundleAgents = path.join(BUNDLE_ROOT, 'agents');
 
   if (fs.existsSync(userAgents)) agentsDirs.push(userAgents);
   if (fs.existsSync(bundleAgents) && path.resolve(bundleAgents) !== path.resolve(userAgents)) {
@@ -95,14 +95,20 @@ export function loadSystemPrompt(): string {
   // Try loading system.md from the tiered search dirs
   let base = loadPrompt('system', '');
 
-  // Fallback to bundle system_prompt.md
+  // Fallback to bundle system_prompt.md (check both AGENT_DIR and BUNDLE_ROOT)
   if (!base) {
-    const bundlePath = path.join(config.AGENT_DIR, 'prompts', 'system_prompt.md');
-    try {
-      if (fs.existsSync(bundlePath)) {
-        base = fs.readFileSync(bundlePath, 'utf-8').trim();
-      }
-    } catch { /* use fallback */ }
+    const candidates = [
+      path.join(config.AGENT_DIR, 'prompts', 'system_prompt.md'),
+      path.join(BUNDLE_ROOT, 'agents', config.AGENT_NAME, 'prompts', 'system_prompt.md'),
+    ];
+    for (const bundlePath of candidates) {
+      try {
+        if (fs.existsSync(bundlePath)) {
+          base = fs.readFileSync(bundlePath, 'utf-8').trim();
+          break;
+        }
+      } catch { /* use fallback */ }
+    }
   }
 
   if (!base) {

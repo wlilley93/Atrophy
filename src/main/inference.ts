@@ -487,6 +487,9 @@ export function streamInference(
   const mode = cliSessionId ? 'resume' : 'new';
   const t0 = Date.now();
 
+  log.info(`spawn mode=${mode} effort=${effort}`);
+  const spawnEnv = cleanEnv();
+
   // Kill any previous active process before spawning to prevent orphans
   // and close the race window where stopInference() could miss the new process
   if (_activeProcess) {
@@ -498,11 +501,12 @@ export function streamInference(
   let proc: ChildProcess;
   try {
     proc = spawn(cmd[0], cmd.slice(1), {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: cleanEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: spawnEnv,
       cwd: os.homedir(),
       detached: false,
     });
+    log.debug(`pid=${proc.pid}`);
     _activeProcess = proc;
     _allProcesses.add(proc);
   } catch (e) {
@@ -756,7 +760,7 @@ export function runInferenceOneshot(
     ];
 
     const proc = spawn(cmd[0], cmd.slice(1), {
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: cleanEnv(),
       cwd: os.homedir(),
       detached: false,

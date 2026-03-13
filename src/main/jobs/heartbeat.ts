@@ -13,7 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { getConfig } from '../config';
+import { getConfig, BUNDLE_ROOT } from '../config';
 import {
   getDb,
   getActiveThreads,
@@ -73,13 +73,18 @@ function loadChecklist(): string {
     }
   } catch { /* missing file */ }
 
-  // Fallback: check agent prompts dir
-  const fallbackPath = path.join(config.AGENT_DIR, 'prompts', 'HEARTBEAT.md');
-  try {
-    if (fs.existsSync(fallbackPath)) {
-      return fs.readFileSync(fallbackPath, 'utf-8');
-    }
-  } catch { /* missing file */ }
+  // Fallback: check agent prompts dir (AGENT_DIR then bundle)
+  const fallbackPaths = [
+    path.join(config.AGENT_DIR, 'prompts', 'HEARTBEAT.md'),
+    path.join(BUNDLE_ROOT, 'agents', config.AGENT_NAME, 'prompts', 'heartbeat.md'),
+  ];
+  for (const fallbackPath of fallbackPaths) {
+    try {
+      if (fs.existsSync(fallbackPath)) {
+        return fs.readFileSync(fallbackPath, 'utf-8');
+      }
+    } catch { /* missing file */ }
+  }
 
   return '';
 }
