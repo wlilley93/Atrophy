@@ -13,7 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig, BUNDLE_ROOT, USER_DATA } from './config';
-import { loadPrompt, loadSkillFiles } from './prompts';
+import { loadPrompt } from './prompts';
 import * as memory from './memory';
 
 // ---------------------------------------------------------------------------
@@ -115,11 +115,10 @@ export function loadSystemPrompt(): string {
     base = 'You are a companion. Be genuine, direct, and honest.';
   }
 
-  // Append skill files
-  const skills = loadSkillFiles();
-  for (const skill of skills) {
-    base += `\n\n---\n\n${skill}`;
-  }
+  // Lazy-load instruction for skill files (no longer appended in full)
+  base += '\n\n---\n\n## Skills\n\nYou have skill files with specialized behavioral guidance. ' +
+    'Use read_note to access them when a situation calls for it. ' +
+    'They cover: tools usage, introspection protocols, gifts, and morning briefings.';
 
   // Append agent roster for deferral awareness
   const roster = getAgentRoster(config.AGENT_NAME);

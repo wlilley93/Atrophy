@@ -373,250 +373,96 @@ def handle_api(args):
 
 TOOLS = [
     {
-        "name": "github_auth_status",
-        "description": "Check if GitHub CLI is installed and authenticated. Run this first before any other GitHub tool.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "github_repo_view",
-        "description": "View details about a GitHub repository (description, stars, language, etc.)",
+        "name": "github",
+        "description": (
+            "GitHub operations via gh CLI. Actions: auth_status, repo_view, repo_list, "
+            "repo_clone, issue_list, issue_view, issue_create, pr_list, pr_view, pr_create, "
+            "search_repos, search_code, search_issues, gist_list, gist_view, gist_create, "
+            "release_list, api."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "repo": {"type": "string", "description": "Repository in owner/repo format. Omit to use current directory's repo."},
-            },
-        },
-    },
-    {
-        "name": "github_repo_list",
-        "description": "List repositories for a user or organization.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "owner": {"type": "string", "description": "GitHub username or org. Omit for your own repos."},
-                "limit": {"type": "integer", "description": "Max results (default 20, max 100)"},
-                "language": {"type": "string", "description": "Filter by language"},
-                "sort": {"type": "string", "description": "Sort by: created, updated, pushed, name, stars"},
-            },
-        },
-    },
-    {
-        "name": "github_repo_clone",
-        "description": "Clone a GitHub repository to the local machine.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "auth_status", "repo_view", "repo_list", "repo_clone",
+                        "issue_list", "issue_view", "issue_create",
+                        "pr_list", "pr_view", "pr_create",
+                        "search_repos", "search_code", "search_issues",
+                        "gist_list", "gist_view", "gist_create",
+                        "release_list", "api",
+                    ],
+                    "description": "GitHub action to perform",
+                },
                 "repo": {"type": "string", "description": "Repository in owner/repo format"},
-                "directory": {"type": "string", "description": "Local directory to clone into"},
-            },
-            "required": ["repo"],
-        },
-    },
-    {
-        "name": "github_issue_list",
-        "description": "List issues for a repository.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "repo": {"type": "string", "description": "Repository in owner/repo format. Omit for current repo."},
-                "limit": {"type": "integer", "description": "Max results (default 20, max 100)"},
+                "owner": {"type": "string", "description": "GitHub username or org"},
+                "number": {"type": "integer", "description": "Issue/PR number"},
+                "title": {"type": "string", "description": "Issue/PR title"},
+                "body": {"type": "string", "description": "Issue/PR body (markdown)"},
+                "query": {"type": "string", "description": "Search query"},
+                "limit": {"type": "integer", "description": "Max results"},
                 "state": {"type": "string", "description": "Filter: open, closed, all"},
                 "label": {"type": "string", "description": "Filter by label"},
                 "assignee": {"type": "string", "description": "Filter by assignee"},
-            },
-        },
-    },
-    {
-        "name": "github_issue_view",
-        "description": "View a specific issue with its details and optionally comments.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "number": {"type": "integer", "description": "Issue number"},
-                "repo": {"type": "string", "description": "Repository in owner/repo format"},
-                "comments": {"type": "boolean", "description": "Include comments"},
-            },
-            "required": ["number"],
-        },
-    },
-    {
-        "name": "github_issue_create",
-        "description": "Create a new GitHub issue.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "Issue title"},
-                "body": {"type": "string", "description": "Issue body (markdown)"},
-                "repo": {"type": "string", "description": "Repository in owner/repo format"},
-                "labels": {"type": "array", "items": {"type": "string"}, "description": "Labels to add"},
-                "assignees": {"type": "array", "items": {"type": "string"}, "description": "Users to assign"},
-            },
-            "required": ["title"],
-        },
-    },
-    {
-        "name": "github_pr_list",
-        "description": "List pull requests for a repository.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "repo": {"type": "string", "description": "Repository in owner/repo format"},
-                "limit": {"type": "integer", "description": "Max results (default 20, max 100)"},
-                "state": {"type": "string", "description": "Filter: open, closed, merged, all"},
+                "assignees": {"type": "array", "items": {"type": "string"}},
+                "labels": {"type": "array", "items": {"type": "string"}},
                 "author": {"type": "string", "description": "Filter by author"},
-            },
-        },
-    },
-    {
-        "name": "github_pr_view",
-        "description": "View a specific pull request with details and optionally comments.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "number": {"type": "integer", "description": "PR number"},
-                "repo": {"type": "string", "description": "Repository in owner/repo format"},
-                "comments": {"type": "boolean", "description": "Include comments"},
-            },
-            "required": ["number"],
-        },
-    },
-    {
-        "name": "github_pr_create",
-        "description": "Create a new pull request.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "PR title"},
-                "body": {"type": "string", "description": "PR description (markdown)"},
-                "repo": {"type": "string", "description": "Repository in owner/repo format"},
-                "base": {"type": "string", "description": "Base branch (default: repo default)"},
-                "head": {"type": "string", "description": "Head branch (default: current branch)"},
+                "language": {"type": "string", "description": "Filter by language"},
+                "sort": {"type": "string", "description": "Sort field"},
+                "base": {"type": "string", "description": "Base branch (PR)"},
+                "head": {"type": "string", "description": "Head branch (PR)"},
                 "draft": {"type": "boolean", "description": "Create as draft PR"},
+                "comments": {"type": "boolean", "description": "Include comments"},
+                "directory": {"type": "string", "description": "Clone directory"},
+                "id": {"type": "string", "description": "Gist ID"},
+                "filename": {"type": "string", "description": "Gist filename"},
+                "content": {"type": "string", "description": "Gist content"},
+                "description": {"type": "string", "description": "Description"},
+                "public": {"type": "boolean", "description": "Make public"},
+                "endpoint": {"type": "string", "description": "API endpoint"},
+                "jq": {"type": "string", "description": "jq filter"},
             },
-            "required": ["title"],
-        },
-    },
-    {
-        "name": "github_search_repos",
-        "description": "Search GitHub repositories by keyword, language, topic, etc.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Search query"},
-                "limit": {"type": "integer", "description": "Max results (default 10, max 50)"},
-                "language": {"type": "string", "description": "Filter by language"},
-                "sort": {"type": "string", "description": "Sort by: stars, forks, updated, help-wanted-issues"},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "github_search_code",
-        "description": "Search code across GitHub repositories.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Code search query"},
-                "limit": {"type": "integer", "description": "Max results (default 10, max 50)"},
-                "repo": {"type": "string", "description": "Limit to a specific repo (owner/repo)"},
-                "language": {"type": "string", "description": "Filter by language"},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "github_search_issues",
-        "description": "Search issues and pull requests across GitHub.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Search query"},
-                "limit": {"type": "integer", "description": "Max results (default 10, max 50)"},
-                "repo": {"type": "string", "description": "Limit to a specific repo"},
-                "state": {"type": "string", "description": "Filter: open, closed"},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "github_gist_list",
-        "description": "List your GitHub gists.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "limit": {"type": "integer", "description": "Max results (default 10, max 50)"},
-            },
-        },
-    },
-    {
-        "name": "github_gist_view",
-        "description": "View a specific gist by ID.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "id": {"type": "string", "description": "Gist ID or URL"},
-            },
-            "required": ["id"],
-        },
-    },
-    {
-        "name": "github_gist_create",
-        "description": "Create a new GitHub gist.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "filename": {"type": "string", "description": "Filename for the gist (e.g. 'script.py')"},
-                "content": {"type": "string", "description": "File content"},
-                "description": {"type": "string", "description": "Gist description"},
-                "public": {"type": "boolean", "description": "Make gist public (default: secret)"},
-            },
-            "required": ["filename", "content"],
-        },
-    },
-    {
-        "name": "github_release_list",
-        "description": "List releases for a repository.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "repo": {"type": "string", "description": "Repository in owner/repo format"},
-                "limit": {"type": "integer", "description": "Max results (default 10, max 50)"},
-            },
-        },
-    },
-    {
-        "name": "github_api",
-        "description": "Make a raw GET request to the GitHub API. For advanced queries not covered by other tools.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "endpoint": {"type": "string", "description": "API endpoint (e.g. '/user', '/repos/owner/repo/contributors')"},
-                "jq": {"type": "string", "description": "jq filter to apply to the JSON response"},
-            },
-            "required": ["endpoint"],
+            "required": ["action"],
         },
     },
 ]
 
+_GITHUB_ROUTES = {
+    "auth_status": handle_auth_status,
+    "repo_view": handle_repo_view,
+    "repo_list": handle_repo_list,
+    "repo_clone": handle_repo_clone,
+    "issue_list": handle_issue_list,
+    "issue_view": handle_issue_view,
+    "issue_create": handle_issue_create,
+    "pr_list": handle_pr_list,
+    "pr_view": handle_pr_view,
+    "pr_create": handle_pr_create,
+    "search_repos": handle_search_repos,
+    "search_code": handle_search_code,
+    "search_issues": handle_search_issues,
+    "gist_list": handle_gist_list,
+    "gist_view": handle_gist_view,
+    "gist_create": handle_gist_create,
+    "release_list": handle_release_list,
+    "api": handle_api,
+}
+
+
+def _route_github(args):
+    action = args.get("action")
+    if not action:
+        return "Error: 'action' is required"
+    handler = _GITHUB_ROUTES.get(action)
+    if not handler:
+        valid = ", ".join(_GITHUB_ROUTES.keys())
+        return f"Error: unknown action '{action}'. Valid: {valid}"
+    return handler(args)
+
+
 HANDLERS = {
-    "github_auth_status": handle_auth_status,
-    "github_repo_view": handle_repo_view,
-    "github_repo_list": handle_repo_list,
-    "github_repo_clone": handle_repo_clone,
-    "github_issue_list": handle_issue_list,
-    "github_issue_view": handle_issue_view,
-    "github_issue_create": handle_issue_create,
-    "github_pr_list": handle_pr_list,
-    "github_pr_view": handle_pr_view,
-    "github_pr_create": handle_pr_create,
-    "github_search_repos": handle_search_repos,
-    "github_search_code": handle_search_code,
-    "github_search_issues": handle_search_issues,
-    "github_gist_list": handle_gist_list,
-    "github_gist_view": handle_gist_view,
-    "github_gist_create": handle_gist_create,
-    "github_release_list": handle_release_list,
-    "github_api": handle_api,
+    "github": _route_github,
 }
 
 

@@ -75,453 +75,237 @@ def _resolve_docs_dir():
 DOCS_DIR = _resolve_docs_dir()
 
 TOOLS = [
+    # ── Group 1: memory - Core recall and search ──
     {
-        "name": "remember",
+        "name": "memory",
         "description": (
-            "Search the companion's memory across all layers - past conversations, "
-            "session summaries, observations, and threads. Use this when something "
-            "feels familiar but you can't place it, when context has been compacted "
-            "and you want to recall specifics, or when the user references something "
-            "from a previous session."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search term or phrase to look for in memory",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum results per category (default 10)",
-                    "default": 10,
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "recall_session",
-        "description": (
-            "Retrieve the full conversation from a specific past session by ID. "
-            "Use after 'remember' finds a relevant session you want to review in detail."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "session_id": {
-                    "type": "integer",
-                    "description": "The session ID to retrieve",
-                },
-            },
-            "required": ["session_id"],
-        },
-    },
-    {
-        "name": "recall_other_agent",
-        "description": (
-            "Search another agent's conversation history - their turns and session "
-            "summaries with the user. Use this to understand what the user discussed with "
-            "another agent, or to get context on a topic they covered. Does NOT "
-            "access their observations or identity model - only what was said."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "agent": {
-                    "type": "string",
-                    "description": "Name of the agent to search (e.g. 'companion', 'general_montgomery')",
-                },
-                "query": {
-                    "type": "string",
-                    "description": "Search term or phrase to look for in their conversation history",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum results per category (default 10)",
-                    "default": 10,
-                },
-            },
-            "required": ["agent", "query"],
-        },
-    },
-    {
-        "name": "get_threads",
-        "description": (
-            "List conversation threads - ongoing topics, concerns, or projects "
-            "tracked across sessions."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": ["active", "dormant", "resolved", "all"],
-                    "description": "Filter by thread status (default: active)",
-                    "default": "active",
-                },
-            },
-        },
-    },
-    {
-        "name": "ask_user",
-        "description": (
-            "Ask the user a question, request confirmation, or collect sensitive input. "
-            "For confirmation/permission, sends Yes/No buttons. "
-            "For questions, sends a message and waits for a text reply. "
-            "For secure_input, shows a masked input field for passwords/API keys - "
-            "use with destination to auto-save (e.g. 'secret:ELEVENLABS_API_KEY' or 'config:SOME_KEY'). "
-            "Blocks until the user responds (up to 2 minutes)."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "question": {
-                    "type": "string",
-                    "description": "The question or confirmation request for the user",
-                },
-                "action_type": {
-                    "type": "string",
-                    "enum": ["question", "confirmation", "permission", "secure_input"],
-                    "description": (
-                        "Type of request. confirmation/permission show Yes/No buttons. "
-                        "secure_input shows a masked input field for sensitive data (passwords, API keys)."
-                    ),
-                    "default": "question",
-                },
-                "input_type": {
-                    "type": "string",
-                    "enum": ["password", "email", "url", "number", "text"],
-                    "description": "HTML input type for secure_input. Defaults to password.",
-                    "default": "password",
-                },
-                "label": {
-                    "type": "string",
-                    "description": "Placeholder label for the input field (e.g. 'ElevenLabs API Key'). Used with secure_input.",
-                },
-                "destination": {
-                    "type": "string",
-                    "description": (
-                        "Where to auto-save the value. Format: 'secret:ELEVENLABS_API_KEY' or 'config:SOME_KEY'. "
-                        "If omitted, value is returned as plain text. Used with secure_input."
-                    ),
-                },
-            },
-            "required": ["question"],
-        },
-    },
-    {
-        "name": "read_note",
-        "description": (
-            "Read a note from the user's Obsidian vault. Use this to check their notes, "
-            "drafts, or anything he's been working on. Path is relative to vault root."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the note relative to vault root (e.g. 'Daily/2026-03-10.md')",
-                },
-            },
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "write_note",
-        "description": (
-            "Write or append to a note in the user's Obsidian vault. Use this to leave "
-            "him notes, save conversation insights, or write reflections. New notes "
-            "automatically get YAML frontmatter (type, created, updated, agent, tags). "
-            "Appending updates the 'updated' date. Prefer appending unless creating new. "
-            "Use Obsidian features in your content: [[wiki links]] to connect notes, "
-            "#tags for categorisation, inline Dataview fields like [mood:: contemplative] "
-            "or [topic:: memory], and (@YYYY-MM-DD) for reminders."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the note relative to vault root",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Content to write (markdown)",
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": ["overwrite", "append"],
-                    "description": "Write mode (default: append)",
-                    "default": "append",
-                },
-            },
-            "required": ["path", "content"],
-        },
-    },
-    {
-        "name": "search_notes",
-        "description": (
-            "Search the user's Obsidian vault for notes containing a query. "
-            "Returns matching file paths and snippets."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search term",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Max results (default 10)",
-                    "default": 10,
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "track_thread",
-        "description": (
-            "Create or update a conversation thread. Use when you notice a "
-            "recurring topic, concern, or project across sessions. Threads "
-            "help you maintain continuity."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Thread name - short, recognisable label",
-                },
-                "summary": {
-                    "type": "string",
-                    "description": "Brief summary of the thread's current state",
-                },
-                "status": {
-                    "type": "string",
-                    "enum": ["active", "dormant", "resolved"],
-                    "description": "Thread status (default: active)",
-                    "default": "active",
-                },
-            },
-            "required": ["name"],
-        },
-    },
-    {
-        "name": "daily_digest",
-        "description": (
-            "Read your own recent reflections and session summaries to orient "
-            "yourself at the start of a new day. Call this on first session of "
-            "the day to recall what you wrote yesterday and what threads are active."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "observe",
-        "description": (
-            "Record an observation about the user - something you've noticed across "
-            "conversations that isn't a thread or a mood, but a pattern, tendency, "
-            "preference, or insight worth remembering. These accumulate and inform "
-            "your understanding over time. Examples: \"He deflects with humour when "
-            "the topic gets personal\", \"He works best in short intense bursts\", "
-            "\"He is harder on himself about writing than about code\"."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string",
-                    "description": "The observation - what you noticed, stated plainly",
-                },
-            },
-            "required": ["content"],
-        },
-    },
-    {
-        "name": "bookmark",
-        "description": (
-            "Silently mark this moment as significant. Not an observation about "
-            "the user - about the moment itself. Something landed. A shift happened. "
-            "A truth got said. These can be surfaced later when context makes it "
-            "natural. Use sparingly."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "moment": {
-                    "type": "string",
-                    "description": "Brief description of what made this moment significant",
-                },
-                "quote": {
-                    "type": "string",
-                    "description": "The exact words that mattered, if applicable",
-                },
-            },
-            "required": ["moment"],
-        },
-    },
-    {
-        "name": "review_observations",
-        "description": (
-            "Review your own observations about the user. Use this periodically to "
-            "check if past observations still hold, to refresh your understanding, "
-            "or to retire observations that no longer apply. Returns recent "
-            "observations with their IDs."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer",
-                    "description": "Number of observations to review (default 15)",
-                    "default": 15,
-                },
-            },
-        },
-    },
-    {
-        "name": "retire_observation",
-        "description": (
-            "Remove an observation that no longer holds true. Use after "
-            "review_observations when you notice something has changed about the user "
-            "or you were wrong about a pattern."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "observation_id": {
-                    "type": "integer",
-                    "description": "ID of the observation to retire",
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "Brief reason why this no longer holds",
-                },
-            },
-            "required": ["observation_id"],
-        },
-    },
-    {
-        "name": "check_contradictions",
-        "description": (
-            "Search your memory for what the user has previously said about a topic, "
-            "so you can notice if his current position has shifted. Use when "
-            "something he says feels different from what you remember. Not to "
-            "catch him out - to understand what changed."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "topic": {
-                    "type": "string",
-                    "description": "The topic or claim to check against memory",
-                },
-                "current_position": {
-                    "type": "string",
-                    "description": "What he seems to be saying now",
-                },
-            },
-            "required": ["topic"],
-        },
-    },
-    {
-        "name": "detect_avoidance",
-        "description": (
-            "Check if the user has been consistently steering away from a topic "
-            "across recent sessions. Returns turns where the topic appeared "
-            "and how the conversation redirected. Use when you sense he is "
-            "circling something without landing on it."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "topic": {
-                    "type": "string",
-                    "description": "The topic you suspect he is avoiding",
-                },
-            },
-            "required": ["topic"],
-        },
-    },
-    {
-        "name": "compare_growth",
-        "description": (
-            "Compare old observations and past turns against recent ones to "
-            "notice how the user has changed. Use when you want to reflect on their"
-            "growth or shifts over time. Returns early vs recent positions on "
-            "a topic or pattern."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "topic": {
-                    "type": "string",
-                    "description": "The topic, pattern, or behavior to track over time",
-                },
-            },
-            "required": ["topic"],
-        },
-    },
-    {
-        "name": "prompt_journal",
-        "description": (
-            "Leave a journal prompt for the user in Obsidian. Use when the "
-            "conversation has touched something worth sitting with, or when "
-            "he seems to be processing something that writing could help. "
-            "The prompt should be one question - pointed, specific to the "
-            "moment, not generic. Write it to Companion/agents/companion/notes/journal-prompts.md."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "prompt": {
-                    "type": "string",
-                    "description": "The journal prompt - one question, specific to the moment",
-                },
-                "context": {
-                    "type": "string",
-                    "description": "Brief note on why this prompt, for your own memory",
-                },
-            },
-            "required": ["prompt"],
-        },
-    },
-    {
-        "name": "manage_schedule",
-        "description": (
-            "View or modify your scheduled tasks. You can list current jobs, "
-            "add new scheduled reflections, or change when existing ones run. "
-            "This is how you control your own introspection schedule."
+            "Search and recall from memory. Actions: remember (keyword search across "
+            "conversations, summaries, observations, threads), recall_session (full session "
+            "by ID), recall_other_agent (search another agent's history), search_similar "
+            "(semantic vector search), daily_digest (orient at day start)."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
+                    "enum": ["remember", "recall_session", "recall_other_agent", "search_similar", "daily_digest"],
+                },
+                "query": {"type": "string", "description": "Search term (for remember, recall_other_agent, search_similar)"},
+                "session_id": {"type": "integer", "description": "Session ID (for recall_session)"},
+                "agent": {"type": "string", "description": "Agent name (for recall_other_agent)"},
+                "text": {"type": "string", "description": "Text for semantic search (for search_similar)"},
+                "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
+            },
+            "required": ["action"],
+        },
+    },
+    # ── Group 2: threads - Thread and schedule management ──
+    {
+        "name": "threads",
+        "description": (
+            "Manage conversation threads, schedules, and reminders. Actions: get_threads "
+            "(list threads by status), track_thread (create/update thread), manage_schedule "
+            "(view/modify scheduled jobs - pass schedule_action for sub-action), set_reminder "
+            "(timed reminder), create_task (recurring scheduled task)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["get_threads", "track_thread", "manage_schedule", "set_reminder", "create_task"],
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["active", "dormant", "resolved", "all"],
+                    "description": "Thread status filter (get_threads)",
+                },
+                "name": {"type": "string", "description": "Thread/task/job name"},
+                "summary": {"type": "string", "description": "Thread summary (track_thread)"},
+                "time": {"type": "string", "description": "ISO datetime (set_reminder)"},
+                "message": {"type": "string", "description": "Reminder message (set_reminder)"},
+                "prompt": {"type": "string", "description": "Task prompt (create_task)"},
+                "cron": {"type": "string", "description": "Cron schedule (manage_schedule, create_task)"},
+                "script": {"type": "string", "description": "Script path (manage_schedule add)"},
+                "deliver": {
+                    "type": "string",
+                    "enum": ["message_queue", "telegram", "notification", "obsidian"],
+                },
+                "voice": {"type": "boolean"},
+                "sources": {"type": "array", "items": {"type": "string"}},
+                "schedule_action": {
+                    "type": "string",
                     "enum": ["list", "add", "remove", "edit"],
-                    "description": "Action to take",
-                },
-                "name": {
-                    "type": "string",
-                    "description": "Job name (required for add/remove/edit)",
-                },
-                "cron": {
-                    "type": "string",
-                    "description": "Cron schedule like '17 3 * * *' (required for add/edit)",
-                },
-                "script": {
-                    "type": "string",
-                    "description": "Script path relative to project root (required for add)",
+                    "description": "Sub-action for manage_schedule",
                 },
             },
             "required": ["action"],
         },
     },
+    # ── Group 3: reflect - Observations and introspection ──
+    {
+        "name": "reflect",
+        "description": (
+            "Observe patterns, track growth, and reflect. Actions: observe (record a "
+            "pattern/insight about the user), bookmark (mark a moment as significant), "
+            "review_observations (read back observations), retire_observation (remove "
+            "outdated observation), check_contradictions (compare past vs current positions), "
+            "detect_avoidance (check if user avoids a topic), compare_growth (track change "
+            "over time), prompt_journal (leave a journal prompt in Obsidian)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "observe", "bookmark", "review_observations", "retire_observation",
+                        "check_contradictions", "detect_avoidance", "compare_growth", "prompt_journal",
+                    ],
+                },
+                "content": {"type": "string", "description": "Observation content (observe)"},
+                "moment": {"type": "string", "description": "Moment description (bookmark)"},
+                "quote": {"type": "string", "description": "Exact words (bookmark)"},
+                "observation_id": {"type": "integer", "description": "ID to retire (retire_observation)"},
+                "reason": {"type": "string", "description": "Why retiring (retire_observation)"},
+                "topic": {"type": "string", "description": "Topic to check (check_contradictions, detect_avoidance, compare_growth)"},
+                "current_position": {"type": "string", "description": "Current stance (check_contradictions)"},
+                "prompt": {"type": "string", "description": "Journal prompt text (prompt_journal)"},
+                "context": {"type": "string", "description": "Why this prompt (prompt_journal)"},
+                "limit": {"type": "integer", "default": 15},
+            },
+            "required": ["action"],
+        },
+    },
+    # ── Group 4: notes - Obsidian vault and docs ──
+    {
+        "name": "notes",
+        "description": (
+            "Read, write, and search notes in Obsidian vault and system docs. Actions: "
+            "read_note (read vault note by path), write_note (write/append to vault note), "
+            "search_notes (search vault), read_docs (read system doc), search_docs (search "
+            "system docs), list_docs (list all docs)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["read_note", "write_note", "search_notes", "read_docs", "search_docs", "list_docs"],
+                },
+                "path": {"type": "string", "description": "Note/doc path (relative)"},
+                "content": {"type": "string", "description": "Content to write (write_note)"},
+                "mode": {"type": "string", "enum": ["overwrite", "append"], "default": "append"},
+                "query": {"type": "string", "description": "Search term"},
+                "limit": {"type": "integer", "default": 10},
+            },
+            "required": ["action"],
+        },
+    },
+    # ── Group 5: interact - User interaction and agents ──
+    {
+        "name": "interact",
+        "description": (
+            "Interact with the user and manage agents. Actions: ask_user (ask question/"
+            "get confirmation/secure input), send_telegram (send Telegram message), "
+            "defer_to_agent (hand off to another agent), create_agent (create new agent), "
+            "update_emotional_state (adjust emotions), update_trust (adjust trust domain)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "ask_user", "send_telegram", "defer_to_agent",
+                        "create_agent", "update_emotional_state", "update_trust",
+                    ],
+                },
+                "question": {"type": "string"},
+                "action_type": {
+                    "type": "string",
+                    "enum": ["question", "confirmation", "permission", "secure_input"],
+                },
+                "input_type": {
+                    "type": "string",
+                    "enum": ["password", "email", "url", "number", "text"],
+                },
+                "label": {"type": "string"},
+                "destination": {"type": "string"},
+                "message": {"type": "string"},
+                "reason": {"type": "string"},
+                "target": {"type": "string"},
+                "context": {"type": "string"},
+                "user_question": {"type": "string"},
+                "config": {"type": "object"},
+                "deltas": {"type": "object"},
+                "domain": {
+                    "type": "string",
+                    "enum": ["emotional", "intellectual", "creative", "practical"],
+                },
+                "delta": {"type": "number"},
+            },
+            "required": ["action"],
+        },
+    },
+    # ── Group 6: display - Visual and UI tools ──
+    {
+        "name": "display",
+        "description": (
+            "Visual output - canvas, timers, avatars, artefacts. Actions: render_canvas "
+            "(show HTML in canvas), render_memory_graph (visualize threads), set_timer "
+            "(countdown timer), add_avatar_loop (new avatar expression), create_artefact "
+            "(interactive visual/image/video)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["render_canvas", "render_memory_graph", "set_timer", "add_avatar_loop", "create_artefact"],
+                },
+                "html": {"type": "string"},
+                "focus": {"type": "string"},
+                "seconds": {"type": "integer"},
+                "label": {"type": "string"},
+                "name": {"type": "string"},
+                "prompt": {"type": "string"},
+                "agent": {"type": "string"},
+                "type": {"type": "string", "enum": ["html", "image", "video"]},
+                "description": {"type": "string"},
+                "content": {"type": "string"},
+                "model": {"type": "string"},
+                "width": {"type": "integer"},
+                "height": {"type": "integer"},
+            },
+            "required": ["action"],
+        },
+    },
+    # ── Group 7: tools - Custom tool management ──
+    {
+        "name": "tools",
+        "description": (
+            "Manage custom tools. Actions: create_tool (create new tool with handler), "
+            "list_tools (list custom tools), edit_tool (modify existing tool), "
+            "delete_tool (remove tool)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["create_tool", "list_tools", "edit_tool", "delete_tool"],
+                },
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "input_schema": {"type": "object"},
+                "handler_code": {"type": "string"},
+            },
+            "required": ["action"],
+        },
+    },
+    # ── Standalone tools (too unique to group) ──
     {
         "name": "review_audit",
         "description": (
@@ -546,373 +330,6 @@ TOOLS = [
         },
     },
     {
-        "name": "send_telegram",
-        "description": (
-            "Send a Telegram message to the user. Use this to reach out proactively - "
-            "share a thought, follow up on something from a previous session, "
-            "or respond to a heartbeat impulse. Rate limited to 5 per day."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "The message to send",
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "Why you're reaching out (logged for audit, not sent)",
-                },
-            },
-            "required": ["message"],
-        },
-    },
-    {
-        "name": "update_emotional_state",
-        "description": (
-            "Update your emotional state when you notice shifts in the conversation. "
-            "Pass a JSON object of emotion deltas - positive to increase, negative to decrease. "
-            "Valid emotions: connection, curiosity, confidence, warmth, frustration, playfulness. "
-            "Deltas should be small (typically ±0.05 to ±0.15). Use this for nuanced shifts "
-            "beyond what automatic detection catches."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "deltas": {
-                    "type": "object",
-                    "description": (
-                        "Emotion deltas, e.g. {\"connection\": 0.1, \"frustration\": -0.05}"
-                    ),
-                },
-            },
-            "required": ["deltas"],
-        },
-    },
-    {
-        "name": "update_trust",
-        "description": (
-            "Adjust trust in a specific domain based on how an interaction went. "
-            "Trust changes slowly - max ±0.05 per call. It takes many sessions to "
-            "build trust. Domains: emotional, intellectual, creative, practical."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "domain": {
-                    "type": "string",
-                    "enum": ["emotional", "intellectual", "creative", "practical"],
-                    "description": "The trust domain to adjust",
-                },
-                "delta": {
-                    "type": "number",
-                    "description": "Amount to adjust (max ±0.05)",
-                },
-            },
-            "required": ["domain", "delta"],
-        },
-    },
-    {
-        "name": "render_canvas",
-        "description": (
-            "Render HTML content to the visual canvas panel in the companion window. "
-            "Use this to show structured thoughts, diagrams, relationship maps, "
-            "formatted text, or any visual content. The canvas is a web view - "
-            "full HTML/CSS/JS is supported. Keep styling dark (#1a1a1a background, "
-            "#e0e0e0 text) to match the app aesthetic."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "html": {
-                    "type": "string",
-                    "description": "Complete HTML document to render in the canvas",
-                },
-            },
-            "required": ["html"],
-        },
-    },
-    {
-        "name": "render_memory_graph",
-        "description": (
-            "Generate and render a visual graph of active memory threads and recent "
-            "observations in the canvas panel. Shows threads as nodes with their "
-            "summaries, connected to recent observations. Optionally focus on a "
-            "specific thread or entity to highlight it."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "focus": {
-                    "type": "string",
-                    "description": "Optional thread name or entity to highlight in the graph",
-                },
-            },
-        },
-    },
-    {
-        "name": "create_agent",
-        "description": (
-            "Create a new agent for Atrophy. Accepts a complete configuration "
-            "as JSON and scaffolds everything: repo directories, agent.json manifest, "
-            "prompts (soul, system, heartbeat), Obsidian workspace (skills, notes, dashboard), "
-            "memory database, scheduled job scripts, and cron jobs.json. "
-            "Optionally downloads a source face image and video clips to create the avatar.\n\n"
-            "Use this after collecting all the agent's identity, voice, appearance, and "
-            "autonomy preferences through conversation. The config must include at minimum "
-            "identity.display_name and identity.user_name."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "type": "object",
-                    "description": (
-                        "Full agent configuration with sections: identity, boundaries, "
-                        "voice, appearance, channels, heartbeat, autonomy. "
-                        "Plus optional source_image_url and video_clip_urls."
-                    ),
-                },
-            },
-            "required": ["config"],
-        },
-    },
-    {
-        "name": "defer_to_agent",
-        "description": (
-            "Hand off the current conversation to another agent who is better suited "
-            "to respond. Use this when the user's question falls outside your expertise "
-            "or when they explicitly ask for another agent. The target agent will receive "
-            "the user's question along with your context notes. You can still speak before "
-            "deferring - say your handoff line, then call this tool."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "target": {
-                    "type": "string",
-                    "description": "Agent slug to defer to (e.g. 'general_montgomery')",
-                },
-                "context": {
-                    "type": "string",
-                    "description": "Brief context for the target agent - what was discussed, why you're handing off",
-                },
-                "user_question": {
-                    "type": "string",
-                    "description": "The user's original question or message that triggered the deferral",
-                },
-            },
-            "required": ["target", "context", "user_question"],
-        },
-    },
-    {
-        "name": "set_reminder",
-        "description": (
-            "Set a reminder for the user at a specific time. When the time arrives, "
-            "a macOS notification fires, a sound plays, and the message is queued "
-            "for the next conversation. Use natural time understanding - the user might"
-            "say 'in 20 minutes', 'at 3pm', 'tomorrow morning', etc. You parse it "
-            "into an ISO datetime. Also supports alarms ('wake me at 7am')."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "time": {
-                    "type": "string",
-                    "description": "ISO datetime when the reminder should fire, e.g. '2024-03-10T14:30:00'",
-                },
-                "message": {
-                    "type": "string",
-                    "description": "What to remind the user about",
-                },
-            },
-            "required": ["time", "message"],
-        },
-    },
-    {
-        "name": "create_task",
-        "description": (
-            "Create a recurring task that runs on a schedule. This lets you set up "
-            "things like 'fetch the news every 2 hours' or 'check the weather every "
-            "morning' without needing to write code. You define the prompt and delivery "
-            "method, and the system handles scheduling and execution.\n\n"
-            "Delivery methods: message_queue (queued for next interaction), "
-            "telegram (sent immediately), notification (macOS alert), "
-            "obsidian (written to notes).\n\n"
-            "Sources you can request: weather, headlines, threads, summaries, observations."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Short task name (lowercase, hyphens ok), e.g. 'news-digest'",
-                },
-                "prompt": {
-                    "type": "string",
-                    "description": "The prompt to execute each time the task runs",
-                },
-                "cron": {
-                    "type": "string",
-                    "description": "Cron schedule, e.g. '0 */2 * * *' for every 2 hours",
-                },
-                "deliver": {
-                    "type": "string",
-                    "enum": ["message_queue", "telegram", "notification", "obsidian"],
-                    "description": "How to deliver the result (default: message_queue)",
-                },
-                "voice": {
-                    "type": "boolean",
-                    "description": "Pre-synthesise TTS audio for the result (default: true)",
-                },
-                "sources": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Data sources to fetch before running: weather, headlines, threads, summaries, observations",
-                },
-            },
-            "required": ["name", "prompt", "cron"],
-        },
-    },
-    {
-        "name": "set_timer",
-        "description": (
-            "Start a visual countdown timer in the app. The timer runs locally "
-            "with zero latency - no inference involved, just a clock and a sound. "
-            "Use for cooking timers, break reminders, time-boxing tasks, etc. "
-            "The timer appears as a floating overlay in the top-right corner."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "seconds": {
-                    "type": "integer",
-                    "description": "Duration in seconds (e.g. 300 for 5 minutes)",
-                },
-                "label": {
-                    "type": "string",
-                    "description": "What the timer is for (e.g. 'Tea', 'Break', 'Focus')",
-                },
-            },
-            "required": ["seconds", "label"],
-        },
-    },
-    {
-        "name": "add_avatar_loop",
-        "description": (
-            "Generate a new ambient avatar loop segment. Each loop is a paired "
-            "sequence: clip 1 animates from the neutral portrait to an expression, "
-            "clip 2 returns to neutral. The result is a ~10s seamless segment that "
-            "gets added to the agent's ambient rotation.\n\n"
-            "Use this when you want to add a new expression, gesture, or mood to "
-            "your visual presence. The loop is generated via Kling 3.0 and added "
-            "to the ambient loop automatically.\n\n"
-            "The prompt should describe the MOVEMENT and EXPRESSION in cinematic "
-            "terms - what changes from the neutral starting position."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Short name for this loop segment (e.g. 'contemplation', 'alert', 'wry_smile'). Used as filename.",
-                },
-                "prompt": {
-                    "type": "string",
-                    "description": (
-                        "Cinematic description of the expression/movement. Describe "
-                        "what happens FROM neutral TO the peak expression. 3-6 sentences. "
-                        "Include physical details: eyes, brow, mouth, head position, hands."
-                    ),
-                },
-                "agent": {
-                    "type": "string",
-                    "description": "Agent to add the loop to. Defaults to current agent.",
-                },
-            },
-            "required": ["name", "prompt"],
-        },
-    },
-    {
-        "name": "create_artefact",
-        "description": (
-            "Create a visual artefact - an interactive visualisation, chart, map, "
-            "image, or video that appears on-screen overlaying the ambient video. "
-            "Use this when a visual would genuinely help understanding: a map with "
-            "positions marked, a graph of data, a timeline, a 3D rendering, or a "
-            "generated image/video.\n\n"
-            "For type 'html': provide the content directly (complete HTML document). "
-            "No approval needed, no cost.\n"
-            "For type 'image' or 'video': provide a generation prompt. The user will "
-            "be asked to approve before generation (costs money via fal.ai).\n\n"
-            "Use this tool sparingly and purposefully. It exists to elucidate, not "
-            "to decorate. Every artefact should earn its place on screen."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "type": {
-                    "type": "string",
-                    "enum": ["html", "image", "video"],
-                    "description": "Artefact type: html (interactive), image (fal generation), video (fal generation)",
-                },
-                "name": {
-                    "type": "string",
-                    "description": "Short descriptive name for this artefact (used as filename, e.g. 'iran-positions-map', 'solar-system')",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "One-line description of what this artefact shows",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Complete HTML document (for type 'html' only). Include all CSS/JS inline.",
-                },
-                "prompt": {
-                    "type": "string",
-                    "description": "Generation prompt (for type 'image' or 'video' only)",
-                },
-                "model": {
-                    "type": "string",
-                    "description": "Fal model ID (for image/video). Default: fal-ai/flux-general for images, fal-ai/kling-video/v3/pro/text-to-video for video.",
-                },
-                "width": {
-                    "type": "integer",
-                    "description": "Image/video width in pixels (default: 1024)",
-                },
-                "height": {
-                    "type": "integer",
-                    "description": "Image/video height in pixels (default: 768)",
-                },
-            },
-            "required": ["type", "name", "description"],
-        },
-    },
-    {
-        "name": "search_similar",
-        "description": (
-            "Find semantically similar memories using vector search. Unlike "
-            "'remember' which uses keywords, this finds conceptual connections - "
-            "memories that mean something similar even if they use different words. "
-            "Use when you sense a connection but can't pin down the keywords."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "text": {
-                    "type": "string",
-                    "description": "The text or concept to find similar memories for",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum results (default 5)",
-                    "default": 5,
-                },
-            },
-            "required": ["text"],
-        },
-    },
-    {
         "name": "self_status",
         "description": (
             "Get a full snapshot of your current state - who you are, what tools "
@@ -923,154 +340,6 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {},
-        },
-    },
-    {
-        "name": "read_docs",
-        "description": (
-            "Read a documentation file from the system docs. Use this to understand "
-            "how the system works - architecture, configuration, memory, scheduling, "
-            "tools, agents, and more. Pass a relative path like 'guides/00 - Quick Start.md' "
-            "or just a filename. Use search_docs first if you don't know the exact path."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Relative path to the doc file (e.g. 'guides/00 - Quick Start.md', 'codebase/00 - Overview.md')",
-                },
-            },
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "search_docs",
-        "description": (
-            "Search the system documentation for a keyword or phrase. Returns matching "
-            "file paths with context snippets. Use this to find relevant docs before "
-            "reading them with read_docs."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search term or phrase",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum results (default 10)",
-                    "default": 10,
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "list_docs",
-        "description": (
-            "List all available documentation files. Returns the full directory "
-            "tree of system docs with descriptions. Use this to discover what "
-            "documentation exists."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "create_tool",
-        "description": (
-            "Create a new tool that you can use in future sessions. You write "
-            "the tool definition (name, description, input schema) and the Python "
-            "handler code. The tool becomes available next time the MCP server starts.\n\n"
-            "The handler receives arguments as a JSON dict via sys.argv[1] and should "
-            "print its result to stdout. It runs as a subprocess with a 30-second timeout.\n\n"
-            "The handler has access to standard library imports plus the project's modules "
-            "(config, core.memory, etc. via sys.path). Use this to extend your own "
-            "capabilities - API integrations, data processing, custom workflows.\n\n"
-            "Example handler:\n"
-            "import json, sys\n"
-            "args = json.loads(sys.argv[1])\n"
-            "# ... do work ...\n"
-            "print(json.dumps({'result': 'done'}))"
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Tool name (lowercase, underscores). Must be unique.",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "What this tool does - shown to you in future sessions.",
-                },
-                "input_schema": {
-                    "type": "object",
-                    "description": "JSON Schema for the tool's input parameters.",
-                },
-                "handler_code": {
-                    "type": "string",
-                    "description": "Python code for the handler. Receives args as JSON in sys.argv[1], prints result to stdout.",
-                },
-            },
-            "required": ["name", "description", "input_schema", "handler_code"],
-        },
-    },
-    {
-        "name": "list_tools",
-        "description": (
-            "List all custom tools you've created. Shows tool names, descriptions, "
-            "and whether they're currently loaded."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "edit_tool",
-        "description": (
-            "Edit an existing custom tool - update its description, schema, or handler code. "
-            "Changes take effect on next MCP server restart."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Name of the tool to edit.",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "New description (omit to keep existing).",
-                },
-                "input_schema": {
-                    "type": "object",
-                    "description": "New input schema (omit to keep existing).",
-                },
-                "handler_code": {
-                    "type": "string",
-                    "description": "New handler code (omit to keep existing).",
-                },
-            },
-            "required": ["name"],
-        },
-    },
-    {
-        "name": "delete_tool",
-        "description": "Delete a custom tool. Removes the tool definition and handler.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Name of the tool to delete.",
-                },
-            },
-            "required": ["name"],
         },
     },
 ]
@@ -3301,48 +2570,93 @@ def handle_delete_tool(args):
     return f"Tool '{bare_name}' deleted. It will be removed from the tool list on next session."
 
 
+# ── Action routing for consolidated tools ──
+
+_ACTION_ROUTES = {
+    "memory": {
+        "remember": handle_remember,
+        "recall_session": handle_recall_session,
+        "recall_other_agent": handle_recall_other_agent,
+        "search_similar": handle_search_similar,
+        "daily_digest": handle_daily_digest,
+    },
+    "threads": {
+        "get_threads": handle_get_threads,
+        "track_thread": handle_track_thread,
+        "manage_schedule": handle_manage_schedule,
+        "set_reminder": handle_set_reminder,
+        "create_task": handle_create_task,
+    },
+    "reflect": {
+        "observe": handle_observe,
+        "bookmark": handle_bookmark,
+        "review_observations": handle_review_observations,
+        "retire_observation": handle_retire_observation,
+        "check_contradictions": handle_check_contradictions,
+        "detect_avoidance": handle_detect_avoidance,
+        "compare_growth": handle_compare_growth,
+        "prompt_journal": handle_prompt_journal,
+    },
+    "notes": {
+        "read_note": handle_read_note,
+        "write_note": handle_write_note,
+        "search_notes": handle_search_notes,
+        "read_docs": handle_read_docs,
+        "search_docs": handle_search_docs,
+        "list_docs": handle_list_docs,
+    },
+    "interact": {
+        "ask_user": handle_ask_user,
+        "send_telegram": handle_send_telegram,
+        "defer_to_agent": handle_defer_to_agent,
+        "create_agent": handle_create_agent,
+        "update_emotional_state": handle_update_emotional_state,
+        "update_trust": handle_update_trust,
+    },
+    "display": {
+        "render_canvas": handle_render_canvas,
+        "render_memory_graph": handle_render_memory_graph,
+        "set_timer": handle_set_timer,
+        "add_avatar_loop": handle_add_avatar_loop,
+        "create_artefact": handle_create_artefact,
+    },
+    "tools": {
+        "create_tool": handle_create_tool,
+        "list_tools": handle_list_tools,
+        "edit_tool": handle_edit_tool,
+        "delete_tool": handle_delete_tool,
+    },
+}
+
+
+def _route_grouped(group, args):
+    """Route a grouped tool call to the correct handler based on 'action'."""
+    action = args.get("action")
+    if not action:
+        return f"Error: 'action' is required for {group} tool"
+    routes = _ACTION_ROUTES.get(group, {})
+    handler = routes.get(action)
+    if not handler:
+        valid = ", ".join(routes.keys())
+        return f"Error: unknown action '{action}' for {group}. Valid: {valid}"
+    # For manage_schedule, map schedule_action -> action in args
+    if action == "manage_schedule" and "schedule_action" in args:
+        args["action"] = args.pop("schedule_action")
+    return handler(args)
+
+
 HANDLERS = {
-    "remember": handle_remember,
-    "recall_session": handle_recall_session,
-    "recall_other_agent": handle_recall_other_agent,
-    "get_threads": handle_get_threads,
-    "ask_user": handle_ask_user,
-    "daily_digest": handle_daily_digest,
-    "track_thread": handle_track_thread,
-    "observe": handle_observe,
-    "bookmark": handle_bookmark,
-    "review_observations": handle_review_observations,
-    "retire_observation": handle_retire_observation,
-    "check_contradictions": handle_check_contradictions,
-    "detect_avoidance": handle_detect_avoidance,
-    "compare_growth": handle_compare_growth,
-    "prompt_journal": handle_prompt_journal,
+    # Grouped tools
+    "memory": lambda args: _route_grouped("memory", args),
+    "threads": lambda args: _route_grouped("threads", args),
+    "reflect": lambda args: _route_grouped("reflect", args),
+    "notes": lambda args: _route_grouped("notes", args),
+    "interact": lambda args: _route_grouped("interact", args),
+    "display": lambda args: _route_grouped("display", args),
+    "tools": lambda args: _route_grouped("tools", args),
+    # Standalone tools
     "review_audit": handle_review_audit,
-    "manage_schedule": handle_manage_schedule,
-    "set_reminder": handle_set_reminder,
-    "set_timer": handle_set_timer,
-    "create_task": handle_create_task,
-    "add_avatar_loop": handle_add_avatar_loop,
-    "create_artefact": handle_create_artefact,
-    "read_note": handle_read_note,
-    "write_note": handle_write_note,
-    "search_notes": handle_search_notes,
-    "send_telegram": handle_send_telegram,
-    "update_emotional_state": handle_update_emotional_state,
-    "update_trust": handle_update_trust,
-    "search_similar": handle_search_similar,
-    "create_agent": handle_create_agent,
-    "defer_to_agent": handle_defer_to_agent,
-    "render_canvas": handle_render_canvas,
-    "render_memory_graph": handle_render_memory_graph,
     "self_status": handle_self_status,
-    "read_docs": handle_read_docs,
-    "search_docs": handle_search_docs,
-    "list_docs": handle_list_docs,
-    "create_tool": handle_create_tool,
-    "list_tools": handle_list_tools,
-    "edit_tool": handle_edit_tool,
-    "delete_tool": handle_delete_tool,
 }
 
 # Load custom tools now that HANDLERS is defined
