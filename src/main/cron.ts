@@ -289,25 +289,93 @@ export function editJobSchedule(name: string, cronStr: string): void {
   }
 }
 
-export function runJobNow(name: string): number {
+// ---------------------------------------------------------------------------
+// Job run history (in-memory, last 100 entries)
+// ---------------------------------------------------------------------------
+
+export interface JobRunEntry {
+  name: string;
+  timestamp: string;
+  exitCode: number;
+  output: string;
+  durationMs: number;
+  agent: string;
+}
+
+const _history: JobRunEntry[] = [];
+const MAX_HISTORY = 100;
+
+function pushHistory(entry: JobRunEntry): void {
+  _history.push(entry);
+  if (_history.length > MAX_HISTORY) _history.splice(0, _history.length - MAX_HISTORY);
+}
+
+export function getJobHistory(): JobRunEntry[] {
+  return [..._history].reverse();
+}
+
+export function runJobNow(name: string): JobRunEntry {
   const jobs = loadJobs();
+  const config = getConfig();
+  const t0 = Date.now();
+
   if (!(name in jobs)) {
     log.warn(`Job '${name}' not found`);
-    return 1;
+    const entry: JobRunEntry = {
+      name,
+      timestamp: new Date().toISOString(),
+      exitCode: 1,
+      output: `Job '${name}' not found`,
+      durationMs: Date.now() - t0,
+      agent: config.AGENT_NAME,
+    };
+    pushHistory(entry);
+    return entry;
   }
 
   const job = jobs[name];
   const scriptPath = path.resolve(BUNDLE_ROOT, job.script);
-  const config = getConfig();
   const extraArgs = job.args || [];
 
   const result = spawnSync(config.PYTHON_PATH, [scriptPath, ...extraArgs], {
     cwd: BUNDLE_ROOT,
-    stdio: 'inherit',
+    stdio: 'pipe',
     env: { ...process.env, AGENT: config.AGENT_NAME },
+    timeout: 120_000,
   });
 
-  return result.status ?? 1;
+  const stdout = result.stdout?.toString('utf-8') || '';
+  const stderr = result.stderr?.toString('utf-8') || '';
+  const output = (stdout + (stderr ? '\n--- stderr ---\n' + stderr : '')).trim();
+  const exitCode = result.status ?? 1;
+
+  const entry: JobRunEntry = {
+    name,
+    timestamp: new Date().toISOString(),
+    exitCode,
+    output: output.slice(0, 10_000),
+    durationMs: Date.now() - t0,
+    agent: config.AGENT_NAME,
+  };
+  pushHistory(entry);
+
+  log.info(`Job '${name}' finished (exit=${exitCode}, ${entry.durationMs}ms)`);
+  return entry;
+}
+
+/**
+ * Read the last N lines of a job's log file.
+ */
+export function readJobLog(name: string, lines = 200): string {
+  const logPath = path.join(logsDir(), `${name}.log`);
+  if (!fs.existsSync(logPath)) return '';
+  try {
+    const content = fs.readFileSync(logPath, 'utf-8');
+    const allLines = content.split('\n');
+    return allLines.slice(-lines).join('\n');
+  } catch {
+    return '';
+  }
 }
 
 export function installAllJobs(): void {

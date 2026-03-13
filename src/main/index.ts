@@ -24,7 +24,7 @@ import { getAllAgentsUsage, getAllActivity } from './usage';
 import { startServer, stopServer } from './server';
 import { startDaemon, stopDaemon, isDaemonRunning } from './telegram-daemon';
 import { registerBotCommands, discoverChatId, sendMessage as sendTelegramMessage } from './telegram';
-import { listJobs, toggleCron } from './cron';
+import { listJobs, toggleCron, runJobNow, getJobHistory, readJobLog } from './cron';
 import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
 import { registerCallHandlers } from './call';
@@ -1119,6 +1119,18 @@ Output EXACTLY this format - a single fenced JSON block:
 
   ipcMain.handle('cron:toggle', (_event, enabled: boolean) => {
     toggleCron(enabled);
+  });
+
+  ipcMain.handle('cron:run', (_event, name: string) => {
+    return runJobNow(name);
+  });
+
+  ipcMain.handle('cron:history', () => {
+    return getJobHistory();
+  });
+
+  ipcMain.handle('cron:readLog', (_event, name: string, lines?: number) => {
+    return readJobLog(name, lines);
   });
 
   // ── Keep Awake ──
