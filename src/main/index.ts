@@ -835,6 +835,50 @@ Output EXACTLY this format - a single fenced JSON block:
       return 'error: google_auth.py not found';
     }
 
+    // Auto-install gws CLI to ~/.atrophy/.gws-cli/ if not already available.
+    // This avoids the user needing admin/sudo for npm install -g.
+    const gwsLocalDir = path.join(USER_DATA, '.gws-cli');
+    const gwsLocalBin = path.join(gwsLocalDir, 'node_modules', '.bin', 'gws');
+    const gwsCandidates = [
+      gwsLocalBin,
+      '/opt/homebrew/bin/gws',
+      '/usr/local/bin/gws',
+    ];
+    const gwsInstalled = gwsCandidates.some((p) => fs.existsSync(p));
+
+    if (!gwsInstalled) {
+      // Find npm — check common paths since Electron has limited PATH
+      let npm: string | undefined;
+      for (const p of ['/opt/homebrew/bin/npm', '/usr/local/bin/npm']) {
+        if (fs.existsSync(p)) { npm = p; break; }
+      }
+      if (!npm) {
+        try { npm = execSync('which npm', { encoding: 'utf8' }).trim(); } catch { /* */ }
+      }
+      if (npm) {
+        log.info('[google-oauth] Auto-installing gws CLI to', gwsLocalDir);
+        fs.mkdirSync(gwsLocalDir, { recursive: true });
+        try {
+          execSync(`"${npm}" install --prefix "${gwsLocalDir}" @googleworkspace/cli`, {
+            timeout: 60_000,
+            stdio: 'pipe',
+          });
+          log.info('[google-oauth] gws CLI installed successfully');
+        } catch (e) {
+          log.warn('[google-oauth] gws CLI auto-install failed:', e);
+          // Continue anyway — the Python script will give instructions
+        }
+      }
+    }
+
+    // Build PATH with gws location so the Python script can find it
+    const extraPaths = [
+      path.join(gwsLocalDir, 'node_modules', '.bin'),
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+    ];
+    const envPath = [...extraPaths, process.env.PATH].join(':');
+
     try {
       const args: string[] = [];
       if (wantWorkspace) args.push('--workspace');
@@ -845,7 +889,7 @@ Output EXACTLY this format - a single fenced JSON block:
       // Use 'inherit' for stdio so gws can interact with the terminal and open browser.
       const result = await new Promise<string>((resolve) => {
         const proc = spawn(pythonPath, [scriptPath, ...args], {
-          env: { ...process.env },
+          env: { ...process.env, PATH: envPath },
           stdio: ['inherit', 'pipe', 'pipe'],
         });
 
