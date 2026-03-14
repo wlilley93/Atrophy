@@ -69,62 +69,57 @@ _GWS_BIN = shutil.which("gws")
 
 
 def _ensure_node() -> bool:
-    """Ensure Node.js and npm are installed. Install via Homebrew if missing."""
+    """Ensure Node.js and npm are available. Gives clear instructions if missing."""
+    # Check common paths (packaged Electron may have limited PATH)
+    for p in ["/opt/homebrew/bin/npm", "/usr/local/bin/npm"]:
+        if Path(p).exists():
+            os.environ["PATH"] = str(Path(p).parent) + ":" + os.environ.get("PATH", "")
+            break
+
     if shutil.which("npm"):
         return True
 
-    print("Node.js is not installed. Attempting to install via Homebrew...")
-
+    # Check if brew exists — if so, try installing node (no sudo needed)
     brew = shutil.which("brew")
     if not brew:
-        print("Homebrew is not installed. Installing Homebrew...")
+        for p in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]:
+            if Path(p).exists():
+                brew = p
+                break
+
+    if brew:
+        print("Node.js is not installed. Installing via Homebrew...")
         try:
-            result = subprocess.run(
-                ["/bin/bash", "-c",
-                 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'],
-                timeout=300,
-            )
-            # Homebrew on Apple Silicon installs to /opt/homebrew
-            for p in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]:
-                if Path(p).exists():
-                    brew = p
-                    break
-            if not brew:
-                brew = shutil.which("brew")
+            result = subprocess.run([brew, "install", "node"], timeout=120)
+            if result.returncode == 0 and shutil.which("npm"):
+                print("Node.js installed successfully.")
+                return True
         except Exception as e:
-            print(f"Homebrew install failed: {e}")
+            print(f"Node.js install error: {e}")
 
-        if not brew:
-            print()
-            print("Homebrew install failed. Please install manually:")
-            print('  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"')
-            print()
-            print("Or install Node.js directly: https://nodejs.org")
-            return False
-        print("Homebrew installed successfully.")
-
-    try:
-        result = subprocess.run(
-            [brew, "install", "node"],
-            timeout=120,
-        )
-        if result.returncode == 0 and shutil.which("npm"):
-            print("Node.js installed successfully.")
-            return True
-        print("Homebrew install of Node.js failed.")
-    except subprocess.TimeoutExpired:
-        print("Node.js install timed out.")
-    except Exception as e:
-        print(f"Node.js install error: {e}")
-
+    # Don't try to install Homebrew — it requires admin and will fail for
+    # non-admin users. Give clear manual instructions instead.
     print()
-    print("Please install Node.js manually: https://nodejs.org")
+    print("error: Node.js is required for Google integration but is not installed.")
+    print()
+    print("Install Node.js using one of these methods:")
+    print("  • Download from https://nodejs.org (no admin required)")
+    print("  • Or with Homebrew: brew install node")
+    print()
+    print("Then re-run Google setup from Settings.")
     return False
 
 
 def _ensure_gws() -> bool:
-    """Ensure gws CLI is installed. Install via npm if missing."""
+    """Ensure gws CLI is available. Uses npx as fallback to avoid global install."""
     global _GWS_BIN
+
+    # Check common paths (packaged Electron may have limited PATH)
+    for p in ["/opt/homebrew/bin/gws", "/usr/local/bin/gws"]:
+        if Path(p).exists():
+            _GWS_BIN = p
+            return True
+
     _GWS_BIN = shutil.which("gws")
     if _GWS_BIN:
         return True
@@ -132,19 +127,31 @@ def _ensure_gws() -> bool:
     if not _ensure_node():
         return False
 
+    # Try npx first — runs without global install and without sudo
+    npx = shutil.which("npx")
+    if npx:
+        print("Using npx to run Google Workspace CLI (no install needed)...")
+        _GWS_BIN = "__npx__"  # sentinel; run_oauth_flow handles this
+        return True
+
+    # Fall back to local install (no -g, no sudo needed)
     npm = shutil.which("npm")
     if not npm:
-        print("npm still not found after Node install. Please restart your terminal and try again.")
+        print("npm not found. Please restart your terminal and try again.")
         return False
 
-    print("Installing Google Workspace CLI (gws)...")
+    # Install to user-local directory instead of global
+    local_dir = Path.home() / ".atrophy" / ".gws-cli"
+    local_dir.mkdir(parents=True, exist_ok=True)
+    print("Installing Google Workspace CLI locally...")
     try:
         result = subprocess.run(
-            [npm, "install", "-g", "@googleworkspace/cli"],
+            [npm, "install", "--prefix", str(local_dir), "@googleworkspace/cli"],
             timeout=60,
         )
-        _GWS_BIN = shutil.which("gws")
-        if result.returncode == 0 and _GWS_BIN:
+        local_bin = local_dir / "node_modules" / ".bin" / "gws"
+        if result.returncode == 0 and local_bin.exists():
+            _GWS_BIN = str(local_bin)
             print("gws CLI installed successfully.")
             return True
         print("gws install failed.")
@@ -157,6 +164,14 @@ def _ensure_gws() -> bool:
     print("Please install manually:")
     print("  npm install -g @googleworkspace/cli")
     return False
+
+
+def _gws_cmd() -> list:
+    """Return the command prefix to run gws (direct binary or via npx)."""
+    if _GWS_BIN == "__npx__":
+        npx = shutil.which("npx")
+        return [npx, "-y", "@googleworkspace/cli"]
+    return [_GWS_BIN]
 
 
 def run_oauth_flow() -> bool:
@@ -173,7 +188,7 @@ def run_oauth_flow() -> bool:
     env["GOOGLE_WORKSPACE_CLI_CLIENT_SECRET"] = _CLIENT_SECRET
 
     result = subprocess.run(
-        [_GWS_BIN, "auth", "login", "-s", _SERVICES],
+        [*_gws_cmd(), "auth", "login", "-s", _SERVICES],
         env=env,
         timeout=120,
     )
@@ -269,17 +284,38 @@ def run_extra_oauth() -> bool:
     return True
 
 
+def _find_gws() -> bool:
+    """Locate the gws binary, checking common paths."""
+    global _GWS_BIN
+    # Check common paths first (packaged Electron has limited PATH)
+    for p in ["/opt/homebrew/bin/gws", "/usr/local/bin/gws"]:
+        if Path(p).exists():
+            _GWS_BIN = p
+            return True
+    # Local install path
+    local_bin = Path.home() / ".atrophy" / ".gws-cli" / "node_modules" / ".bin" / "gws"
+    if local_bin.exists():
+        _GWS_BIN = str(local_bin)
+        return True
+    _GWS_BIN = shutil.which("gws")
+    if _GWS_BIN:
+        return True
+    # npx fallback
+    if shutil.which("npx"):
+        _GWS_BIN = "__npx__"
+        return True
+    return False
+
+
 def check_credentials() -> bool:
     """Check if valid credentials exist via gws auth status."""
-    global _GWS_BIN
-    _GWS_BIN = shutil.which("gws")
-    if not _GWS_BIN:
+    if not _find_gws():
         print("gws CLI not installed.")
         return False
 
     result = subprocess.run(
-        [_GWS_BIN, "auth", "status"],
-        capture_output=True, text=True, timeout=10,
+        [*_gws_cmd(), "auth", "status"],
+        capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:
         print("No valid Google credentials found.")
@@ -300,26 +336,22 @@ def check_credentials() -> bool:
 
 def revoke_credentials():
     """Revoke tokens via gws auth logout."""
-    global _GWS_BIN
-    _GWS_BIN = shutil.which("gws")
-    if not _GWS_BIN:
+    if not _find_gws():
         print("gws CLI not installed.")
         return
 
-    subprocess.run([_GWS_BIN, "auth", "logout"], timeout=10)
+    subprocess.run([*_gws_cmd(), "auth", "logout"], timeout=10)
     print("Google credentials removed.")
 
 
 def is_configured() -> bool:
     """Quick check — is gws authenticated?"""
-    global _GWS_BIN
-    _GWS_BIN = shutil.which("gws")
-    if not _GWS_BIN:
+    if not _find_gws():
         return False
     try:
         result = subprocess.run(
-            [_GWS_BIN, "auth", "status"],
-            capture_output=True, text=True, timeout=5,
+            [*_gws_cmd(), "auth", "status"],
+            capture_output=True, text=True, timeout=15,
         )
         if result.returncode != 0:
             return False
