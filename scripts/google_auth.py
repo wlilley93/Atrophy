@@ -174,6 +174,24 @@ def _gws_cmd() -> list:
     return [_GWS_BIN]
 
 
+def _open_browser(url: str):
+    """Open a URL in the user's browser.
+
+    Prints an OPEN_URL: marker so the Electron parent process can intercept it
+    and call shell.openExternal() — which is reliable even from packaged apps.
+    Falls back to Python's webbrowser.open() for standalone usage.
+    """
+    import webbrowser
+
+    # Marker for Electron IPC handler to detect and open reliably
+    print(f"OPEN_URL:{url}", flush=True)
+    # Also try Python's webbrowser as fallback (works when run from terminal)
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+
+
 def run_oauth_flow() -> bool:
     """Run OAuth2 via gws auth login. Opens browser for consent. Returns True on success."""
     if not _ensure_gws():
@@ -186,12 +204,29 @@ def run_oauth_flow() -> bool:
     env = dict(os.environ)
     env["GOOGLE_WORKSPACE_CLI_CLIENT_ID"] = _CLIENT_ID
     env["GOOGLE_WORKSPACE_CLI_CLIENT_SECRET"] = _CLIENT_SECRET
+    # Help gws find the system browser when spawned from Electron
+    if sys.platform == "darwin":
+        env.setdefault("BROWSER", "/usr/bin/open")
 
+    # Capture gws output so we can detect and forward auth URLs
     result = subprocess.run(
         [*_gws_cmd(), "auth", "login", "-s", _SERVICES],
         env=env,
+        capture_output=True, text=True,
         timeout=120,
     )
+
+    # Forward output
+    combined = (result.stdout or "") + (result.stderr or "")
+    if combined.strip():
+        print(combined.strip())
+
+    # If gws printed an auth URL, open it via the Electron-intercepted channel
+    import re
+    url_match = re.search(r'(https://accounts\.google\.com\S+)', combined)
+    if url_match:
+        _open_browser(url_match.group(1))
+
     if result.returncode != 0:
         return False
 
@@ -205,7 +240,6 @@ def run_extra_oauth() -> bool:
     import http.server
     import urllib.parse
     import urllib.request
-    import webbrowser
 
     _EXTRA_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -251,7 +285,7 @@ def run_extra_oauth() -> bool:
 
     print(f"Opening browser for YouTube, Photos, and Search Console consent...")
     print(f"If it doesn't open, visit: {auth_url}\n")
-    webbrowser.open(auth_url)
+    _open_browser(auth_url)
 
     server.handle_request()
     server.server_close()

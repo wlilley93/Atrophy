@@ -3,7 +3,7 @@
  * Port of main.py - two modes: menu bar (--app) and GUI (--gui).
  */
 
-import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, session as electronSession, powerSaveBlocker } from 'electron';
+import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, session as electronSession, powerSaveBlocker, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execFile, execSync, spawn } from 'child_process';
@@ -899,6 +899,16 @@ Output EXACTLY this format - a single fenced JSON block:
           const chunk = d.toString();
           stdout += chunk;
           log.info('[google-oauth] stdout:', chunk.trim());
+
+          // Detect OAuth URLs and open them via Electron (reliable on macOS).
+          // Python's webbrowser.open() and gws CLI may fail to open a browser
+          // when running as a subprocess of Electron.
+          const urlMatch = chunk.match(/OPEN_URL:(.+)/);
+          if (urlMatch) {
+            const url = urlMatch[1].trim();
+            log.info('[google-oauth] Opening auth URL via Electron shell');
+            shell.openExternal(url);
+          }
         });
         proc.stderr?.on('data', (d: Buffer) => {
           const chunk = d.toString();
