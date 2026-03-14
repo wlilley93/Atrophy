@@ -837,7 +837,7 @@ Output EXACTLY this format - a single fenced JSON block:
 
     // Auto-install gws CLI to ~/.atrophy/.gws-cli/ if not already available.
     // This avoids the user needing admin/sudo for npm install -g.
-    const gwsLocalDir = path.join(USER_DATA, '.gws-cli');
+    const gwsLocalDir = path.join(USER_DATA, 'tools', 'gws-cli');
     const gwsLocalBin = path.join(gwsLocalDir, 'node_modules', '.bin', 'gws');
     const gwsCandidates = [
       gwsLocalBin,

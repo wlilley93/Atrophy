@@ -141,7 +141,7 @@ def _ensure_gws() -> bool:
         return False
 
     # Install to user-local directory instead of global
-    local_dir = Path.home() / ".atrophy" / ".gws-cli"
+    local_dir = Path.home() / ".atrophy" / "tools" / "gws-cli"
     local_dir.mkdir(parents=True, exist_ok=True)
     print("Installing Google Workspace CLI locally...")
     try:
@@ -293,7 +293,7 @@ def _find_gws() -> bool:
             _GWS_BIN = p
             return True
     # Local install path
-    local_bin = Path.home() / ".atrophy" / ".gws-cli" / "node_modules" / ".bin" / "gws"
+    local_bin = Path.home() / ".atrophy" / "tools" / "gws-cli" / "node_modules" / ".bin" / "gws"
     if local_bin.exists():
         _GWS_BIN = str(local_bin)
         return True
