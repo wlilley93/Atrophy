@@ -26,7 +26,7 @@ function apiUrl(method: string): string {
   return `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/${method}`;
 }
 
-async function post(method: string, payload: Record<string, unknown>): Promise<unknown | null> {
+async function post(method: string, payload: Record<string, unknown>, timeoutMs = 15_000): Promise<unknown | null> {
   const config = getConfig();
   if (!config.TELEGRAM_BOT_TOKEN) {
     log.warn('TELEGRAM_BOT_TOKEN not configured');
@@ -38,7 +38,7 @@ async function post(method: string, payload: Record<string, unknown>): Promise<u
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     const result = await resp.json() as { ok: boolean; result?: unknown };
@@ -213,7 +213,7 @@ export async function pollCallback(
       offset: _lastUpdateId + 1,
       timeout: pollTime,
       allowed_updates: ['callback_query', 'message'],
-    }) as { update_id: number; callback_query?: { id: string; from?: { id: number }; data?: string } }[] | null;
+    }, (pollTime + 10) * 1000) as { update_id: number; callback_query?: { id: string; from?: { id: number }; data?: string } }[] | null;
 
     if (!result) {
       await new Promise((r) => setTimeout(r, 2000));
@@ -250,7 +250,7 @@ export async function pollReply(
       offset: _lastUpdateId + 1,
       timeout: pollTime,
       allowed_updates: ['message'],
-    }) as { update_id: number; message?: { from?: { id: number }; text?: string } }[] | null;
+    }, (pollTime + 10) * 1000) as { update_id: number; message?: { from?: { id: number }; text?: string } }[] | null;
 
     if (!result) {
       await new Promise((r) => setTimeout(r, 2000));

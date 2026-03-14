@@ -481,7 +481,7 @@ export function streamInference(
   if (cliSessionId) {
     cmd = [
       config.CLAUDE_BIN,
-      '--model', 'claude-haiku-4-5-20251001',
+      '--model', config.CLAUDE_MODEL,
       '--effort', effort,
       '--verbose',
       '--output-format', 'stream-json',
@@ -495,7 +495,7 @@ export function streamInference(
   } else {
     cmd = [
       config.CLAUDE_BIN,
-      '--model', 'claude-haiku-4-5-20251001',
+      '--model', config.CLAUDE_MODEL,
       '--effort', effort,
       '--verbose',
       '--output-format', 'stream-json',

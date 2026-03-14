@@ -89,6 +89,7 @@
 
   // Inference
   let claudeBin = $state('claude');
+  let claudeModel = $state('claude-haiku-4-5-20251001');
   let claudeEffort = $state('medium');
   let adaptiveEffort = $state(true);
 
@@ -255,6 +256,7 @@
       maxRecordSec = cfg.maxRecordSec || 120;
 
       claudeBin = cfg.claudeBin || 'claude';
+      claudeModel = cfg.claudeModel || 'claude-haiku-4-5-20251001';
       claudeEffort = cfg.claudeEffort || 'medium';
       adaptiveEffort = cfg.adaptiveEffort ?? true;
 
@@ -328,6 +330,7 @@
       SAMPLE_RATE: sampleRate,
       MAX_RECORD_SEC: maxRecordSec,
       CLAUDE_BIN: claudeBin,
+      CLAUDE_MODEL: claudeModel,
       CLAUDE_EFFORT: claudeEffort,
       ADAPTIVE_EFFORT: adaptiveEffort,
       CONTEXT_SUMMARIES: contextSummaries,
@@ -805,6 +808,15 @@
           <label class="field">
             <span class="field-label">Claude Binary</span>
             <input type="text" bind:value={claudeBin} class="field-input" />
+          </label>
+          <label class="field">
+            <span class="field-label">Model</span>
+            <select bind:value={claudeModel} class="field-select">
+              <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+              <option value="claude-sonnet-4-5-20241022">Sonnet 4.5</option>
+              <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+              <option value="claude-opus-4-6">Opus 4.6</option>
+            </select>
           </label>
           <label class="field">
             <span class="field-label">Claude Effort</span>

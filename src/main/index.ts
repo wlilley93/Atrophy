@@ -430,6 +430,7 @@ function registerIpcHandlers(): void {
       maxRecordSec: c.MAX_RECORD_SEC,
       // Inference
       claudeBin: c.CLAUDE_BIN,
+      claudeModel: c.CLAUDE_MODEL,
       claudeEffort: c.CLAUDE_EFFORT,
       adaptiveEffort: c.ADAPTIVE_EFFORT,
       // Memory
@@ -495,7 +496,7 @@ function registerIpcHandlers(): void {
   const userKeys = new Set([
     'USER_NAME', 'INPUT_MODE', 'PTT_KEY', 'WAKE_WORD_ENABLED',
     'WAKE_CHUNK_SECONDS', 'SAMPLE_RATE', 'MAX_RECORD_SEC',
-    'CLAUDE_BIN', 'CLAUDE_EFFORT', 'ADAPTIVE_EFFORT', 'CONTEXT_SUMMARIES',
+    'CLAUDE_BIN', 'CLAUDE_MODEL', 'CLAUDE_EFFORT', 'ADAPTIVE_EFFORT', 'CONTEXT_SUMMARIES',
     'MAX_CONTEXT_TOKENS', 'VECTOR_SEARCH_WEIGHT', 'EMBEDDING_MODEL',
     'EMBEDDING_DIM', 'SESSION_SOFT_LIMIT_MINS', 'NOTIFICATIONS_ENABLED',
     'SILENCE_TIMER_ENABLED', 'SILENCE_TIMER_MINUTES',

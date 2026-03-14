@@ -425,6 +425,7 @@ export class Config {
 
   // Claude CLI
   CLAUDE_BIN: string;
+  CLAUDE_MODEL: string;
   CLAUDE_EFFORT: string;
   ADAPTIVE_EFFORT: boolean;
 
@@ -538,6 +539,7 @@ export class Config {
     this.WHISPER_BIN = '';
     this.WHISPER_MODEL = '';
     this.CLAUDE_BIN = 'claude';
+    this.CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
     this.CLAUDE_EFFORT = 'medium';
     this.ADAPTIVE_EFFORT = true;
     this.MCP_DIR = '';
@@ -671,6 +673,7 @@ export class Config {
       return 'claude';
     })();
     this.CLAUDE_BIN = cfg('CLAUDE_BIN', claudeDefault);
+    this.CLAUDE_MODEL = cfg('CLAUDE_MODEL', 'claude-haiku-4-5-20251001');
     this.CLAUDE_EFFORT = cfg('CLAUDE_EFFORT', 'medium');
     this.ADAPTIVE_EFFORT = cfg('ADAPTIVE_EFFORT', true);
 
