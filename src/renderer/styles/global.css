@@ -53,9 +53,14 @@ html, body, #app {
   -webkit-app-region: drag;
 }
 
-/* Make interactive elements non-draggable */
+/* Make interactive elements non-draggable and selectable */
 input, textarea, button, a, [data-no-drag] {
   -webkit-app-region: no-drag;
+}
+
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Selection color */

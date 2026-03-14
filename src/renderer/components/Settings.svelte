@@ -123,6 +123,11 @@
   let telegramDiscovering = $state(false);
   let telegramDiscoverStatus = $state('');
 
+  // Password visibility toggles
+  let showElevenlabsKey = $state(false);
+  let showFalKey = $state(false);
+  let showTelegramToken = $state(false);
+
   // About
   let version = $state('0.0.0');
   let bundleRoot = $state('');
@@ -650,10 +655,19 @@
               <option value="none">None</option>
             </select>
           </label>
-          <label class="field">
+          <div class="field">
             <span class="field-label">ElevenLabs API Key</span>
-            <input type="password" bind:value={elevenlabsApiKey} class="field-input" />
-          </label>
+            <div class="input-eye-wrap">
+              <input type={showElevenlabsKey ? 'text' : 'password'} bind:value={elevenlabsApiKey} class="field-input has-eye" />
+              <button class="eye-toggle" type="button" onclick={() => showElevenlabsKey = !showElevenlabsKey} aria-label={showElevenlabsKey ? 'Hide' : 'Show'}>
+                {#if showElevenlabsKey}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                {:else}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                {/if}
+              </button>
+            </div>
+          </div>
           <label class="field">
             <span class="field-label">ElevenLabs Voice ID</span>
             <input type="text" bind:value={elevenlabsVoiceId} class="field-input" />
@@ -688,10 +702,19 @@
             <input type="range" min="0.5" max="2.0" step="0.01" bind:value={ttsPlaybackRate} class="field-slider" />
             <span class="field-value">{ttsPlaybackRate.toFixed(2)}x</span>
           </label>
-          <label class="field">
+          <div class="field">
             <span class="field-label">Fal API Key</span>
-            <input type="password" bind:value={falApiKey} class="field-input" />
-          </label>
+            <div class="input-eye-wrap">
+              <input type={showFalKey ? 'text' : 'password'} bind:value={falApiKey} class="field-input has-eye" />
+              <button class="eye-toggle" type="button" onclick={() => showFalKey = !showFalKey} aria-label={showFalKey ? 'Hide' : 'Show'}>
+                {#if showFalKey}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                {:else}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                {/if}
+              </button>
+            </div>
+          </div>
           <label class="field">
             <span class="field-label">Fal Voice ID</span>
             <input type="text" bind:value={falVoiceId} class="field-input" />
@@ -896,10 +919,19 @@
         <div class="section">
           <div class="section-header">Telegram</div>
           <div class="section-line"></div>
-          <label class="field">
+          <div class="field">
             <span class="field-label">Bot Token</span>
-            <input type="password" bind:value={telegramBotToken} class="field-input" />
-          </label>
+            <div class="input-eye-wrap">
+              <input type={showTelegramToken ? 'text' : 'password'} bind:value={telegramBotToken} class="field-input has-eye" />
+              <button class="eye-toggle" type="button" onclick={() => showTelegramToken = !showTelegramToken} aria-label={showTelegramToken ? 'Hide' : 'Show'}>
+                {#if showTelegramToken}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                {:else}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                {/if}
+              </button>
+            </div>
+          </div>
           <label class="field">
             <span class="field-label">Chat ID</span>
             <input type="text" bind:value={telegramChatId} class="field-input" />
@@ -1437,6 +1469,43 @@
 
   .field-input:focus {
     border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  .field-input.has-eye {
+    padding-right: 36px;
+  }
+
+  .input-eye-wrap {
+    position: relative;
+    flex: 1;
+  }
+
+  .input-eye-wrap .field-input {
+    width: 100%;
+  }
+
+  .eye-toggle {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, background 0.15s;
+    padding: 0;
+  }
+
+  .eye-toggle:hover {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
   }
 
   .field.row {

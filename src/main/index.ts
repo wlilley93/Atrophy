@@ -780,6 +780,14 @@ Output EXACTLY this format - a single fenced JSON block:
     return saveEnvVar(key, value);
   });
 
+  ipcMain.handle('setup:speak', async (_event, text: string) => {
+    if (isMuted()) return;
+    const audioPath = await synthesise(text);
+    if (audioPath) {
+      await playAudio(audioPath);
+    }
+  });
+
   ipcMain.handle('setup:createAgent', (_event, agentConfig: Record<string, string>) => {
     const { createAgent } = require('./create-agent');
     const userName = getConfig().USER_NAME || 'User';

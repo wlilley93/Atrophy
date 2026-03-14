@@ -88,6 +88,11 @@
   // Skip confirmation
   let skipConfirmVisible = $state(false);
 
+  // Password visibility toggles
+  let showElevenLabsKey = $state(false);
+  let showFalKey = $state(false);
+  let showTelegramToken = $state(false);
+
   // GitHub
   let githubChecking = $state(false);
   let githubInstalled = $state<boolean | null>(null);
@@ -304,13 +309,22 @@
       {#if svc.key === 'ELEVENLABS_API_KEY'}
         <label class="service-field">
           <span>{svc.label}</span>
-          <input
-            type="password"
-            bind:value={elevenLabsKey}
-            class="svc-input secure-input"
-            placeholder={svc.placeholder}
-            autofocus
-          />
+          <div class="input-eye-wrap">
+            <input
+              type={showElevenLabsKey ? 'text' : 'password'}
+              bind:value={elevenLabsKey}
+              class="svc-input secure-input has-eye"
+              placeholder={svc.placeholder}
+              autofocus
+            />
+            <button class="eye-toggle" type="button" onclick={() => showElevenLabsKey = !showElevenLabsKey} aria-label={showElevenLabsKey ? 'Hide' : 'Show'}>
+              {#if showElevenLabsKey}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              {/if}
+            </button>
+          </div>
         </label>
         {#if elevenLabsVerified === true}
           <span class="verify-status verified">Verified</span>
@@ -329,13 +343,22 @@
       {:else if svc.key === 'FAL_KEY'}
         <label class="service-field">
           <span>{svc.label}</span>
-          <input
-            type="password"
-            bind:value={falKey}
-            class="svc-input secure-input"
-            placeholder={svc.placeholder}
-            autofocus
-          />
+          <div class="input-eye-wrap">
+            <input
+              type={showFalKey ? 'text' : 'password'}
+              bind:value={falKey}
+              class="svc-input secure-input has-eye"
+              placeholder={svc.placeholder}
+              autofocus
+            />
+            <button class="eye-toggle" type="button" onclick={() => showFalKey = !showFalKey} aria-label={showFalKey ? 'Hide' : 'Show'}>
+              {#if showFalKey}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              {/if}
+            </button>
+          </div>
         </label>
         {#if falVerified === true}
           <span class="verify-status verified">Verified</span>
@@ -354,13 +377,22 @@
       {:else if svc.key === 'TELEGRAM'}
         <label class="service-field">
           <span>Bot Token</span>
-          <input
-            type="password"
-            bind:value={telegramToken}
-            class="svc-input secure-input"
-            placeholder="123456:ABC-DEF..."
-            autofocus
-          />
+          <div class="input-eye-wrap">
+            <input
+              type={showTelegramToken ? 'text' : 'password'}
+              bind:value={telegramToken}
+              class="svc-input secure-input has-eye"
+              placeholder="123456:ABC-DEF..."
+              autofocus
+            />
+            <button class="eye-toggle" type="button" onclick={() => showTelegramToken = !showTelegramToken} aria-label={showTelegramToken ? 'Hide' : 'Show'}>
+              {#if showTelegramToken}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              {/if}
+            </button>
+          </div>
         </label>
         {#if telegramVerified === true}
           <span class="verify-status verified">Bot verified</span>
@@ -563,6 +595,39 @@
   .secure-input:focus {
     border-color: rgba(220, 160, 60, 0.7);
     box-shadow: 0 0 0 2px rgba(220, 140, 40, 0.12);
+  }
+
+  .secure-input.has-eye {
+    padding-right: 44px;
+  }
+
+  .input-eye-wrap {
+    position: relative;
+    width: 100%;
+  }
+
+  .eye-toggle {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, background 0.15s;
+    padding: 0;
+  }
+
+  .eye-toggle:hover {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
   }
 
   /* ---- Buttons ---- */
