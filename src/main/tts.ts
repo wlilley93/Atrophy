@@ -483,6 +483,8 @@ interface QueueItem {
 
 let _queue: QueueItem[] = [];
 let _playing = false;
+let _nextExpectedIndex = 0;
+let _waitTimer: ReturnType<typeof setTimeout> | null = null;
 let _onStarted: ((index: number) => void) | null = null;
 let _onDone: ((index: number) => void) | null = null;
 let _onQueueEmpty: (() => void) | null = null;
@@ -511,6 +513,8 @@ export function isMuted(): boolean {
 export function enqueueAudio(audioPath: string, index: number): void {
   if (_muted) return;
   _queue.push({ audioPath, index });
+  // Keep queue sorted by sentence index so out-of-order TTS results play correctly
+  _queue.sort((a, b) => a.index - b.index);
   if (!_playing) {
     processQueue();
   }
@@ -525,6 +529,8 @@ export function clearAudioQueue(): void {
     try { fs.unlinkSync(item.audioPath); } catch { /* best-effort cleanup */ }
   }
   _queue = [];
+  _nextExpectedIndex = 0;
+  if (_waitTimer) { clearTimeout(_waitTimer); _waitTimer = null; }
   stopCurrentPlayback();
 }
 
@@ -533,7 +539,36 @@ async function processQueue(): Promise<void> {
   _playing = true;
 
   while (_queue.length > 0) {
+    // Wait for the next expected sentence index to avoid out-of-order playback.
+    // If sentence 2 arrives before sentence 1, wait up to 3s for sentence 1.
+    if (_queue[0].index > _nextExpectedIndex) {
+      const arrived = await new Promise<boolean>((resolve) => {
+        const check = () => {
+          if (_queue.length > 0 && _queue[0].index === _nextExpectedIndex) {
+            resolve(true);
+          }
+        };
+        check();
+        // Re-check when new items arrive (enqueueAudio calls processQueue which
+        // won't re-enter because _playing is true, but we poll briefly)
+        _waitTimer = setTimeout(() => {
+          _waitTimer = null;
+          resolve(false); // Give up waiting, play whatever is next
+        }, 3000);
+        // Also check periodically in case enqueue happened between checks
+        const interval = setInterval(() => {
+          if (_queue.length > 0 && _queue[0].index === _nextExpectedIndex) {
+            clearInterval(interval);
+            if (_waitTimer) { clearTimeout(_waitTimer); _waitTimer = null; }
+            resolve(true);
+          }
+        }, 50);
+      });
+      if (!arrived && _queue.length === 0) break;
+    }
+
     const item = _queue.shift()!;
+    _nextExpectedIndex = item.index + 1;
     _onStarted?.(item.index);
 
     try {
