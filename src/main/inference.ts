@@ -17,7 +17,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
-import { getConfig } from './config';
+import { getConfig, USER_DATA } from './config';
 import { classifyEffort, EffortLevel } from './thinking';
 import {
   timeOfDayContext,
@@ -200,7 +200,8 @@ function getMcpConfigPath(): string {
   if (_mcpConfigPath) return _mcpConfigPath;
 
   const config = getConfig();
-  const configPath = path.join(config.MCP_DIR, 'config.json');
+  // Write config to user data dir (not inside the app bundle, which may be read-only)
+  const configPath = path.join(USER_DATA, 'mcp', 'config.json');
 
   const servers: Record<string, unknown> = {
     memory: {
