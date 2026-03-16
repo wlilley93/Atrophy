@@ -15,9 +15,9 @@
   // Update relative timestamps every 30s
   let timestampTimer: ReturnType<typeof setInterval>;
 
-  // Character reveal animation - 8 chars per 25ms tick
-  const REVEAL_RATE = 8;
-  const REVEAL_INTERVAL = 25;
+  // Character reveal animation - 24 chars per 33ms tick (~30fps, 3x faster reveal)
+  const REVEAL_RATE = 24;
+  const REVEAL_INTERVAL = 33;
 
   function startReveal(msg: Message) {
     if (msg.complete || revealTimers.has(msg.id)) return;
@@ -213,18 +213,35 @@
     return text.trim();
   }
 
+  // Memoize rendered markdown to avoid re-parsing on every reactive update
+  const renderCache = new Map<string, { key: string; html: string }>();
+
   function renderMessage(msg: Message): string {
     const text = displayText(msg.content, msg.revealed);
+    const cacheKey = `${msg.id}:${msg.revealed}:${msg.complete ? 1 : 0}`;
+    const cached = renderCache.get(msg.id);
+    if (cached && cached.key === cacheKey) return cached.html;
+
+    let html: string;
     if (msg.role === 'agent') {
-      return renderMarkdown(text);
+      html = renderMarkdown(text);
+    } else {
+      // User messages: escape HTML and linkify URLs
+      let escaped = escapeHtml(text);
+      escaped = escaped.replace(
+        /(https?:\/\/[^\s<&]+)/g,
+        '<a href="$1" target="_blank" rel="noopener" class="md-link">$1</a>'
+      );
+      html = escaped;
     }
-    // User messages: escape HTML and linkify URLs
-    let escaped = escapeHtml(text);
-    escaped = escaped.replace(
-      /(https?:\/\/[^\s<&]+)/g,
-      '<a href="$1" target="_blank" rel="noopener" class="md-link">$1</a>'
-    );
-    return escaped;
+
+    renderCache.set(msg.id, { key: cacheKey, html });
+    // Evict old entries to prevent unbounded growth
+    if (renderCache.size > 200) {
+      const first = renderCache.keys().next().value;
+      if (first) renderCache.delete(first);
+    }
+    return html;
   }
 
   // Relative time formatting

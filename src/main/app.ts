@@ -1864,7 +1864,7 @@ app.whenReady().then(() => {
     }
   }, 10_000);
 
-  // Deferral watcher - check for agent handoff requests every 2s
+  // Deferral watcher - check for agent handoff requests every 5s
   deferralTimer = setInterval(() => {
     if (!mainWindow || !currentAgentName) return;
     const request = checkDeferralRequest();
@@ -1881,7 +1881,7 @@ app.whenReady().then(() => {
       context: request.context,
       user_question: request.user_question,
     });
-  }, 2_000);
+  }, 5_000);
 
   // Status timer - check macOS idle state every 60s, set away if idle > 10min
   statusTimer = setInterval(() => {
@@ -1903,7 +1903,7 @@ app.whenReady().then(() => {
     }
   }, 60_000);
 
-  // Ask-user watcher - check for MCP ask_user requests every 1s
+  // Ask-user watcher - check for MCP ask_user requests every 3s
   cleanupAskFiles();
   askUserTimer = setInterval(() => {
     if (!mainWindow) return;
@@ -1921,9 +1921,9 @@ app.whenReady().then(() => {
       label: request.label,
       destination: request.destination,
     });
-  }, 1_000);
+  }, 3_000);
 
-  // Artefact display watcher - check for MCP create_artefact output every 2s
+  // Artefact display watcher - check for MCP create_artefact output every 5s
   artefactTimer = setInterval(() => {
     if (!mainWindow) return;
     const config = getConfig();
@@ -1987,7 +1987,7 @@ app.whenReady().then(() => {
       // Malformed file - remove it
       try { fs.unlinkSync(displayFile); } catch { /* already gone */ }
     }
-  }, 2_000);
+  }, 5_000);
 
   // Server mode - no window
   if (isServerMode) {

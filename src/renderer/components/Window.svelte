@@ -22,14 +22,21 @@
 
   import { api } from '../api';
 
-  // Brain frames for update check screen
+  // Brain frames for update check screen - lazy loaded, only resolved when needed
   const brainFramePaths: string[] = [];
   const brainModules = import.meta.glob(
     '../../../resources/icons/brain_frames/brain_*.png',
-    { eager: true, query: '?url', import: 'default' }
+    { eager: false, query: '?url', import: 'default' }
   );
-  for (const key of Object.keys(brainModules).sort()) {
-    brainFramePaths.push(brainModules[key] as string);
+  const brainModuleKeys = Object.keys(brainModules).sort();
+  let brainFramesLoaded = false;
+  async function ensureBrainFrames(): Promise<void> {
+    if (brainFramesLoaded) return;
+    for (const key of brainModuleKeys) {
+      const mod = await brainModules[key]() as string;
+      brainFramePaths.push(mod);
+    }
+    brainFramesLoaded = true;
   }
   let updateBrainFrame = $state(0);
   let updateBrainTimer: ReturnType<typeof setInterval> | null = null;
@@ -160,10 +167,15 @@
   async function runUpdateCheck(): Promise<void> {
     if (!api) return;
 
+    // Load brain frames on demand (not at startup)
+    await ensureBrainFrames();
+
     // Start brain frame cycling
     updateBrainFrame = 0;
     updateBrainTimer = setInterval(() => {
-      updateBrainFrame = (updateBrainFrame + 1) % brainFramePaths.length;
+      if (brainFramePaths.length > 0) {
+        updateBrainFrame = (updateBrainFrame + 1) % brainFramePaths.length;
+      }
     }, 400);
 
     return new Promise<void>((resolve) => {
