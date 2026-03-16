@@ -39,7 +39,7 @@ import { ensureAvatarAssets, ensureAmbientVideo, getAmbientVideoPath } from './a
 import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSourcePhoto } from './jobs/generate-mirror-avatar';
 import type { MirrorAvatarProgress } from './jobs/generate-mirror-avatar';
 import { parseArtifacts } from './artifact-parser';
-import { loadCachedOpening, generateOpening, cacheNextOpening } from './opening';
+import { loadCachedOpening, generateOpening, cacheNextOpening, getStaticFallback } from './opening';
 import { getHotBundlePaths, checkForBundleUpdate, getActiveBundleVersion, getPendingBundleInfo, clearHotBundle } from './bundle-updater';
 import type { HotBundlePaths } from './bundle-updater';
 import { createLogger } from './logger';
@@ -713,12 +713,16 @@ function registerIpcHandlers(): void {
         cacheNextOpening(systemPrompt, currentSession?.cliSessionId ?? undefined);
         return result.text;
       } catch (err) {
-        log.error('[opening] Generation failed, falling back to static:', err);
+        log.error('[opening] Generation failed:', err);
       }
+    } else {
+      log.warn('[opening] System prompt not available, skipping dynamic generation');
     }
 
-    // 4. Fall back to static config line
-    return getConfig().OPENING_LINE || 'Ready. Where are we?';
+    // 4. Fall back to a varied static line (not just the agent name)
+    const fallback = getStaticFallback();
+    log.info(`[opening] Using static fallback: "${fallback}"`);
+    return fallback;
   });
 
   ipcMain.handle('setup:check', () => {
@@ -1191,6 +1195,14 @@ Output EXACTLY this format - a single fenced JSON block:
               mainWindow.webContents.send('inference:done', cleanedText);
             } else {
               mainWindow.webContents.send('inference:done', fullText);
+            }
+            // Cache an opening for next boot if we don't have one yet
+            // (proves the CLI is working, so dynamic generation will succeed)
+            if (systemPrompt) {
+              const cachePath = getConfig().OPENING_CACHE_FILE;
+              if (cachePath && !fs.existsSync(cachePath)) {
+                cacheNextOpening(systemPrompt, currentSession?.cliSessionId ?? undefined);
+              }
             }
             // Prefetch context for the next message during idle
             setImmediate(() => prefetchContext());
