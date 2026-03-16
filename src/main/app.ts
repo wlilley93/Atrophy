@@ -1206,6 +1206,13 @@ Output EXACTLY this format - a single fenced JSON block:
 
   ipcMain.handle('agent:switch', async (_event, name: string) => {
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Invalid agent name');
+
+    // Verify agent directory exists before switching
+    const knownAgents = discoverAgents();
+    if (!knownAgents.some(a => a.name === name)) {
+      throw new Error(`Agent "${name}" not found`);
+    }
+
     // End current session before switching
     if (currentSession && systemPrompt) {
       await currentSession.end(systemPrompt);

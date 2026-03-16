@@ -61,11 +61,22 @@ async function boot(): Promise<void> {
   let useHot = false;
 
   try {
-    // Check if last hot boot crashed (sentinel still present)
+    // Check if last hot boot crashed (sentinel still present from a dead process)
     if (fs.existsSync(BOOT_SENTINEL)) {
-      console.warn('[bootstrap] previous hot boot crashed, skipping hot bundle this time');
-      try { fs.unlinkSync(BOOT_SENTINEL); } catch { /* ignore */ }
-      // Fall through to frozen
+      // Check if the PID in the sentinel is still alive (race condition guard)
+      let stale = true;
+      try {
+        const pid = parseInt(fs.readFileSync(BOOT_SENTINEL, 'utf-8').trim(), 10);
+        if (pid && pid !== process.pid) {
+          try { process.kill(pid, 0); stale = false; } catch { /* process dead - sentinel is stale */ }
+        }
+      } catch { /* unreadable sentinel */ }
+
+      if (stale) {
+        console.warn('[bootstrap] previous hot boot crashed, skipping hot bundle this time');
+        try { fs.unlinkSync(BOOT_SENTINEL); } catch { /* ignore */ }
+        // Fall through to frozen
+      }
     } else if (fs.existsSync(MANIFEST_PATH) && fs.existsSync(HOT_APP)) {
       const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf-8'));
       if (manifest?.version && isNewer(manifest.version, app.getVersion())) {
@@ -77,10 +88,10 @@ async function boot(): Promise<void> {
   }
 
   if (useHot) {
-    // Write boot sentinel - cleared after 10 seconds of successful running
+    // Write boot sentinel with PID - cleared after 10 seconds of successful running
     try {
       fs.mkdirSync(BUNDLE_DIR, { recursive: true });
-      fs.writeFileSync(BOOT_SENTINEL, Date.now().toString());
+      fs.writeFileSync(BOOT_SENTINEL, String(process.pid));
     } catch { /* non-fatal */ }
 
     // Tell the app code it's running from a hot bundle

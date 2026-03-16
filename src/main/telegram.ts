@@ -45,10 +45,10 @@ async function post(method: string, payload: Record<string, unknown>, timeoutMs 
       signal: AbortSignal.timeout(fetchTimeout),
     });
 
-    const result = await resp.json() as { ok: boolean; result?: unknown };
-    if (result.ok) return result.result;
+    const data = await resp.json() as { ok: boolean; result?: unknown; description?: string };
+    if (data.ok) return data.result ?? null;
 
-    log.error(`API error: ${JSON.stringify(result)}`);
+    log.error(`API error: ${data.description || JSON.stringify(data)}`);
     return null;
   } catch (e) {
     log.error(`error: ${e}`);
@@ -214,11 +214,12 @@ export async function pollCallback(
     const remaining = Math.max(1, Math.floor((deadline - Date.now()) / 1000));
     const pollTime = Math.min(remaining, 30);
 
-    const result = await post('getUpdates', {
+    const raw = await post('getUpdates', {
       offset: _lastUpdateId + 1,
       timeout: pollTime,
       allowed_updates: ['callback_query', 'message'],
-    }, (pollTime + 10) * 1000) as { update_id: number; callback_query?: { id: string; from?: { id: number }; data?: string } }[] | null;
+    }, (pollTime + 10) * 1000);
+    const result = Array.isArray(raw) ? raw as { update_id: number; callback_query?: { id: string; from?: { id: number }; data?: string } }[] : null;
 
     if (!result) {
       await new Promise((r) => setTimeout(r, retryDelay));
@@ -254,11 +255,12 @@ export async function pollReply(
     const remaining = Math.max(1, Math.floor((deadline - Date.now()) / 1000));
     const pollTime = Math.min(remaining, 30);
 
-    const result = await post('getUpdates', {
+    const raw = await post('getUpdates', {
       offset: _lastUpdateId + 1,
       timeout: pollTime,
       allowed_updates: ['message'],
-    }, (pollTime + 10) * 1000) as { update_id: number; message?: { from?: { id: number }; text?: string } }[] | null;
+    }, (pollTime + 10) * 1000);
+    const result = Array.isArray(raw) ? raw as { update_id: number; message?: { from?: { id: number }; text?: string } }[] : null;
 
     if (!result) {
       await new Promise((r) => setTimeout(r, retryDelay));

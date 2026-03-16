@@ -416,15 +416,16 @@ async function pollOnce(): Promise<void> {
   }
 
   // Long-poll timeout is 30s on Telegram's side; HTTP timeout must be longer
-  const result = await _post('getUpdates', {
+  const raw = await _post('getUpdates', {
     offset: _lastUpdateId + 1,
     timeout: 30,
     allowed_updates: ['message'],
-  }, 45_000) as { update_id: number; message?: {
+  }, 45_000);
+  const result = Array.isArray(raw) ? raw as { update_id: number; message?: {
     text?: string;
     from?: { id: number };
     chat?: { id: number };
-  } }[] | null;
+  } }[] : null;
 
   if (!result) return;
 

@@ -607,6 +607,10 @@ export function streamInference(
         if (subtype === 'init') {
           sessionId = (event.session_id as string) || sessionId;
         } else if (subtype.includes('compact') || subtype.includes('compress')) {
+          // Context compaction may assign a new session ID
+          if (event.session_id) {
+            sessionId = event.session_id as string;
+          }
           emitter.emit('event', { type: 'Compacting' } as CompactingEvent);
         }
         continue;
