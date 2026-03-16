@@ -739,14 +739,10 @@ export class Config {
     this.HEARTBEAT_ACTIVE_END = (hb.active_end as number) ?? cfg('HEARTBEAT_ACTIVE_END', 22);
     this.HEARTBEAT_INTERVAL_MINS = (hb.interval_mins as number) ?? cfg('HEARTBEAT_INTERVAL_MINS', 30);
 
-    // Telegram (per-agent) - supports env var indirection via manifest
-    // The agent manifest can specify telegram.bot_token_env and telegram.chat_id_env
-    // to point to custom env var names, allowing different agents to use different bots.
-    const telegramCfg = (_agentManifest.telegram as Record<string, unknown>) || {};
-    const botTokenEnv = (telegramCfg.bot_token_env as string) || 'TELEGRAM_BOT_TOKEN';
-    const chatIdEnv = (telegramCfg.chat_id_env as string) || 'TELEGRAM_CHAT_ID';
-    this.TELEGRAM_BOT_TOKEN = process.env[botTokenEnv] || cfg('TELEGRAM_BOT_TOKEN', '');
-    this.TELEGRAM_CHAT_ID = process.env[chatIdEnv] || cfg('TELEGRAM_CHAT_ID', '');
+    // Telegram - system-level credentials, shared by all agents.
+    // One bot, one chat. Routing decides which agent handles each message.
+    this.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || cfg('TELEGRAM_BOT_TOKEN', '');
+    this.TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || cfg('TELEGRAM_CHAT_ID', '');
 
     // Notifications
     this.NOTIFICATIONS_ENABLED = cfg('NOTIFICATIONS_ENABLED', true);

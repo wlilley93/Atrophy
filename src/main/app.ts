@@ -39,7 +39,7 @@ import { ensureAvatarAssets, ensureAmbientVideo, getAmbientVideoPath } from './a
 import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSourcePhoto } from './jobs/generate-mirror-avatar';
 import type { MirrorAvatarProgress } from './jobs/generate-mirror-avatar';
 import { parseArtifacts } from './artifact-parser';
-import { loadCachedOpening, generateOpening, cacheNextOpening } from './opening';
+import { loadCachedOpening, generateOpening, cacheNextOpening, getStaticFallback } from './opening';
 import { getHotBundlePaths, checkForBundleUpdate, getActiveBundleVersion, getPendingBundleInfo, clearHotBundle } from './bundle-updater';
 import type { HotBundlePaths } from './bundle-updater';
 import { createLogger } from './logger';
@@ -685,10 +685,19 @@ function registerIpcHandlers(): void {
   // ── Opening line ──
 
   ipcMain.handle('opening:get', async () => {
+    const shouldSpeak = getConfig().TTS_BACKEND !== 'off' && !isMuted();
+
     // 1. Try cached opening (instant if available and time bracket matches)
     const cached = loadCachedOpening();
     if (cached) {
       log.info('[opening] Using cached opening');
+      // Play pre-synthesised audio if available
+      if (shouldSpeak && cached.audioPath) {
+        playAudio(cached.audioPath).catch(() => { /* non-fatal */ });
+      } else if (shouldSpeak) {
+        // Synthesise on the fly
+        synthesise(cached.text).then((p) => { if (p) playAudio(p).catch(() => {}); }).catch(() => {});
+      }
       // Pre-generate next opening in background
       if (!systemPrompt) systemPrompt = loadSystemPrompt();
       if (systemPrompt) {
@@ -711,14 +720,25 @@ function registerIpcHandlers(): void {
         );
         // Cache next opening in background for next launch
         cacheNextOpening(systemPrompt, currentSession?.cliSessionId ?? undefined);
+        // Speak it
+        if (shouldSpeak) {
+          synthesise(result.text).then((p) => { if (p) playAudio(p).catch(() => {}); }).catch(() => {});
+        }
         return result.text;
       } catch (err) {
-        log.error('[opening] Generation failed, falling back to static:', err);
+        log.error('[opening] Generation failed:', err);
       }
+    } else {
+      log.warn('[opening] System prompt not available, skipping dynamic generation');
     }
 
-    // 4. Fall back to static config line
-    return getConfig().OPENING_LINE || 'Ready. Where are we?';
+    // 4. Fall back to a varied static line (not just the agent name)
+    const fallback = getStaticFallback();
+    log.info(`[opening] Using static fallback: "${fallback}"`);
+    if (shouldSpeak) {
+      synthesise(fallback).then((p) => { if (p) playAudio(p).catch(() => {}); }).catch(() => {});
+    }
+    return fallback;
   });
 
   ipcMain.handle('setup:check', () => {
@@ -1191,6 +1211,14 @@ Output EXACTLY this format - a single fenced JSON block:
               mainWindow.webContents.send('inference:done', cleanedText);
             } else {
               mainWindow.webContents.send('inference:done', fullText);
+            }
+            // Cache an opening for next boot if we don't have one yet
+            // (proves the CLI is working, so dynamic generation will succeed)
+            if (systemPrompt) {
+              const cachePath = getConfig().OPENING_CACHE_FILE;
+              if (cachePath && !fs.existsSync(cachePath)) {
+                cacheNextOpening(systemPrompt, currentSession?.cliSessionId ?? undefined);
+              }
             }
             // Prefetch context for the next message during idle
             setImmediate(() => prefetchContext());
@@ -1864,7 +1892,8 @@ app.whenReady().then(() => {
   // Prefetch context data during startup idle time
   setImmediate(() => prefetchContext());
 
-  // Auto-start Telegram daemon if configured
+  // Auto-start Telegram daemon if configured.
+  // Credentials are system-level (from .env / config.json), not per-agent.
   if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID) {
     const started = startDaemon();
     if (started) {

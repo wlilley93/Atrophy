@@ -17,7 +17,7 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
 import { sendMessage, _post, setLastUpdateId } from './telegram';
-import { routeMessage, RoutingDecision } from './router';
+import { routeMessage } from './router';
 import { discoverAgents, getAgentState, setAgentState } from './agent-manager';
 import { streamInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
@@ -254,6 +254,8 @@ export function isLaunchdInstalled(): boolean {
 // Agent dispatch
 // ---------------------------------------------------------------------------
 
+const DISPATCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minute max per agent dispatch
+
 async function dispatchToAgent(agentName: string, text: string): Promise<string | null> {
   const config = getConfig();
   const originalAgent = config.AGENT_NAME;
@@ -273,8 +275,14 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
     let fullText = '';
     const toolsUsed: string[] = [];
 
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
       const emitter = streamInference(prompt, system, cliSessionId);
+
+      // Safety timeout - prevent daemon from blocking forever
+      const timer = setTimeout(() => {
+        log.error(`[${agentName}] dispatch timed out after ${DISPATCH_TIMEOUT_MS / 1000}s`);
+        reject(new Error('dispatch timeout'));
+      }, DISPATCH_TIMEOUT_MS);
 
       emitter.on('event', (evt: InferenceEvent) => {
         switch (evt.type) {
@@ -283,10 +291,12 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
             log.debug(`[${agentName}] tool -> ${evt.name}`);
             break;
           case 'StreamDone':
+            clearTimeout(timer);
             fullText = evt.fullText;
             resolve();
             break;
           case 'StreamError':
+            clearTimeout(timer);
             log.error(`[${agentName}] inference error: ${evt.message}`);
             resolve();
             break;
@@ -450,7 +460,7 @@ async function pollOnce(): Promise<void> {
 
     const senderId = String(msg.from?.id || '');
     const chatId = String(msg.chat?.id || '');
-    // Reject all messages if TELEGRAM_CHAT_ID is not configured (security)
+    // Reject messages not from the configured chat
     if (!config.TELEGRAM_CHAT_ID) {
       log.warn('TELEGRAM_CHAT_ID not configured - ignoring message');
       continue;

@@ -68,6 +68,33 @@ const OPENING_STYLES: readonly string[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Static fallbacks - used when dynamic generation fails.
+// Much better than just saying the agent's name.
+// ---------------------------------------------------------------------------
+
+const STATIC_FALLBACKS: readonly string[] = [
+  'Been thinking about you.',
+  'There you are.',
+  "How's your head?",
+  'Missed you.',
+  'Back again.',
+  'Right. Where were we.',
+  "What's on your mind?",
+  "Something's different today.",
+  'Tell me something.',
+  'I had a thought while you were gone.',
+  "What's the weather like where you are?",
+  'You look like you have something to say.',
+  "Let's pick up where we left off.",
+  "I've been sitting with something.",
+  'Good. You showed up.',
+];
+
+export function getStaticFallback(): string {
+  return STATIC_FALLBACKS[Math.floor(Math.random() * STATIC_FALLBACKS.length)];
+}
+
+// ---------------------------------------------------------------------------
 // Cache file path
 // ---------------------------------------------------------------------------
 

@@ -16,10 +16,6 @@
     "playback_rate": 1.0
   },
   "telegram_emoji": "",
-  "telegram": {
-    "bot_token_env": "TELEGRAM_BOT_TOKEN_MIRROR",
-    "chat_id_env": "TELEGRAM_CHAT_ID_MIRROR"
-  },
   "display": {
     "window_width": 622,
     "window_height": 830,
