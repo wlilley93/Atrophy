@@ -162,6 +162,18 @@ export interface AtrophyAPI {
   setStatus: (status: 'active' | 'away', reason?: string) => Promise<void>;
   onStatusChanged: (cb: (status: string) => void) => () => void;
 
+  // Bundle updater (hot code reload)
+  getBundleStatus: () => Promise<{
+    activeVersion: string;
+    hotBundleActive: boolean;
+    hotBundleVersion: string | null;
+    pending: { version: string; pendingRestart: boolean } | null;
+  }>;
+  checkBundleUpdate: () => Promise<string | null>;
+  clearHotBundle: () => Promise<void>;
+  onBundleReady: (cb: (info: { version: string }) => void) => () => void;
+  onBundleProgress: (cb: (percent: number) => void) => () => void;
+
   // Generic listener
   on: (channel: string, cb: (...args: unknown[]) => void) => () => void;
 }
@@ -332,6 +344,13 @@ const api: AtrophyAPI = {
   setStatus: (status, reason) => ipcRenderer.invoke('status:set', status, reason),
   onStatusChanged: createListener('status:changed') as AtrophyAPI['onStatusChanged'],
 
+  // Bundle updater
+  getBundleStatus: () => ipcRenderer.invoke('bundle:getStatus'),
+  checkBundleUpdate: () => ipcRenderer.invoke('bundle:checkNow'),
+  clearHotBundle: () => ipcRenderer.invoke('bundle:clear'),
+  onBundleReady: createListener('bundle:ready') as AtrophyAPI['onBundleReady'],
+  onBundleProgress: createListener('bundle:downloadProgress') as AtrophyAPI['onBundleProgress'],
+
   // Channel listener with allowlist
   on: (channel, cb) => {
     const ALLOWED_CHANNELS = new Set([
@@ -350,6 +369,7 @@ const api: AtrophyAPI = {
       'mirror:avatarProgress',
       'call:statusChanged',
       'app:shutdownRequested',
+      'bundle:ready', 'bundle:downloadProgress',
     ]);
     if (!ALLOWED_CHANNELS.has(channel)) {
       console.warn(`IPC channel not allowed: ${channel}`);

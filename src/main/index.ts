@@ -35,9 +35,17 @@ import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSo
 import type { MirrorAvatarProgress } from './jobs/generate-mirror-avatar';
 import { parseArtifacts } from './artifact-parser';
 import { loadCachedOpening, generateOpening, cacheNextOpening } from './opening';
+import { getHotBundlePaths, checkForBundleUpdate, getActiveBundleVersion, getPendingBundleInfo, clearHotBundle } from './bundle-updater';
+import type { HotBundlePaths } from './bundle-updater';
 import { createLogger } from './logger';
 
 const log = createLogger('main');
+
+// ---------------------------------------------------------------------------
+// Hot bundle detection (runs before app.whenReady)
+// ---------------------------------------------------------------------------
+
+const _hotBundle: HotBundlePaths | null = getHotBundlePaths();
 
 // ---------------------------------------------------------------------------
 // State
@@ -85,7 +93,7 @@ function createWindow(): BrowserWindow {
     backgroundColor: '#00000000',
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'index.js'),
+      preload: _hotBundle?.preload ?? path.join(__dirname, '..', 'preload', 'index.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -108,8 +116,28 @@ function createWindow(): BrowserWindow {
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+    const rendererPath = _hotBundle?.renderer ?? path.join(__dirname, '..', 'renderer', 'index.html');
+    win.loadFile(rendererPath);
   }
+
+  // Open external links in the system browser instead of in-app
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  // Prevent in-app navigation to external URLs
+  win.webContents.on('will-navigate', (event, url) => {
+    // Allow same-origin navigation (file:// for the renderer)
+    if (!url.startsWith('file://') && !url.startsWith('devtools://')) {
+      event.preventDefault();
+      if (url.startsWith('https://') || url.startsWith('http://')) {
+        shell.openExternal(url);
+      }
+    }
+  });
 
   win.once('ready-to-show', () => {
     if (!isMenuBarMode) {
@@ -472,6 +500,7 @@ function registerIpcHandlers(): void {
       googleConfigured: c.GOOGLE_CONFIGURED,
       // About
       version: c.VERSION,
+      bundleVersion: _hotBundle?.version ?? null,
       bundleRoot: BUNDLE_ROOT,
     };
   });
@@ -942,6 +971,28 @@ Output EXACTLY this format - a single fenced JSON block:
     } finally {
       googleAuthInProgress = false;
     }
+  });
+
+  // ── Bundle updater ──
+
+  ipcMain.handle('bundle:getStatus', () => {
+    return {
+      activeVersion: getActiveBundleVersion(),
+      hotBundleActive: !!_hotBundle,
+      hotBundleVersion: _hotBundle?.version ?? null,
+      pending: getPendingBundleInfo(),
+    };
+  });
+
+  ipcMain.handle('bundle:checkNow', async () => {
+    const newVersion = await checkForBundleUpdate((percent) => {
+      mainWindow?.webContents.send('bundle:downloadProgress', percent);
+    });
+    return newVersion;
+  });
+
+  ipcMain.handle('bundle:clear', () => {
+    clearHotBundle();
   });
 
   // ── Inference ──
@@ -1854,6 +1905,19 @@ app.whenReady().then(() => {
   if (mainWindow) {
     initAutoUpdater(mainWindow);
   }
+
+  // Background bundle update check (downloads for next boot, non-blocking)
+  if (_hotBundle) {
+    log.info(`running on hot bundle v${_hotBundle.version}`);
+  }
+  checkForBundleUpdate((percent) => {
+    mainWindow?.webContents.send('bundle:downloadProgress', percent);
+  }).then((newVersion) => {
+    if (newVersion) {
+      log.info(`bundle v${newVersion} downloaded, will activate on next boot`);
+      mainWindow?.webContents.send('bundle:ready', { version: newVersion });
+    }
+  }).catch(() => { /* non-critical */ });
 
   // Download avatar assets and ambient video on first launch (non-blocking)
   Promise.all([
