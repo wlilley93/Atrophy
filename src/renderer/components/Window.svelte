@@ -194,8 +194,8 @@
         }
       };
 
-      // Timeout - don't block boot forever (8 seconds max)
-      const timeout = setTimeout(done, 8000);
+      // Timeout - don't block boot forever (4 seconds max)
+      const timeout = setTimeout(done, 4000);
 
       api.onUpdateAvailable?.((info: { version: string }) => {
         updateStatus = 'available';
@@ -207,8 +207,7 @@
       api.onUpdateNotAvailable?.(() => {
         updateStatus = 'up-to-date';
         clearTimeout(timeout);
-        // Brief pause so user sees "up to date"
-        setTimeout(done, 1200);
+        done();
       });
 
       api.onUpdateProgress?.((progress: { percent: number }) => {
