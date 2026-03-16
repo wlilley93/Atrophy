@@ -685,10 +685,19 @@ function registerIpcHandlers(): void {
   // ── Opening line ──
 
   ipcMain.handle('opening:get', async () => {
+    const shouldSpeak = getConfig().TTS_BACKEND !== 'off' && !isMuted();
+
     // 1. Try cached opening (instant if available and time bracket matches)
     const cached = loadCachedOpening();
     if (cached) {
       log.info('[opening] Using cached opening');
+      // Play pre-synthesised audio if available
+      if (shouldSpeak && cached.audioPath) {
+        playAudio(cached.audioPath).catch(() => { /* non-fatal */ });
+      } else if (shouldSpeak) {
+        // Synthesise on the fly
+        synthesise(cached.text).then((p) => { if (p) playAudio(p).catch(() => {}); }).catch(() => {});
+      }
       // Pre-generate next opening in background
       if (!systemPrompt) systemPrompt = loadSystemPrompt();
       if (systemPrompt) {
@@ -711,6 +720,10 @@ function registerIpcHandlers(): void {
         );
         // Cache next opening in background for next launch
         cacheNextOpening(systemPrompt, currentSession?.cliSessionId ?? undefined);
+        // Speak it
+        if (shouldSpeak) {
+          synthesise(result.text).then((p) => { if (p) playAudio(p).catch(() => {}); }).catch(() => {});
+        }
         return result.text;
       } catch (err) {
         log.error('[opening] Generation failed:', err);
@@ -722,6 +735,9 @@ function registerIpcHandlers(): void {
     // 4. Fall back to a varied static line (not just the agent name)
     const fallback = getStaticFallback();
     log.info(`[opening] Using static fallback: "${fallback}"`);
+    if (shouldSpeak) {
+      synthesise(fallback).then((p) => { if (p) playAudio(p).catch(() => {}); }).catch(() => {});
+    }
     return fallback;
   });
 
