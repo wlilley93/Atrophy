@@ -630,9 +630,9 @@ export class Config {
   }
 
   private _resolveVersion(): void {
-    const vPath = path.join(BUNDLE_ROOT, 'VERSION');
     try {
-      this.VERSION = fs.readFileSync(vPath, 'utf-8').trim();
+      const { app } = require('electron');
+      this.VERSION = app.getVersion() || '0.0.0';
     } catch {
       this.VERSION = '0.0.0';
     }
