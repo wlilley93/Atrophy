@@ -212,6 +212,8 @@ function getMcpConfigPath(): string {
         OBSIDIAN_VAULT: config.OBSIDIAN_VAULT,
         OBSIDIAN_AGENT_DIR: config.OBSIDIAN_AGENT_DIR,
         OBSIDIAN_AGENT_NOTES: config.OBSIDIAN_AGENT_NOTES,
+        TELEGRAM_BOT_TOKEN: config.TELEGRAM_BOT_TOKEN || '',
+        TELEGRAM_CHAT_ID: config.TELEGRAM_CHAT_ID || '',
         AGENT: config.AGENT_NAME,
       },
     },
