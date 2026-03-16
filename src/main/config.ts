@@ -7,7 +7,8 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
+import * as crypto from 'crypto';
 
 // ---------------------------------------------------------------------------
 // Root paths
@@ -18,7 +19,7 @@ export const BUNDLE_ROOT = app.isPackaged
   : path.resolve(__dirname, '..', '..');
 
 export const USER_DATA = path.join(
-  process.env.ATROPHY_DATA || path.join(process.env.HOME || '/tmp', '.atrophy'),
+  process.env.ATROPHY_DATA || path.join(os.homedir(), '.atrophy'),
 );
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,12 @@ function loadEnvFile(): void {
       if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
         val = val.slice(1, -1);
       }
-      if (key && !process.env[key]) {
+      // Only load whitelisted keys and reject dangerous env overrides
+      const DANGEROUS_KEYS = new Set([
+        'NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE', 'LD_PRELOAD',
+        'DYLD_INSERT_LIBRARIES', 'PATH', 'HOME',
+      ]);
+      if (key && !process.env[key] && !DANGEROUS_KEYS.has(key)) {
         process.env[key] = val;
       }
     }
@@ -136,6 +142,7 @@ function deepMerge(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = { ...target };
   for (const key of Object.keys(source)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
     const srcVal = source[key];
     const tgtVal = result[key];
     if (isPlainObject(srcVal) && isPlainObject(tgtVal)) {
@@ -156,7 +163,17 @@ function deepMerge(
 
 let _agentManifest: Record<string, unknown> = {};
 
+/** Validate agent name - alphanumeric, hyphens, underscores only. */
+export function isValidAgentName(name: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name) && !name.includes('..');
+}
+
 function loadAgentManifest(name: string): void {
+  if (!isValidAgentName(name)) {
+    console.warn(`[config] Invalid agent name rejected: ${name}`);
+    _agentManifest = {};
+    return;
+  }
   // Load bundle manifest as base, then merge user overrides on top.
   // This ensures bundle defaults (voice, display, heartbeat, telegram)
   // are preserved unless the user explicitly overrides them.
@@ -189,7 +206,10 @@ function cfg<T>(key: string, fallback: T): T {
   // Tier 1: env vars
   const envVal = process.env[key];
   if (envVal !== undefined) {
-    if (typeof fallback === 'number') return Number(envVal) as T;
+    if (typeof fallback === 'number') {
+      const n = Number(envVal);
+      return (Number.isNaN(n) ? fallback : n) as T;
+    }
     if (typeof fallback === 'boolean') return (envVal.toLowerCase() === 'true') as T;
     return envVal as T;
   }
@@ -230,7 +250,7 @@ export function ensureUserData(): void {
     path.join(USER_DATA, 'logs'),
     path.join(USER_DATA, 'models'),
   ]) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
 
   const cfgPath = path.join(USER_DATA, 'config.json');
@@ -300,11 +320,16 @@ function copyTreeIfMissing(src: string, dst: string): void {
 // ---------------------------------------------------------------------------
 
 function findPython(): string {
-  if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH;
+  if (process.env.PYTHON_PATH) {
+    const p = process.env.PYTHON_PATH;
+    // Validate it looks like a file path - reject shell metacharacters
+    if (/^[a-zA-Z0-9_.\/~-]+$/.test(p)) return p;
+    log.warn('PYTHON_PATH contains invalid characters, ignoring');
+  }
   const candidates = ['python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3'];
   for (const c of candidates) {
     try {
-      execSync(`${c} --version`, { stdio: 'pipe' });
+      execFileSync(c, ['--version'], { stdio: 'pipe' });
       return c;
     } catch {
       continue;
@@ -332,11 +357,11 @@ function googleConfigured(): boolean {
   if (!gwsBin) return false;
 
   try {
-    const result = execSync(`${gwsBin} auth status`, {
+    const result = execFileSync(gwsBin, ['auth', 'status'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       encoding: 'utf-8',
       timeout: 5000,
-    });
+    }) as string;
     const parsed = JSON.parse(result) as Record<string, unknown>;
     return (parsed.auth_method ?? 'none') !== 'none';
   } catch {
@@ -539,7 +564,7 @@ export class Config {
     this.WHISPER_BIN = '';
     this.WHISPER_MODEL = '';
     this.CLAUDE_BIN = 'claude';
-    this.CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
+    this.CLAUDE_MODEL = 'claude-sonnet-4-6';
     this.CLAUDE_EFFORT = 'medium';
     this.ADAPTIVE_EFFORT = true;
     this.MCP_DIR = '';
@@ -673,7 +698,7 @@ export class Config {
       return 'claude';
     })();
     this.CLAUDE_BIN = cfg('CLAUDE_BIN', claudeDefault);
-    this.CLAUDE_MODEL = cfg('CLAUDE_MODEL', 'claude-haiku-4-5-20251001');
+    this.CLAUDE_MODEL = cfg('CLAUDE_MODEL', 'claude-sonnet-4-6');
     this.CLAUDE_EFFORT = cfg('CLAUDE_EFFORT', 'medium');
     this.ADAPTIVE_EFFORT = cfg('ADAPTIVE_EFFORT', true);
 
@@ -772,6 +797,15 @@ export class Config {
 // ---------------------------------------------------------------------------
 
 /**
+ * Atomic write - writes to a temp file then renames to avoid partial writes on crash.
+ */
+function atomicWriteFileSync(filePath: string, data: string, mode = 0o600): void {
+  const tmpPath = filePath + '.' + crypto.randomBytes(6).toString('hex') + '.tmp';
+  fs.writeFileSync(tmpPath, data, { mode });
+  fs.renameSync(tmpPath, filePath);
+}
+
+/**
  * Deep-merge updates into ~/.atrophy/config.json, preserving existing keys.
  * Reads the current file, merges recursively, writes back, then reloads
  * the in-memory config cache so subsequent cfg() calls see new values.
@@ -783,7 +817,7 @@ export function saveUserConfig(updates: Record<string, unknown>): void {
     existing = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
   } catch { /* empty or missing - start fresh */ }
   const merged = deepMerge(existing, updates);
-  fs.writeFileSync(cfgPath, JSON.stringify(merged, null, 2) + '\n', { mode: 0o600 });
+  atomicWriteFileSync(cfgPath, JSON.stringify(merged, null, 2) + '\n');
   loadUserConfig();
 }
 
@@ -819,6 +853,10 @@ export function saveAgentConfig(
   agentName: string,
   updates: Record<string, unknown>,
 ): void {
+  if (!isValidAgentName(agentName)) {
+    console.warn(`[config] saveAgentConfig: invalid agent name "${agentName}"`);
+    return;
+  }
   const agentJsonPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
   let existing: Record<string, unknown> = {};
   try {
@@ -840,7 +878,7 @@ export function saveAgentConfig(
   }
 
   fs.mkdirSync(path.dirname(agentJsonPath), { recursive: true });
-  fs.writeFileSync(agentJsonPath, JSON.stringify(existing, null, 2), { mode: 0o600 });
+  atomicWriteFileSync(agentJsonPath, JSON.stringify(existing, null, 2));
 }
 
 // ---------------------------------------------------------------------------

@@ -112,6 +112,20 @@ function createWindow(): BrowserWindow {
     });
   });
 
+  // Open external URLs in system browser instead of navigating the app window
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
   // Load renderer
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -421,7 +435,8 @@ function resetJournalNudgeTimer(): void {
 // ---------------------------------------------------------------------------
 
 function registerIpcHandlers(): void {
-  const config = getConfig();
+  // NOTE: Do not capture getConfig() in a closure here - it would go stale
+  // after agent switches or config:reload. Call getConfig() inside each handler.
 
   ipcMain.handle('config:reload', () => {
     reloadConfig();
@@ -589,7 +604,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('agent:cycle', (_event, direction: number) => {
-    const next = cycleAgent(direction, config.AGENT_NAME);
+    const next = cycleAgent(direction, getConfig().AGENT_NAME);
     return next;
   });
 
@@ -669,7 +684,7 @@ function registerIpcHandlers(): void {
     }
 
     // 3. Fall back to static config line
-    return config.OPENING_LINE || 'Ready. Where are we?';
+    return getConfig().OPENING_LINE || 'Ready. Where are we?';
   });
 
   ipcMain.handle('setup:check', () => {
@@ -1056,7 +1071,7 @@ Output EXACTLY this format - a single fenced JSON block:
           case 'SentenceReady':
             // Synthesise TTS in background, send sentence to renderer immediately
             mainWindow.webContents.send('inference:sentenceReady', evt.sentence, '');
-            if (config.TTS_BACKEND !== 'off' && !isMuted()) {
+            if (getConfig().TTS_BACKEND !== 'off' && !isMuted()) {
               synthesise(evt.sentence).then((audioPath) => {
                 if (audioPath) {
                   enqueueAudio(audioPath, evt.index);
@@ -1147,7 +1162,7 @@ Output EXACTLY this format - a single fenced JSON block:
     clearAudioQueue();
 
     // Switch agent config
-    config.reloadForAgent(name);
+    getConfig().reloadForAgent(name);
     initDb();
     resetMcpConfig();
     currentAgentName = name;
@@ -1168,9 +1183,10 @@ Output EXACTLY this format - a single fenced JSON block:
       } catch { continue; }
     }
 
+    const c = getConfig();
     return {
-      agentName: config.AGENT_NAME,
-      agentDisplayName: config.AGENT_DISPLAY_NAME,
+      agentName: c.AGENT_NAME,
+      agentDisplayName: c.AGENT_DISPLAY_NAME,
       customSetup,
     };
   });
@@ -1564,6 +1580,10 @@ Output EXACTLY this format - a single fenced JSON block:
         suspendAgentSession(currentAgentName!, currentSession.cliSessionId, currentSession.turnHistory);
       }
 
+      // Stop current inference and audio before switching
+      stopInference();
+      clearAudioQueue();
+
       // Switch to target agent
       const config = getConfig();
       config.reloadForAgent(data.target);
@@ -1571,7 +1591,6 @@ Output EXACTLY this format - a single fenced JSON block:
       resetMcpConfig();
       currentAgentName = data.target;
       setLastActiveAgent(data.target);
-      clearAudioQueue();
 
       // Resume or create new session for target agent
       const resumed = resumeAgentSession(data.target);
@@ -1622,7 +1641,19 @@ Output EXACTLY this format - a single fenced JSON block:
         }
       } else if (dest.startsWith('config:')) {
         const key = dest.slice('config:'.length);
-        saveUserConfig({ [key]: response });
+        // Only allow safe config keys - reject anything that could change
+        // executable paths, binary locations, or security-sensitive settings
+        const SAFE_CONFIG_KEYS = new Set([
+          'USER_NAME', 'OPENING_LINE', 'MUTE_BY_DEFAULT', 'EYE_MODE_DEFAULT',
+          'INPUT_MODE', 'VOICE_CALL_MODE', 'WAKE_WORD_ENABLED', 'ADAPTIVE_EFFORT',
+          'NOTIFICATIONS_ENABLED', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
+        ]);
+        if (!SAFE_CONFIG_KEYS.has(key)) {
+          log.warn(`ask:respond - config key rejected by allowlist: ${key}`);
+          destinationFailed = true;
+        } else {
+          saveUserConfig({ [key]: response });
+        }
       }
     }
     writeAskResponse(requestId, response, destinationFailed);
@@ -1742,7 +1773,11 @@ app.whenReady().then(() => {
     if (started) {
       log.info('Telegram daemon auto-started');
       registerBotCommands().catch(() => { /* non-critical */ });
+    } else {
+      log.warn('Telegram daemon failed to start (lock held by another instance?)');
     }
+  } else {
+    log.debug(`Telegram daemon skipped: token=${!!config.TELEGRAM_BOT_TOKEN} chatId=${!!config.TELEGRAM_CHAT_ID}`);
   }
 
   // Sentinel timer - coherence check every 5 minutes
@@ -1856,18 +1891,21 @@ app.whenReady().then(() => {
       let src = '';
 
       if (data.file) {
-        // Validate file path - only allow reading from agent data directory
-        const config = getConfig();
-        const agentDataBase = path.resolve(path.dirname(config.DATA_DIR));
+        // Validate file path is within the agent's artefacts directory
+        const c = getConfig();
+        const artefactsBase = path.resolve(path.join(USER_DATA, 'agents', c.AGENT_NAME, 'artefacts'));
         let resolvedFile: string;
         try {
           resolvedFile = fs.realpathSync(path.resolve(data.file));
         } catch {
           resolvedFile = ''; // path doesn't exist
         }
-        if (!resolvedFile || !resolvedFile.startsWith(agentDataBase + path.sep)) {
-          log.warn(`artefact display blocked path: ${data.file}`);
-        } else if (artefactType === 'html') {
+        if (!resolvedFile || (!resolvedFile.startsWith(artefactsBase + path.sep) && resolvedFile !== artefactsBase)) {
+          log.warn(`Artefact watcher blocked path traversal: ${data.file}`);
+          return;
+        }
+
+        if (artefactType === 'html') {
           try {
             content = fs.readFileSync(resolvedFile, 'utf-8');
           } catch { /* file missing */ }
@@ -1945,8 +1983,9 @@ app.whenReady().then(() => {
 
   // Cmd+Shift+] / [ - cycle agents
   globalShortcut.register('CommandOrControl+Shift+]', () => {
-    const next = cycleAgent(1, config.AGENT_NAME);
-    if (next && next !== config.AGENT_NAME) {
+    const cfg = getConfig();
+    const next = cycleAgent(1, cfg.AGENT_NAME);
+    if (next && next !== cfg.AGENT_NAME) {
       stopAllInference();
       clearAudioQueue();
       if (currentSession && systemPrompt) {
@@ -1954,22 +1993,24 @@ app.whenReady().then(() => {
       }
       currentSession = null;
       systemPrompt = null;
-      config.reloadForAgent(next);
+      cfg.reloadForAgent(next);
       initDb();
       resetMcpConfig();
       currentAgentName = next;
       setLastActiveAgent(next);
+      const updated = getConfig();
       mainWindow?.webContents.send('agent:switched', {
-        agentName: config.AGENT_NAME,
-        agentDisplayName: config.AGENT_DISPLAY_NAME,
+        agentName: updated.AGENT_NAME,
+        agentDisplayName: updated.AGENT_DISPLAY_NAME,
       });
       rebuildTrayMenu();
     }
   });
 
   globalShortcut.register('CommandOrControl+Shift+[', () => {
-    const prev = cycleAgent(-1, config.AGENT_NAME);
-    if (prev && prev !== config.AGENT_NAME) {
+    const cfg = getConfig();
+    const prev = cycleAgent(-1, cfg.AGENT_NAME);
+    if (prev && prev !== cfg.AGENT_NAME) {
       stopAllInference();
       clearAudioQueue();
       if (currentSession && systemPrompt) {
@@ -1977,14 +2018,15 @@ app.whenReady().then(() => {
       }
       currentSession = null;
       systemPrompt = null;
-      config.reloadForAgent(prev);
+      cfg.reloadForAgent(prev);
       initDb();
       resetMcpConfig();
       currentAgentName = prev;
       setLastActiveAgent(prev);
+      const updated = getConfig();
       mainWindow?.webContents.send('agent:switched', {
-        agentName: config.AGENT_NAME,
-        agentDisplayName: config.AGENT_DISPLAY_NAME,
+        agentName: updated.AGENT_NAME,
+        agentDisplayName: updated.AGENT_DISPLAY_NAME,
       });
       rebuildTrayMenu();
     }

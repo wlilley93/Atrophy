@@ -174,6 +174,7 @@ async function synthesiseElevenLabsStream(text: string): Promise<string> {
         style: sty,
       },
     }),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!response.ok) {
@@ -183,17 +184,30 @@ async function synthesiseElevenLabsStream(text: string): Promise<string> {
 
   const tmpPath = secureTmp('.mp3');
 
+  if (!response.body) {
+    // Fallback: buffer the whole response if no streaming body
+    const buf = Buffer.from(await response.arrayBuffer());
+    fs.writeFileSync(tmpPath, buf, { mode: 0o600 });
+    return tmpPath;
+  }
+
   // Stream chunks to disk as they arrive - avoids buffering the entire
   // response in memory and reduces time-to-first-byte latency.
   const fileHandle = fs.createWriteStream(tmpPath);
-  const reader = response.body!.getReader();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    fileHandle.write(Buffer.from(value));
+  try {
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      fileHandle.write(Buffer.from(value));
+    }
+    fileHandle.end();
+    await new Promise<void>((resolve) => fileHandle.on('finish', resolve));
+  } catch (err) {
+    fileHandle.destroy();
+    try { fs.unlinkSync(tmpPath); } catch { /* cleanup best-effort */ }
+    throw err;
   }
-  fileHandle.end();
-  await new Promise<void>((resolve) => fileHandle.on('finish', resolve));
 
   return tmpPath;
 }
@@ -297,11 +311,20 @@ function synthesiseMacOS(text: string): Promise<string> {
       stdio: ['ignore', 'ignore', 'ignore'],
     });
 
+    const timeout = setTimeout(() => {
+      try { proc.kill(); } catch { /* already dead */ }
+      reject(new Error('macOS say timed out (30s)'));
+    }, 30_000);
+
     proc.on('close', (code) => {
+      clearTimeout(timeout);
       if (code === 0) resolve(audioPath);
       else reject(new Error(`say exited with code ${code}`));
     });
-    proc.on('error', reject);
+    proc.on('error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
   });
 }
 
@@ -497,6 +520,10 @@ export function enqueueAudio(audioPath: string, index: number): void {
  * Clear all pending audio and stop the currently playing clip.
  */
 export function clearAudioQueue(): void {
+  // Clean up temp files from pending queue items
+  for (const item of _queue) {
+    try { fs.unlinkSync(item.audioPath); } catch { /* best-effort cleanup */ }
+  }
   _queue = [];
   stopCurrentPlayback();
 }

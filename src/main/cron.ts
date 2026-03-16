@@ -367,6 +367,7 @@ export function runJobNow(name: string): JobRunEntry {
  * Read the last N lines of a job's log file.
  */
 export function readJobLog(name: string, lines = 200): string {
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return '';
   const logPath = path.join(logsDir(), `${name}.log`);
   if (!fs.existsSync(logPath)) return '';
   try {

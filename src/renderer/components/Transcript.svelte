@@ -187,7 +187,7 @@
     result = result.replace(/\[\[artifact:([^\]]+)\]\]/g, (_match, id: string) => {
       const art = getArtifact(id);
       const title = art ? escapeHtml(art.title) : id;
-      const typeLabel = art ? art.type.toUpperCase() : 'ARTIFACT';
+      const typeLabel = art ? escapeHtml(art.type.toUpperCase()) : 'ARTIFACT';
       const langLabel = art?.language ? escapeHtml(art.language) : '';
       return (
         `<button class="artifact-card" data-artifact-id="${escapeHtml(id)}">` +

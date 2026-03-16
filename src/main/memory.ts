@@ -171,6 +171,8 @@ export async function embedAndStore(
   text: string,
   dbPath?: string,
 ): Promise<void> {
+  const allowed = ['turns', 'summaries', 'observations', 'bookmarks'];
+  if (!allowed.includes(table)) throw new Error(`embedAndStore: invalid table "${table}"`);
   const vec = await embed(text);
   const blob = embVectorToBlob(vec);
   const p = dbPath || getConfig().DB_PATH;
@@ -613,11 +615,9 @@ export function updateActivation(table: string, rowId: number): void {
   if (!allowed.includes(table)) return;
 
   const db = getDb();
-  // Dynamically check if the table has activation and last_accessed columns
-  const cols = new Set(
-    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((r) => r.name),
-  );
-  if (cols.has('activation') && cols.has('last_accessed')) {
+  // Tables with activation columns - avoids dynamic PRAGMA for validated tables
+  const activationTables = new Set(['observations']);
+  if (activationTables.has(table)) {
     db.prepare(
       `UPDATE ${table}
        SET activation = MIN(1.0, COALESCE(activation, 0.5) + 0.2),

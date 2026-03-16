@@ -89,7 +89,7 @@
 
   // Inference
   let claudeBin = $state('claude');
-  let claudeModel = $state('claude-haiku-4-5-20251001');
+  let claudeModel = $state('claude-sonnet-4-6');
   let claudeEffort = $state('medium');
   let adaptiveEffort = $state(true);
 
@@ -256,7 +256,7 @@
       maxRecordSec = cfg.maxRecordSec || 120;
 
       claudeBin = cfg.claudeBin || 'claude';
-      claudeModel = cfg.claudeModel || 'claude-haiku-4-5-20251001';
+      claudeModel = cfg.claudeModel || 'claude-sonnet-4-6';
       claudeEffort = cfg.claudeEffort || 'medium';
       adaptiveEffort = cfg.adaptiveEffort ?? true;
 
@@ -812,14 +812,14 @@
           <label class="field">
             <span class="field-label">Model</span>
             <select bind:value={claudeModel} class="field-select">
-              <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-              <option value="claude-sonnet-4-5-20241022">Sonnet 4.5</option>
               <option value="claude-sonnet-4-6">Sonnet 4.6</option>
               <option value="claude-opus-4-6">Opus 4.6</option>
+              <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+              <option value="claude-sonnet-4-5-20241022">Sonnet 4.5</option>
             </select>
           </label>
           <label class="field">
-            <span class="field-label">Claude Effort</span>
+            <span class="field-label">Effort</span>
             <select bind:value={claudeEffort} class="field-select">
               <option value="low">Low</option>
               <option value="medium">Medium</option>

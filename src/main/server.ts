@@ -252,7 +252,15 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
   let fullText = '';
   let sessionId = session.cliSessionId || '';
 
-  const emitter = streamInference(message, systemPrompt, session.cliSessionId);
+  let emitter: ReturnType<typeof streamInference>;
+  try {
+    emitter = streamInference(message, systemPrompt, session.cliSessionId);
+  } catch (err) {
+    inferLock = false;
+    res.write(`data: ${JSON.stringify({ type: 'error', message: String(err) })}\n\n`);
+    res.end();
+    return;
+  }
   let streamEnded = false;
 
   function finalize() {
@@ -349,7 +357,15 @@ async function handleChatStreamJson(req: http.IncomingMessage, res: http.ServerR
   let fullText = '';
   let sessionId = session.cliSessionId || '';
 
-  const emitter = streamInference(message, systemPrompt, session.cliSessionId);
+  let emitter: ReturnType<typeof streamInference>;
+  try {
+    emitter = streamInference(message, systemPrompt, session.cliSessionId);
+  } catch (err) {
+    inferLock = false;
+    res.write(JSON.stringify({ type: 'error', error: String(err) }) + '\n');
+    res.end();
+    return;
+  }
   let streamEnded = false;
 
   function finalize() {
@@ -431,7 +447,7 @@ async function handleChatStreamJson(req: http.IncomingMessage, res: http.ServerR
 }
 
 async function handleStatus(_req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  // No auth required for basic status check (like /health but with more info)
+  if (!checkAuth(_req)) { sendJson(res, { error: 'unauthorized' }, 401); return; }
   const config = getConfig();
   const { getStatus } = await import('./status');
   const userStatus = getStatus();
@@ -456,7 +472,7 @@ async function handleMemorySearch(req: http.IncomingMessage, res: http.ServerRes
 
   const query = parseQuery(req.url || '');
   const q = (query.q || '').trim();
-  const limit = parseInt(query.limit || '10', 10);
+  const limit = Math.min(Math.max(1, parseInt(query.limit || '10', 10) || 10), 100);
 
   if (!q) {
     sendJson(res, { error: 'missing q parameter' }, 400);

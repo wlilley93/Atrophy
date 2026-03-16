@@ -36,6 +36,19 @@ import { createLogger } from './logger';
 const log = createLogger('inference');
 
 // ---------------------------------------------------------------------------
+// Model whitelist
+// ---------------------------------------------------------------------------
+
+export const ALLOWED_MODELS = new Set([
+  'claude-haiku-4-5-20251001',
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
+  'claude-sonnet-4-5-20241022',
+]);
+
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
+
+// ---------------------------------------------------------------------------
 // Tool blacklist
 // ---------------------------------------------------------------------------
 
@@ -185,7 +198,7 @@ function getMcpConfigPath(): string {
 
   const mcpConfig = { mcpServers: servers };
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
+  fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2), { mode: 0o600 });
   _mcpConfigPath = configPath;
   return configPath;
 }
@@ -477,11 +490,14 @@ export function streamInference(
   let sessionId = cliSessionId || uuidv4();
   const allowedTools = 'mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*,mcp__shell__*,mcp__github__*';
 
+  // Resolve model from config, validate against whitelist
+  const model = ALLOWED_MODELS.has(config.CLAUDE_MODEL) ? config.CLAUDE_MODEL : DEFAULT_MODEL;
+
   let cmd: string[];
   if (cliSessionId) {
     cmd = [
       config.CLAUDE_BIN,
-      '--model', config.CLAUDE_MODEL,
+      '--model', model,
       '--effort', effort,
       '--verbose',
       '--output-format', 'stream-json',
@@ -495,7 +511,7 @@ export function streamInference(
   } else {
     cmd = [
       config.CLAUDE_BIN,
-      '--model', config.CLAUDE_MODEL,
+      '--model', model,
       '--effort', effort,
       '--verbose',
       '--output-format', 'stream-json',
@@ -770,17 +786,10 @@ export function streamInference(
 // One-shot inference (for summaries, etc.)
 // ---------------------------------------------------------------------------
 
-const ALLOWED_MODELS = new Set([
-  'claude-haiku-4-5-20251001',
-  'claude-sonnet-4-6',
-  'claude-opus-4-6',
-  'claude-sonnet-4-5-20241022',
-]);
-
 export function runInferenceOneshot(
   messages: { role: string; content: string }[],
   system: string,
-  model = 'claude-sonnet-4-6',
+  model = DEFAULT_MODEL,
   effort: EffortLevel = 'low',
 ): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -788,7 +797,7 @@ export function runInferenceOneshot(
 
     // Validate
     if (!['low', 'medium', 'high'].includes(effort)) effort = 'low';
-    if (!ALLOWED_MODELS.has(model)) model = 'claude-sonnet-4-6';
+    if (!ALLOWED_MODELS.has(model)) model = DEFAULT_MODEL;
 
     const promptParts = messages.map((msg) => {
       const roleLabel = msg.role === 'user' ? config.USER_NAME : config.AGENT_DISPLAY_NAME;
@@ -813,24 +822,40 @@ export function runInferenceOneshot(
       detached: false,
     });
 
+    // Track for shutdown cleanup
+    _allProcesses.add(proc);
+
     let stdout = '';
     let stderr = '';
+    let settled = false;
     const t0 = Date.now();
+
+    function cleanup() {
+      _allProcesses.delete(proc);
+    }
 
     proc.stdout?.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
     });
     proc.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
+      // Cap stderr accumulation
+      if (stderr.length < 8192) stderr += chunk.toString();
     });
 
     const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
       try { proc.kill(); } catch { /* noop */ }
       reject(new Error('Oneshot inference timed out (30s)'));
     }, 30000);
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
+      cleanup();
+      if (settled) return;
+      settled = true;
+
       if (code !== 0) {
         reject(new Error(`CLI error: ${stderr.slice(0, 500)}`));
         return;
@@ -855,6 +880,9 @@ export function runInferenceOneshot(
 
     proc.on('error', (err) => {
       clearTimeout(timeout);
+      cleanup();
+      if (settled) return;
+      settled = true;
       reject(err);
     });
   });

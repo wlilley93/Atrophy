@@ -33,12 +33,16 @@ async function post(method: string, payload: Record<string, unknown>, timeoutMs 
     return null;
   }
 
+  // Long-poll requests (getUpdates with timeout) need a longer fetch timeout
+  const pollTimeout = (payload.timeout as number) || 0;
+  const fetchTimeout = pollTimeout > 0 ? (pollTimeout + 10) * 1000 : 15_000;
+
   try {
     const resp = await fetch(apiUrl(method), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(fetchTimeout),
     });
 
     const result = await resp.json() as { ok: boolean; result?: unknown };
