@@ -494,6 +494,19 @@ gh release create v1.2.7 \
 
 The DMG is only needed for first-time installs. Existing users receive updates via the hot bundle system - on each boot, the app checks GitHub Releases for a newer `bundle.tar.gz`, downloads it to `~/.atrophy/bundle/`, and loads it on the next launch. See `src/main/bundle-updater.ts` for the full self-update flow.
 
+### CI/CD - automatic hot bundle releases
+
+A GitHub Actions workflow (`.github/workflows/bundle.yml`) runs on every push to `main` that touches code (docs-only and markdown-only changes are skipped). It:
+
+1. Bumps the patch version in `package.json`
+2. Builds the hot bundle (`out/` minus bootstrap)
+3. Commits the version bump with `[skip ci]` to prevent loops
+4. Creates a GitHub Release with `bundle.tar.gz` and `bundle-manifest.json`
+
+The workflow can also be triggered manually from the Actions tab with a choice of patch/minor/major bump.
+
+This means: push code to main, and existing app installs will pick up the change on their next restart. No manual `pnpm bundle` or `gh release create` needed for code changes. DMG builds (for new installs) are still done locally with notarization since they require macOS and Apple credentials.
+
 ---
 
 ## Native Dependencies

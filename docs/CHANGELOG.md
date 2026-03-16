@@ -15,6 +15,7 @@ All notable changes to Atrophy.
 
 - DMG is now signed and notarized with Apple - no more "cannot verify" Gatekeeper warnings
 - Signing credentials restored from backup (`~/.atrophy-backup3/signing/` -> `~/.atrophy/signing/`)
+- **GitHub Actions CI/CD** - pushes to main automatically build and release hot bundles. Existing installs self-update on next boot. DMG builds remain local (require macOS + Apple credentials)
 
 ---
 
