@@ -4,6 +4,24 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.2.6 - 2026-03-16
+
+Documentation overhaul. All guides rewritten for users. Developer docs separated from public site.
+
+### Documentation
+
+- **Quick Start** - real repo URL, current version, removed Building for Distribution (developer-only)
+- **Creating Agents** - stripped internal scaffolding details, kept what users need
+- **Configuration Reference** - removed resolution function internals, organized by what you can change
+- **Setup Wizard** - removed component architecture, kept the user-facing walkthrough
+- Depersonalized all docs - removed hardcoded vault paths, updated branding to Atrophy
+- Removed `docs/textbook/` (exact duplicate of `docs/agents/companion/handbook/`)
+- Removed empty placeholder files and duplicate guides
+- Moved Building and Distribution to developer docs
+- Marketing site now only syncs user-facing content; developer docs under `developer/` subdirectory
+
+---
+
 ## 1.2.5 - 2026-03-16
 
 Performance release. Moves synchronous DB queries off the main thread hot path during inference. Release script now auto-bumps version.
