@@ -845,7 +845,6 @@ const AGENT_KEY_NESTING: Record<string, { object: string; key: string }> = {
 const AGENT_KEY_ROOT: Record<string, string> = {
   AGENT_DISPLAY_NAME: 'display_name',
   USER_NAME: 'user_name',
-  OPENING_LINE: 'opening_line',
   WAKE_WORDS: 'wake_words',
   TELEGRAM_EMOJI: 'telegram_emoji',
   DISABLED_TOOLS: 'disabled_tools',

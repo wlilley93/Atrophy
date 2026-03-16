@@ -479,7 +479,6 @@ function registerIpcHandlers(): void {
       agentName: c.AGENT_NAME,
       agentDisplayName: c.AGENT_DISPLAY_NAME,
       userName: c.USER_NAME,
-      openingLine: c.OPENING_LINE,
       wakeWords: c.WAKE_WORDS,
       disabledTools: c.DISABLED_TOOLS,
       // Voice
@@ -560,7 +559,7 @@ function registerIpcHandlers(): void {
 
   // Allowlist of keys safe to update from the renderer
   const agentKeys = new Set([
-    'AGENT_DISPLAY_NAME', 'OPENING_LINE', 'TTS_BACKEND', 'TTS_PLAYBACK_RATE',
+    'AGENT_DISPLAY_NAME', 'TTS_BACKEND', 'TTS_PLAYBACK_RATE',
     'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL', 'ELEVENLABS_STABILITY',
     'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
     'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
@@ -1768,7 +1767,7 @@ Output EXACTLY this format - a single fenced JSON block:
         // Only allow safe config keys - reject anything that could change
         // executable paths, binary locations, or security-sensitive settings
         const SAFE_CONFIG_KEYS = new Set([
-          'USER_NAME', 'OPENING_LINE', 'MUTE_BY_DEFAULT', 'EYE_MODE_DEFAULT',
+          'USER_NAME', 'MUTE_BY_DEFAULT', 'EYE_MODE_DEFAULT',
           'INPUT_MODE', 'VOICE_CALL_MODE', 'WAKE_WORD_ENABLED', 'ADAPTIVE_EFFORT',
           'NOTIFICATIONS_ENABLED', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
         ]);

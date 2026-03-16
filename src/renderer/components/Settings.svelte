@@ -22,7 +22,6 @@
   // Identity
   let userName = $state('');
   let agentDisplayName = $state('');
-  let openingLine = $state('');
   let wakeWords = $state('');
 
   // Tools
@@ -282,7 +281,6 @@
       // Populate form
       userName = cfg.userName || '';
       agentDisplayName = cfg.agentDisplayName || '';
-      openingLine = cfg.openingLine || '';
       wakeWords = (cfg.wakeWords || []).join(', ');
       disabledTools = new Set(cfg.disabledTools || []);
 
