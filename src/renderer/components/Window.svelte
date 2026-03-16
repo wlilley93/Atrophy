@@ -1409,11 +1409,12 @@
     </button>
   </div>
 
-  <!-- Update banner -->
+  <!-- Update banner - fixed position so it stays visible -->
   {#if pendingUpdateVersion}
     <div class="update-banner">
-      <span class="update-banner-text">Update v{pendingUpdateVersion} ready</span>
-      <button class="update-banner-btn" onclick={() => api?.restartForUpdate()}>Restart to update</button>
+      <span class="update-banner-text">v{pendingUpdateVersion} ready</span>
+      <button class="update-banner-btn" onclick={() => api?.restartForUpdate()}>Restart</button>
+      <button class="update-banner-dismiss" onclick={() => pendingUpdateVersion = null} aria-label="Dismiss">&times;</button>
     </div>
   {/if}
 
@@ -1614,13 +1615,20 @@
   /* -- Update banner -- */
 
   .update-banner {
+    position: fixed;
+    top: 36px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 8px 16px;
-    background: rgba(100, 140, 255, 0.1);
-    border-bottom: 1px solid rgba(100, 140, 255, 0.15);
-    flex-shrink: 0;
+    gap: 8px;
+    padding: 6px 12px;
+    background: rgba(20, 20, 30, 0.85);
+    border: 1px solid rgba(100, 140, 255, 0.2);
+    border-radius: 8px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 
   .update-banner-text {
@@ -1644,6 +1652,20 @@
   .update-banner-btn:hover {
     background: rgba(100, 140, 255, 0.3);
     border-color: rgba(100, 140, 255, 0.5);
+  }
+
+  .update-banner-dismiss {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+  }
+
+  .update-banner-dismiss:hover {
+    color: var(--text-secondary);
   }
 
   /* -- Mode buttons -- */
