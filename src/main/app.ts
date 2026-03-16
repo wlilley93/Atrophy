@@ -2142,6 +2142,12 @@ app.on('will-quit', () => {
   stopDaemon();
   stopServer();
   closeAllDbs();
+
+  // Force exit after 2s if lingering async work (e.g. Telegram long-poll) prevents clean shutdown
+  setTimeout(() => {
+    log.warn('Force exiting - async cleanup took too long');
+    process.exit(0);
+  }, 2000).unref();
 });
 
 // ---------------------------------------------------------------------------

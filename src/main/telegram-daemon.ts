@@ -409,18 +409,31 @@ async function handleMuteCommand(text: string): Promise<void> {
 let _lastUpdateId = 0;
 
 async function pollOnce(): Promise<void> {
+  if (!_running) return;
+
   const config = getConfig();
   if (!config.TELEGRAM_BOT_TOKEN) {
     log.warn('TELEGRAM_BOT_TOKEN not configured');
     return;
   }
 
+  // Use abort controller so stopDaemon() can cancel the long-poll
+  _pollAbort = new AbortController();
+
   // Long-poll timeout is 30s on Telegram's side; HTTP timeout must be longer
-  const raw = await _post('getUpdates', {
-    offset: _lastUpdateId + 1,
-    timeout: 30,
-    allowed_updates: ['message'],
-  }, 45_000);
+  let raw: unknown;
+  try {
+    raw = await _post('getUpdates', {
+      offset: _lastUpdateId + 1,
+      timeout: 30,
+      allowed_updates: ['message'],
+    }, 45_000);
+  } catch (e) {
+    if (!_running) return; // Aborted by stopDaemon
+    throw e;
+  } finally {
+    _pollAbort = null;
+  }
   const result = Array.isArray(raw) ? raw as { update_id: number; message?: {
     text?: string;
     from?: { id: number };
@@ -506,6 +519,7 @@ async function pollOnce(): Promise<void> {
 
 let _pollTimer: ReturnType<typeof setInterval> | null = null;
 let _running = false;
+let _pollAbort: AbortController | null = null;
 
 /**
  * Start the polling daemon. Acquires an instance lock to prevent
@@ -555,6 +569,10 @@ export function stopDaemon(): void {
   if (_pollTimer) {
     clearTimeout(_pollTimer as unknown as ReturnType<typeof setTimeout>);
     _pollTimer = null;
+  }
+  if (_pollAbort) {
+    _pollAbort.abort();
+    _pollAbort = null;
   }
   releaseLock();
   log.info('Stopped');
