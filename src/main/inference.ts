@@ -198,7 +198,10 @@ function getMcpConfigPath(): string {
 
   const mcpConfig = { mcpServers: servers };
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2), { mode: 0o600 });
+  // Atomic write: tmp file + rename to avoid partial reads by concurrent spawns
+  const tmpPath = configPath + '.tmp';
+  fs.writeFileSync(tmpPath, JSON.stringify(mcpConfig, null, 2), { mode: 0o600 });
+  fs.renameSync(tmpPath, configPath);
   _mcpConfigPath = configPath;
   return configPath;
 }
@@ -720,6 +723,19 @@ export function streamInference(
     _allProcesses.delete(proc);
     const elapsed = (Date.now() - t0) / 1000;
 
+    // Flush any remaining data in the line buffer (no trailing newline)
+    if (lineBuffer.trim()) {
+      try {
+        const event = JSON.parse(lineBuffer.trim()) as Record<string, unknown>;
+        if (event.type === 'result') {
+          sessionId = (event.session_id as string) || sessionId;
+          const resultText = (event.result as string) || '';
+          if (resultText && !fullText) fullText = resultText;
+        }
+      } catch { /* not valid JSON - discard */ }
+      lineBuffer = '';
+    }
+
     // Killed by signal (SIGTERM, SIGKILL, etc.) - always an error
     if (signal) {
       const errMsg = stderrChunks.trim().slice(0, 300) || `claude killed by ${signal}`;
@@ -744,7 +760,7 @@ export function streamInference(
       return;
     }
 
-    // Empty response with exit 0 — treat as error
+    // Empty response with exit 0 - only an error if no tools were called either
     if (!fullText.trim() && toolCalls.length === 0) {
       const hint = stderrChunks.trim().slice(0, 300) || 'Claude returned an empty response';
       log.warn(`empty response after ${elapsed.toFixed(1)}s: ${hint}`);

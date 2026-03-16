@@ -76,17 +76,46 @@ export async function sendMessage(
     text = `${config.TELEGRAM_EMOJI} *${config.AGENT_DISPLAY_NAME}*\n\n${text}`;
   }
 
-  const result = await post('sendMessage', {
-    chat_id: target,
-    text,
-    parse_mode: 'Markdown',
-  });
-
-  if (result) {
-    log.debug(`Sent message (${text.length} chars)`);
-    return true;
+  // Telegram has a 4096 character limit per message - split if needed
+  const MAX_LEN = 4096;
+  if (text.length <= MAX_LEN) {
+    const result = await post('sendMessage', {
+      chat_id: target,
+      text,
+      parse_mode: 'Markdown',
+    });
+    if (result) {
+      log.debug(`Sent message (${text.length} chars)`);
+      return true;
+    }
+    return false;
   }
-  return false;
+
+  // Split on paragraph boundaries, falling back to character limit
+  let remaining = text;
+  let allSent = true;
+  while (remaining.length > 0) {
+    let chunk: string;
+    if (remaining.length <= MAX_LEN) {
+      chunk = remaining;
+      remaining = '';
+    } else {
+      // Try to split at a paragraph boundary
+      let splitAt = remaining.lastIndexOf('\n\n', MAX_LEN);
+      if (splitAt < MAX_LEN / 2) splitAt = remaining.lastIndexOf('\n', MAX_LEN);
+      if (splitAt < MAX_LEN / 2) splitAt = MAX_LEN;
+      chunk = remaining.slice(0, splitAt);
+      remaining = remaining.slice(splitAt).trimStart();
+    }
+    const result = await post('sendMessage', {
+      chat_id: target,
+      text: chunk,
+      parse_mode: 'Markdown',
+    });
+    if (!result) allSent = false;
+  }
+  log.debug(`Sent message (${text.length} chars, split)`);
+  return allSent;
 }
 
 export async function sendButtons(

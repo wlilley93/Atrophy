@@ -437,7 +437,12 @@ async function pollOnce(): Promise<void> {
 
     const senderId = String(msg.from?.id || '');
     const chatId = String(msg.chat?.id || '');
-    if (config.TELEGRAM_CHAT_ID && senderId !== config.TELEGRAM_CHAT_ID && chatId !== config.TELEGRAM_CHAT_ID) {
+    // Reject all messages if TELEGRAM_CHAT_ID is not configured (security)
+    if (!config.TELEGRAM_CHAT_ID) {
+      log.warn('TELEGRAM_CHAT_ID not configured - ignoring message');
+      continue;
+    }
+    if (senderId !== config.TELEGRAM_CHAT_ID && chatId !== config.TELEGRAM_CHAT_ID) {
       continue;
     }
 

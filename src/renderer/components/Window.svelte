@@ -469,6 +469,7 @@
 
   /** Submit handler passed to InputBar during setup - routes to wizard inference */
   async function setupSubmit(text: string) {
+    if (session.inferenceState === 'thinking') return; // prevent concurrent calls
     addMessage('user', text);
     completeLast();
     session.inferenceState = 'thinking';
