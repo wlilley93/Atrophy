@@ -252,14 +252,68 @@
   $effect(() => {
     if (!api) return;
 
+    // ── Text-audio sync ──
+    // When TTS is active, buffer text and only reveal each sentence
+    // when its audio starts playing. This keeps text and voice in sync.
+    // When TTS is off/muted, text appears immediately.
+
     // Buffer for detecting partial <artifact> tags during streaming.
-    // When we see a '<' that could be the start of an artifact tag,
-    // we hold text until we can confirm it's not an artifact block.
     let streamBuffer = '';
+    // Accumulated raw text (for sync mode - holds text until audio plays)
+    let rawTextBuffer = '';
+    // How many characters have been revealed to the transcript
+    let revealedChars = 0;
+    // Sentence boundaries: index -> char offset where that sentence ends in rawTextBuffer
+    let sentenceBoundaries: { index: number; endChar: number; ttsActive: boolean }[] = [];
+    // Which sentence index has started playing
+    let lastPlayedIndex = -1;
+    // Whether we're in sync mode for this response
+    let syncMode = false;
+    // Track if streaming is done (need to reveal remaining text)
+    let streamDone = false;
+
+    function resetSyncState() {
+      rawTextBuffer = '';
+      revealedChars = 0;
+      sentenceBoundaries = [];
+      lastPlayedIndex = -1;
+      syncMode = false;
+      streamDone = false;
+    }
+
+    function stripArtifacts(text: string): string {
+      // Remove <artifact>...</artifact> blocks
+      return text.replace(/<artifact[\s\S]*?<\/artifact>/g, '');
+    }
+
+    // Reveal text up to a character position
+    function revealUpTo(targetChars: number) {
+      if (targetChars <= revealedChars) return;
+      const cleaned = stripArtifacts(rawTextBuffer);
+      const toReveal = cleaned.slice(revealedChars, targetChars);
+      if (toReveal) {
+        appendToLast(toReveal);
+      }
+      revealedChars = targetChars;
+    }
+
+    // Reveal all remaining text (when stream ends or TTS finishes)
+    function revealAll() {
+      const cleaned = stripArtifacts(rawTextBuffer);
+      if (revealedChars < cleaned.length) {
+        appendToLast(cleaned.slice(revealedChars));
+        revealedChars = cleaned.length;
+      }
+    }
 
     function flushBuffer() {
       if (streamBuffer) {
-        appendToLast(streamBuffer);
+        if (syncMode) {
+          // In sync mode, accumulate but don't reveal yet
+          rawTextBuffer += streamBuffer;
+        } else {
+          appendToLast(streamBuffer);
+        }
         streamBuffer = '';
       }
     }
@@ -272,39 +326,72 @@
         // Check if buffer might contain a partial <artifact tag
         const lastOpen = streamBuffer.lastIndexOf('<artifact');
         if (lastOpen !== -1) {
-          // Flush everything before the potential tag
           if (lastOpen > 0) {
-            appendToLast(streamBuffer.slice(0, lastOpen));
+            const before = streamBuffer.slice(0, lastOpen);
+            if (syncMode) {
+              rawTextBuffer += before;
+            } else {
+              appendToLast(before);
+            }
             streamBuffer = streamBuffer.slice(lastOpen);
           }
-          // Check if we have a complete closing tag - if so, don't show it
-          // (the main process will strip it and send cleaned text on done)
           const closeIdx = streamBuffer.indexOf('</artifact>');
           if (closeIdx !== -1) {
-            // Full artifact block in buffer - discard it, main process handles extraction
             const afterClose = streamBuffer.slice(closeIdx + '</artifact>'.length);
+            if (syncMode) {
+              rawTextBuffer += streamBuffer; // Keep artifact in raw buffer for stripping
+            }
             streamBuffer = afterClose;
             if (streamBuffer) flushBuffer();
           }
-          // Otherwise keep buffering until tag completes or turns out to not be an artifact
         } else if (streamBuffer.endsWith('<')) {
-          // Might be start of <artifact - hold it
-          appendToLast(streamBuffer.slice(0, -1));
+          const before = streamBuffer.slice(0, -1);
+          if (syncMode) {
+            rawTextBuffer += before;
+          } else {
+            appendToLast(before);
+          }
           streamBuffer = '<';
         } else {
           flushBuffer();
         }
       }),
+      // Sentence boundary - controls when text is revealed in sync mode
+      api.onSentenceReady((sentence: string, index: number, ttsActive: boolean) => {
+        if (index === 0) {
+          // First sentence - decide sync mode for this response
+          syncMode = ttsActive;
+        }
+
+        // Record where this sentence ends in the raw buffer
+        const endChar = stripArtifacts(rawTextBuffer).length;
+        sentenceBoundaries.push({ index, endChar, ttsActive });
+
+        if (!ttsActive) {
+          // No TTS - reveal immediately
+          revealAll();
+        }
+      }),
       api.onDone((fullText: string) => {
-        // Flush any remaining buffer (partial tags that never completed)
         flushBuffer();
+        streamDone = true;
+
+        if (!syncMode) {
+          // Not in sync mode - reveal everything
+          revealAll();
+        } else {
+          // In sync mode - reveal up to last played sentence,
+          // any remaining text after last sentence plays via tts:done/queueEmpty
+        }
+
         completeLast();
         session.inferenceState = 'idle';
-        // Classify emotion from complete response and trigger avatar reaction
         setEmotionFromText(fullText);
       }),
       api.onError((msg: string) => {
         flushBuffer();
+        revealAll();
+        resetSyncState();
         completeLast();
         session.inferenceState = 'idle';
         revertToDefault();
@@ -315,14 +402,22 @@
       api.onCompacting(() => {
         session.inferenceState = 'compacting';
       }),
-      // Inline artifacts from agent response
       api.onArtifact((artifact: { id: string; type: string; title: string; language: string; content: string }) => {
         storeArtifact(artifact as any);
       }),
-      // TTS events
-      api.onTtsStarted((_index: number) => {
+      // TTS events - drive text reveal in sync mode
+      api.onTtsStarted((index: number) => {
         audio.isPlaying = true;
         audio.vignetteOpacity = 0.15;
+
+        if (syncMode) {
+          lastPlayedIndex = index;
+          // Reveal text up to this sentence's boundary
+          const boundary = sentenceBoundaries.find((b) => b.index === index);
+          if (boundary) {
+            revealUpTo(boundary.endChar);
+          }
+        }
       }),
       api.onTtsDone((_index: number) => {
         // Keep playing until queue empty
@@ -330,6 +425,12 @@
       api.onTtsQueueEmpty(() => {
         audio.isPlaying = false;
         audio.vignetteOpacity = 0;
+
+        // Reveal any remaining text after all audio has played
+        if (syncMode) {
+          revealAll();
+          resetSyncState();
+        }
       }),
       // Voice call status updates from main process
       api.onCallStatusChanged((status: string) => {

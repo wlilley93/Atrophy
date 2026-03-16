@@ -8,7 +8,7 @@ export interface AtrophyAPI {
   // Inference
   sendMessage: (text: string) => Promise<void>;
   onTextDelta: (cb: (text: string) => void) => () => void;
-  onSentenceReady: (cb: (sentence: string, audioPath: string) => void) => () => void;
+  onSentenceReady: (cb: (sentence: string, index: number, ttsActive: boolean) => void) => () => void;
   onToolUse: (cb: (name: string) => void) => () => void;
   onDone: (cb: (fullText: string) => void) => () => void;
   onCompacting: (cb: () => void) => () => void;

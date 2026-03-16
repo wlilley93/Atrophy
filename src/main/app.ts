@@ -1168,10 +1168,11 @@ Output EXACTLY this format - a single fenced JSON block:
             mainWindow.webContents.send('inference:textDelta', evt.text);
             break;
 
-          case 'SentenceReady':
-            // Synthesise TTS in background, send sentence to renderer immediately
-            mainWindow.webContents.send('inference:sentenceReady', evt.sentence, '');
-            if (getConfig().TTS_BACKEND !== 'off' && !isMuted()) {
+          case 'SentenceReady': {
+            const ttsActive = getConfig().TTS_BACKEND !== 'off' && !isMuted();
+            // Tell renderer about the sentence boundary + whether to wait for audio
+            mainWindow.webContents.send('inference:sentenceReady', evt.sentence, evt.index, ttsActive);
+            if (ttsActive) {
               synthesise(evt.sentence).then((audioPath) => {
                 if (audioPath) {
                   enqueueAudio(audioPath, evt.index);
@@ -1179,6 +1180,7 @@ Output EXACTLY this format - a single fenced JSON block:
               }).catch((e) => { log.warn(`[tts] synthesise error: ${e}`); });
             }
             break;
+          }
 
           case 'ToolUse':
             mainWindow.webContents.send('inference:toolUse', evt.name);
