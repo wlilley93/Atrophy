@@ -99,7 +99,7 @@ python scripts/install_app.py uninstall  # Remove
 python scripts/install_app.py status     # Check
 ```
 
-Installs a plist to `~/Library/LaunchAgents/com.atrophiedmind.companion.plist`. Logs to `~/.atrophy/logs/app.*.log`.
+Installs a plist to `~/Library/LaunchAgents/com.atrophy.companion.plist`. Logs to `~/.atrophy/logs/app.*.log`.
 
 ### config.py — Central Configuration
 

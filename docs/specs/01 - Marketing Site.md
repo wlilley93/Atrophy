@@ -1,4 +1,4 @@
-# Marketing Site — theatrophiedmind.com
+# Marketing Site — atrophy.app
 
 A single-page site that does one thing: makes you want to open the app.
 
@@ -453,7 +453,7 @@ Every word on this page should sound like it was written at 2am by someone who c
 
 ## Hosted Docs
 
-When the site is live, docs will be served at `theatrophiedmind.com/docs/` (or a subdomain: `docs.theatrophiedmind.com`). The same markdown files from the repo's `docs/` directory, rendered with a minimal dark theme matching the marketing site tokens.
+When the site is live, docs will be served at `atrophy.app/docs/` (or a subdomain: `docs.atrophy.app`). The same markdown files from the repo's `docs/` directory, rendered with a minimal dark theme matching the marketing site tokens.
 
 Agents will be able to fetch docs from the hosted URL via puppeteer/web tools as an alternative to the local `read_docs` MCP tool. Local-first, hosted as fallback.
 
@@ -463,11 +463,11 @@ The docs site uses the same design tokens but adds a sidebar navigation tree and
 
 ## Privacy Policy
 
-Hosted at `theatrophiedmind.com/privacy`. Same design tokens as the main site. Plain text, no legalese where possible. Required for Google OAuth verification.
+Hosted at `atrophy.app/privacy`. Same design tokens as the main site. Plain text, no legalese where possible. Required for Google OAuth verification.
 
 ### URL
 
-`theatrophiedmind.com/privacy`
+`atrophy.app/privacy`
 
 ### Content
 

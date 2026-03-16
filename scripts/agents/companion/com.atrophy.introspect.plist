@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.atrophiedmind.introspect</string>
+    <string>com.atrophy.introspect</string>
     <key>ProgramArguments</key>
     <array>
         <string>/Users/williamlilley/.pyenv/versions/3.12.7/bin/python</string>

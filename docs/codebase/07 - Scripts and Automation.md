@@ -104,13 +104,13 @@ export function toggleCron(enabled: boolean): void
 
 The internal functions handle path resolution, job storage, cron parsing, and the low-level install/uninstall mechanics. They are not exported but are critical to understanding the module's behaviour.
 
-**`labelPrefix(): string`** - Returns `com.atrophiedmind.<agent_name>.` using the current config's agent name. This prefix ensures that each agent's launchd jobs are namespaced and do not collide with jobs from other agents.
+**`labelPrefix(): string`** - Returns `com.atrophy.<agent_name>.` using the current config's agent name. This prefix ensures that each agent's launchd jobs are namespaced and do not collide with jobs from other agents.
 
 **`jobsFile(): string`** - Returns the path to the jobs definition file: `<BUNDLE_ROOT>/scripts/agents/<agent_name>/jobs.json`. Each agent has its own jobs file, allowing different agents to have different schedules and even different sets of jobs.
 
 **`logsDir(): string`** - Returns `<BUNDLE_ROOT>/logs/<agent_name>`. Created on install if missing. Both stdout and stderr from launchd jobs are directed here, one log file per job.
 
-**`plistPath(name: string): string`** - Returns `~/Library/LaunchAgents/com.atrophiedmind.<agent>.<name>.plist`. This is the canonical location where macOS expects per-user launchd job definitions to live.
+**`plistPath(name: string): string`** - Returns `~/Library/LaunchAgents/com.atrophy.<agent>.<name>.plist`. This is the canonical location where macOS expects per-user launchd job definitions to live.
 
 **`loadJobs(): Record<string, Job>`** - Reads and parses `jobs.json`. Returns empty object if file is missing or malformed. The resilient error handling ensures that a corrupted jobs file does not crash the app.
 
@@ -124,7 +124,7 @@ The `generatePlist(name: string, job: Job): PlistDict` function builds a structu
 
 | Key | Value |
 |-----|-------|
-| `Label` | `com.atrophiedmind.<agent>.<job_name>` |
+| `Label` | `com.atrophy.<agent>.<job_name>` |
 | `ProgramArguments` | `[<PYTHON_PATH>, <resolved_script_path>, ...args]` |
 | `WorkingDirectory` | `BUNDLE_ROOT` |
 | `StandardOutPath` | `<BUNDLE_ROOT>/logs/<agent>/<job_name>.log` |
@@ -164,7 +164,7 @@ The following table lists all files that `cron.ts` reads from and writes to duri
 |-----------|------|--------|
 | Read | `<BUNDLE_ROOT>/scripts/agents/<agent>/jobs.json` | JSON object of Job definitions |
 | Write | Same path | Same format, 2-space indent |
-| Write | `~/Library/LaunchAgents/com.atrophiedmind.<agent>.<job>.plist` | Apple plist XML |
+| Write | `~/Library/LaunchAgents/com.atrophy.<agent>.<job>.plist` | Apple plist XML |
 | Delete | Same plist path | On uninstall |
 | Create dir | `<BUNDLE_ROOT>/logs/<agent>/` | On install |
 

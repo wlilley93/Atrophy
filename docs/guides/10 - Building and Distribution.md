@@ -146,7 +146,7 @@ The distinction between `pnpm pack` and `pnpm dist` is that `pack` creates only 
 The build configuration lives at `electron-builder.yml` in the project root. This file controls everything from the app identifier and icon to the packaging targets and update publishing. Every field is documented inline below.
 
 ```yaml
-appId: com.atrophiedmind.app
+appId: com.atrophy.app
 productName: Atrophy
 copyright: Copyright (c) 2024-2026 Atrophy
 

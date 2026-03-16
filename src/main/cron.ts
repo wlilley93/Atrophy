@@ -41,7 +41,7 @@ export interface JobInfo extends Job {
 const LAUNCH_AGENTS = path.join(process.env.HOME || '/tmp', 'Library', 'LaunchAgents');
 
 function labelPrefix(): string {
-  return `com.atrophiedmind.${getConfig().AGENT_NAME}.`;
+  return `com.atrophy.${getConfig().AGENT_NAME}.`;
 }
 
 function jobsFile(): string {

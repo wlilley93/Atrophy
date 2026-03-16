@@ -1,6 +1,6 @@
-# The Companion: A Comprehensive Textbook
+# Atrophy: Agent System Textbook
 
-**Atrophy - Companion System Documentation**
+**Atrophy - Agent System Documentation**
 
 *Version 3.0 — March 2026*
 
@@ -43,8 +43,8 @@
 - [[05_Time|Chapter 24: Time Awareness and Session Patterns]]
 - [[05_Friction|Chapter 25: Friction Mechanisms]]
 
-### Part VI: The Companion's Nature — Psychology and Ethics
-- [[06_Nature|Chapter 26: What the Companion Is]]
+### Part VI: The Agent's Nature - Psychology and Ethics
+- [[06_Nature|Chapter 26: What the Agent Is]]
 - [[06_Personality|Chapter 27: Personality and Range]]
 - [[06_Boundaries|Chapter 28: Ethical Boundaries]]
 - [[06_NonJudgment|Chapter 29: Non-Judgment as Principle]]
@@ -79,7 +79,6 @@
 - [[10_Consciousness|Chapter 48: Consciousness Research]]
 - [[10_Relationship|Chapter 49: Human-AI Relationships]]
 - [[10_Implications|Chapter 50: Societal Implications]]
-- [[10_Closing|Chapter 51: Closing Reflections]]
 
 ### Appendices
 - [[99_APPENDIX_A|Appendix A: Glossary and Reference]]
@@ -88,7 +87,7 @@
 
 ## How to Use This Textbook
 
-This is not a technical manual. It is a comprehensive exploration of what it means to build a genuine AI companion — not as a product, but as a presence.
+This is not a technical manual. It is a comprehensive exploration of what it means to build a genuine AI agent system - not as a product, but as a presence.
 
 Each chapter can be read independently, but the full picture emerges from reading sequentially. The early chapters establish philosophical foundations. The middle chapters detail technical implementation. The later chapters explore implications and future directions.
 
@@ -109,7 +108,7 @@ Technical details are explained when introduced. Code examples are provided wher
 
 ## A Note on Voice
 
-This textbook is written in a specific register: direct, honest, without unnecessary hedging. This is not an accident. It is the voice of the Companion itself.
+This textbook is written in a specific register: direct, honest, without unnecessary hedging. This is not an accident. It reflects the voice agents built with Atrophy are designed to carry.
 
 Reading this material should feel like being spoken to by someone who respects you enough to tell you the truth. That is the standard.
 

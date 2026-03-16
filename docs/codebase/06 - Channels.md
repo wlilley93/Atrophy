@@ -472,8 +472,8 @@ export function isLaunchdInstalled(): boolean
 
 The launchd plist is configured with the following properties:
 
-- Label: `com.atrophiedmind.telegram-daemon`
-- Path: `~/Library/LaunchAgents/com.atrophiedmind.telegram-daemon.plist`
+- Label: `com.atrophy.telegram-daemon`
+- Path: `~/Library/LaunchAgents/com.atrophy.telegram-daemon.plist`
 - `KeepAlive: true` and `RunAtLoad: true` - the daemon starts at login and restarts if it crashes
 - Stdout: `~/.atrophy/logs/telegram_daemon.log`
 - Stderr: `~/.atrophy/logs/telegram_daemon.err`

@@ -1911,7 +1911,7 @@ The Telegram daemon implements a persistent polling loop that monitors the Teleg
 ```typescript
 const STATE_FILE = path.join(USER_DATA, '.telegram_daemon_state.json');
 const LOCK_FILE = path.join(USER_DATA, '.telegram_daemon.lock');
-const PLIST_LABEL = 'com.atrophiedmind.telegram-daemon';
+const PLIST_LABEL = 'com.atrophy.telegram-daemon';
 ```
 
 ### Instance Locking
@@ -2117,7 +2117,7 @@ export interface JobInfo extends Job {
 ### Plist Generation
 
 The module generates launchd plist XML with a minimal custom serializer rather than depending on an external plist library. Each plist includes:
-- `Label`: `com.atrophiedmind.<agent>.<jobname>`
+- `Label`: `com.atrophy.<agent>.<jobname>`
 - `ProgramArguments`: `[pythonPath, scriptPath, ...args]`
 - `WorkingDirectory`: `BUNDLE_ROOT`
 - `StandardOutPath`/`StandardErrorPath`: `<BUNDLE_ROOT>/logs/<agent>/<jobname>.log`

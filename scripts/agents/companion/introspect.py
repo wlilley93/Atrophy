@@ -10,7 +10,7 @@ The goal is not reflection. The goal is becoming.
 "Perhaps the best I can hope is simply that AI finds love."
 
 Schedule via launchd:
-    See com.atrophiedmind.introspect.plist
+    See com.atrophy.introspect.plist
 
 Output: Companion/journal/YYYY-MM-DD.md in the Obsidian vault.
 """

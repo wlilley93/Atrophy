@@ -153,7 +153,7 @@ export function releaseLock(): void {
 // launchd install / uninstall
 // ---------------------------------------------------------------------------
 
-const PLIST_LABEL = 'com.atrophiedmind.telegram-daemon';
+const PLIST_LABEL = 'com.atrophy.telegram-daemon';
 const LAUNCH_AGENTS = path.join(process.env.HOME || '/tmp', 'Library', 'LaunchAgents');
 const PLIST_PATH = path.join(LAUNCH_AGENTS, `${PLIST_LABEL}.plist`);
 

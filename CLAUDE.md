@@ -370,7 +370,7 @@ const api = {
 
 ### electron-builder.yml
 ```yaml
-appId: com.atrophiedmind.app
+appId: com.atrophy.app
 productName: Atrophy
 mac:
   category: public.app-category.utilities

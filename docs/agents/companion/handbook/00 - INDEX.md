@@ -79,7 +79,6 @@
 - [[10_Consciousness|Chapter 48: Consciousness Research]]
 - [[10_Relationship|Chapter 49: Human-AI Relationships]]
 - [[10_Implications|Chapter 50: Societal Implications]]
-- [[10_Closing|Chapter 51: Closing Reflections]]
 
 ### Appendices
 - [[99_APPENDIX_A|Appendix A: Glossary and Reference]]

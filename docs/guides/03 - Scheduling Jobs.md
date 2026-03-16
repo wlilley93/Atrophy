@@ -71,10 +71,10 @@ If `type` is omitted, it defaults to `"calendar"` and expects a `cron` field.
 `python scripts/cron.py install` converts each job definition into a macOS launchd plist and places it in `~/Library/LaunchAgents/`. The plist label follows the pattern:
 
 ```
-com.atrophiedmind.<agent>.<job-name>
+com.atrophy.<agent>.<job-name>
 ```
 
-For example: `com.atrophiedmind.companion.heartbeat`
+For example: `com.atrophy.companion.heartbeat`
 
 Logs go to `~/.atrophy/logs/<agent>/<job-name>.log`.
 

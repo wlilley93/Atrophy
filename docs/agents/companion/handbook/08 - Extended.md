@@ -98,7 +98,7 @@ python scripts/install_app.py uninstall  # Remove
 python scripts/install_app.py status     # Check if running
 ```
 
-This creates a plist at `~/Library/LaunchAgents/com.atrophiedmind.companion.plist`:
+This creates a plist at `~/Library/LaunchAgents/com.atrophy.companion.plist`:
 - `RunAtLoad: true` — starts at login
 - `KeepAlive.SuccessfulExit: false` — restarts on crash (but not on clean exit)
 - Logs to `logs/app.stdout.log` and `logs/app.stderr.log`

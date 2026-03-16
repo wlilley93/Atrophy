@@ -25,7 +25,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 AGENT_NAME = os.environ.get("AGENT", "companion")
 JOBS_FILE = PROJECT_ROOT / "scripts" / "agents" / AGENT_NAME / "jobs.json"
 LAUNCH_AGENTS = Path.home() / "Library" / "LaunchAgents"
-LABEL_PREFIX = f"com.atrophiedmind.{AGENT_NAME}."
+LABEL_PREFIX = f"com.atrophy.{AGENT_NAME}."
 PYTHON = sys.executable
 LOGS_DIR = PROJECT_ROOT / "logs" / AGENT_NAME
 
@@ -289,7 +289,7 @@ def main():
     if args.agent:
         AGENT_NAME = args.agent
         JOBS_FILE = PROJECT_ROOT / "scripts" / "agents" / AGENT_NAME / "jobs.json"
-        LABEL_PREFIX = f"com.atrophiedmind.{AGENT_NAME}."
+        LABEL_PREFIX = f"com.atrophy.{AGENT_NAME}."
         LOGS_DIR = PROJECT_ROOT / "logs" / AGENT_NAME
 
     if not args.command:
