@@ -59,8 +59,8 @@ src/
     audio.ts                 # Audio recording management
     wake-word.ts             # Wake word detection (port of voice/wake_word.py)
     telegram.ts              # Telegram Bot API client (port of channels/telegram.py)
-    telegram-daemon.ts       # Telegram polling daemon (port of channels/telegram_daemon.py)
-    router.ts                # Message routing (port of channels/router.py)
+    telegram-daemon.ts       # Telegram polling daemon using Topics mode (1 topic per agent)
+    router.ts                # Message routing (legacy - not used by Telegram daemon)
     server.ts                # HTTP API server (port of server.py)
     cron.ts                  # launchd job management (port of scripts/cron.py)
     install.ts               # Login item installer
@@ -234,7 +234,7 @@ Two-phase flow:
 1. Ask user's name
 2. AI-driven agent creation (Xan metaprompt)
 
-Service setup: ElevenLabs (paste key), Telegram (paste bot token + chat ID), Google (OAuth browser flow with service picker checkboxes).
+Service setup: ElevenLabs (paste key), Telegram (bot creation via BotFather, group creation with Topics enabled, topic setup per agent, paste bot token + group ID), Google (OAuth browser flow with service picker checkboxes).
 
 ### 3.8 Voice Pipeline
 
@@ -271,7 +271,7 @@ These are straightforward TypeScript translations:
 | `core/prompts.py` | `src/main/prompts.ts` | Prompt loading |
 | `core/context.py` | `src/main/context.ts` | Context assembly |
 | `channels/telegram.py` | `src/main/telegram.ts` | Bot API client |
-| `channels/router.py` | `src/main/router.ts` | Message routing |
+| `channels/router.py` | `src/main/router.ts` | Message routing (legacy - no longer used by daemon) |
 
 ### 3.10 `core/embeddings.py` -> `src/main/embeddings.ts`
 

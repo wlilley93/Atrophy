@@ -233,7 +233,8 @@ export interface CreateAgentOptions {
   heartbeatIntervalMins?: number;  // default: 30
   outreachStyle?: string;
   telegramBotToken?: string;
-  telegramChatId?: string;
+  telegramGroupId?: string;
+  telegramTopicId?: number;
 }
 ```
 
@@ -259,8 +260,9 @@ export interface AgentManifest {
     playback_rate: number;
   };
   telegram: {
-    bot_token_env: string;   // e.g. 'TELEGRAM_BOT_TOKEN_COMPANION'
-    chat_id_env: string;     // e.g. 'TELEGRAM_CHAT_ID_COMPANION'
+    bot_token_env: string;   // e.g. 'TELEGRAM_BOT_TOKEN'
+    group_id_env: string;    // e.g. 'TELEGRAM_GROUP_ID'
+    topic_id: number;        // agent's topic thread ID in the group
   };
   display: {
     window_width: number;    // always 622
@@ -299,7 +301,7 @@ The internal functions handle the individual steps of agent creation - name slug
 
 **`writeIfMissing(filePath: string, content: string): void`** - Creates parent directories and writes file only if it does not already exist. This is the key to idempotency - re-running agent creation never overwrites existing prompt files that may have been customised.
 
-**`buildManifest(opts, name): AgentManifest`** - Assembles the full manifest from options with defaults. Description is truncated to 120 characters (117 + `'...'`). Telegram env key references use the pattern `TELEGRAM_BOT_TOKEN_<NAME_UPPER>` and `TELEGRAM_CHAT_ID_<NAME_UPPER>`, which are resolved from environment variables at runtime.
+**`buildManifest(opts, name): AgentManifest`** - Assembles the full manifest from options with defaults. Description is truncated to 120 characters (117 + `'...'`). Telegram config uses the shared `TELEGRAM_BOT_TOKEN` and `TELEGRAM_GROUP_ID` env vars, with a per-agent `topic_id` that identifies the agent's topic thread within the Topics-enabled group.
 
 **`generateSystemPrompt(opts, name): string`** - Template-based system prompt (typically 500-800 words). Sections: Origin, Who You Are, Character, Relationship with user, Values, Constraints, Friction, Voice, Capabilities (CONVERSATION, MEMORY, RESEARCH, REFLECTION, WRITING, SCHEDULING, MONITORING), Session Behaviour, Opening Line. Unset sections use the placeholder `(To be written.)`.
 
@@ -1413,7 +1415,7 @@ export async function run(): Promise<void>
 
 The voice note follows a multi-stage pipeline from context gathering through TTS synthesis to Telegram delivery, with enrichment and observation storage as side effects.
 
-1. Check Telegram config - skip if `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` not set
+1. Check Telegram config - skip if `TELEGRAM_BOT_TOKEN` or `TELEGRAM_GROUP_ID` not set
 2. Check active hours - reschedule if outside window
 3. Gather context (threads, observations, conversation turns)
 4. Generate thought via `runInferenceOneshot()`

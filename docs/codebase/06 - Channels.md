@@ -1,23 +1,23 @@
 # Channels
 
-External communication channels beyond the direct conversation interface. The channel system enables the companion to communicate with the user through Telegram, serving as an always-available messaging layer that works independently of the GUI window. This is the primary mechanism for autonomous outreach - heartbeat messages, morning briefs, voice notes, and agent-to-agent routing all flow through the Telegram channel.
+External communication channels beyond the direct conversation interface. The channel system enables the companion to communicate with the user through Telegram, serving as an always-available messaging layer that works independently of the GUI window. This is the primary mechanism for autonomous outreach - heartbeat messages, morning briefs, voice notes, and scheduled task delivery all flow through the Telegram channel.
 
 ## Architecture
 
-All agents share a single Telegram bot. A central daemon polls for messages, routes them to the right agent(s), and dispatches responses sequentially. This eliminates race conditions - no two agents ever run inference concurrently, which prevents database corruption, context window conflicts, and garbled multi-agent responses.
+Telegram uses Topics mode - a single group with Topics (Forum mode) enabled, where each agent gets its own topic thread. The bot is shared across all agents, and routing is handled structurally by Telegram itself rather than by application-level logic. Messages sent to a topic are dispatched directly to the corresponding agent, and each agent's responses go back to its own topic.
 
-The architecture follows a strict pipeline: messages arrive from Telegram, pass through the router for classification, and are dispatched one at a time to target agents. Each agent's response is sent back through the same Telegram bot with an emoji prefix to identify the speaker.
+This replaces the previous flat-chat architecture where all agents shared a single conversation and a router (pattern matching + LLM classification) decided which agent should respond. Topics mode eliminates the need for routing entirely - the topic ID tells the daemon exactly which agent the message is for.
 
 ```
-Telegram Bot API
+Telegram Bot API (Topics-enabled group)
   |
 src/main/telegram-daemon.ts  (single poller)
   |
-src/main/router.ts           (explicit match -> routing agent)
+Topic ID -> agent mapping      (no router needed)
   |
-Sequential dispatch           (agent A responds fully, then agent B)
+Sequential dispatch             (one agent at a time)
   |
-src/main/telegram.ts          (send with emoji prefix)
+src/main/telegram.ts            (send to agent's topic)
 ```
 
 ---
@@ -46,13 +46,14 @@ async function post(method: string, payload: Record<string, unknown>): Promise<u
 
 The module provides three sending methods, each handling a different message type. All three support optional emoji-prefixed agent identification.
 
-The `sendMessage` function sends a plain Markdown-formatted text message. When `prefix=true` (the default), it prepends the agent's emoji and display name (e.g. "moon *Xan*") so the recipient knows which agent is speaking. This prefix is the visual cue that distinguishes messages from different agents in the same Telegram chat.
+The `sendMessage` function sends a plain Markdown-formatted text message. Messages are sent to the agent's topic thread within the group by default. When `prefix=true` (the default), it prepends the agent's emoji and display name (e.g. "moon *Xan*") so the recipient knows which agent is speaking, though this is less critical in Topics mode since each topic is already scoped to one agent.
 
 ```typescript
 export async function sendMessage(
   text: string,
-  chatId?: string,    // defaults to config.TELEGRAM_CHAT_ID
+  chatId?: string,    // defaults to config.TELEGRAM_GROUP_ID
   prefix?: boolean,   // defaults to true
+  topicId?: number,   // defaults to agent's TELEGRAM_TOPIC_ID
 ): Promise<boolean>
 ```
 
@@ -167,19 +168,20 @@ When calling `getUpdates`, the offset is set to `_lastUpdateId + 1`, telling the
 
 ### Configuration
 
-Each agent's Telegram configuration comes from its `agent.json` manifest. The env var names themselves are configurable, allowing multiple agents to use different Telegram bots if needed (though the standard setup uses a single shared bot).
+Each agent's Telegram configuration comes from its `agent.json` manifest. All agents share a single bot and group, but each has its own topic thread ID.
 
 ```json
 {
   "telegram": {
     "bot_token_env": "TELEGRAM_BOT_TOKEN",
-    "chat_id_env": "TELEGRAM_CHAT_ID"
+    "group_id_env": "TELEGRAM_GROUP_ID",
+    "topic_id": 42
   },
   "telegram_emoji": "\ud83c\udf19"
 }
 ```
 
-The `telegram_emoji` appears before the agent's name in all outgoing messages. This visual identifier is essential in a multi-agent setup where messages from different agents appear in the same chat thread.
+The `topic_id` identifies the agent's topic thread within the Topics-enabled group. The `telegram_emoji` appears before the agent's name in outgoing messages - less critical in Topics mode since each topic is already scoped to one agent, but still used for visual consistency.
 
 ### Usage
 
@@ -207,9 +209,11 @@ The implementation makes several deliberate technical choices that affect reliab
 
 ---
 
-## src/main/router.ts - Message Router
+## src/main/router.ts - Message Router (Legacy)
 
-The router is a two-tier routing system that decides which agent(s) should handle an incoming Telegram message. The first tier uses pattern matching (free, instant), and the second tier uses a lightweight LLM call (costs one Haiku inference). This tiered approach means most messages are routed without any LLM cost, while ambiguous messages still get intelligent routing.
+> **Note:** The router is no longer used by the Telegram daemon. With Topics mode, each agent has its own topic thread, so routing is handled structurally by Telegram rather than by application logic. The router module remains in the codebase for potential use by other subsystems but is not part of the active Telegram message flow.
+
+The router is a two-tier routing system that was originally used to decide which agent(s) should handle an incoming Telegram message. The first tier uses pattern matching (free, instant), and the second tier uses a lightweight LLM call (costs one Haiku inference). This tiered approach means most messages are routed without any LLM cost, while ambiguous messages still get intelligent routing.
 
 ### Types
 
@@ -328,18 +332,18 @@ The `enqueueRoute` function appends a route entry and keeps only the last 50 ent
 
 ## src/main/telegram-daemon.ts - Polling Daemon
 
-The polling daemon is the single-process component responsible for receiving Telegram messages, routing them, and dispatching them to agents. It runs as either a managed timer within the Electron main process or as a standalone launchd agent. The key architectural decision is sequential dispatch - agents process messages one at a time, never concurrently.
+The polling daemon is the single-process component responsible for receiving Telegram messages from the Topics-enabled group, mapping them to agents by topic ID, and dispatching responses. It runs as either a managed timer within the Electron main process or as a standalone launchd agent. The key architectural decision is sequential dispatch - agents process messages one at a time, never concurrently.
 
 ### How It Works
 
-The daemon's poll cycle is a six-step pipeline that runs on every interval tick. Each step builds on the previous one, and failures at any step are caught and logged without stopping the daemon.
+The daemon's poll cycle runs on every interval tick. With Topics mode, routing is structural - the topic ID on each incoming message directly identifies the target agent, eliminating the need for the router module. Each step builds on the previous one, and failures at any step are caught and logged without stopping the daemon.
 
 1. **Poll** - Long-polls `getUpdates` with 30-second timeout, `allowed_updates: ['message']`
-2. **Filter** - Only accepts messages from the configured `TELEGRAM_CHAT_ID` (matches both `from.id` and `chat.id` to handle both private and group messages)
+2. **Filter** - Only accepts messages from the configured `TELEGRAM_GROUP_ID`
 3. **Intercept utility commands** - `/status`, `/mute` handled directly without routing or dispatch
-4. **Route** - Passes message through `routeMessage()` to determine target agent(s)
-5. **Dispatch** - Invokes each target agent one at a time via `dispatchToAgent()`
-6. **Respond** - Sends each agent's response to Telegram with emoji prefix
+4. **Map topic to agent** - Looks up the agent whose `topic_id` matches the message's `message_thread_id`
+5. **Dispatch** - Invokes the target agent via `dispatchToAgent()`
+6. **Respond** - Sends the agent's response to the same topic thread
 7. **Persist** - Saves `_lastUpdateId` to state file after each poll cycle
 
 ### Agent Dispatch
@@ -369,7 +373,7 @@ function sendAgentResponse(agentName: string, text: string): void
 
 ### Race Condition Prevention
 
-Sequential dispatch is the core safety mechanism that makes multi-agent Telegram routing possible. Without it, two agents could simultaneously write to the same database, compete for the Claude CLI session, or produce interleaved responses.
+Sequential dispatch is the core safety mechanism. Even though Topics mode means each message targets a single agent, messages from different topics can arrive in the same poll batch. Without sequential dispatch, two agents could simultaneously write to the same database, compete for the Claude CLI session, or produce interleaved responses.
 
 - **No concurrent agents** - agent A completes all tool calls and inference before agent B starts. This is enforced by `await` on each dispatch.
 - **Instance lock** - `O_EXLOCK` on macOS (with pid-check fallback on other platforms) prevents two daemon instances from running simultaneously. Only one process can hold the lock.

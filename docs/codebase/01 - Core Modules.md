@@ -1866,7 +1866,7 @@ export async function sendVoiceNote(
 export async function pollCallback(
   timeoutSecs = 120, chatId = ''
 ): Promise<string | null>;
-// Long-polls getUpdates with 30-second chunks. Filters by chat_id.
+// Long-polls getUpdates with 30-second chunks. Filters by group_id.
 // Answers callback queries automatically.
 
 export async function pollReply(
@@ -1897,7 +1897,7 @@ export function setLastUpdateId(id: number): void;
 The `askConfirm()` and `askQuestion()` functions are convenience wrappers for the common pattern of sending a prompt and waiting for a response. They flush old updates first to avoid picking up stale messages from previous interactions. The `registerBotCommands()` function sets up Telegram's command autocomplete menu with all available agents plus utility commands.
 
 ### Dependencies
-- `config.ts` - for bot token, chat ID, agent emoji and display name
+- `config.ts` - for bot token, group ID, topic ID, agent emoji and display name
 - `agent-manager.ts` - for agent discovery when registering bot commands
 
 ---

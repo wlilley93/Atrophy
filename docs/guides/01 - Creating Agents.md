@@ -91,8 +91,9 @@ This is the technical configuration file for the agent. All fields:
   },
 
   "telegram": {
-    "bot_token_env": "TELEGRAM_BOT_TOKEN_ORACLE",
-    "chat_id_env": "TELEGRAM_CHAT_ID_ORACLE"
+    "bot_token_env": "TELEGRAM_BOT_TOKEN",
+    "group_id_env": "TELEGRAM_GROUP_ID",
+    "topic_id": 6
   },
 
   "display": {

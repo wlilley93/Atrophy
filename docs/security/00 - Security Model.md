@@ -164,7 +164,7 @@ Each agent's data is fully isolated from other agents through filesystem separat
 - Separate database file per agent
 - Separate data directory (`~/.atrophy/agents/<name>/data/`)
 - Separate Obsidian subdirectory for notes
-- Separate Telegram bot token (referenced by environment variable name in `agent.json`, not stored directly in the manifest)
+- Separate Telegram topic thread per agent (each agent's `topic_id` in `agent.json` scopes it to its own conversation within the shared group)
 
 ### No Telemetry or Exfiltration
 
@@ -471,7 +471,7 @@ The `config:update` IPC handler restricts which configuration keys can be modifi
 
 The allowlisted keys are split into two sets:
 
-- **Agent keys** (saved to `agent.json`): display name, voice settings, heartbeat schedule, Telegram chat ID, window dimensions, disabled tools.
+- **Agent keys** (saved to `agent.json`): display name, voice settings, heartbeat schedule, Telegram topic ID, window dimensions, disabled tools.
 - **User keys** (saved to `config.json`): user name, input mode, audio settings, inference effort, memory settings, session limits, notifications, avatar settings, Obsidian vault path.
 
 ### Env Value Sanitization
@@ -509,13 +509,14 @@ Agent manifests (`agents/<name>/data/agent.json`) reference secrets by environme
 ```json
 {
   "telegram": {
-    "bot_token_env": "CLARA_TELEGRAM_BOT_TOKEN",
-    "chat_id_env": "CLARA_TELEGRAM_CHAT_ID"
+    "bot_token_env": "TELEGRAM_BOT_TOKEN",
+    "group_id_env": "TELEGRAM_GROUP_ID",
+    "topic_id": 8
   }
 }
 ```
 
-The system reads the actual token from `process.env` at runtime, resolving the environment variable name to its value. This pattern keeps secrets in exactly one place (the `.env` file) while allowing the rest of the configuration to be transparent.
+The system reads the actual token and group ID from `process.env` at runtime, resolving the environment variable names to their values. The `topic_id` is a non-secret numeric ID that identifies the agent's topic thread within the group. This pattern keeps secrets in exactly one place (the `.env` file) while allowing the rest of the configuration to be transparent.
 
 ### Claude CLI Environment
 

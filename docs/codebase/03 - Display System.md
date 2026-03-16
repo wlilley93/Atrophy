@@ -1544,7 +1544,7 @@ ServiceCard.svelte renders an inline service configuration card between the Tran
 |------|-----|-------|------------|
 | 0 | `ELEVENLABS_API_KEY` | Voice - ElevenLabs | Password (secure) |
 | 1 | `FAL_KEY` | Visual Presence - Fal.ai | Password (secure) |
-| 2 | `TELEGRAM` | Messaging - Telegram | Bot Token (secure) + Chat ID (plain) |
+| 2 | `TELEGRAM` | Messaging - Telegram | Bot Token (secure) + Group ID (plain) + Topics setup guide |
 | 3 | `GOOGLE` | Google Workspace + YouTube + Photos | Checkbox scopes + OAuth button |
 
 #### Service Verification
@@ -1558,7 +1558,7 @@ Verification happens directly from the renderer via `fetch` calls:
 | Telegram | `GET https://api.telegram.org/bot.../getMe` | `data.ok === true` in the JSON response |
 | Google | OAuth browser flow via `api.startGoogleOAuth()` | Returns `'complete'` |
 
-Verified keys are saved to `~/.atrophy/.env` via `api.saveSecret()`. Non-secret settings (like Telegram chat ID) go to `config.json` via `api.updateConfig()`.
+Verified keys are saved to `~/.atrophy/.env` via `api.saveSecret()`. Non-secret settings (like Telegram group ID) go to `config.json` via `api.updateConfig()`.
 
 #### Styling
 

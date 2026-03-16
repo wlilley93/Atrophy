@@ -43,7 +43,7 @@ Open with the gear icon or **Cmd+,**. All changes can be applied immediately (in
 | **Heartbeat** | Active hours and check interval for unprompted outreach |
 | **Paths** | Obsidian vault path, database path (read-only) |
 | **Google** | Connect/disconnect Google Workspace |
-| **Telegram** | Bot token, chat ID, daemon start/stop |
+| **Telegram** | Bot token, group ID, daemon start/stop |
 | **App** | Reset setup wizard |
 | **About** | Version info |
 
@@ -122,12 +122,13 @@ Each agent can have its own voice, heartbeat schedule, Telegram bot, and display
 
 ### Telegram
 
-Each agent can have its own Telegram bot for separate conversation channels:
+Telegram uses Topics mode - one group with one topic per agent. All agents share a single bot and group, but each agent has its own topic thread for clean separation.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `TELEGRAM_BOT_TOKEN` | (none) | This agent's Telegram bot token |
-| `TELEGRAM_CHAT_ID` | (none) | This agent's Telegram chat ID |
+| `TELEGRAM_BOT_TOKEN` | (none) | Telegram bot token (shared across agents) |
+| `TELEGRAM_GROUP_ID` | (none) | Telegram group ID (the group with Topics enabled) |
+| `TELEGRAM_TOPIC_ID` | (none) | This agent's topic thread ID within the group |
 
 ### Display
 

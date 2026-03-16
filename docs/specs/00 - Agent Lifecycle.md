@@ -117,8 +117,9 @@ The following table documents every field in the manifest. The "Resolution" colu
 | `HEARTBEAT_ACTIVE_START` | `number` | `9` | `agentCfg` | Heartbeat active hours start (24h) |
 | `HEARTBEAT_ACTIVE_END` | `number` | `22` | `agentCfg` | Heartbeat active hours end (24h) |
 | `HEARTBEAT_INTERVAL_MINS` | `number` | `30` | `agentCfg` | Minutes between heartbeat checks |
-| `TELEGRAM_BOT_TOKEN` | `string` | `""` | `agentCfg` | Per-agent Telegram bot token |
-| `TELEGRAM_CHAT_ID` | `string` | `""` | `agentCfg` | Per-agent Telegram chat ID |
+| `TELEGRAM_BOT_TOKEN` | `string` | `""` | `agentCfg` | Telegram bot token (shared across agents) |
+| `TELEGRAM_GROUP_ID` | `string` | `""` | `agentCfg` | Telegram group ID (Topics-enabled group) |
+| `TELEGRAM_TOPIC_ID` | `number` | `0` | `agentCfg` | Agent's topic thread ID within the group |
 | `WINDOW_WIDTH` | `number` | `622` | `agentCfg` | Window width in pixels |
 | `WINDOW_HEIGHT` | `number` | `830` | `agentCfg` | Window height in pixels |
 | `DISABLED_TOOLS` | `string[]` | `[]` | `agentCfg` | Tools to block (saved via settings) |

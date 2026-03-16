@@ -51,7 +51,14 @@ Paste your API key from [fal.ai](https://fal.ai). Enables image generation capab
 
 ### Telegram
 
-Create a bot via [@BotFather](https://t.me/BotFather) on Telegram. Paste the bot token and your chat ID. Once connected, agents can message you on Telegram - useful for reminders, check-ins, and unprompted outreach.
+The wizard walks you through the full Telegram setup:
+
+1. **Create a bot** via [@BotFather](https://t.me/BotFather) on Telegram and paste the bot token
+2. **Create a group** and enable Topics (Forum mode) in group settings
+3. **Add the bot** to the group as an admin
+4. **Create one topic per agent** - each agent gets its own topic thread
+
+The wizard captures the bot token and the group ID (`TELEGRAM_GROUP_ID`). Each agent sends and receives messages in its own topic, so conversations stay cleanly separated - no routing logic needed. This replaces the previous flat-chat model where all agents shared a single chat and a router decided who should respond.
 
 ### Google
 

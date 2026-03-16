@@ -25,7 +25,7 @@ Skills are collected from both the local agent directory (`~/.atrophy/agents/<na
 
 - **Memory database** (`memory.db`) -- conversations, observations, threads, bookmarks are personal and not portable
 - **Generated avatar assets** -- video loops, ambient clips, idle videos (large, machine-specific, regenerable from source)
-- **API keys** -- the export process strips `elevenlabs_api_key`, `telegram_bot_token`, `telegram_chat_id`, and `api_key` from the manifest before writing
+- **API keys** -- the export process strips `elevenlabs_api_key`, `telegram_bot_token`, `telegram_group_id`, and `api_key` from the manifest before writing
 - **Runtime state** -- emotional state, message queue, user status, canvas content
 - **Obsidian notes** -- journal entries, reflections, gifts, evolution logs
 

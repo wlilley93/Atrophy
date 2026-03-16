@@ -27,7 +27,7 @@ These dependencies unlock additional capabilities but are not required for basic
 | **Xcode Command Line Tools** | Latest | Required for compiling `better-sqlite3` native module. Install via `xcode-select --install`. |
 | **CMake** | 3.20+ | Required only if building whisper.cpp for voice input. Install via `brew install cmake`. |
 | **ElevenLabs API key** | - | For text-to-speech. Your agent can speak. Get a key at elevenlabs.io. |
-| **Telegram bot** | - | For notifications and unprompted outreach. Create via @BotFather. |
+| **Telegram bot** | - | For notifications and unprompted outreach. Create via @BotFather. Requires a group with Topics enabled. |
 | **Obsidian vault** | - | Agents write journal entries, reflections, and notes here. Falls back to `~/.atrophy/` if unavailable. |
 | **Google account** | - | For Gmail and Google Calendar integration via MCP. OAuth is handled by bundled scripts or `gws` CLI. |
 
@@ -304,7 +304,7 @@ If `setup_complete` is not set (first run), the **setup flow** activates - a con
 
 1. **Welcome overlay** - asks your name, sets `USER_NAME` in config, then dismisses
 2. **Opening text** - Xan's pre-baked introduction appears in the main Transcript
-3. **Service cards** - inline cards appear between Transcript and InputBar for ElevenLabs (voice), Fal (images/video), Telegram (messaging), and Google (workspace). Each can be saved or skipped
+3. **Service cards** - inline cards appear between Transcript and InputBar for ElevenLabs (voice), Fal (images/video), Telegram (bot creation, group with Topics, topic setup per agent), and Google (workspace). Each can be saved or skipped
 4. **Agent creation** - after services, the InputBar routes to wizard inference. Xan guides you through creating a companion via 3-5 conversational exchanges, then outputs an `AGENT_CONFIG` JSON block
 5. **Creating/Done overlays** - brief overlays while the agent is scaffolded, then auto-dismiss
 

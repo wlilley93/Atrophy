@@ -21,7 +21,7 @@ Electron provides native menu bar and tray support, system notifications, and di
 
 ## Agent System
 
-The system is agent-aware. Switching agents changes the entire identity - all paths, configuration, database, voice settings, and personality are scoped per-agent. The `src/main/create-agent.ts` module scaffolds new agents programmatically, generating directory structures, manifests, prompt files, and database schemas. Each agent's system prompt includes a `## Capabilities` section with labeled strengths (e.g. PRESENCE, MEMORY, RESEARCH) - used for self-awareness, Telegram routing/bidding, and deferral decisions.
+The system is agent-aware. Switching agents changes the entire identity - all paths, configuration, database, voice settings, and personality are scoped per-agent. The `src/main/create-agent.ts` module scaffolds new agents programmatically, generating directory structures, manifests, prompt files, and database schemas. Each agent's system prompt includes a `## Capabilities` section with labeled strengths (e.g. PRESENCE, MEMORY, RESEARCH) - used for self-awareness and deferral decisions.
 
 Two root paths drive the system, and all other paths derive from them:
 
@@ -537,9 +537,9 @@ Background daemons run via macOS launchd, managed by `src/main/cron.ts`. Each da
 | `evolve` | Monthly (1st, 3:00 AM) | Revise prompts/soul.md and prompts/system_prompt.md |
 | `gift` | Monthly (28th, 12:11 AM) | Unprompted gift note, self-rescheduling |
 | `voice_note` | Random (2-8 hours, self-rescheduling) | Spontaneous Telegram voice note - inference, TTS, OGG Opus |
-| `telegram_daemon` | Continuous (launchd) | Poll Telegram, route messages, dispatch to agents sequentially |
+| `telegram_daemon` | Continuous (launchd) | Poll Telegram Topics group, dispatch messages to agents by topic |
 
-The `telegram_daemon` uses instance locking (`O_EXLOCK` on macOS, pid-check fallback) to ensure only one poller runs. Message routing is two-tier: explicit match (commands, @mentions, name prefix) then LLM routing agent. The `evolve` daemon is particularly notable - it allows the agent to rewrite its own system prompt and soul document over time, creating genuine personality evolution.
+The `telegram_daemon` uses instance locking (`O_EXLOCK` on macOS, pid-check fallback) to ensure only one poller runs. Message routing is structural - each agent has its own topic thread in a Topics-enabled Telegram group, so the topic ID on each incoming message directly identifies the target agent. No application-level router is needed. The `evolve` daemon is particularly notable - it allows the agent to rewrite its own system prompt and soul document over time, creating genuine personality evolution.
 
 See [07 - Scripts and Automation](07%20-%20Scripts%20and%20Automation.md) and [06 - Channels](06%20-%20Channels.md).
 
