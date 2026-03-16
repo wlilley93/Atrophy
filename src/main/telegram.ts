@@ -7,6 +7,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { getConfig } from './config';
 import { createLogger } from './logger';
@@ -156,12 +157,58 @@ export async function sendButtons(
   return null;
 }
 
-export async function sendVoiceNote(
-  audioPath: string,
-  caption = '',
-  chatId = '',
-  prefix = true,
+// ---------------------------------------------------------------------------
+// Multipart helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a multipart/form-data body buffer for file uploads.
+ *
+ * @param fields - String key-value pairs (chat_id, caption, parse_mode, etc.)
+ * @param fileField - The file to upload: { name: form field name, path: local file path, contentType: MIME type }
+ * @param boundary - The multipart boundary string
+ * @returns Buffer ready to use as fetch body
+ */
+function buildMultipartBody(
+  fields: Record<string, string>,
+  fileField: { name: string; path: string; contentType: string },
+  boundary: string,
+): Buffer {
+  const parts: Buffer[] = [];
+
+  // Add string fields
+  for (const [key, value] of Object.entries(fields)) {
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`,
+    ));
+  }
+
+  // Add file field
+  const fileData = fs.readFileSync(fileField.path);
+  const filename = path.basename(fileField.path);
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="${fileField.name}"; filename="${filename}"\r\n` +
+    `Content-Type: ${fileField.contentType}\r\n\r\n`,
+  ));
+  parts.push(fileData);
+  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+
+  return Buffer.concat(parts);
+}
+
+/**
+ * Shared logic for sending a file via any Telegram upload method.
+ */
+async function sendFileUpload(
+  method: string,
+  fieldName: string,
+  filePath: string,
+  contentType: string,
+  caption: string,
+  chatId: string,
+  prefix: boolean,
   threadId?: number,
+  timeoutMs = 30_000,
 ): Promise<boolean> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -175,57 +222,200 @@ export async function sendVoiceNote(
   }
 
   try {
-    const fileData = fs.readFileSync(audioPath);
-    const filename = path.basename(audioPath);
-    const isOgg = audioPath.endsWith('.ogg') || audioPath.endsWith('.oga');
-    const method = isOgg ? 'sendVoice' : 'sendAudio';
-    const fieldName = isOgg ? 'voice' : 'audio';
-
-    // Build multipart form data
     const boundary = `----FormBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
-    const parts: Buffer[] = [];
 
-    // chat_id
-    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${target}\r\n`));
-
-    // message_thread_id (for Topics mode)
-    if (threadId) {
-      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="message_thread_id"\r\n\r\n${threadId}\r\n`));
-    }
-
-    // caption
+    const fields: Record<string, string> = { chat_id: target };
+    if (threadId) fields.message_thread_id = String(threadId);
     if (caption) {
-      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n`));
-      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="parse_mode"\r\n\r\nMarkdown\r\n`));
+      fields.caption = caption;
+      fields.parse_mode = 'Markdown';
     }
 
-    // file
-    parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\n` +
-      `Content-Type: ${isOgg ? 'audio/ogg' : 'audio/mpeg'}\r\n\r\n`,
-    ));
-    parts.push(fileData);
-    parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
-
-    const body = Buffer.concat(parts);
+    const body = buildMultipartBody(fields, { name: fieldName, path: filePath, contentType }, boundary);
 
     const resp = await fetch(apiUrl(method), {
       method: 'POST',
       headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
       body,
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     const result = await resp.json() as { ok: boolean };
     if (result.ok) {
-      log.debug(`Sent voice note (${fileData.length} bytes)`);
+      log.debug(`Sent ${method} (${fs.statSync(filePath).size} bytes)`);
       return true;
     }
-    log.error(`Voice note error: ${JSON.stringify(result)}`);
+    log.error(`${method} error: ${JSON.stringify(result)}`);
     return false;
   } catch (e) {
-    log.error(`Voice note error: ${e}`);
+    log.error(`${method} error: ${e}`);
     return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// File sending functions
+// ---------------------------------------------------------------------------
+
+export async function sendVoiceNote(
+  audioPath: string,
+  caption = '',
+  chatId = '',
+  prefix = true,
+  threadId?: number,
+): Promise<boolean> {
+  const isOgg = audioPath.endsWith('.ogg') || audioPath.endsWith('.oga');
+  const method = isOgg ? 'sendVoice' : 'sendAudio';
+  const fieldName = isOgg ? 'voice' : 'audio';
+  const contentType = isOgg ? 'audio/ogg' : 'audio/mpeg';
+
+  return sendFileUpload(method, fieldName, audioPath, contentType, caption, chatId, prefix, threadId);
+}
+
+export async function sendPhoto(
+  filePath: string,
+  caption = '',
+  chatId = '',
+  prefix = true,
+  threadId?: number,
+): Promise<boolean> {
+  // Detect content type from extension
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeMap: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+  };
+  const contentType = mimeMap[ext] || 'image/jpeg';
+
+  return sendFileUpload('sendPhoto', 'photo', filePath, contentType, caption, chatId, prefix, threadId);
+}
+
+export async function sendVideo(
+  filePath: string,
+  caption = '',
+  chatId = '',
+  prefix = true,
+  threadId?: number,
+): Promise<boolean> {
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeMap: Record<string, string> = {
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.avi': 'video/x-msvideo',
+    '.webm': 'video/webm',
+    '.mkv': 'video/x-matroska',
+  };
+  const contentType = mimeMap[ext] || 'video/mp4';
+
+  // Videos can be large - allow 60s timeout
+  return sendFileUpload('sendVideo', 'video', filePath, contentType, caption, chatId, prefix, threadId, 60_000);
+}
+
+export async function sendDocument(
+  filePath: string,
+  caption = '',
+  chatId = '',
+  prefix = true,
+  threadId?: number,
+): Promise<boolean> {
+  return sendFileUpload('sendDocument', 'document', filePath, 'application/octet-stream', caption, chatId, prefix, threadId);
+}
+
+/**
+ * Send text content as a document file. Writes content to a temp file,
+ * sends it via sendDocument, then cleans up.
+ *
+ * Useful for code blocks, HTML artefacts, structured data, etc.
+ */
+export async function sendArtefact(
+  content: string,
+  filename: string,
+  caption = '',
+  chatId = '',
+  prefix = true,
+  threadId?: number,
+): Promise<boolean> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atrophy-artefact-'));
+  const tmpPath = path.join(tmpDir, filename);
+
+  try {
+    fs.writeFileSync(tmpPath, content, 'utf-8');
+    return await sendDocument(tmpPath, caption, chatId, prefix, threadId);
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+    try { fs.rmdirSync(tmpDir); } catch { /* ignore */ }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// File downloading (for receiving media)
+// ---------------------------------------------------------------------------
+
+/**
+ * Download a file from Telegram's servers using a file_id.
+ *
+ * Calls getFile to get the file_path, then downloads from the file API.
+ * Creates destDir if it does not exist.
+ *
+ * @param fileId - Telegram file_id
+ * @param destDir - Local directory to save the file
+ * @param filename - Optional filename override (defaults to Telegram's filename)
+ * @returns Local file path on success, null on failure
+ */
+export async function downloadTelegramFile(
+  fileId: string,
+  destDir: string,
+  filename?: string,
+): Promise<string | null> {
+  const config = getConfig();
+  if (!config.TELEGRAM_BOT_TOKEN) {
+    log.warn('TELEGRAM_BOT_TOKEN not configured');
+    return null;
+  }
+
+  try {
+    // Step 1: call getFile to get the file_path
+    const fileInfo = await post('getFile', { file_id: fileId }) as {
+      file_id: string;
+      file_path?: string;
+      file_size?: number;
+    } | null;
+
+    if (!fileInfo?.file_path) {
+      log.error(`getFile failed for file_id ${fileId}`);
+      return null;
+    }
+
+    // Step 2: download the file
+    const downloadUrl = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+    const resp = await fetch(downloadUrl, {
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (!resp.ok) {
+      log.error(`File download failed: ${resp.status} ${resp.statusText}`);
+      return null;
+    }
+
+    // Determine the local filename
+    const remoteName = path.basename(fileInfo.file_path);
+    const localName = filename || remoteName;
+
+    // Ensure destination directory exists
+    fs.mkdirSync(destDir, { recursive: true });
+
+    const destPath = path.join(destDir, localName);
+    const arrayBuffer = await resp.arrayBuffer();
+    fs.writeFileSync(destPath, Buffer.from(arrayBuffer));
+
+    log.debug(`Downloaded file to ${destPath} (${arrayBuffer.byteLength} bytes)`);
+    return destPath;
+  } catch (e) {
+    log.error(`File download error: ${e}`);
+    return null;
   }
 }
 
@@ -521,7 +711,7 @@ export async function discoverChatId(
 }
 
 // Export for daemon access
-export { post, post as _post, _lastUpdateId };
+export { post, post as _post, _lastUpdateId, apiUrl };
 export function setLastUpdateId(id: number): void {
   _lastUpdateId = id;
 }

@@ -16,7 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
-import { sendMessage, post, setLastUpdateId } from './telegram';
+import { sendMessage, post, setLastUpdateId, downloadTelegramFile } from './telegram';
 import { discoverAgents, getAgentState } from './agent-manager';
 import { streamInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
@@ -485,9 +485,14 @@ async function pollOnce(): Promise<void> {
     update_id: number;
     message?: {
       text?: string;
+      caption?: string;
       from?: { id: number };
       chat?: { id: number };
       message_thread_id?: number;
+      photo?: { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }[];
+      voice?: { file_id: string; duration: number; mime_type?: string; file_size?: number };
+      document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
+      video?: { file_id: string; duration: number; width: number; height: number; mime_type?: string; file_size?: number };
     };
   }[] : null;
 
@@ -497,7 +502,12 @@ async function pollOnce(): Promise<void> {
     _state.last_update_id = Math.max(_state.last_update_id, update.update_id);
 
     const msg = update.message;
-    if (!msg?.text) continue;
+    if (!msg) continue;
+
+    // A message has content if it has text, caption, or any media attachment
+    const hasText = !!(msg.text?.trim());
+    const hasMedia = !!(msg.photo || msg.voice || msg.document || msg.video);
+    if (!hasText && !hasMedia) continue;
 
     // Only accept messages from Will in the configured group
     const senderId = String(msg.from?.id || '');
@@ -513,12 +523,10 @@ async function pollOnce(): Promise<void> {
       continue;
     }
 
-    const text = msg.text.trim();
-    if (!text) continue;
-
+    const text = (msg.text || '').trim();
     const threadId = msg.message_thread_id;
 
-    // Handle /status anywhere
+    // Handle /status anywhere (text-only)
     if (text.toLowerCase() === '/status') {
       await handleStatusCommand(msgChatId, threadId);
       continue;
@@ -537,10 +545,66 @@ async function pollOnce(): Promise<void> {
       continue;
     }
 
-    log.info(`[${agentName}] Message: ${text.slice(0, 80)}`);
+    // Build the prompt from text and/or media
+    const promptParts: string[] = [];
+
+    // Handle incoming media - download to agent's media directory
+    const mediaDir = path.join(USER_DATA, 'agents', agentName, 'media');
+
+    if (msg.photo && msg.photo.length > 0) {
+      // Telegram sends multiple sizes - take the largest (last in array)
+      const largest = msg.photo[msg.photo.length - 1];
+      const savedPath = await downloadTelegramFile(largest.file_id, mediaDir);
+      if (savedPath) {
+        promptParts.push(`[Telegram photo from Will]\n\n<image saved to: ${savedPath}>`);
+      } else {
+        promptParts.push('[Telegram photo from Will - download failed]');
+      }
+    }
+
+    if (msg.voice) {
+      const savedPath = await downloadTelegramFile(msg.voice.file_id, mediaDir);
+      if (savedPath) {
+        promptParts.push(`[Telegram voice message from Will]\n\n<voice note saved to: ${savedPath}>`);
+      } else {
+        promptParts.push('[Telegram voice message from Will - download failed]');
+      }
+    }
+
+    if (msg.document) {
+      const docFilename = msg.document.file_name || undefined;
+      const savedPath = await downloadTelegramFile(msg.document.file_id, mediaDir, docFilename);
+      const label = msg.document.file_name ? `Telegram document from Will: ${msg.document.file_name}` : 'Telegram document from Will';
+      if (savedPath) {
+        promptParts.push(`[${label}]\n\n<file saved to: ${savedPath}>`);
+      } else {
+        promptParts.push(`[${label} - download failed]`);
+      }
+    }
+
+    if (msg.video) {
+      const savedPath = await downloadTelegramFile(msg.video.file_id, mediaDir);
+      if (savedPath) {
+        promptParts.push(`[Telegram video from Will]\n\n<video saved to: ${savedPath}>`);
+      } else {
+        promptParts.push('[Telegram video from Will - download failed]');
+      }
+    }
+
+    // Include text/caption content
+    // A media message can have a caption instead of text
+    const messageText = text || (msg.caption || '').trim();
+    if (messageText) {
+      promptParts.push(messageText);
+    }
+
+    const fullPrompt = promptParts.join('\n\n');
+    if (!fullPrompt) continue;
+
+    log.info(`[${agentName}] Message: ${fullPrompt.slice(0, 80)}`);
 
     // Dispatch directly - no routing needed
-    const response = await dispatchToAgent(agentName, text);
+    const response = await dispatchToAgent(agentName, fullPrompt);
     if (response) {
       await sendAgentResponse(agentName, response, msgChatId, threadId);
       log.info(`[${agentName}] Responded (${response.length} chars)`);

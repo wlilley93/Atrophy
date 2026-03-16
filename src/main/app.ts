@@ -306,6 +306,11 @@ function rebuildTrayMenu(): void {
         setAway('manual');
         updateTrayState('away');
         mainWindow?.webContents.send('status:changed', 'away');
+        // Auto-start Telegram daemon when user sets away
+        if (!isDaemonRunning() && getConfig().TELEGRAM_GROUP_ID) {
+          startDaemon();
+          log.info('Telegram daemon auto-started (manual away)');
+        }
         rebuildTrayMenu();
       },
     },
@@ -1144,6 +1149,11 @@ Output EXACTLY this format - a single fenced JSON block:
         updateTrayState('away');
         mainWindow.webContents.send('status:changed', 'away');
         log.info(`Away intent detected: "${awayIntent}"`);
+        // Auto-start Telegram daemon on away intent
+        if (!isDaemonRunning() && getConfig().TELEGRAM_GROUP_ID) {
+          startDaemon();
+          log.info('Telegram daemon auto-started (away intent)');
+        }
       }
 
       // Stream inference
@@ -1952,6 +1962,11 @@ app.whenReady().then(() => {
         log.info('User idle - setting away');
         updateTrayState('away');
         mainWindow?.webContents.send('status:changed', 'away');
+        // Auto-start Telegram daemon when user goes away
+        if (!isDaemonRunning() && getConfig().TELEGRAM_GROUP_ID) {
+          startDaemon();
+          log.info('Telegram daemon auto-started (user away)');
+        }
       }
     } else {
       if (wasAway) {
