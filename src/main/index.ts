@@ -947,7 +947,10 @@ Output EXACTLY this format - a single fenced JSON block:
   // ── Inference ──
 
   ipcMain.handle('inference:send', (_event, text: string) => {
-    if (!mainWindow) return;
+    if (!mainWindow) {
+      log.warn('inference:send called but mainWindow is null');
+      return;
+    }
 
     // Mark user active and reset journal nudge timer
     setActive();

@@ -547,6 +547,17 @@ export function streamInference(
   const toolCalls: string[] = [];
   let stderrChunks = '';
 
+  // Inference timeout — kill process if it hangs for 10 minutes with no output
+  const INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
+  let lastActivity = Date.now();
+  const timeoutTimer = setInterval(() => {
+    if (Date.now() - lastActivity > INFERENCE_TIMEOUT_MS) {
+      clearInterval(timeoutTimer);
+      log.error(`inference timed out after ${((Date.now() - t0) / 1000).toFixed(0)}s of inactivity`);
+      try { proc.kill(); } catch { /* already dead */ }
+    }
+  }, 30_000);
+
   // Collect stderr
   proc.stderr?.on('data', (chunk: Buffer) => {
     stderrChunks += chunk.toString();
@@ -555,6 +566,7 @@ export function streamInference(
   // Parse stdout JSON lines
   let lineBuffer = '';
   proc.stdout?.on('data', (chunk: Buffer) => {
+    lastActivity = Date.now();
     lineBuffer += chunk.toString();
     const lines = lineBuffer.split('\n');
     lineBuffer = lines.pop() || ''; // Keep incomplete line in buffer
@@ -683,6 +695,7 @@ export function streamInference(
 
   // Handle process exit
   proc.on('close', (code) => {
+    clearInterval(timeoutTimer);
     if (_activeProcess === proc) _activeProcess = null;
     _allProcesses.delete(proc);
     const elapsed = (Date.now() - t0) / 1000;
@@ -700,6 +713,14 @@ export function streamInference(
       const errMsg = stderrChunks.trim().slice(0, 300) || 'No response from claude';
       log.error('no output');
       emitter.emit('event', { type: 'StreamError', message: errMsg } as StreamErrorEvent);
+      return;
+    }
+
+    // Empty response with exit 0 — treat as error
+    if (!fullText.trim() && toolCalls.length === 0) {
+      const hint = stderrChunks.trim().slice(0, 300) || 'Claude returned an empty response';
+      log.warn(`empty response after ${elapsed.toFixed(1)}s: ${hint}`);
+      emitter.emit('event', { type: 'StreamError', message: hint } as StreamErrorEvent);
       return;
     }
 
@@ -733,6 +754,7 @@ export function streamInference(
   });
 
   proc.on('error', (err) => {
+    clearInterval(timeoutTimer);
     try { proc.kill(); } catch { /* already dead */ }
     _allProcesses.delete(proc);
     _activeProcess = null;

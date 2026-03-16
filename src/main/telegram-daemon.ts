@@ -461,19 +461,33 @@ async function pollOnce(): Promise<void> {
 
     if (!decision.agents.length) {
       log.warn('No agents available to handle message');
+      try {
+        await sendMessage('No agents are currently available to respond.', '', false);
+      } catch (e) { log.error(`failed to send no-agents notice: ${e}`); }
       continue;
     }
 
     // Dispatch to each agent sequentially
+    let anyResponded = false;
     for (const agentName of decision.agents) {
       log.info(`Dispatching to ${agentName}...`);
-      const response = await dispatchToAgent(agentName, decision.text);
-      if (response) {
-        await sendAgentResponse(agentName, response);
-        log.info(`[${agentName}] responded (${response.length} chars)`);
-      } else {
-        log.debug(`[${agentName}] no response`);
+      try {
+        const response = await dispatchToAgent(agentName, decision.text);
+        if (response) {
+          await sendAgentResponse(agentName, response);
+          log.info(`[${agentName}] responded (${response.length} chars)`);
+          anyResponded = true;
+        } else {
+          log.warn(`[${agentName}] returned empty response`);
+        }
+      } catch (e) {
+        log.error(`[${agentName}] dispatch/send failed: ${e}`);
       }
+    }
+    if (!anyResponded) {
+      try {
+        await sendMessage("I received your message but couldn't generate a response. Please try again.", '', false);
+      } catch (e) { log.error(`failed to send error notice: ${e}`); }
     }
   }
 

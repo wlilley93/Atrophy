@@ -164,14 +164,27 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse): 
     await new Promise<void>((resolve) => {
       const emitter = streamInference(message, systemPrompt, session!.cliSessionId);
 
+      // Timeout: if no response after 10 minutes, give up
+      const timeout = setTimeout(() => {
+        if (!errored) {
+          errored = true;
+          log.error('HTTP /chat inference timed out');
+          sendJson(res, { error: 'inference timed out' }, 504);
+          stopInference();
+        }
+        resolve();
+      }, 10 * 60 * 1000);
+
       emitter.on('event', (evt: InferenceEvent) => {
         switch (evt.type) {
           case 'StreamDone':
+            clearTimeout(timeout);
             fullText = evt.fullText;
             if (evt.sessionId) sessionId = evt.sessionId;
             resolve();
             break;
           case 'StreamError':
+            clearTimeout(timeout);
             errored = true;
             sendJson(res, { error: evt.message }, 500);
             resolve();
