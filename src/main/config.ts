@@ -630,12 +630,18 @@ export class Config {
   }
 
   private _resolveVersion(): void {
+    // Check for hot bundle version first, then fall back to app version
+    const manifestPath = path.join(USER_DATA, 'bundle', 'bundle-manifest.json');
     try {
-      const { app } = require('electron');
-      this.VERSION = app.getVersion() || '0.0.0';
-    } catch {
-      this.VERSION = '0.0.0';
-    }
+      if (fs.existsSync(manifestPath)) {
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        if (manifest.version) {
+          this.VERSION = manifest.version;
+          return;
+        }
+      }
+    } catch { /* fall through */ }
+    this.VERSION = app.getVersion() || '0.0.0';
   }
 
   private _resolveAgent(name: string): void {

@@ -366,7 +366,6 @@
     return {
       USER_NAME: userName,
       AGENT_DISPLAY_NAME: agentDisplayName,
-      OPENING_LINE: openingLine,
       WAKE_WORDS: wakeWords.split(',').map((w: string) => w.trim()).filter(Boolean),
       DISABLED_TOOLS: enabledToolsList,
       WINDOW_WIDTH: windowWidth,
@@ -636,10 +635,6 @@
           <label class="field">
             <span class="field-label">Display Name</span>
             <input type="text" bind:value={agentDisplayName} class="field-input" />
-          </label>
-          <label class="field">
-            <span class="field-label">Opening Line</span>
-            <input type="text" bind:value={openingLine} class="field-input" />
           </label>
           <label class="field">
             <span class="field-label">Wake Words</span>
