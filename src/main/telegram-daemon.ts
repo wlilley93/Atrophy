@@ -1,10 +1,10 @@
 /**
- * Telegram polling daemon - single process, sequential agent dispatch.
- * Port of channels/telegram_daemon.py.
+ * Telegram Topics daemon - one topic per agent, sequential dispatch.
+ * Port of channels/telegram_daemon.py (Topics mode).
  *
- * Polls the shared Telegram bot for incoming messages. Routes each message
- * via the router (explicit match -> routing agent), then dispatches to target
- * agent(s) one at a time. Sequential dispatch eliminates race conditions.
+ * Uses Telegram Forum (Topics) mode in a supergroup. On startup, creates
+ * a topic for each enabled agent. Messages in a topic go directly to that
+ * agent - no routing needed, the topic IS the agent.
  *
  * Can run as:
  *   - Single poll (for launchd interval jobs)
@@ -16,9 +16,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
-import { sendMessage, _post, setLastUpdateId } from './telegram';
-import { routeMessage } from './router';
-import { discoverAgents, getAgentState, setAgentState } from './agent-manager';
+import { sendMessage, post, setLastUpdateId } from './telegram';
+import { discoverAgents, getAgentState } from './agent-manager';
 import { streamInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
 import * as memory from './memory';
@@ -27,24 +26,36 @@ import { createLogger } from './logger';
 const log = createLogger('telegram-daemon');
 
 // ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface DaemonState {
+  last_update_id: number;
+  topic_map: Record<string, string>; // thread_id -> agent_name
+}
+
+// ---------------------------------------------------------------------------
 // State persistence
 // ---------------------------------------------------------------------------
 
 const STATE_FILE = path.join(USER_DATA, '.telegram_daemon_state.json');
 
-function loadLastUpdateId(): number {
+function loadState(): DaemonState {
   try {
     if (fs.existsSync(STATE_FILE)) {
-      const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-      return state.last_update_id || 0;
+      const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+      return {
+        last_update_id: raw.last_update_id || 0,
+        topic_map: raw.topic_map || {},
+      };
     }
   } catch { /* default */ }
-  return 0;
+  return { last_update_id: 0, topic_map: {} };
 }
 
-function saveLastUpdateId(updateId: number): void {
+function saveState(state: DaemonState): void {
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
-  fs.writeFileSync(STATE_FILE, JSON.stringify({ last_update_id: updateId }) + '\n');
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + '\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -111,20 +122,16 @@ function acquireLockFallback(): boolean {
       const lockTime = lines[1] ? parseInt(lines[1], 10) : NaN;
 
       // If process is alive AND lock is < 30 minutes old, it's valid.
-      // If timestamp is missing/corrupt but process is alive, still treat as valid
-      // to avoid reclaiming a lock from a running process.
       const STALE_MS = 30 * 60 * 1000;
       if (pid && isProcessAlive(pid)) {
         if (isNaN(lockTime) || (Date.now() - lockTime < STALE_MS)) {
           return false;
         }
       }
-      // Otherwise: process dead, PID recycled, or lock stale - reclaim
     } catch { /* stale or corrupt - reclaim */ }
   }
 
   fs.writeFileSync(LOCK_FILE, `${process.pid}\n${Date.now()}\n`);
-  // Open + hold the fd so the file stays referenced for our lifetime
   _lockFd = fs.openSync(LOCK_FILE, fs.constants.O_RDONLY);
   return true;
 }
@@ -159,9 +166,6 @@ const PLIST_PATH = path.join(LAUNCH_AGENTS, `${PLIST_LABEL}.plist`);
 
 /**
  * Build an XML plist string for the telegram daemon launchd agent.
- *
- * Uses the same XML serialisation style as cron.ts - hand-built rather
- * than pulling in a plist library.
  */
 function buildDaemonPlist(electronBin: string, loopFlag: boolean): string {
   const logDir = path.join(USER_DATA, 'logs');
@@ -213,14 +217,10 @@ function escapeXml(s: string): string {
 
 /**
  * Install the telegram daemon as a launchd agent.
- *
- * @param electronBin - Path to the Electron binary or app entry point that
- *   accepts a --telegram-daemon flag to start continuous polling.
  */
 export function installLaunchd(electronBin: string): void {
   fs.mkdirSync(LAUNCH_AGENTS, { recursive: true });
 
-  // Unload first if already installed
   if (fs.existsSync(PLIST_PATH)) {
     spawnSync('launchctl', ['unload', PLIST_PATH], { stdio: 'pipe' });
   }
@@ -251,6 +251,100 @@ export function isLaunchdInstalled(): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Agent manifest helper
+// ---------------------------------------------------------------------------
+
+function getAgentManifest(agentName: string): Record<string, unknown> {
+  for (const base of [
+    path.join(USER_DATA, 'agents', agentName),
+    path.join(BUNDLE_ROOT, 'agents', agentName),
+  ]) {
+    const mpath = path.join(base, 'data', 'agent.json');
+    if (fs.existsSync(mpath)) {
+      try {
+        return JSON.parse(fs.readFileSync(mpath, 'utf-8'));
+      } catch { /* skip */ }
+    }
+  }
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// Topic management
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a forum topic in a supergroup. Returns the topic thread_id or null.
+ */
+async function createForumTopic(chatId: string, name: string): Promise<number | null> {
+  const payload: Record<string, unknown> = { chat_id: chatId, name };
+  const result = await post('createForumTopic', payload) as { message_thread_id?: number } | null;
+  if (result) {
+    return result.message_thread_id ?? null;
+  }
+  return null;
+}
+
+/**
+ * Discover enabled agents and return their info with manifest data.
+ */
+function discoverEnabledAgents(): { name: string; display_name: string; emoji: string }[] {
+  const agents: { name: string; display_name: string; emoji: string }[] = [];
+
+  for (const agent of discoverAgents()) {
+    const state = getAgentState(agent.name);
+    if (!state.enabled) {
+      continue;
+    }
+    const manifest = getAgentManifest(agent.name);
+    agents.push({
+      name: agent.name,
+      display_name: agent.display_name || agent.name.charAt(0).toUpperCase() + agent.name.slice(1),
+      emoji: (manifest.telegram_emoji as string) || '',
+    });
+  }
+
+  return agents;
+}
+
+/**
+ * Ensure each enabled agent has a topic in the group. Creates missing ones.
+ * Returns the updated state with topic_map populated.
+ */
+async function ensureTopics(groupId: string, state: DaemonState): Promise<DaemonState> {
+  const topicMap = state.topic_map;
+
+  // Build reverse map: agent_name -> thread_id
+  const agentToTopic: Record<string, string> = {};
+  for (const [threadId, agentName] of Object.entries(topicMap)) {
+    agentToTopic[agentName] = threadId;
+  }
+
+  const agents = discoverEnabledAgents();
+
+  for (const agent of agents) {
+    if (agent.name in agentToTopic) {
+      log.debug(`Agent ${agent.name} already has topic ${agentToTopic[agent.name]}`);
+      continue;
+    }
+
+    // Create a new topic for this agent
+    const topicName = agent.emoji ? `${agent.emoji} ${agent.display_name}` : agent.display_name;
+    const threadId = await createForumTopic(groupId, topicName);
+
+    if (threadId) {
+      topicMap[String(threadId)] = agent.name;
+      log.info(`Created topic '${topicName}' (thread_id=${threadId}) for agent ${agent.name}`);
+    } else {
+      log.error(`Failed to create topic for agent ${agent.name}`);
+    }
+  }
+
+  state.topic_map = topicMap;
+  return state;
+}
+
+// ---------------------------------------------------------------------------
 // Agent dispatch
 // ---------------------------------------------------------------------------
 
@@ -261,9 +355,6 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
   const originalAgent = config.AGENT_NAME;
 
   try {
-    // Switch config to target agent for the entire inference call.
-    // streamInference reads config at spawn time for CLI args, MCP paths,
-    // agency context, etc. - so it must run while the target agent is active.
     config.reloadForAgent(agentName);
     resetMcpConfig();
     memory.initDb();
@@ -278,7 +369,6 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
     await new Promise<void>((resolve, reject) => {
       const emitter = streamInference(prompt, system, cliSessionId);
 
-      // Safety timeout - prevent daemon from blocking forever
       const timer = setTimeout(() => {
         log.error(`[${agentName}] dispatch timed out after ${DISPATCH_TIMEOUT_MS / 1000}s`);
         reject(new Error('dispatch timeout'));
@@ -313,110 +403,54 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
     log.error(`[${agentName}] dispatch failed: ${e}`);
     return null;
   } finally {
-    // Always restore original agent
     config.reloadForAgent(originalAgent);
     resetMcpConfig();
     memory.initDb();
   }
 }
 
-async function sendAgentResponse(agentName: string, text: string): Promise<void> {
-  // Load agent manifest for emoji prefix
-  for (const base of [
-    path.join(USER_DATA, 'agents', agentName),
-    path.join(BUNDLE_ROOT, 'agents', agentName),
-  ]) {
-    const mpath = path.join(base, 'data', 'agent.json');
-    if (fs.existsSync(mpath)) {
-      try {
-        const manifest = JSON.parse(fs.readFileSync(mpath, 'utf-8'));
-        const emoji = manifest.telegram_emoji || '';
-        const display = manifest.display_name || agentName.charAt(0).toUpperCase() + agentName.slice(1);
-        if (emoji) {
-          text = `${emoji} *${display}*\n\n${text}`;
-        }
-        break;
-      } catch { /* use plain text */ }
-    }
+/**
+ * Send a response to a specific topic thread, prefixed with agent emoji/name.
+ */
+async function sendAgentResponse(
+  agentName: string,
+  text: string,
+  chatId: string,
+  threadId: number,
+): Promise<void> {
+  const manifest = getAgentManifest(agentName);
+  const emoji = (manifest.telegram_emoji as string) || '';
+  const display = (manifest.display_name as string) || agentName.charAt(0).toUpperCase() + agentName.slice(1);
+
+  if (emoji) {
+    text = `${emoji} *${display}*\n\n${text}`;
   }
 
-  await sendMessage(text, '', false);
+  await sendMessage(text, chatId, false, threadId);
 }
 
 // ---------------------------------------------------------------------------
 // Utility commands
 // ---------------------------------------------------------------------------
 
-async function handleStatusCommand(): Promise<void> {
+async function handleStatusCommand(chatId: string, threadId?: number): Promise<void> {
+  const agents = discoverEnabledAgents();
   const lines = ['*Active agents:*\n'];
 
-  for (const agent of discoverAgents()) {
-    const name = agent.name;
-    const state = getAgentState(name);
-
-    // Load emoji from manifest
-    let emoji = '';
-    for (const base of [
-      path.join(USER_DATA, 'agents', name),
-      path.join(BUNDLE_ROOT, 'agents', name),
-    ]) {
-      const mpath = path.join(base, 'data', 'agent.json');
-      if (fs.existsSync(mpath)) {
-        try {
-          const manifest = JSON.parse(fs.readFileSync(mpath, 'utf-8'));
-          emoji = manifest.telegram_emoji || '';
-        } catch { /* skip */ }
-        break;
-      }
-    }
-
-    let status = 'active';
-    if (!state.enabled) status = 'disabled';
-    else if (state.muted) status = 'muted';
-
-    const prefix = emoji ? `${emoji} ` : '';
-    lines.push(`${prefix}*${agent.display_name}* (\`/${name}\`) - ${status}`);
+  for (const a of agents) {
+    const prefix = a.emoji ? `${a.emoji} ` : '';
+    lines.push(`${prefix}*${a.display_name}* (\`/${a.name}\`)`);
   }
 
-  await sendMessage(lines.join('\n'), '', false);
-}
-
-async function handleMuteCommand(text: string): Promise<void> {
-  const parts = text.trim().split(/\s+/);
-  const agents = discoverAgents();
-
-  let targetName: string;
-  if (parts.length < 2) {
-    if (!agents.length) {
-      await sendMessage('No agents available.', '', false);
-      return;
-    }
-    targetName = agents[0].name;
-  } else {
-    targetName = parts[1].toLowerCase().replace(/^\//, '');
-  }
-
-  const found = agents.find(
-    (a) => a.name === targetName || a.display_name.toLowerCase() === targetName,
-  );
-  if (!found) {
-    await sendMessage(`Unknown agent: \`${targetName}\``, '', false);
-    return;
-  }
-
-  const state = getAgentState(found.name);
-  const newMuted = !state.muted;
-  setAgentState(found.name, { muted: newMuted });
-
-  const verb = newMuted ? 'muted' : 'unmuted';
-  await sendMessage(`*${found.display_name}* ${verb}.`, '', false);
+  const text = lines.join('\n');
+  await sendMessage(text, chatId, false, threadId);
 }
 
 // ---------------------------------------------------------------------------
 // Polling
 // ---------------------------------------------------------------------------
 
-let _lastUpdateId = 0;
+let _state: DaemonState = { last_update_id: 0, topic_map: {} };
 
 async function pollOnce(): Promise<void> {
   if (!_running) return;
@@ -427,14 +461,16 @@ async function pollOnce(): Promise<void> {
     return;
   }
 
+  const groupId = config.TELEGRAM_GROUP_ID;
+  const userId = config.TELEGRAM_CHAT_ID; // Will's personal user ID for auth
+
   // Use abort controller so stopDaemon() can cancel the long-poll
   _pollAbort = new AbortController();
 
-  // Long-poll timeout is 30s on Telegram's side; HTTP timeout must be longer
   let raw: unknown;
   try {
-    raw = await _post('getUpdates', {
-      offset: _lastUpdateId + 1,
+    raw = await post('getUpdates', {
+      offset: _state.last_update_id + 1,
       timeout: 30,
       allowed_updates: ['message'],
     }, 45_000);
@@ -444,83 +480,76 @@ async function pollOnce(): Promise<void> {
   } finally {
     _pollAbort = null;
   }
-  const result = Array.isArray(raw) ? raw as { update_id: number; message?: {
-    text?: string;
-    from?: { id: number };
-    chat?: { id: number };
-  } }[] : null;
+
+  const result = Array.isArray(raw) ? raw as {
+    update_id: number;
+    message?: {
+      text?: string;
+      from?: { id: number };
+      chat?: { id: number };
+      message_thread_id?: number;
+    };
+  }[] : null;
 
   if (!result) return;
 
   for (const update of result) {
-    _lastUpdateId = Math.max(_lastUpdateId, update.update_id);
+    _state.last_update_id = Math.max(_state.last_update_id, update.update_id);
 
     const msg = update.message;
     if (!msg?.text) continue;
 
+    // Only accept messages from Will in the configured group
     const senderId = String(msg.from?.id || '');
-    const chatId = String(msg.chat?.id || '');
-    // Reject messages not from the configured chat
-    if (!config.TELEGRAM_CHAT_ID) {
-      log.warn('TELEGRAM_CHAT_ID not configured - ignoring message');
+    const msgChatId = String(msg.chat?.id || '');
+
+    if (userId && senderId !== userId) {
+      log.debug(`Ignoring message from user ${senderId}`);
       continue;
     }
-    if (senderId !== config.TELEGRAM_CHAT_ID && chatId !== config.TELEGRAM_CHAT_ID) {
+
+    if (groupId && msgChatId !== groupId) {
+      log.debug(`Ignoring message from chat ${msgChatId}`);
       continue;
     }
 
     const text = msg.text.trim();
     if (!text) continue;
 
-    log.info(`Received: ${text.slice(0, 80)}`);
+    const threadId = msg.message_thread_id;
 
-    // Utility commands
+    // Handle /status anywhere
     if (text.toLowerCase() === '/status') {
-      await handleStatusCommand();
-      continue;
-    }
-    if (text.toLowerCase().startsWith('/mute')) {
-      await handleMuteCommand(text);
+      await handleStatusCommand(msgChatId, threadId);
       continue;
     }
 
-    // Route the message
-    const decision = await routeMessage(text);
-    log.debug(`Routed: agents=${decision.agents.join(',')} tier=${decision.tier}`);
-
-    if (!decision.agents.length) {
-      log.warn('No agents available to handle message');
-      try {
-        await sendMessage('No agents are currently available to respond.', '', false);
-      } catch (e) { log.error(`failed to send no-agents notice: ${e}`); }
+    // Messages must be in a topic to reach an agent
+    if (!threadId) {
+      log.debug(`Ignoring message outside of topic: ${text.slice(0, 40)}`);
       continue;
     }
 
-    // Dispatch to each agent sequentially
-    let anyResponded = false;
-    for (const agentName of decision.agents) {
-      log.info(`Dispatching to ${agentName}...`);
-      try {
-        const response = await dispatchToAgent(agentName, decision.text);
-        if (response) {
-          await sendAgentResponse(agentName, response);
-          log.info(`[${agentName}] responded (${response.length} chars)`);
-          anyResponded = true;
-        } else {
-          log.warn(`[${agentName}] returned empty response`);
-        }
-      } catch (e) {
-        log.error(`[${agentName}] dispatch/send failed: ${e}`);
-      }
+    // Look up which agent owns this topic
+    const agentName = _state.topic_map[String(threadId)];
+    if (!agentName) {
+      log.warn(`No agent mapped to thread_id ${threadId}, ignoring`);
+      continue;
     }
-    if (!anyResponded) {
-      try {
-        await sendMessage("I received your message but couldn't generate a response. Please try again.", '', false);
-      } catch (e) { log.error(`failed to send error notice: ${e}`); }
+
+    log.info(`[${agentName}] Message: ${text.slice(0, 80)}`);
+
+    // Dispatch directly - no routing needed
+    const response = await dispatchToAgent(agentName, text);
+    if (response) {
+      await sendAgentResponse(agentName, response, msgChatId, threadId);
+      log.info(`[${agentName}] Responded (${response.length} chars)`);
+    } else {
+      log.warn(`[${agentName}] No response`);
     }
   }
 
-  saveLastUpdateId(_lastUpdateId);
+  saveState(_state);
 }
 
 // ---------------------------------------------------------------------------
@@ -544,20 +573,31 @@ export function startDaemon(intervalMs = 10_000): boolean {
   }
 
   _running = true;
-  _lastUpdateId = loadLastUpdateId();
-  setLastUpdateId(_lastUpdateId);
+  _state = loadState();
+  setLastUpdateId(_state.last_update_id);
 
-  log.info(`Starting (last_update_id=${_lastUpdateId}, interval=${intervalMs}ms)`);
+  log.info(`Starting (last_update_id=${_state.last_update_id}, topics=${Object.keys(_state.topic_map).length}, interval=${intervalMs}ms)`);
 
-  // Sequential polling loop - wait for each poll to complete before scheduling next
-  async function pollLoop(): Promise<void> {
+  // Ensure topics exist before starting the poll loop
+  async function initAndPoll(): Promise<void> {
+    const config = getConfig();
+    if (config.TELEGRAM_GROUP_ID) {
+      try {
+        _state = await ensureTopics(config.TELEGRAM_GROUP_ID, _state);
+        saveState(_state);
+        log.info(`Topics ready: ${Object.keys(_state.topic_map).length} agents`);
+      } catch (e) {
+        log.error(`Failed to ensure topics: ${e}`);
+      }
+    }
+
+    // Sequential polling loop - wait for each poll to complete before scheduling next
     while (_running) {
       try {
         await pollOnce();
       } catch (e) {
         log.error(`Poll error: ${e}`);
       }
-      // Wait before next poll (only if still running)
       if (_running) {
         await new Promise((resolve) => {
           _pollTimer = setTimeout(resolve, intervalMs) as unknown as ReturnType<typeof setInterval>;
@@ -566,7 +606,7 @@ export function startDaemon(intervalMs = 10_000): boolean {
     }
   }
 
-  pollLoop();
+  initAndPoll();
 
   return true;
 }

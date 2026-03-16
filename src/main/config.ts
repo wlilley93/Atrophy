@@ -80,6 +80,7 @@ const ALLOWED_ENV_KEYS = new Set([
   'FAL_KEY',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_CHAT_ID',
+  'TELEGRAM_GROUP_ID',
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
 ]);
@@ -491,6 +492,7 @@ export class Config {
   // Telegram
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_CHAT_ID: string;
+  TELEGRAM_GROUP_ID: string;
 
   // Notifications
   NOTIFICATIONS_ENABLED: boolean;
@@ -589,6 +591,7 @@ export class Config {
     this.HEARTBEAT_INTERVAL_MINS = 30;
     this.TELEGRAM_BOT_TOKEN = '';
     this.TELEGRAM_CHAT_ID = '';
+    this.TELEGRAM_GROUP_ID = '';
     this.NOTIFICATIONS_ENABLED = true;
     this.SILENCE_TIMER_ENABLED = true;
     this.SILENCE_TIMER_MINUTES = 5;
@@ -746,9 +749,10 @@ export class Config {
     this.HEARTBEAT_INTERVAL_MINS = (hb.interval_mins as number) ?? cfg('HEARTBEAT_INTERVAL_MINS', 30);
 
     // Telegram - system-level credentials, shared by all agents.
-    // One bot, one chat. Routing decides which agent handles each message.
+    // One bot, one group. Topics mode - each agent gets its own topic thread.
     this.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || cfg('TELEGRAM_BOT_TOKEN', '');
     this.TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || cfg('TELEGRAM_CHAT_ID', '');
+    this.TELEGRAM_GROUP_ID = process.env.TELEGRAM_GROUP_ID || cfg('TELEGRAM_GROUP_ID', '');
 
     // Notifications
     this.NOTIFICATIONS_ENABLED = cfg('NOTIFICATIONS_ENABLED', true);

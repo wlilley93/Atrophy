@@ -9,7 +9,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig } from './config';
-import { discoverAgents } from './agent-manager';
 import { createLogger } from './logger';
 
 const log = createLogger('telegram');
@@ -64,6 +63,7 @@ export async function sendMessage(
   text: string,
   chatId = '',
   prefix = true,
+  threadId?: number,
 ): Promise<boolean> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -79,11 +79,13 @@ export async function sendMessage(
   // Telegram has a 4096 character limit per message - split if needed
   const MAX_LEN = 4096;
   if (text.length <= MAX_LEN) {
-    const result = await post('sendMessage', {
+    const payload: Record<string, unknown> = {
       chat_id: target,
       text,
       parse_mode: 'Markdown',
-    });
+    };
+    if (threadId) payload.message_thread_id = threadId;
+    const result = await post('sendMessage', payload);
     if (result) {
       log.debug(`Sent message (${text.length} chars)`);
       return true;
@@ -107,11 +109,13 @@ export async function sendMessage(
       chunk = remaining.slice(0, splitAt);
       remaining = remaining.slice(splitAt).trimStart();
     }
-    const result = await post('sendMessage', {
+    const payload: Record<string, unknown> = {
       chat_id: target,
       text: chunk,
       parse_mode: 'Markdown',
-    });
+    };
+    if (threadId) payload.message_thread_id = threadId;
+    const result = await post('sendMessage', payload);
     if (!result) allSent = false;
   }
   log.debug(`Sent message (${text.length} chars, split)`);
@@ -123,6 +127,7 @@ export async function sendButtons(
   buttons: { text: string; callback_data: string }[][],
   chatId = '',
   prefix = true,
+  threadId?: number,
 ): Promise<number | null> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -135,12 +140,14 @@ export async function sendButtons(
     text = `${config.TELEGRAM_EMOJI} *${config.AGENT_DISPLAY_NAME}*\n\n${text}`;
   }
 
-  const result = await post('sendMessage', {
+  const payload: Record<string, unknown> = {
     chat_id: target,
     text,
     parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: buttons },
-  }) as { message_id?: number } | null;
+  };
+  if (threadId) payload.message_thread_id = threadId;
+  const result = await post('sendMessage', payload) as { message_id?: number } | null;
 
   if (result) {
     log.debug(`Sent buttons (${text.length} chars)`);
@@ -154,6 +161,7 @@ export async function sendVoiceNote(
   caption = '',
   chatId = '',
   prefix = true,
+  threadId?: number,
 ): Promise<boolean> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -179,6 +187,11 @@ export async function sendVoiceNote(
 
     // chat_id
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${target}\r\n`));
+
+    // message_thread_id (for Topics mode)
+    if (threadId) {
+      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="message_thread_id"\r\n\r\n${threadId}\r\n`));
+    }
 
     // caption
     if (caption) {
@@ -347,24 +360,11 @@ interface BotCommand {
 }
 
 function buildCommands(): BotCommand[] {
-  const commands: BotCommand[] = [];
-
-  for (const agent of discoverAgents()) {
-    let desc = agent.description || `Talk to ${agent.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}`;
-    // Telegram limits command descriptions to 256 chars
-    if (desc.length > 256) {
-      desc = desc.slice(0, 253) + '...';
-    }
-    commands.push({ command: agent.name, description: desc });
-  }
-
-  // Utility commands
-  commands.push(
+  // Topics mode - each agent has its own topic, no per-agent commands needed.
+  // Only register utility commands.
+  return [
     { command: 'status', description: 'Show which agents are active' },
-    { command: 'mute', description: 'Mute/unmute the current agent' },
-  );
-
-  return commands;
+  ];
 }
 
 /**
@@ -521,7 +521,7 @@ export async function discoverChatId(
 }
 
 // Export for daemon access
-export { post as _post, _lastUpdateId };
+export { post, post as _post, _lastUpdateId };
 export function setLastUpdateId(id: number): void {
   _lastUpdateId = id;
 }
