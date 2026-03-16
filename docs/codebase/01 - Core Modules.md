@@ -180,7 +180,7 @@ The `cfg<T>(key, fallback)` helper resolves in order: env var -> `_userCfg[key]`
 
 ### Obsidian Vault
 
-Default path: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind`. Overridable via `OBSIDIAN_VAULT` env var. `OBSIDIAN_AVAILABLE` is `true` if the directory exists on disk. The vault path is passed to MCP servers as an environment variable so they can read and write notes directly into the user's knowledge base.
+No default path - set via `OBSIDIAN_VAULT` env var or `~/.atrophy/config.json`. `OBSIDIAN_AVAILABLE` is `true` if the directory exists on disk. The vault path is passed to MCP servers as an environment variable so they can read and write notes directly into the user's knowledge base.
 
 ### Dependencies
 

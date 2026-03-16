@@ -70,7 +70,7 @@ These variables can be set in your shell before launching the app, or placed in 
 | `AGENT` | `xan` | `cfg()` | Active agent name. Determines which `agents/<name>/` directory is loaded |
 | `ATROPHY_DATA` | `~/.atrophy` | Direct | Root user data directory. Exported as `USER_DATA` constant |
 | `INPUT_MODE` | `dual` | `cfg()` | Input mode: `voice`, `text`, or `dual` |
-| `OBSIDIAN_VAULT` | `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind` | `cfg()` | Path to the Obsidian vault root |
+| `OBSIDIAN_VAULT` | (unset) | `cfg()` | Path to the Obsidian vault root |
 | `AVATAR_ENABLED` | `false` | `cfg()` | Enable animated avatar in GUI mode |
 | `TTS_BACKEND` | `elevenlabs` | `agentCfg()` | TTS engine: `elevenlabs`, `fal`, `macos`, `off` |
 | `ELEVENLABS_API_KEY` | `''` | `cfg()` | ElevenLabs API key (shared across agents) |

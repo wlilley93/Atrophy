@@ -4,7 +4,7 @@ The system prompt is the companion's operating manual — loaded at the start of
 
 ## Location
 
-- **Canonical**: Obsidian `Projects/The Atrophied Mind/Agent Workspace/companion/skills/system.md`
+- **Canonical**: Obsidian `Projects/Atrophy/Agent Workspace/companion/skills/system.md`
 - **Fallback**: Repo `agents/companion/prompts/system_prompt.md`
 
 The Obsidian version takes precedence. The companion can self-modify the Obsidian version via the evolution system.

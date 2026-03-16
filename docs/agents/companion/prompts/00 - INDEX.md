@@ -1,6 +1,6 @@
 # Agent Prompts
 
-Prompt documentation for the companion agent. These describe the prompts used at runtime — the canonical versions live in Obsidian at `Projects/The Atrophied Mind/Agent Workspace/companion/skills/`.
+Prompt documentation for the companion agent. These describe the prompts used at runtime - the canonical versions live in Obsidian at `Projects/Atrophy/Agent Workspace/companion/skills/`.
 
 ## Local Fallbacks (repo `agents/companion/prompts/`)
 

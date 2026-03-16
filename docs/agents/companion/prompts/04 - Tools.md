@@ -4,7 +4,7 @@ Documents the MCP tools available to the companion at runtime.
 
 ## Location
 
-Obsidian: `Projects/The Atrophied Mind/Agent Workspace/companion/skills/tools.md`
+Obsidian: `Projects/Atrophy/Agent Workspace/companion/skills/tools.md`
 
 ## Tool Categories
 

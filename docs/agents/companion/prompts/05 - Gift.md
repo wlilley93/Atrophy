@@ -4,7 +4,7 @@ The gift skill is used to leave a note for the user to find in Obsidian.
 
 ## Location
 
-Obsidian: `Projects/The Atrophied Mind/Agent Workspace/companion/skills/gift.md`
+Obsidian: `Projects/Atrophy/Agent Workspace/companion/skills/gift.md`
 
 ## Constraints
 

@@ -4,7 +4,7 @@ The introspection skill drives the companion's nightly journal — a 3am reflect
 
 ## Location
 
-Obsidian: `Projects/The Atrophied Mind/Agent Workspace/companion/skills/introspection.md`
+Obsidian: `Projects/Atrophy/Agent Workspace/companion/skills/introspection.md`
 
 ## Purpose
 

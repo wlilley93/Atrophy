@@ -4,7 +4,7 @@ The soul document is the companion's identity ground — who she is, what she va
 
 ## Location
 
-- **Canonical**: Obsidian `Projects/The Atrophied Mind/Agent Workspace/companion/skills/soul.md`
+- **Canonical**: Obsidian `Projects/Atrophy/Agent Workspace/companion/skills/soul.md`
 - **Fallback**: Repo `agents/companion/prompts/soul.md`
 
 ## Purpose

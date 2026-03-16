@@ -4,7 +4,7 @@ The morning brief skill generates a greeting when the user opens the app in the 
 
 ## Location
 
-Obsidian: `Projects/The Atrophied Mind/Agent Workspace/companion/skills/morning-brief.md`
+Obsidian: `Projects/Atrophy/Agent Workspace/companion/skills/morning-brief.md`
 
 ## Formula
 

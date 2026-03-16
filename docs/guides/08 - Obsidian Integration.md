@@ -13,7 +13,7 @@ _obsidian_base = Path(_cfg("OBSIDIAN_VAULT", _obsidian_default))
 OBSIDIAN_AVAILABLE = _obsidian_base.is_dir()
 ```
 
-The default path is `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind`. Override it with the `OBSIDIAN_VAULT` environment variable or set it in `~/.atrophy/config.json`.
+There is no default path. Set it with the `OBSIDIAN_VAULT` environment variable, in `~/.atrophy/config.json`, or via the Settings panel under Paths.
 
 The check is a simple `is_dir()` -- no Obsidian process needs to be running. If the directory exists, the vault is considered available.
 
@@ -25,8 +25,8 @@ When `OBSIDIAN_AVAILABLE` is `True`, agent workspace paths resolve into the vaul
 
 | Config variable | Resolves to |
 |---|---|
-| `OBSIDIAN_PROJECT_DIR` | `<vault>/Projects/The Atrophied Mind` |
-| `OBSIDIAN_AGENT_DIR` | `<vault>/Projects/The Atrophied Mind/Agent Workspace/<agent>` |
+| `OBSIDIAN_PROJECT_DIR` | `<vault>/Projects/Atrophy` |
+| `OBSIDIAN_AGENT_DIR` | `<vault>/Projects/Atrophy/Agent Workspace/<agent>` |
 | `OBSIDIAN_AGENT_NOTES` | Same as `OBSIDIAN_AGENT_DIR` |
 | `OBSIDIAN_VAULT` | The vault root (as configured) |
 
@@ -162,7 +162,7 @@ Three ways, in priority order:
 
 1. **Environment variable**: `export OBSIDIAN_VAULT=/path/to/vault`
 2. **Config file**: Set `"OBSIDIAN_VAULT": "/path/to/vault"` in `~/.atrophy/config.json`
-3. **Default**: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind`
+3. **Default**: (unset) - you must configure this to enable Obsidian integration
 
 The GUI settings panel also has an Obsidian vault path field under the **PATHS** section.
 

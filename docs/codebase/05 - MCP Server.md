@@ -16,7 +16,7 @@ The following JSON shows the structure of the generated config. Each server entr
       "args": ["mcp/memory_server.py"],
       "env": {
         "COMPANION_DB": "~/.atrophy/agents/<name>/data/memory.db",
-        "OBSIDIAN_VAULT": "~/Library/Mobile Documents/.../The Atrophied Mind",
+        "OBSIDIAN_VAULT": "<vault-path>",
         "OBSIDIAN_AGENT_DIR": "<vault>/<agent_display_name>",
         "OBSIDIAN_AGENT_NOTES": "<vault>/<agent>/agents/<name>",
         "AGENT": "<name>"

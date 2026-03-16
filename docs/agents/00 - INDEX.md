@@ -108,7 +108,7 @@ Each agent has three homes:
 | `avatar/loops/` | Generated loop segments (loop_*.mp4) |
 | `avatar/ambient_loop.mp4` | Master ambient loop (concatenated from segments) |
 
-### Obsidian (`Projects/The Atrophied Mind/Agent Workspace/<name>/`)
+### Obsidian (`Projects/Atrophy/Agent Workspace/<name>/`)
 
 | Directory | Purpose |
 |-----------|---------|

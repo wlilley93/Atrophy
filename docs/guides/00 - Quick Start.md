@@ -38,8 +38,8 @@ These dependencies unlock additional capabilities but are not required for basic
 Clone the repository and install dependencies. The `pnpm install` step downloads all npm packages, and `pnpm rebuild` compiles the `better-sqlite3` native module against the Electron Node.js headers, which is required because Electron ships its own version of Node.js that differs from your system installation.
 
 ```bash
-git clone <repo-url>
-cd atrophy-app-electron
+git clone https://github.com/wlilley93/Atrophy.git
+cd Atrophy
 pnpm install
 pnpm rebuild
 ```
@@ -47,7 +47,7 @@ pnpm rebuild
 The `pnpm rebuild` command invokes `electron-rebuild` to recompile native modules. You should see output similar to the following on a successful build:
 
 ```
-> atrophy@0.1.2 rebuild
+> atrophy@1.2.5 rebuild
 > electron-rebuild -f -w better-sqlite3
 
 - Searching for modules in /path/to/atrophy-app-electron/node_modules
@@ -208,7 +208,7 @@ These environment variables affect the app's behavior at startup. Set them in yo
 | `CLAUDE_BIN` | `claude` | Path to Claude Code CLI binary. |
 | `CLAUDE_EFFORT` | `medium` | Inference effort level: `low`, `medium`, or `high`. |
 | `ADAPTIVE_EFFORT` | `true` | Auto-adjust effort by query complexity (short greetings get `low`, complex questions get `high`). |
-| `OBSIDIAN_VAULT` | `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind` | Path to Obsidian vault root. Set if your vault is in a non-default location. |
+| `OBSIDIAN_VAULT` | (unset) | Path to your Obsidian vault root. Set this to enable Obsidian integration for agent notes, journals, and skills. |
 | `ELECTRON_RENDERER_URL` | (unset) | Set automatically by `pnpm dev`. When set, the main process loads the renderer from this URL instead of the built HTML file. Also disables auto-updater checks. |
 
 ---
@@ -259,7 +259,7 @@ On successful launch, the main process prints a one-line summary showing the ver
 ```
   Renderer dev server: http://localhost:5173/
 
-[atrophy] v0.1.2 | agent: xan | db: /Users/you/.atrophy/agents/xan/data/memory.db
+[atrophy] v1.2.5 | agent: xan | db: /Users/you/.atrophy/agents/xan/data/memory.db
 ```
 
 ---
@@ -310,7 +310,7 @@ If `setup_complete` is not set (first run), the **setup flow** activates - a con
 
 After the flow completes, `setup_complete: true` is written to `~/.atrophy/config.json`. The wizard can be re-run from Settings > About > Reset Setup Wizard.
 
-**Obsidian is optional.** If no Obsidian vault is found at the default path (`~/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind`), the system falls back to `~/.atrophy/agents/<name>/` for all note, skill, and workspace operations. The `OBSIDIAN_AVAILABLE` flag in config controls this behavior, and it is checked automatically at startup.
+**Obsidian is optional.** If `OBSIDIAN_VAULT` is not set or the path does not exist, the system falls back to `~/.atrophy/agents/<name>/` for all note, skill, and workspace operations. The `OBSIDIAN_AVAILABLE` flag in config controls this behavior, and it is checked automatically at startup.
 
 ---
 
