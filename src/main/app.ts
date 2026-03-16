@@ -7,6 +7,10 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, session as electronSession, powerSaveBlocker, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+
+// Performance: increase V8 heap limit and enable concurrent GC
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
+app.commandLine.appendSwitch('enable-features', 'V8ConcurrentSparkplug');
 import { execFile, execSync, spawn } from 'child_process';
 import { ensureUserData, getConfig, reloadConfig, saveUserConfig, saveAgentConfig, saveEnvVar, isAllowedEnvKey, BUNDLE_ROOT, USER_DATA } from './config';
 import { initDb, closeAll as closeAllDbs, writeObservation } from './memory';
@@ -236,13 +240,21 @@ function toggleKeepAwake(): void {
 // Tray (menu bar mode)
 // ---------------------------------------------------------------------------
 
+// Cache agent list for tray menu - refreshed on agent switch, not every rebuild
+let _cachedAgents: ReturnType<typeof discoverAgents> | null = null;
+function getCachedAgents(): ReturnType<typeof discoverAgents> {
+  if (!_cachedAgents) _cachedAgents = discoverAgents();
+  return _cachedAgents;
+}
+function invalidateAgentCache(): void { _cachedAgents = null; }
+
 function rebuildTrayMenu(): void {
   if (!tray) return;
 
   const awake = isKeepAwakeActive();
   const config = getConfig();
   const status = getStatus();
-  const agents = discoverAgents();
+  const agents = getCachedAgents();
 
   const statusLabel = status.status === 'active' ? 'Online' : 'Away';
   const statusIcon = status.status === 'active' ? '🟢' : '🟡';
@@ -351,7 +363,15 @@ function rebuildTrayMenu(): void {
     {
       label: 'Quit',
       accelerator: 'CommandOrControl+Q',
-      click: () => app.quit(),
+      click: () => {
+        // Skip shutdown animation when quitting from tray - quit immediately
+        if (mainWindow) {
+          mainWindow.removeAllListeners('close');
+          mainWindow.destroy();
+          mainWindow = null;
+        }
+        app.quit();
+      },
     },
   ];
 
@@ -1230,6 +1250,7 @@ Output EXACTLY this format - a single fenced JSON block:
     resetMcpConfig();
     currentAgentName = name;
     setLastActiveAgent(name);
+    invalidateAgentCache();
 
     // Check if agent needs custom setup (e.g. Mirror)
     // Try user-data first, then bundled
