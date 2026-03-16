@@ -21,14 +21,26 @@ let _lastUpdateId = 0;
 // API helpers
 // ---------------------------------------------------------------------------
 
+// Override bot token and chat ID for daemon use (when current agent has no Telegram config)
+let _botTokenOverride: string | null = null;
+let _chatIdOverride: string | null = null;
+
+export function setBotTokenOverride(token: string | null): void {
+  _botTokenOverride = token;
+}
+
+export function setChatIdOverride(chatId: string | null): void {
+  _chatIdOverride = chatId;
+}
+
 function apiUrl(method: string): string {
-  const config = getConfig();
-  return `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/${method}`;
+  const token = _botTokenOverride || getConfig().TELEGRAM_BOT_TOKEN;
+  return `https://api.telegram.org/bot${token}/${method}`;
 }
 
 async function post(method: string, payload: Record<string, unknown>, timeoutMs = 15_000): Promise<unknown | null> {
-  const config = getConfig();
-  if (!config.TELEGRAM_BOT_TOKEN) {
+  const token = _botTokenOverride || getConfig().TELEGRAM_BOT_TOKEN;
+  if (!token) {
     log.warn('TELEGRAM_BOT_TOKEN not configured');
     return null;
   }
@@ -66,7 +78,7 @@ export async function sendMessage(
   prefix = true,
 ): Promise<boolean> {
   const config = getConfig();
-  const target = chatId || config.TELEGRAM_CHAT_ID;
+  const target = chatId || _chatIdOverride || config.TELEGRAM_CHAT_ID;
   if (!target) {
     log.warn('TELEGRAM_CHAT_ID not configured');
     return false;

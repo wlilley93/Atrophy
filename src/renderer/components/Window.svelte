@@ -877,6 +877,15 @@
       if (result.customSetup === 'mirror') {
         mirrorSetupVisible = true;
       }
+
+      // Fetch opening line for the new agent
+      try {
+        const opening = await api.getOpeningLine();
+        if (opening) {
+          addMessage('agent', opening);
+          completeLast();
+        }
+      } catch { /* non-critical */ }
     }
   }
 
