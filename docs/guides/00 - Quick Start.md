@@ -408,19 +408,6 @@ Agent cycling (`Cmd+Up`/`Cmd+Down`) skips disabled agents. Check `~/.atrophy/age
 
 ---
 
-## Building for Distribution
-
-When you are ready to create a distributable `.app` bundle, two commands handle the full pipeline. The `build` step compiles TypeScript and bundles the renderer, while `dist:mac` additionally packages everything into a signed DMG and ZIP:
-
-```bash
-pnpm build                    # Compile TypeScript + bundle renderer via Vite
-pnpm dist:mac                 # Build + create DMG and ZIP for macOS
-```
-
-The resulting DMG is output to the `dist/` directory. See [10 - Building and Distribution](10%20-%20Building%20and%20Distribution.md) for the full build and release workflow.
-
----
-
 ## What's Next
 
 Now that the app is running, these guides cover the next steps for customization, automation, and integration:
