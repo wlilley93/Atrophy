@@ -28,12 +28,74 @@ import {
   timeGapNote, detectDrift, energyNote,
   shouldPromptJournal, detectEmotionalSignals,
 } from './agency';
-import { formatForContext, updateEmotions, updateTrust, loadState } from './inner-life';
+import { formatForContext, updateEmotions, updateTrust, loadState, type EmotionalState } from './inner-life';
 import { getStatus } from './status';
 import * as memory from './memory';
 import { createLogger } from './logger';
 
 const log = createLogger('inference');
+
+// ---------------------------------------------------------------------------
+// Context prefetch cache
+// ---------------------------------------------------------------------------
+
+interface ContextCache {
+  recentTurns: string[];
+  sessionMood: string | null;
+  recentSummaries: memory.Summary[];
+  lastSessionTime: string | null;
+  activeThreads: memory.Thread[];
+  crossAgentSummaries: { agent: string; display_name: string; summaries: { content: string; created_at: string; mood: string | null }[] }[];
+  emotionalState: EmotionalState;
+  timestamp: number;
+}
+
+let _contextCache: ContextCache | null = null;
+const CACHE_TTL_MS = 30_000; // 30 seconds
+
+function getCached<K extends keyof ContextCache>(key: K, fallback: () => ContextCache[K]): ContextCache[K] {
+  if (_contextCache && (Date.now() - _contextCache.timestamp < CACHE_TTL_MS)) {
+    return _contextCache[key];
+  }
+  return fallback();
+}
+
+/**
+ * Prefetch all context data into cache during idle time.
+ * Call this after initialization, after each inference completes, and on agent switch.
+ * The queries are synchronous but run during idle - not during user-perceived send latency.
+ */
+export function prefetchContext(): void {
+  const t0 = Date.now();
+  try {
+    const recentTurns = memory.getRecentCompanionTurns();
+    const sessionMood = memory.getCurrentSessionMood();
+    const recentSummaries = memory.getRecentSummaries(10);
+    const lastSessionTime = memory.getLastSessionTime();
+    const activeThreads = memory.getActiveThreads();
+    const crossAgentSummaries = memory.getOtherAgentsRecentSummaries(2, 5);
+    const emotionalState = loadState();
+
+    _contextCache = {
+      recentTurns,
+      sessionMood,
+      recentSummaries,
+      lastSessionTime,
+      activeThreads,
+      crossAgentSummaries,
+      emotionalState,
+      timestamp: Date.now(),
+    };
+    log.debug(`prefetchContext: ${Date.now() - t0}ms`);
+  } catch (e) {
+    log.debug(`prefetchContext failed: ${e}`);
+  }
+}
+
+/** Invalidate prefetch cache (e.g. on agent switch). */
+export function invalidateContextCache(): void {
+  _contextCache = null;
+}
 
 // ---------------------------------------------------------------------------
 // Model whitelist
@@ -287,8 +349,9 @@ function buildAgencyContext(userMessage: string): string {
 
   const parts: string[] = [timeOfDayContext().context];
 
-  // Inner life - emotional state (changes per turn)
-  parts.push(formatForContext());
+  // Inner life - emotional state (use cached if available)
+  const emotionalState = getCached('emotionalState', () => loadState());
+  parts.push(formatForContext(emotionalState));
 
   // Detected patterns - only the ones that trigger
   if (detectMoodShift(userMessage)) {
@@ -306,12 +369,12 @@ function buildAgencyContext(userMessage: string): string {
   if (energy) parts.push(energy);
 
   // Drift detection - only if detected
-  const recentTurns = memory.getRecentCompanionTurns();
+  const recentTurns = getCached('recentTurns', () => memory.getRecentCompanionTurns());
   const driftNote = detectDrift(recentTurns);
   if (driftNote) parts.push(driftNote);
 
   // Session mood (changes per turn)
-  const sessionMood = memory.getCurrentSessionMood();
+  const sessionMood = getCached('sessionMood', () => memory.getCurrentSessionMood());
   if (sessionMood === 'heavy') {
     parts.push('The session mood is heavy. Be present before being useful. Don\'t try to fix, reframe, or redirect unless asked.');
   }
@@ -329,7 +392,7 @@ function buildAgencyContext(userMessage: string): string {
 
     // Session patterns
     try {
-      const recentSessions = memory.getRecentSummaries(10);
+      const recentSessions = getCached('recentSummaries', () => memory.getRecentSummaries(10));
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const thisWeek = recentSessions.filter(
         (s: { created_at: string }) => new Date(s.created_at) > weekAgo,
@@ -340,7 +403,7 @@ function buildAgencyContext(userMessage: string): string {
     } catch (e) { log.debug(`session patterns failed: ${e}`); }
 
     // Time-gap awareness
-    const lastTime = memory.getLastSessionTime();
+    const lastTime = getCached('lastSessionTime', () => memory.getLastSessionTime());
     const gapNote = timeGapNote(lastTime);
     if (gapNote) parts.push(gapNote);
 
@@ -372,7 +435,7 @@ function buildAgencyContext(userMessage: string): string {
     }
 
     // Active threads
-    const threads = memory.getActiveThreads();
+    const threads = getCached('activeThreads', () => memory.getActiveThreads());
     if (threads.length > 0) {
       const threadNames = threads.slice(0, 5).map((t) => t.name);
       parts.push(`Active threads you're tracking: ${threadNames.join(', ')}. Consider surfacing one if relevant.`);
@@ -380,7 +443,7 @@ function buildAgencyContext(userMessage: string): string {
 
     // Cross-agent awareness
     try {
-      const otherAgents = memory.getOtherAgentsRecentSummaries(2, 5);
+      const otherAgents = getCached('crossAgentSummaries', () => memory.getOtherAgentsRecentSummaries(2, 5));
       if (otherAgents.length > 0) {
         const crossParts = ['## Other Agents - Recent Activity'];
         for (const oa of otherAgents) {
@@ -474,8 +537,8 @@ export function streamInference(
   // Adaptive effort
   let effort: EffortLevel = config.CLAUDE_EFFORT as EffortLevel;
   if (config.ADAPTIVE_EFFORT && config.CLAUDE_EFFORT === 'medium') {
-    const recentTurns = memory.getRecentCompanionTurns();
-    effort = classifyEffort(userMessage, recentTurns);
+    const cachedTurns = getCached('recentTurns', () => memory.getRecentCompanionTurns());
+    effort = classifyEffort(userMessage, cachedTurns);
     log.debug(`effort: ${effort}`);
   }
 

@@ -4,6 +4,20 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.2.4 - 2026-03-16
+
+Performance release. Moves synchronous DB queries off the main thread hot path during inference.
+
+### Performance
+
+- **Context prefetch cache** - all agency context queries (recent turns, session mood, summaries, threads, cross-agent data, emotional state) are prefetched during idle time and served from a 30-second TTL cache. First-turn latency drops from ~50-200ms to ~0ms for the common case
+- **Emotional state turn cache** - `loadState()` caches its result for 5 seconds, eliminating the double file-read-and-decay-computation that occurred every turn
+- **Adaptive effort** reuses cached recent turns instead of issuing a redundant DB query
+- **Prefetch triggers** - context is prefetched on app startup, after each StreamDone event, and after agent switch
+- Added `idx_summaries_session_id` database index for faster cross-agent summary lookups
+
+---
+
 ## 1.2.1 - 2026-03-16
 
 Bug fix release. 13 bugs fixed across inference, Telegram, setup flow, and bootstrap.

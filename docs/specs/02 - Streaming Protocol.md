@@ -521,6 +521,18 @@ The context is assembled from 18 components, each contributing a different aspec
 17. **Drift detection** - `detectDrift()` checks recent companion turns for agreeableness patterns
 18. **Journal prompting** - if `shouldPromptJournal()` returns true, suggests a writing prompt
 
+### Prefetch Cache
+
+To avoid blocking the main thread during user-perceived send latency, all DB queries and file reads used by `buildAgencyContext()` are prefetched into a module-level `ContextCache` during idle time. The cache has a 30-second TTL and is populated by `prefetchContext()`, which runs:
+
+- On app startup (via `setImmediate`)
+- After each `StreamDone` event (preloading for the next message)
+- After agent switch (invalidate + re-prefetch)
+
+Each query site in `buildAgencyContext()` uses `getCached(key, fallback)` - if the cache is fresh, the cached value is returned instantly; if stale, the fallback executes the synchronous query directly. This means first-turn context assembly (which includes cross-agent DB scans) drops from ~50-200ms to ~0ms in the common case.
+
+The emotional state also uses a 5-second turn-scoped cache in `inner-life.ts` to avoid the double `loadState()` call that previously occurred (once in signal detection, once in `formatForContext()`).
+
 ### Emotional Signal Detection
 
 Before building context, `detectEmotionalSignals()` scans the user message for patterns that indicate emotional shifts. Detected signals are applied immediately to the emotional model so the current turn's context reflects the detected state change. Trust signals (keys starting with `_trust_`) update specific trust domains via `updateTrust()`, while emotion signals update the emotion dimensions via `updateEmotions()`. This ensures the agent's emotional awareness is current before it generates a response.

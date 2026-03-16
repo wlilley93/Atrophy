@@ -14,7 +14,7 @@ app.commandLine.appendSwitch('enable-features', 'V8ConcurrentSparkplug');
 import { execFile, execSync, spawn } from 'child_process';
 import { ensureUserData, getConfig, reloadConfig, saveUserConfig, saveAgentConfig, saveEnvVar, isAllowedEnvKey, BUNDLE_ROOT, USER_DATA } from './config';
 import { initDb, closeAll as closeAllDbs, writeObservation } from './memory';
-import { streamInference, stopInference, stopAllInference, resetMcpConfig, InferenceEvent } from './inference';
+import { streamInference, stopInference, stopAllInference, resetMcpConfig, prefetchContext, invalidateContextCache, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
 import { Session } from './session';
 import { setActive, setAway, isAway, isMacIdle, getStatus, detectAwayIntent, IDLE_TIMEOUT_SECS } from './status';
@@ -1188,6 +1188,8 @@ Output EXACTLY this format - a single fenced JSON block:
             } else {
               mainWindow.webContents.send('inference:done', fullText);
             }
+            // Prefetch context for the next message during idle
+            setImmediate(() => prefetchContext());
             break;
 
           case 'StreamError':
@@ -1248,9 +1250,13 @@ Output EXACTLY this format - a single fenced JSON block:
     getConfig().reloadForAgent(name);
     initDb();
     resetMcpConfig();
+    invalidateContextCache();
     currentAgentName = name;
     setLastActiveAgent(name);
     invalidateAgentCache();
+
+    // Prefetch context for the new agent during idle
+    setImmediate(() => prefetchContext());
 
     // Check if agent needs custom setup (e.g. Mirror)
     // Try user-data first, then bundled
@@ -1850,6 +1856,9 @@ app.whenReady().then(() => {
     initDb();
     log.info(`resumed agent: ${config.AGENT_NAME}`);
   }
+
+  // Prefetch context data during startup idle time
+  setImmediate(() => prefetchContext());
 
   // Auto-start Telegram daemon if configured
   if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID) {

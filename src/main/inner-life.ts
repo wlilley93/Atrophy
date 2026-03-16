@@ -160,7 +160,15 @@ function applyDecay(state: EmotionalState): EmotionalState {
 // Load / save
 // ---------------------------------------------------------------------------
 
+// Turn-scoped cache to avoid redundant file reads + decay computation within a single turn
+let _stateCache: { state: EmotionalState; ts: number } | null = null;
+const STATE_CACHE_TTL_MS = 5_000;
+
 export function loadState(): EmotionalState {
+  if (_stateCache && Date.now() - _stateCache.ts < STATE_CACHE_TTL_MS) {
+    return _stateCache.state;
+  }
+
   const config = getConfig();
   const filePath = config.EMOTIONAL_STATE_FILE;
 
@@ -183,7 +191,14 @@ export function loadState(): EmotionalState {
     }
   } catch { /* use defaults */ }
 
-  return applyDecay(state);
+  state = applyDecay(state);
+  _stateCache = { state, ts: Date.now() };
+  return state;
+}
+
+/** Invalidate the loadState cache (called after writes or agent switch). */
+export function invalidateStateCache(): void {
+  _stateCache = null;
 }
 
 export function saveState(state: EmotionalState): void {
@@ -192,6 +207,8 @@ export function saveState(state: EmotionalState): void {
   try {
     fs.writeFileSync(config.EMOTIONAL_STATE_FILE, JSON.stringify(state, null, 2));
   } catch { /* silent */ }
+  // Update cache so next loadState() gets the freshly saved state
+  _stateCache = { state, ts: Date.now() };
 }
 
 // ---------------------------------------------------------------------------

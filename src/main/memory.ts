@@ -303,6 +303,10 @@ function migrate(db: Database.Database): void {
     safeAddColumn('observations', 'embedding', 'BLOB');
   }
 
+  if (tableNames.has('summaries')) {
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_summaries_session_id ON summaries(session_id)'); } catch { /* already exists */ }
+  }
+
   if (tableNames.has('coherence_checks')) {
     safeAddColumn('coherence_checks', 'action', "TEXT DEFAULT 'none'");
   }

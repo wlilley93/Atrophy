@@ -352,6 +352,8 @@ Session tone: reflective
 
 The agency context is a dynamic block assembled before each inference call by `buildAgencyContext()` in `src/main/inference.ts`. It includes behavioral signals derived from the conversation state, user presence, emotional model, and temporal patterns. The context is injected differently depending on session state: for new sessions, it is appended to the system prompt; for resumed sessions, it is prepended to the user message wrapped in `[Current context: ...]`.
 
+All data queries used by context assembly (recent turns, session mood, summaries, threads, cross-agent summaries, emotional state) are served from a prefetch cache with a 30-second TTL. The cache is populated during idle time by `prefetchContext()` - on startup, after each inference completes, and after agent switch. This moves ~50-200ms of synchronous SQLite queries off the critical path between the user pressing Enter and the thinking indicator appearing.
+
 ### Time-of-Day Context
 
 `timeOfDayContext()` returns register guidance based on the current hour, helping the agent match the conversational energy appropriate for the time of day. Late-night messages suggest gentler interaction, while working hours suggest practical focus.

@@ -190,6 +190,8 @@ CREATE INDEX IF NOT EXISTS idx_turns_timestamp
   ON turns(timestamp);
 CREATE INDEX IF NOT EXISTS idx_summaries_topics
   ON summaries(topics);
+CREATE INDEX IF NOT EXISTS idx_summaries_session_id
+  ON summaries(session_id);
 CREATE INDEX IF NOT EXISTS idx_threads_status
   ON threads(status);
 CREATE INDEX IF NOT EXISTS idx_observations_inc
