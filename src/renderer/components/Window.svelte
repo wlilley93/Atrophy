@@ -817,14 +817,9 @@
       }));
     }
 
-    // Listen for bundle update ready
-    if (api?.onBundleReady) {
-      const bundleCleanup = api.onBundleReady((info: { version: string }) => {
-        pendingUpdateVersion = info.version;
-      });
-      if (bundleCleanup) ipcCleanups.push(bundleCleanup);
-    }
-    // Check for previously downloaded bundle update
+    // Check for previously downloaded bundle update (from a prior session).
+    // Only show the banner for updates downloaded BEFORE this boot - not for
+    // background downloads during this session (those load automatically on next boot).
     api?.getBundleStatus?.().then((status) => {
       if (status?.pending?.pendingRestart && status.pending.version) {
         pendingUpdateVersion = status.pending.version;
