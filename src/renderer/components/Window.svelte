@@ -128,6 +128,9 @@
   let silenceTimerEnabled = true;
   let silenceTimeoutMs = 5 * 60 * 1000; // default 5 minutes
 
+  // Pending bundle update banner
+  let pendingUpdateVersion = $state<string | null>(null);
+
   // Status bar metrics
   let lastResponseMs = $state<number | null>(null);
   let contextUsagePercent = $state<number | null>(null);
@@ -418,6 +421,23 @@
     if (nextStep >= SETUP_SERVICE_TITLES.length) {
       // All services done
       setupShowServiceCard = false;
+
+      // Health check - verify Claude CLI is reachable before proceeding
+      try {
+        const health = await api?.healthCheck?.();
+        if (health && !health.ok) {
+          addMessage('system',
+            'Claude Code CLI not found. Install it with:\n\n' +
+            '```\nnpm install -g @anthropic-ai/claude-code\n```\n\n' +
+            'Then relaunch the app. Without it, your companion cannot think.'
+          );
+          completeLast();
+          // Still allow proceeding - they might fix it later
+        } else if (health?.hint) {
+          addMessage('system', health.hint);
+          completeLast();
+        }
+      } catch { /* non-fatal */ }
 
       const noVoiceKey = setupServicesSkipped.includes('ELEVENLABS_API_KEY');
       if (noVoiceKey) {
@@ -744,6 +764,20 @@
         }
       }));
     }
+
+    // Listen for bundle update ready
+    if (api?.onBundleReady) {
+      const bundleCleanup = api.onBundleReady((info: { version: string }) => {
+        pendingUpdateVersion = info.version;
+      });
+      if (bundleCleanup) ipcCleanups.push(bundleCleanup);
+    }
+    // Check for previously downloaded bundle update
+    api?.getBundleStatus?.().then((status) => {
+      if (status?.pending?.pendingRestart && status.pending.version) {
+        pendingUpdateVersion = status.pending.version;
+      }
+    }).catch(() => { /* non-critical */ });
 
     // Listen for shutdown signal from main process
     const shutdownCleanup = api?.onShutdownRequested?.(() => {
@@ -1297,6 +1331,14 @@
     </button>
   </div>
 
+  <!-- Update banner -->
+  {#if pendingUpdateVersion}
+    <div class="update-banner">
+      <span class="update-banner-text">Update v{pendingUpdateVersion} ready</span>
+      <button class="update-banner-btn" onclick={() => api?.restartForUpdate()}>Restart to update</button>
+    </div>
+  {/if}
+
   <!-- Chat area - hidden in eye mode -->
   {#if !eyeMode}
     <Transcript onArtifactClick={handleInlineArtifactClick} />
@@ -1489,6 +1531,41 @@
   .top-bar.hidden {
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* -- Update banner -- */
+
+  .update-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(100, 140, 255, 0.1);
+    border-bottom: 1px solid rgba(100, 140, 255, 0.15);
+    flex-shrink: 0;
+  }
+
+  .update-banner-text {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-family: var(--font-sans);
+  }
+
+  .update-banner-btn {
+    background: rgba(100, 140, 255, 0.2);
+    border: 1px solid rgba(100, 140, 255, 0.3);
+    color: rgba(100, 140, 255, 0.9);
+    font-size: 11px;
+    font-family: var(--font-sans);
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .update-banner-btn:hover {
+    background: rgba(100, 140, 255, 0.3);
+    border-color: rgba(100, 140, 255, 0.5);
   }
 
   /* -- Mode buttons -- */

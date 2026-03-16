@@ -1,23 +1,33 @@
 /**
- * Hot bundle updater — pulls new compiled JS from GitHub on boot.
+ * Hot bundle updater - pulls new compiled JS from GitHub on boot.
  *
  * Instead of rebuilding and distributing a new DMG for every change,
  * this module downloads pre-built `out/` bundles from GitHub Releases
  * to `~/.atrophy/bundle/`. On the NEXT boot, the app loads from the
  * hot bundle instead of the frozen one inside the .app.
  *
+ * Architecture:
+ *   - bootstrap.ts (frozen in asar) is the entry point. It never changes.
+ *   - app.ts (hot-loadable) contains all real app logic.
+ *   - bootstrap.ts checks for ~/.atrophy/bundle/out/main/app.js and
+ *     require()s it if the version is newer than the frozen one.
+ *   - Preload + renderer are also loaded from the hot bundle.
+ *   - Native modules (better-sqlite3 etc.) always resolve from the asar.
+ *
  * Release asset convention:
  *   - A GitHub Release tagged `bundle-vX.Y.Z` (or any tag)
- *   - Must contain `bundle.tar.gz` — a tarball of the `out/` directory
+ *   - Must contain `bundle.tar.gz` - a tarball of the `out/` directory
+ *     (excluding out/main/index.js which is the bootstrap)
  *   - Must contain `bundle-manifest.json` with { version, sha256, timestamp }
  *
- * Boot sequence (called from index.ts BEFORE app.whenReady):
- *   1. getHotBundlePaths() — returns overridden paths if a valid hot bundle exists
- *   2. If paths returned, index.ts uses them for preload + renderer loading
- *   3. For main process: app.relaunch() with ATROPHY_HOT_BUNDLE env, then exit
+ * Boot sequence (handled by bootstrap.ts):
+ *   1. bootstrap.ts reads bundle-manifest.json, compares version
+ *   2. If newer, sets ATROPHY_HOT_BOOT=1 and require()s hot app.js
+ *   3. app.ts calls getHotBundlePaths() for preload/renderer paths
+ *   4. If hot app.js throws, bootstrap falls back to frozen app.js
  *
  * Background check (called AFTER app is ready):
- *   1. checkForBundleUpdate() — queries GitHub for newer bundle
+ *   1. checkForBundleUpdate() - queries GitHub for newer bundle
  *   2. If found, downloads + extracts to ~/.atrophy/bundle/
  *   3. Next boot picks it up automatically
  */
@@ -72,7 +82,7 @@ function readLocalManifest(): BundleManifest | null {
 // ---------------------------------------------------------------------------
 
 export interface HotBundlePaths {
-  main: string;       // path to out/main/index.js
+  main: string;       // path to out/main/app.js (bootstrap stays frozen)
   preload: string;    // path to out/preload/index.js
   renderer: string;   // path to out/renderer/index.html
   version: string;    // hot bundle version string
@@ -95,7 +105,8 @@ export function getHotBundlePaths(): HotBundlePaths | null {
   if (!manifest) return null;
 
   // Validate the hot bundle directory has the expected structure
-  const mainPath = path.join(HOT_OUT_DIR, 'main', 'index.js');
+  // Main process code is in app.js (bootstrap.ts stays frozen in the asar)
+  const mainPath = path.join(HOT_OUT_DIR, 'main', 'app.js');
   const preloadPath = path.join(HOT_OUT_DIR, 'preload', 'index.js');
   const rendererPath = path.join(HOT_OUT_DIR, 'renderer', 'index.html');
 
@@ -226,8 +237,9 @@ export async function checkForBundleUpdate(
     await extractTarGz(tarPath, stagingOut);
 
     // Validate extracted bundle has expected structure
+    // Main process app code is app.js (bootstrap index.js stays frozen in asar)
     if (
-      !fs.existsSync(path.join(stagingOut, 'main', 'index.js')) ||
+      !fs.existsSync(path.join(stagingOut, 'main', 'app.js')) ||
       !fs.existsSync(path.join(stagingOut, 'preload', 'index.js')) ||
       !fs.existsSync(path.join(stagingOut, 'renderer', 'index.html'))
     ) {

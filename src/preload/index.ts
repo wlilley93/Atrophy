@@ -48,6 +48,7 @@ export interface AtrophyAPI {
   saveSecret: (key: string, value: string) => Promise<void>;
   setupSpeak: (text: string) => Promise<void>;
   startGoogleOAuth: (wantWorkspace: boolean, wantExtra: boolean) => Promise<string>;
+  healthCheck: () => Promise<{ ok: boolean; version?: string; bin?: string; hint?: string; error?: string; help?: string }>;
 
   // Window
   toggleFullscreen: () => Promise<void>;
@@ -162,6 +163,9 @@ export interface AtrophyAPI {
   setStatus: (status: 'active' | 'away', reason?: string) => Promise<void>;
   onStatusChanged: (cb: (status: string) => void) => () => void;
 
+  // Restart for update
+  restartForUpdate: () => Promise<void>;
+
   // Bundle updater (hot code reload)
   getBundleStatus: () => Promise<{
     activeVersion: string;
@@ -230,6 +234,7 @@ const api: AtrophyAPI = {
   saveSecret: (key, value) => ipcRenderer.invoke('setup:saveSecret', key, value),
   setupSpeak: (text) => ipcRenderer.invoke('setup:speak', text),
   startGoogleOAuth: (wantWorkspace, wantExtra) => ipcRenderer.invoke('setup:googleOAuth', wantWorkspace, wantExtra),
+  healthCheck: () => ipcRenderer.invoke('setup:healthCheck'),
 
   // Window
   toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
@@ -343,6 +348,9 @@ const api: AtrophyAPI = {
   getStatus: () => ipcRenderer.invoke('status:get'),
   setStatus: (status, reason) => ipcRenderer.invoke('status:set', status, reason),
   onStatusChanged: createListener('status:changed') as AtrophyAPI['onStatusChanged'],
+
+  // Restart for update
+  restartForUpdate: () => ipcRenderer.invoke('app:restartForUpdate'),
 
   // Bundle updater
   getBundleStatus: () => ipcRenderer.invoke('bundle:getStatus'),

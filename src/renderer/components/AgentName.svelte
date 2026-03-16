@@ -100,10 +100,13 @@
     border: none;
     color: var(--text-dim);
     cursor: pointer;
-    padding: 0;
+    padding: 4px 8px;
     line-height: 0;
     opacity: 0;
     transition: opacity 0.2s;
+    -webkit-app-region: no-drag;
+    position: relative;
+    z-index: 20;
   }
 
   .agent-name:hover .chevron {
@@ -112,6 +115,10 @@
 
   .chevron:hover {
     color: var(--text-secondary);
+  }
+
+  .chevron:active {
+    color: var(--text-primary);
   }
 
   .name-clip {

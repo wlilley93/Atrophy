@@ -9,7 +9,7 @@
 
   let { onClose }: Props = $props();
 
-  type Tab = 'settings' | 'usage' | 'activity' | 'jobs';
+  type Tab = 'settings' | 'usage' | 'activity' | 'jobs' | 'updates';
   let activeTab = $state<Tab>('settings');
 
   // ---------------------------------------------------------------------------
@@ -201,6 +201,69 @@
     } catch {
       jobLogContent = '(could not read log)';
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Updates tab state
+  // ---------------------------------------------------------------------------
+
+  let bundleVersion = $state<string | null>(null);
+  let hotBundleActive = $state(false);
+  let updateCheckStatus = $state<'idle' | 'checking' | 'downloading' | 'ready' | 'up-to-date' | 'error'>('idle');
+  let updateDownloadPercent = $state(0);
+  let updateReadyVersion = $state<string | null>(null);
+  let updateStatusText = $state('');
+
+  async function loadUpdatesTab() {
+    if (!api) return;
+    try {
+      const status = await api.getBundleStatus();
+      bundleVersion = status.hotBundleVersion;
+      hotBundleActive = status.hotBundleActive;
+      if (status.pending?.pendingRestart && status.pending.version) {
+        updateReadyVersion = status.pending.version;
+        updateCheckStatus = 'ready';
+        updateStatusText = `v${status.pending.version} downloaded - restart to apply`;
+      }
+    } catch { /* ignore */ }
+
+    // Listen for progress and ready events
+    api.onBundleProgress?.((percent: number) => {
+      updateDownloadPercent = percent;
+      updateCheckStatus = 'downloading';
+      updateStatusText = `Downloading... ${Math.round(percent)}%`;
+    });
+    api.onBundleReady?.((info: { version: string }) => {
+      updateReadyVersion = info.version;
+      updateCheckStatus = 'ready';
+      updateStatusText = `v${info.version} downloaded - restart to apply`;
+    });
+  }
+
+  async function checkForUpdates() {
+    if (!api) return;
+    updateCheckStatus = 'checking';
+    updateStatusText = 'Checking for updates...';
+    updateDownloadPercent = 0;
+    try {
+      const newVersion = await api.checkBundleUpdate();
+      if (newVersion) {
+        updateReadyVersion = newVersion;
+        updateCheckStatus = 'ready';
+        updateStatusText = `v${newVersion} downloaded - restart to apply`;
+      } else {
+        updateCheckStatus = 'up-to-date';
+        updateStatusText = 'Already up to date';
+      }
+    } catch {
+      updateCheckStatus = 'error';
+      updateStatusText = 'Update check failed';
+    }
+  }
+
+  async function restartToApply() {
+    if (!api) return;
+    await api.restartForUpdate();
   }
 
   // ---------------------------------------------------------------------------
@@ -493,6 +556,7 @@
     if (tab === 'usage') loadUsage(usagePeriod);
     if (tab === 'activity') loadActivity();
     if (tab === 'jobs') loadJobs();
+    if (tab === 'updates') loadUpdatesTab();
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -511,6 +575,7 @@
         <button class="tab" class:active={activeTab === 'usage'} onclick={() => switchTab('usage')}>Usage</button>
         <button class="tab" class:active={activeTab === 'activity'} onclick={() => switchTab('activity')}>Activity</button>
         <button class="tab" class:active={activeTab === 'jobs'} onclick={() => switchTab('jobs')}>Jobs</button>
+        <button class="tab" class:active={activeTab === 'updates'} onclick={() => switchTab('updates')}>Updates</button>
       </div>
       <button class="close-btn" onclick={onClose} aria-label="Close settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1165,6 +1230,59 @@
             </button>
           {/each}
         {/if}
+
+      {:else if activeTab === 'updates'}
+        <!-- Updates tab -->
+        <div class="section">
+          <div class="section-header">Version</div>
+          <div class="section-line"></div>
+
+          <div class="field-row">
+            <label class="field-label">App version</label>
+            <span class="field-info">{version}</span>
+          </div>
+          {#if hotBundleActive && bundleVersion}
+            <div class="field-row">
+              <label class="field-label">Bundle version</label>
+              <span class="field-info">{bundleVersion} (hot)</span>
+            </div>
+          {/if}
+        </div>
+
+        <div class="section">
+          <div class="section-header">Bundle Updates</div>
+          <div class="section-line"></div>
+
+          {#if updateCheckStatus === 'downloading'}
+            <div class="update-progress-row">
+              <div class="update-progress-bar">
+                <div class="update-progress-fill" style="width: {updateDownloadPercent}%"></div>
+              </div>
+              <span class="field-info">{Math.round(updateDownloadPercent)}%</span>
+            </div>
+          {/if}
+
+          {#if updateCheckStatus === 'ready' && updateReadyVersion}
+            <div class="field-row">
+              <span class="update-ready-text">v{updateReadyVersion} ready to install</span>
+              <button class="save-btn" onclick={restartToApply}>Restart to apply</button>
+            </div>
+          {:else}
+            <div class="field-row">
+              <button
+                class="save-btn"
+                disabled={updateCheckStatus === 'checking' || updateCheckStatus === 'downloading'}
+                onclick={checkForUpdates}
+              >
+                {updateCheckStatus === 'checking' ? 'Checking...' : 'Check for updates'}
+              </button>
+            </div>
+          {/if}
+
+          {#if updateStatusText}
+            <p class="section-hint">{updateStatusText}</p>
+          {/if}
+        </div>
 
       {:else if activeTab === 'jobs'}
         <!-- Jobs tab -->
@@ -1952,6 +2070,36 @@
     font-size: 13px;
     text-align: center;
     padding: 40px 0;
+  }
+
+  /* -- Updates tab -- */
+
+  .update-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .update-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .update-progress-fill {
+    height: 100%;
+    background: rgba(100, 140, 255, 0.6);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+
+  .update-ready-text {
+    color: rgba(100, 140, 255, 0.9);
+    font-size: 13px;
+    font-family: var(--font-sans);
   }
 
   /* -- Jobs tab -- */
