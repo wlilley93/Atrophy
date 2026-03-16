@@ -148,7 +148,7 @@ The build configuration lives at `electron-builder.yml` in the project root. Thi
 ```yaml
 appId: com.atrophiedmind.app
 productName: Atrophy
-copyright: Copyright (c) 2024-2026 Will Lilley
+copyright: Copyright (c) 2024-2026 Atrophy
 
 directories:
   output: dist                    # Where DMG/ZIP/unpacked .app goes

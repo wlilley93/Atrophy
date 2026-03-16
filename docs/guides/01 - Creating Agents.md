@@ -157,7 +157,7 @@ This is the technical configuration file. All fields:
   "display": {
     "window_width": 622,
     "window_height": 830,
-    "title": "THE ATROPHIED MIND"
+    "title": "ATROPHY"
   },
 
   "heartbeat": {

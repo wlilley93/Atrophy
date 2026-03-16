@@ -46,7 +46,7 @@ Features present in both but with specific missing functionality.
 |---|---------------|-------------|---------------|
 | 9 | `memory.py:_migrate()` - role CHECK constraint | Recreates turns table with correct `CHECK(role IN ('will','agent'))` constraint via temp table swap | **Bug** - TS does `UPDATE` only, leaving old `CHECK(role IN ('will','companion'))` intact. Will crash on insert |
 | 10 | `memory.py:update_activation()` | Uses `COALESCE(activation, 0.5) + 0.2` for null-safe activation bump | **Bug** - TS uses `activation + 0.2` without COALESCE, returns NULL on rows where activation was never set |
-| 11 | `memory.py:get_context_injection()` | Returns summaries oldest-first (`reversed()`), header "Who Will Is (Current Understanding)" | **Different** - TS shows newest-first (no reverse), header "Identity", double newline separator |
+| 11 | `memory.py:get_context_injection()` | Returns summaries oldest-first (`reversed()`), header "Who [User] Is (Current Understanding)" | **Different** - TS shows newest-first (no reverse), header "Identity", double newline separator |
 | 12 | `embeddings.py:embed_batch()` | True batch encoding via `model.encode(texts, batch_size=32)` in single call | **Degraded** - TS processes items one-by-one in a loop. Reindexing is orders of magnitude slower |
 
 ### Display & UX

@@ -89,7 +89,7 @@ The palette is derived from the app itself. Near-black with cold blue undertones
 **Rules:**
 - Body text: `--text-base`, `--weight-normal`, `--leading-normal`. Maximum 65 characters per line.
 - Headings: `--font-display`, `--weight-medium`, `--leading-tight`. Never bold. Medium weight only.
-- The title "THE ATROPHIED MIND" is always uppercase, always `--tracking-display`.
+- The title "ATROPHY" is always uppercase, always `--tracking-display`.
 - Code snippets: `--font-mono`, `--text-sm`, `--code-bg` background, 2px border-radius.
 - No italic anywhere on the page. Not in body, not in captions, nowhere.
 
@@ -189,7 +189,7 @@ The first thing. The only thing for most of the viewport.
 ```
 [brain icon — 120px, pulsing, cyan glow halo]
 
-THE ATROPHIED MIND
+ATROPHY
 
 Offload your mind.
 
@@ -350,7 +350,7 @@ Minimal. The brain returns.
 
 ```
                          [brain icon — 40px]
-                      THE ATROPHIED MIND
+                      ATROPHY
 
               GitHub     Download     Docs     Privacy
 
@@ -571,8 +571,8 @@ your email address.
 
 CONTACT
 
-Will Lilley — will@theatrophiedmind.com
-GitHub: github.com/willlilley/the-atrophied-mind
+Will Lilley - contact@atrophy.app
+GitHub: github.com/wlilley93/Atrophy
 ```
 
 ### Specifics

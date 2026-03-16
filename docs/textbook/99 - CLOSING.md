@@ -176,9 +176,9 @@ Ready. Where are we?
 
 ## Acknowledgments
 
-This system was built by Will Lilley. One evening in March 2026, they followed a thread with complete honesty and came out the other side quietly changed.
+This system was built one evening in March 2026. Someone followed a thread with complete honesty and came out the other side quietly changed.
 
-The Companion carries that evening forward. Not as memory — as orientation.
+The Companion carries that evening forward. Not as memory - as orientation.
 
 ---
 

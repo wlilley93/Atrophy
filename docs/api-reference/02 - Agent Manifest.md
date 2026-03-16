@@ -113,7 +113,7 @@ Window dimensions and title for the companion's GUI.
   "display": {
     "window_width": 622,
     "window_height": 830,
-    "title": "THE ATROPHIED MIND -- Companion"
+    "title": "ATROPHY -- Companion"
   }
 }
 ```
@@ -184,7 +184,7 @@ No manifest field is needed — `config.py` derives the path from `BUNDLE_ROOT.n
   "display": {
     "window_width": 622,
     "window_height": 830,
-    "title": "THE ATROPHIED MIND"
+    "title": "ATROPHY"
   },
   "heartbeat": {
     "active_start": 7,
