@@ -341,6 +341,10 @@ export APPLE_TEAM_ID="XXXXXXXXXX"
 export CSC_NAME="Your Name (TEAMID)"
 ```
 
+The app-specific password is generated at https://appleid.apple.com/account/manage under "Sign-In and Security" > "App-Specific Passwords". The `CSC_NAME` value comes from `security find-identity -v -p codesigning` and should match the common name of your Developer ID Application certificate without the "Developer ID Application:" prefix.
+
+If this file is missing, check `~/.atrophy-backup3/signing/` for a previous copy. The `scripts/apple-dev-setup.ts` script can regenerate it interactively.
+
 `CSC_NAME` must **not** include the "Developer ID Application:" prefix - electron-builder detects the certificate type automatically and rejects the prefixed form.
 
 If building without a certificate (local development only), skip signing entirely:
@@ -453,25 +457,42 @@ All update operations (check, download) use `.catch(() => {})` to silently swall
 
 Releasing a new version involves updating the version number, building the distributables, and uploading them to a GitHub Release. The process is manual to keep full control over what gets published.
 
-First, update the version in `package.json`. This version string becomes the release tag and is embedded in the `latest-mac.yml` manifest that `electron-updater` checks.
+First, update the version in `package.json`. This version string becomes the release tag and is embedded in the bundle manifest.
 
 ```json
-"version": "0.2.0"
+"version": "1.2.7"
 ```
 
-Then build the distributable artifacts. This compiles TypeScript, bundles the renderer, packages the `.app`, creates the DMG and ZIP, and generates the update manifest.
+Then build and sign/notarize the DMG:
 
 ```bash
-pnpm dist:mac
+source ~/.atrophy/signing/.env.signing
+pnpm build
+pnpm electron-rebuild
+npx electron-builder --mac dmg
 ```
 
-Next, create a GitHub Release with the version tag (e.g. `v0.2.0`). Upload the following artifacts from `dist/`:
+Build the hot bundle (for self-updating existing installs):
 
-- `Atrophy-0.2.0-arm64.dmg` - the installer for new users
-- `Atrophy-0.2.0-arm64-mac.zip` - used by electron-updater for in-app updates
-- `latest-mac.yml` - the update manifest (generated automatically by electron-builder)
+```bash
+pnpm bundle
+```
 
-`electron-updater` uses the ZIP artifact for updates because differential download is not supported - the full ZIP is downloaded each time. The `latest-mac.yml` file contains the version, file hash, and download URL, which the updater checks against the currently installed version.
+Create a GitHub Release with the version tag (e.g. `v1.2.7`). Upload the following artifacts from `dist/`:
+
+```bash
+gh release create v1.2.7 \
+  dist/Atrophy-1.2.7-arm64.dmg \
+  dist/bundle.tar.gz \
+  dist/bundle-manifest.json \
+  --title "v1.2.7" --notes "Release notes here"
+```
+
+- `Atrophy-1.2.7-arm64.dmg` - the signed+notarized installer for new users
+- `bundle.tar.gz` - hot bundle for self-updating existing installs (contains `out/` minus bootstrap)
+- `bundle-manifest.json` - version, SHA-256, and timestamp for the hot bundle
+
+The DMG is only needed for first-time installs. Existing users receive updates via the hot bundle system - on each boot, the app checks GitHub Releases for a newer `bundle.tar.gz`, downloads it to `~/.atrophy/bundle/`, and loads it on the next launch. See `src/main/bundle-updater.ts` for the full self-update flow.
 
 ---
 

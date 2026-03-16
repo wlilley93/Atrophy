@@ -11,6 +11,11 @@ All notable changes to Atrophy.
 - **Boot decay animation** - returning users now see a brain decay animation (frames 0->9) on every normal boot, mirroring the reverse 9->0 restore animation on shutdown. The opening line is fetched in parallel so there is no extra wait after the animation completes.
 - Tray quit bypasses shutdown animation and exits immediately
 
+### Distribution
+
+- DMG is now signed and notarized with Apple - no more "cannot verify" Gatekeeper warnings
+- Signing credentials restored from backup (`~/.atrophy-backup3/signing/` -> `~/.atrophy/signing/`)
+
 ---
 
 ## 1.2.6 - 2026-03-16
