@@ -169,7 +169,7 @@
 
   let bootRan = false;
 
-  /** Run update check - resolves when check is done (up-to-date, error, or downloaded) */
+  /** Run update check - checks for hot bundle updates, downloads if available */
   async function runUpdateCheck(): Promise<void> {
     if (!api) return;
 
@@ -184,57 +184,38 @@
       }
     }, 400);
 
-    return new Promise<void>((resolve) => {
-      let resolved = false;
-      const done = () => {
-        if (!resolved) {
-          resolved = true;
-          if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
-          resolve();
-        }
-      };
+    updateStatus = 'checking';
 
-      // Timeout - don't block boot forever (4 seconds max)
-      const timeout = setTimeout(done, 4000);
-
-      api.onUpdateAvailable?.((info: { version: string }) => {
-        updateStatus = 'available';
-        updateVersion = info.version;
-        api.downloadUpdate?.();
-        updateStatus = 'downloading';
-      });
-
-      api.onUpdateNotAvailable?.(() => {
-        updateStatus = 'up-to-date';
-        clearTimeout(timeout);
-        done();
-      });
-
-      api.onUpdateProgress?.((progress: { percent: number }) => {
-        updateStatus = 'downloading';
-        updatePercent = progress.percent;
-      });
-
-      api.onUpdateDownloaded?.((info: { version: string }) => {
-        updateStatus = 'downloaded';
-        updateVersion = info.version;
-        clearTimeout(timeout);
-        // Auto quit-and-install after brief pause
-        setTimeout(() => {
-          api.quitAndInstall?.();
-        }, 1500);
-        // Don't resolve - app is restarting
-      });
-
-      api.onUpdateError?.(() => {
-        updateStatus = 'error';
-        clearTimeout(timeout);
-        done();
-      });
-
-      updateStatus = 'checking';
-      api.checkForUpdates?.();
+    // Listen for download progress
+    const progressCleanup = api.onBundleProgress?.((percent: number) => {
+      updateStatus = 'downloading';
+      updatePercent = percent;
     });
+
+    try {
+      // Check and download hot bundle update (blocks until done or no update)
+      const newVersion = await api.checkBundleUpdate();
+
+      if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
+      progressCleanup?.();
+
+      if (newVersion) {
+        updateStatus = 'downloaded';
+        updateVersion = newVersion;
+        // Restart to load the new bundle
+        setTimeout(() => {
+          api.restartForUpdate?.();
+        }, 500);
+        // Don't continue boot - app is restarting
+        return;
+      }
+
+      updateStatus = 'up-to-date';
+    } catch {
+      updateStatus = 'error';
+      if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
+      progressCleanup?.();
+    }
   }
 
   async function runBootSequence() {
@@ -259,7 +240,9 @@
     });
 
     // ── Update check phase (blocks before splash) ──
+    // If an update is found, the app restarts automatically - boot stops here.
     await runUpdateCheck();
+    if (updateStatus === 'downloaded') return; // Restarting for update
     updateCheckVisible = false;
 
     // Load config and agent list

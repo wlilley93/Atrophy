@@ -414,12 +414,8 @@ function createTray(): void {
 
     tray.on('click', () => {
       if (mainWindow) {
-        if (mainWindow.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-          mainWindow.focus();
-        }
+        mainWindow.show();
+        mainWindow.focus();
       }
     });
 
@@ -2075,16 +2071,9 @@ app.whenReady().then(() => {
   if (_hotBundle) {
     log.info(`running on hot bundle v${_hotBundle.version}`);
   }
-  checkForBundleUpdate((percent) => {
-    mainWindow?.webContents.send('bundle:downloadProgress', percent);
-  }).then((newVersion) => {
-    if (newVersion) {
-      log.info(`bundle v${newVersion} downloaded, will activate on next boot`);
-      pendingBundleVersion = newVersion;
-      mainWindow?.webContents.send('bundle:ready', { version: newVersion });
-      rebuildTrayMenu();
-    }
-  }).catch(() => { /* non-critical */ });
+  // Bundle update check is now driven by the renderer during the boot update
+  // check phase (via bundle:checkNow IPC). If an update is found, the renderer
+  // triggers a restart automatically. No background check needed here.
 
   // Download avatar assets and ambient video on first launch (non-blocking)
   Promise.all([
