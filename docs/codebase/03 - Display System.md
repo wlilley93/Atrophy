@@ -324,13 +324,13 @@ Window.svelte declares a large number of reactive state variables because it orc
 
 The boot sequence runs once in `onMount` and transitions the app from a black screen to the ready state. It is guarded by a `bootRan` flag to prevent duplicate execution (important because Svelte's strict mode can double-invoke effects in development). The sequence proceeds through these steps:
 
-1. Load config and agent list from the main process via IPC (`getConfig()`, `getAgents()`) in a parallel `Promise.all` call, populating the `agents` store with the results.
-2. Apply config-driven defaults from the loaded config: if `eyeModeDefault` is true, enable eye mode; if `muteByDefault` is true, mute TTS; if `silenceTimerEnabled` is false, disable the silence timer; if `silenceTimerMinutes` is set, use it as the silence timeout duration.
-3. Check `needsSetup()` - if true, fade out the boot overlay and show the SetupWizard instead of continuing to the normal ready state.
-4. If no setup is needed, fetch the opening line via `getOpeningLine()` IPC and add it to the transcript as a completed agent message.
-5. Clear the boot label, set `bootOpacity = 0` to trigger the CSS fade-out transition, then wait 1.5 seconds for the animation to complete before setting `bootPhase = 'ready'` to remove the overlay from the DOM.
+1. Run the update check phase - displays a brain frame cycling animation while checking for updates via `electron-updater` and the hot bundle system. The update check overlay is a `position: fixed` black div at `z-index: 10000` with the cycling brain icon and status text.
+2. Load config and agent list from the main process via IPC (`getConfig()`, `getAgents()`) in a parallel `Promise.all` call, populating the `agents` store with the results.
+3. Apply config-driven defaults from the loaded config: if `eyeModeDefault` is true, enable eye mode; if `muteByDefault` is true, mute TTS; if `silenceTimerEnabled` is false, disable the silence timer; if `silenceTimerMinutes` is set, use it as the silence timeout duration.
+4. Check `needsSetup()` - if true, show the SplashScreen (cinematic intro with voiceover) followed by the SetupWizard.
+5. If no setup is needed, play the **boot decay animation** - brain frames step from 0 (healthy) to 9 (decayed) at 200ms per frame, then hold 300ms and fade out over 500ms. The opening line is fetched via `getOpeningLine()` IPC in parallel with the animation so there is no extra wait. After the animation completes, the opening line is added to the transcript.
 
-The boot overlay is a `position: fixed` black div at `z-index: 9999` that transitions from opacity 1 to 0 over 1.5 seconds via CSS. During loading, it displays a subtle "connecting..." label (13px font, 2px letter-spacing, lowercase, `var(--text-dim)` colour) centered in the window.
+The boot decay overlay is a `position: fixed` black div at `z-index: 10000` with a centered brain image. It mirrors the shutdown screen's reverse animation (9->0), creating a symmetrical open/close experience.
 
 #### Opening Line
 
@@ -344,7 +344,8 @@ The display system uses a carefully ordered z-index stack to ensure overlays ren
 
 | z-index | Layer | CSS Class |
 |---------|-------|-----------|
-| 9999 | Boot overlay | `.boot-overlay` |
+| 10000 | Update check / Boot decay / Splash / Shutdown | `.update-check-overlay`, `.boot-decay-overlay`, `.splash`, `.shutdown` |
+| 9999 | Boot overlay (legacy) | `.boot-overlay` |
 | 80 | Agent deferral iris wipe | `.deferral-overlay` |
 | 75 | Agent switch clip-path animation | `.agent-switch-overlay` |
 | 70 | SetupWizard | `.wizard-overlay` |
@@ -1728,9 +1729,15 @@ The minimize and close behavior varies between the two application modes, reflec
 
 ## Shutdown Screen
 
-**Not yet implemented.** The Python version has a shutdown screen that mirrors the boot screen but plays the brain animation in reverse (rotating from the final "cybernetic" frame back to the initial "organic" frame) with a faster pulse (3.0 Hz vs 2.0 Hz during boot) and a smaller brain icon (90px vs 110px). The shutdown screen provides a graceful visual closing that bookends the boot animation.
+`ShutdownScreen.svelte` plays a reverse brain decay animation (frames 9->0) at 200ms per frame when the app is closing. The component receives an `onComplete` callback which triggers `app.quit()` via IPC.
 
-The Electron app currently closes immediately without a shutdown animation. The `AppPhase` type in the session store includes a `'shutdown'` value, but no component currently checks for it or renders shutdown-specific UI. Implementing the shutdown screen would involve reversing the brain frame sequence, playing the animation, and calling `app.quit()` after it completes.
+The animation sequence: fade in over 300ms, step from frame 9 (decayed) to frame 0 (healthy), hold 400ms on the healthy frame, then call `onComplete`. A progress bar tracks the animation (0% at frame 9, 100% at frame 0). The status text reads "Restoring your sanity...".
+
+The main process hooks into the window `close` event: it prevents the default close, sends `app:shutdownRequested` to the renderer, and sets a 5-second safety timeout. If the renderer doesn't respond (e.g. it crashed), the safety timeout force-quits the app. When the shutdown animation completes, the renderer calls `app:shutdown` via IPC, which sets `allowClose = true` and calls `app.quit()`.
+
+The tray Quit menu item bypasses the shutdown animation entirely - it destroys the window and calls `app.quit()` immediately for responsiveness.
+
+Together with the boot decay animation (0->9 on startup), these form a symmetrical pair: the brain decays as the app wakes, and restores as it sleeps.
 
 ## Preload API (src/preload/index.ts)
 

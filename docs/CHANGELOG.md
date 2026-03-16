@@ -4,6 +4,15 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.2.7 - 2026-03-16
+
+### UI
+
+- **Boot decay animation** - returning users now see a brain decay animation (frames 0->9) on every normal boot, mirroring the reverse 9->0 restore animation on shutdown. The opening line is fetched in parallel so there is no extra wait after the animation completes.
+- Tray quit bypasses shutdown animation and exits immediately
+
+---
+
 ## 1.2.6 - 2026-03-16
 
 Documentation overhaul. All guides rewritten for users. Developer docs separated from public site.
