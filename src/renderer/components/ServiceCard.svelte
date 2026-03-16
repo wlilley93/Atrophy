@@ -78,6 +78,8 @@
   let falVerified = $state<boolean | null>(null);
   let telegramVerifying = $state(false);
   let telegramVerified = $state<boolean | null>(null);
+  let telegramDiscovering = $state(false);
+  let telegramChatDiscovered = $state(false);
 
   // Google OAuth
   let googleWorkspace = $state(true);
@@ -238,7 +240,19 @@
       await api?.saveSecret('FAL_KEY', falKey.trim());
       onSaved('FAL_KEY');
     } else if (s.key === 'TELEGRAM' && telegramToken.trim()) {
+      // Save token first
       await api?.saveSecret('TELEGRAM_BOT_TOKEN', telegramToken.trim());
+      // Discover chat ID if not already done
+      if (!telegramChatDiscovered) {
+        telegramDiscovering = true;
+        try {
+          const result = await api?.discoverTelegramChatId?.(telegramToken.trim());
+          if (result?.chatId) {
+            telegramChatDiscovered = true;
+          }
+        } catch { /* non-critical */ }
+        telegramDiscovering = false;
+      }
       // Start the polling daemon now that credentials are saved
       api?.startTelegramDaemon?.().catch(() => { /* non-critical */ });
       onSaved('TELEGRAM_BOT_TOKEN');
@@ -396,15 +410,24 @@
         </label>
         {#if telegramVerified === true}
           <span class="verify-status verified">Bot verified</span>
+          {#if !telegramChatDiscovered && !telegramDiscovering}
+            <p class="svc-hint">Send any message to your bot in Telegram, then press Save. This links your chat.</p>
+          {/if}
+          {#if telegramDiscovering}
+            <span class="verify-status">Waiting for your message to the bot...</span>
+          {/if}
+          {#if telegramChatDiscovered}
+            <span class="verify-status verified">Chat linked</span>
+          {/if}
         {:else if telegramVerified === false}
           <span class="verify-status failed">Invalid token</span>
         {/if}
         <div class="service-card-actions">
-          <button class="svc-btn verify-btn" disabled={!telegramToken.trim() || telegramVerifying} onclick={verifyTelegram}>
+          <button class="svc-btn verify-btn" disabled={!telegramToken.trim() || telegramVerifying || telegramDiscovering} onclick={verifyTelegram}>
             {telegramVerifying ? 'Checking...' : 'Verify'}
           </button>
-          <button class="svc-btn" onclick={telegramToken.trim() ? saveCurrentService : skipCurrentService}>
-            {telegramToken.trim() ? 'Save' : 'Skip'}
+          <button class="svc-btn" disabled={telegramDiscovering} onclick={telegramToken.trim() ? saveCurrentService : skipCurrentService}>
+            {telegramDiscovering ? 'Linking...' : telegramToken.trim() ? 'Save' : 'Skip'}
           </button>
         </div>
 
@@ -680,6 +703,13 @@
   .verify-status.failed {
     color: rgba(255, 120, 100, 0.9);
     background: rgba(200, 60, 40, 0.15);
+  }
+
+  .svc-hint {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.45);
+    margin: 4px 0;
+    line-height: 1.4;
   }
 
   /* ---- Fields ---- */
