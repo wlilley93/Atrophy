@@ -494,17 +494,24 @@
             setupCreatedAgentName = agentConfig.display_name;
             setupWizardPhase = 'creating';
 
-            const manifest = await api.createAgent(agentConfig);
-            if (manifest && manifest.name) {
-              await api.switchAgent(manifest.name as string);
-              agents.current = (manifest as Record<string, string>).name;
-              agents.displayName = agentConfig.display_name;
-            }
+            try {
+              const manifest = await api.createAgent(agentConfig);
+              if (manifest && manifest.name) {
+                await api.switchAgent(manifest.name as string);
+                agents.current = (manifest as Record<string, string>).name;
+                agents.displayName = agentConfig.display_name;
+              }
 
-            // Brief pause on creating screen, then done
-            setTimeout(() => {
-              setupWizardPhase = 'done';
-            }, 2500);
+              // Brief pause on creating screen, then done
+              setTimeout(() => {
+                setupWizardPhase = 'done';
+              }, 2500);
+            } catch (createErr) {
+              // Agent creation or switch failed - recover from creating overlay
+              setupWizardPhase = 'hidden';
+              addMessage('system', `Failed to create agent: ${createErr instanceof Error ? createErr.message : 'Unknown error'}. Try again.`);
+              completeLast();
+            }
           }
         } catch {
           // JSON parse failed - continue conversation

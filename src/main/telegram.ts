@@ -209,6 +209,7 @@ export async function pollCallback(
   const target = chatId || config.TELEGRAM_CHAT_ID;
   const deadline = Date.now() + timeoutSecs * 1000;
 
+  let retryDelay = 2000;
   while (Date.now() < deadline) {
     const remaining = Math.max(1, Math.floor((deadline - Date.now()) / 1000));
     const pollTime = Math.min(remaining, 30);
@@ -220,9 +221,11 @@ export async function pollCallback(
     }, (pollTime + 10) * 1000) as { update_id: number; callback_query?: { id: string; from?: { id: number }; data?: string } }[] | null;
 
     if (!result) {
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, retryDelay));
+      retryDelay = Math.min(retryDelay * 1.5, 30_000); // backoff up to 30s
       continue;
     }
+    retryDelay = 2000; // reset on success
 
     for (const update of result) {
       _lastUpdateId = Math.max(_lastUpdateId, update.update_id);
@@ -246,6 +249,7 @@ export async function pollReply(
   const target = chatId || config.TELEGRAM_CHAT_ID;
   const deadline = Date.now() + timeoutSecs * 1000;
 
+  let retryDelay = 2000;
   while (Date.now() < deadline) {
     const remaining = Math.max(1, Math.floor((deadline - Date.now()) / 1000));
     const pollTime = Math.min(remaining, 30);
@@ -257,9 +261,11 @@ export async function pollReply(
     }, (pollTime + 10) * 1000) as { update_id: number; message?: { from?: { id: number }; text?: string } }[] | null;
 
     if (!result) {
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, retryDelay));
+      retryDelay = Math.min(retryDelay * 1.5, 30_000);
       continue;
     }
+    retryDelay = 2000;
 
     for (const update of result) {
       _lastUpdateId = Math.max(_lastUpdateId, update.update_id);

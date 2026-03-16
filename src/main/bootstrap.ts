@@ -105,7 +105,17 @@ async function boot(): Promise<void> {
   }
 
   // Frozen fallback
-  await import(pathToFileURL(FROZEN_APP).href);
+  try {
+    await import(pathToFileURL(FROZEN_APP).href);
+  } catch (fatalErr) {
+    console.error('[bootstrap] FATAL: frozen app.js failed to load:', fatalErr);
+    const { dialog } = await import('electron');
+    dialog.showErrorBox(
+      'Atrophy failed to start',
+      `The app could not load. Try reinstalling.\n\n${fatalErr instanceof Error ? fatalErr.message : String(fatalErr)}`,
+    );
+    app.exit(1);
+  }
 }
 
 boot();

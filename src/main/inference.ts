@@ -710,14 +710,22 @@ export function streamInference(
   });
 
   // Handle process exit
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     clearInterval(timeoutTimer);
     if (_activeProcess === proc) _activeProcess = null;
     _allProcesses.delete(proc);
     const elapsed = (Date.now() - t0) / 1000;
 
-    // Check for failure
-    if (code && code !== 0) {
+    // Killed by signal (SIGTERM, SIGKILL, etc.) - always an error
+    if (signal) {
+      const errMsg = stderrChunks.trim().slice(0, 300) || `claude killed by ${signal}`;
+      log.error(`killed by ${signal} after ${elapsed.toFixed(1)}s`);
+      emitter.emit('event', { type: 'StreamError', message: errMsg } as StreamErrorEvent);
+      return;
+    }
+
+    // Check for non-zero exit code
+    if (code !== null && code !== 0) {
       const errMsg = stderrChunks.trim().slice(0, 300) || `claude exited with code ${code}`;
       log.error(`error (exit ${code}): ${errMsg.slice(0, 120)}`);
       emitter.emit('event', { type: 'StreamError', message: errMsg } as StreamErrorEvent);
