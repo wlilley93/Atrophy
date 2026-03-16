@@ -685,20 +685,24 @@ function registerIpcHandlers(): void {
   // ── Opening line ──
 
   ipcMain.handle('opening:get', async () => {
-    const config = getConfig();
-
     // 1. Try cached opening (instant if available and time bracket matches)
     const cached = loadCachedOpening();
     if (cached) {
       log.info('[opening] Using cached opening');
       // Pre-generate next opening in background
+      if (!systemPrompt) systemPrompt = loadSystemPrompt();
       if (systemPrompt) {
         cacheNextOpening(systemPrompt, currentSession?.cliSessionId ?? undefined);
       }
       return cached.text;
     }
 
-    // 2. Generate dynamically if system prompt is loaded
+    // 2. Ensure system prompt is loaded so we can generate dynamically
+    if (!systemPrompt) {
+      systemPrompt = loadSystemPrompt();
+    }
+
+    // 3. Generate dynamically
     if (systemPrompt) {
       try {
         const result = await generateOpening(
@@ -713,7 +717,7 @@ function registerIpcHandlers(): void {
       }
     }
 
-    // 3. Fall back to static config line
+    // 4. Fall back to static config line
     return getConfig().OPENING_LINE || 'Ready. Where are we?';
   });
 
