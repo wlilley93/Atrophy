@@ -1121,19 +1121,15 @@
             draggable="false"
           />
         {/if}
-        {#if updateStatus === 'checking'}
-          <span class="update-label">Checking for updates...</span>
-        {:else if updateStatus === 'downloading'}
+        {#if updateStatus === 'downloading'}
           <div class="update-progress-bar">
             <div class="update-progress-fill" style="width: {updatePercent}%"></div>
           </div>
-          <span class="update-label">Downloading {updateVersion}... {Math.round(updatePercent)}%</span>
+          <span class="update-label">Updating... {Math.round(updatePercent)}%</span>
         {:else if updateStatus === 'downloaded'}
-          <span class="update-label">Installing update...</span>
-        {:else if updateStatus === 'up-to-date'}
-          <span class="update-label">Up to date</span>
-        {:else if updateStatus === 'error'}
-          <span class="update-label"></span>
+          <span class="update-label">Restarting...</span>
+        {:else}
+          <span class="update-label">Checking for updates</span>
         {/if}
       </div>
     </div>
