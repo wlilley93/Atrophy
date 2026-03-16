@@ -58,6 +58,12 @@
   let updateVersion = $state('');
   let updatePercent = $state(0);
 
+  // Boot decay animation (normal boot, not first launch)
+  let bootDecayVisible = $state(false);
+  let bootDecayFrame = $state(0);
+  let bootDecayOpacity = $state(1);
+  let bootDecayTimer: ReturnType<typeof setInterval> | null = null;
+
   // Splash screen
   let splashVisible = $state(false);
   let avatarDownloading = $state(false);
@@ -288,16 +294,43 @@
       splashVisible = true;
       setupWizardPhase = 'welcome';
     } else {
-      // Normal boot - skip splash, go straight to chat
-      splashVisible = false;
+      // Normal boot - play brain decay animation while fetching opening line
+      await ensureBrainFrames();
+      bootDecayVisible = true;
+      bootDecayFrame = 0;
+      bootDecayOpacity = 1;
+
+      const decayDone = new Promise<void>((resolve) => {
+        bootDecayTimer = setInterval(() => {
+          if (bootDecayFrame < brainFramePaths.length - 1) {
+            bootDecayFrame++;
+          } else {
+            if (bootDecayTimer) { clearInterval(bootDecayTimer); bootDecayTimer = null; }
+            // Hold on final frame briefly, then fade out
+            setTimeout(() => {
+              bootDecayOpacity = 0;
+              setTimeout(() => {
+                bootDecayVisible = false;
+                resolve();
+              }, 500);
+            }, 300);
+          }
+        }, 200);
+      });
+
+      // Fetch opening line in parallel with the animation
+      let opening: string | null = null;
       try {
-        const opening = await api.getOpeningLine();
-        if (opening) {
-          addMessage('agent', opening);
-          completeLast();
-        }
+        opening = await api.getOpeningLine();
       } catch {
         // use default
+      }
+
+      await decayDone;
+
+      if (opening) {
+        addMessage('agent', opening);
+        completeLast();
       }
     }
     // Splash dismisses itself via onComplete when decay finishes + download done
@@ -807,6 +840,7 @@
   });
 
   onDestroy(() => {
+    if (bootDecayTimer) clearInterval(bootDecayTimer);
     if (silenceTimerId) clearTimeout(silenceTimerId);
     if (agentSwitchCleanup) agentSwitchCleanup();
     ipcCleanups.forEach((fn) => fn());
@@ -1080,7 +1114,7 @@
 <div class="window">
   <!-- Background orb / avatar layer -->
   {#if avatarVisible}
-    <OrbAvatar pip={showArtefact} ambientMode={updateCheckVisible || splashVisible || setupActive} />
+    <OrbAvatar pip={showArtefact} ambientMode={updateCheckVisible || bootDecayVisible || splashVisible || setupActive} />
   {/if}
 
   <!-- Warm vignette overlay (shows during audio playback) -->
@@ -1114,6 +1148,22 @@
           <span class="update-label">Up to date</span>
         {:else if updateStatus === 'error'}
           <span class="update-label"></span>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Boot decay animation (normal boot) -->
+  {#if bootDecayVisible}
+    <div class="boot-decay-overlay" style="opacity: {bootDecayOpacity}">
+      <div class="boot-decay-content">
+        {#if brainFramePaths[bootDecayFrame]}
+          <img
+            class="update-brain"
+            src={brainFramePaths[bootDecayFrame]}
+            alt=""
+            draggable="false"
+          />
         {/if}
       </div>
     </div>
@@ -1864,6 +1914,24 @@
 
   .journal-nudge:hover .journal-nudge-text {
     opacity: 0.9;
+  }
+
+  /* ── Boot decay overlay (normal boot) ── */
+  .boot-decay-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.5s ease;
+  }
+
+  .boot-decay-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   }
 
   /* ── Update check overlay ── */
