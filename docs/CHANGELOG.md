@@ -4,9 +4,9 @@ All notable changes to Atrophy.
 
 ---
 
-## 1.2.4 - 2026-03-16
+## 1.2.5 - 2026-03-16
 
-Performance release. Moves synchronous DB queries off the main thread hot path during inference.
+Performance release. Moves synchronous DB queries off the main thread hot path during inference. Release script now auto-bumps version.
 
 ### Performance
 
@@ -15,6 +15,46 @@ Performance release. Moves synchronous DB queries off the main thread hot path d
 - **Adaptive effort** reuses cached recent turns instead of issuing a redundant DB query
 - **Prefetch triggers** - context is prefetched on app startup, after each StreamDone event, and after agent switch
 - Added `idx_summaries_session_id` database index for faster cross-agent summary lookups
+
+### Infrastructure
+
+- Release script (`pnpm release`) now auto-bumps patch/minor/major version before building
+
+---
+
+## 1.2.4 - 2026-03-16
+
+Fix tray quit, cache agent list, increase V8 heap.
+
+### Fixes
+
+- Tray "Quit" now calls `app.quit()` correctly instead of silently failing
+- Agent list cached after first discovery to avoid repeated filesystem scans
+- V8 heap limit increased to 4096MB to prevent OOM on large context windows
+
+---
+
+## 1.2.3 - 2026-03-16
+
+Performance release. Lazy brain frames, faster reveal, memoized markdown, reduced polling.
+
+### Performance
+
+- Brain frame PNGs for thinking indicator loaded lazily instead of at startup
+- Faster window reveal on launch
+- Memoized markdown rendering to avoid re-parsing unchanged content
+- Reduced polling intervals for background timers
+
+---
+
+## 1.2.2 - 2026-03-16
+
+Infrastructure release. Added release script and changelog.
+
+### Infrastructure
+
+- Added `pnpm release` script for building and publishing hot bundles to GitHub Releases
+- Added changelog at `docs/CHANGELOG.md`
 
 ---
 
