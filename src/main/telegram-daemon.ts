@@ -16,8 +16,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
-import { sendMessage, _post, setLastUpdateId, setBotTokenOverride, setChatIdOverride } from './telegram';
-import { routeMessage, RoutingDecision } from './router';
+import { sendMessage, _post, setLastUpdateId } from './telegram';
+import { routeMessage } from './router';
 import { discoverAgents, getAgentState, setAgentState } from './agent-manager';
 import { streamInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
@@ -418,67 +418,12 @@ async function handleMuteCommand(text: string): Promise<void> {
 
 let _lastUpdateId = 0;
 
-// Resolve Telegram credentials - checks current agent first, then scans others.
-// This ensures the daemon can poll even if the current agent has no Telegram config.
-let _cachedBotToken: string | null = null;
-let _cachedChatId: string | null = null;
-
-function resolveTelegramCredentials(): { botToken: string; chatId: string } | null {
-  const config = getConfig();
-
-  // Fast path: current agent has credentials
-  if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID) {
-    _cachedBotToken = config.TELEGRAM_BOT_TOKEN;
-    _cachedChatId = config.TELEGRAM_CHAT_ID;
-    return { botToken: config.TELEGRAM_BOT_TOKEN, chatId: config.TELEGRAM_CHAT_ID };
-  }
-
-  // Return cached if available (avoids re-scanning on every poll)
-  if (_cachedBotToken && _cachedChatId) {
-    return { botToken: _cachedBotToken, chatId: _cachedChatId };
-  }
-
-  // Scan all agents for Telegram config
-  for (const agent of discoverAgents()) {
-    for (const base of [
-      path.join(USER_DATA, 'agents', agent.name),
-      path.join(BUNDLE_ROOT, 'agents', agent.name),
-    ]) {
-      const mpath = path.join(base, 'data', 'agent.json');
-      if (!fs.existsSync(mpath)) continue;
-      try {
-        const manifest = JSON.parse(fs.readFileSync(mpath, 'utf-8'));
-        const tg = manifest.telegram || {};
-        const tokenEnv = tg.bot_token_env || 'TELEGRAM_BOT_TOKEN';
-        const chatIdEnv = tg.chat_id_env || 'TELEGRAM_CHAT_ID';
-        const token = process.env[tokenEnv] || '';
-        const chatId = process.env[chatIdEnv] || '';
-        if (token && chatId) {
-          _cachedBotToken = token;
-          _cachedChatId = chatId;
-          log.info(`Using Telegram credentials from agent: ${agent.name}`);
-          return { botToken: token, chatId };
-        }
-      } catch { /* skip */ }
-      break; // only check first existing manifest per agent
-    }
-  }
-
-  return null;
-}
-
 async function pollOnce(): Promise<void> {
-  const creds = resolveTelegramCredentials();
-  if (!creds) {
-    log.warn('No Telegram credentials found for any agent');
+  const config = getConfig();
+  if (!config.TELEGRAM_BOT_TOKEN) {
+    log.warn('TELEGRAM_BOT_TOKEN not configured');
     return;
   }
-  const { botToken, chatId: expectedChatId } = creds;
-
-  // Set overrides so Telegram API calls use the correct credentials even if
-  // the current agent has no Telegram config
-  setBotTokenOverride(botToken);
-  setChatIdOverride(expectedChatId);
 
   // Long-poll timeout is 30s on Telegram's side; HTTP timeout must be longer
   const raw = await _post('getUpdates', {
@@ -503,7 +448,11 @@ async function pollOnce(): Promise<void> {
     const senderId = String(msg.from?.id || '');
     const chatId = String(msg.chat?.id || '');
     // Reject messages not from the configured chat
-    if (senderId !== expectedChatId && chatId !== expectedChatId) {
+    if (!config.TELEGRAM_CHAT_ID) {
+      log.warn('TELEGRAM_CHAT_ID not configured - ignoring message');
+      continue;
+    }
+    if (senderId !== config.TELEGRAM_CHAT_ID && chatId !== config.TELEGRAM_CHAT_ID) {
       continue;
     }
 

@@ -1876,42 +1876,18 @@ app.whenReady().then(() => {
   // Prefetch context data during startup idle time
   setImmediate(() => prefetchContext());
 
-  // Auto-start Telegram daemon if ANY agent has Telegram configured.
-  // The current agent may not have Telegram set up (e.g. mirror) even though
-  // another agent (e.g. xan) does - we still want the daemon running.
-  {
-    let hasTelegram = !!(config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID);
-    if (!hasTelegram) {
-      // Check other agents' env vars for Telegram config
-      for (const agent of discoverAgents()) {
-        const mpath = [
-          path.join(USER_DATA, 'agents', agent.name, 'data', 'agent.json'),
-          path.join(BUNDLE_ROOT, 'agents', agent.name, 'data', 'agent.json'),
-        ].find((p) => fs.existsSync(p));
-        if (!mpath) continue;
-        try {
-          const manifest = JSON.parse(fs.readFileSync(mpath, 'utf-8'));
-          const tg = manifest.telegram || {};
-          const tokenEnv = tg.bot_token_env || 'TELEGRAM_BOT_TOKEN';
-          const chatIdEnv = tg.chat_id_env || 'TELEGRAM_CHAT_ID';
-          if (process.env[tokenEnv] && process.env[chatIdEnv]) {
-            hasTelegram = true;
-            break;
-          }
-        } catch { /* skip */ }
-      }
-    }
-    if (hasTelegram) {
-      const started = startDaemon();
-      if (started) {
-        log.info('Telegram daemon auto-started');
-        registerBotCommands().catch(() => { /* non-critical */ });
-      } else {
-        log.warn('Telegram daemon failed to start (lock held by another instance?)');
-      }
+  // Auto-start Telegram daemon if configured.
+  // Credentials are system-level (from .env / config.json), not per-agent.
+  if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID) {
+    const started = startDaemon();
+    if (started) {
+      log.info('Telegram daemon auto-started');
+      registerBotCommands().catch(() => { /* non-critical */ });
     } else {
-      log.debug(`Telegram daemon skipped: no agent has Telegram configured`);
+      log.warn('Telegram daemon failed to start (lock held by another instance?)');
     }
+  } else {
+    log.debug(`Telegram daemon skipped: token=${!!config.TELEGRAM_BOT_TOKEN} chatId=${!!config.TELEGRAM_CHAT_ID}`);
   }
 
   // Sentinel timer - coherence check every 5 minutes

@@ -104,10 +104,6 @@ export interface AgentManifest {
     fal_voice_id: string;
     playback_rate: number;
   };
-  telegram: {
-    bot_token_env: string;
-    chat_id_env: string;
-  };
   display: {
     window_width: number;
     window_height: number;
@@ -182,10 +178,6 @@ function buildManifest(opts: CreateAgentOptions, name: string): AgentManifest {
       elevenlabs_style: v.elevenlabsStyle ?? 0.35,
       fal_voice_id: v.falVoiceId || '',
       playback_rate: v.playbackRate ?? 1.12,
-    },
-    telegram: {
-      bot_token_env: `TELEGRAM_BOT_TOKEN_${name.toUpperCase()}`,
-      chat_id_env: `TELEGRAM_CHAT_ID_${name.toUpperCase()}`,
     },
     display: {
       window_width: 622,
