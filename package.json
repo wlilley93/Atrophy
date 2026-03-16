@@ -1,6 +1,6 @@
 {
   "name": "atrophy",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "A companion agent system - voice-enabled, memory-bearing, self-evolving",
   "main": "./out/main/index.js",
   "scripts": {
@@ -20,7 +20,8 @@
     "dist:mac": "pnpm build && electron-builder --mac",
     "resign": "xattr -cr dist/mac-arm64/Atrophy.app 2>/dev/null; codesign --deep --force --sign - dist/mac-arm64/Atrophy.app 2>/dev/null; xattr -cr dist/mac/Atrophy.app 2>/dev/null; codesign --deep --force --sign - dist/mac/Atrophy.app 2>/dev/null; true",
     "cli": "npx tsx src/cli.ts",
-    "bundle": "bash scripts/build-bundle.sh"
+    "bundle": "bash scripts/build-bundle.sh",
+    "release": "bash scripts/release-bundle.sh"
   },
   "author": "Will Lilley",
   "license": "UNLICENSED",

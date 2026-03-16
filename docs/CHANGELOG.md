@@ -4,19 +4,53 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.2.1 - 2026-03-16
+
+Bug fix release. 13 bugs fixed across inference, Telegram, setup flow, and bootstrap.
+
+### Fixes
+
+- Inference: process killed by signal (SIGTERM/SIGKILL) now emits StreamError instead of returning truncated text as success
+- Inference: line buffer flushed on process close - prevents losing the final JSON event if CLI exits without trailing newline
+- Inference: MCP config written atomically via tmp file + rename to prevent concurrent spawns reading partial JSON
+- Inference: session ID captured from context compaction events so --resume doesn't use a stale ID
+- Setup: createAgent/switchAgent failures recover from the "Creating..." overlay instead of hanging forever
+- Setup: concurrent setupSubmit calls blocked - prevents double agent creation on rapid Enter presses
+- Setup: Claude CLI health check at end of service cards - shows install instructions if `claude` binary not found
+- Telegram: polling uses exponential backoff (2s to 30s cap) on repeated failures instead of infinite 2s retry
+- Telegram: API responses validated with `Array.isArray()` before iteration - prevents silent failures on non-array response
+- Telegram: messages exceeding 4096 chars split on paragraph boundaries
+- Telegram daemon: rejects all messages when TELEGRAM_CHAT_ID is not configured (security)
+- Bootstrap: frozen app.js import failure shows native error dialog and exits cleanly
+- Bootstrap: boot sentinel stores PID and checks if alive before treating as crash indicator
+- Agent switch validates agent exists via `discoverAgents()` before reloading config
+
+### UI
+
+- Update banner in main window when hot bundle downloaded - "Update v{version} ready - Restart to update"
+- Updates tab in Settings with version info, check button, progress bar, restart button
+- Tray menu shows "Update Available" item with restart action when bundle ready
+- Agent cycling chevrons: bigger hit targets (padding 4px/8px), explicit no-drag, z-index, active state
+- Shift+Up/Down global shortcuts for agent cycling (alongside Cmd+Shift+[/])
+- Tray menu: "Keep Computer Awake" label
+
+---
+
 ## 1.2.0 - 2026-03-16
 
-The biggest reliability release yet. Model switching, Google auth overhaul, hot bundle updates, and a full security hardening pass.
+The last DMG you'll ever download. Hot-loadable main process, model switching, Google auth overhaul, and security hardening.
 
 ### New features
 
+- **Hot-loadable main process** - `bootstrap.ts` (2.7KB, frozen in asar) detects hot bundles and dynamic-imports `app.ts`. All future code updates ship as hot bundles via GitHub Releases - users never need another DMG
+- `pnpm release` builds and publishes hot bundles to GitHub in one command
 - Model switching in Settings - choose between Claude Sonnet 4.6, Opus 4.6, Haiku 4.5, and Sonnet 4.5 without leaving the app
-- Hot bundle updater (`bundle-updater.ts`, 411 lines) - downloads pre-built `out/` bundles from GitHub Releases to `~/.atrophy/bundle/`. On next boot, preload + renderer load from the hot bundle. SHA-256 verification, atomic staging swap, semver comparison. Preload API wired up (`getBundleStatus`, `checkBundleUpdate`, `clearHotBundle`, `onBundleReady`, `onBundleProgress`)
+- Hot bundle updater downloads pre-built bundles from GitHub Releases to `~/.atrophy/bundle/`. SHA-256 verification, atomic staging swap, semver comparison
 - Password visibility toggle on API key fields
-- External links now open in your default browser via `shell.openExternal` instead of being swallowed by the Electron window - fixes users unable to reach API key pages or complete OAuth flows
-- Auto-install of gws CLI tool to `~/.atrophy/tools/` during Google OAuth setup - no manual steps needed
+- External links now open in your default browser via `shell.openExternal` instead of being swallowed by the Electron window
+- Auto-install of gws CLI tool to `~/.atrophy/tools/` during Google OAuth setup
 - Apple developer setup script (`scripts/apple-dev-setup.ts`) for code signing and notarisation
-- Typed preload API module (`src/renderer/api.ts`) - all 17 `(window as any).atrophy` casts across 11 renderer components replaced with `import { api } from '../api'`
+- Typed preload API module (`src/renderer/api.ts`) - all 17 `(window as any).atrophy` casts replaced with typed imports
 
 ### Fixes
 
