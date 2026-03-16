@@ -12,9 +12,9 @@
     ambientMode?: boolean;
   }
 
-  let { pip = false, ambientMode = false }: Props = $props();
+  import { api } from '../api';
 
-  const api = (window as any).atrophy;
+  let { pip = false, ambientMode = false }: Props = $props();
 
   let videoEl = $state<HTMLVideoElement | null>(null);
   let videoSrc = $state('');

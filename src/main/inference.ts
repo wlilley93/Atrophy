@@ -180,7 +180,7 @@ function getMcpConfigPath(): string {
           servers[name] = server;
         }
       }
-    } catch { /* non-fatal */ }
+    } catch (e) { log.debug(`failed to import global MCP settings: ${e}`); }
   }
 
   const mcpConfig = { mcpServers: servers };
@@ -321,7 +321,7 @@ function buildAgencyContext(userMessage: string): string {
       const times = thisWeek.map((s: { created_at: string }) => s.created_at);
       const pattern = sessionPatternNote(thisWeek.length, times);
       if (pattern) parts.push(pattern);
-    } catch { /* non-critical */ }
+    } catch (e) { log.debug(`session patterns failed: ${e}`); }
 
     // Time-gap awareness
     const lastTime = memory.getLastSessionTime();
@@ -381,7 +381,7 @@ function buildAgencyContext(userMessage: string): string {
         );
         parts.push(crossParts.join('\n'));
       }
-    } catch { /* non-critical */ }
+    } catch (e) { log.debug(`cross-agent context failed: ${e}`); }
 
     // Morning digest nudge
     const hour = new Date().getHours();
@@ -723,7 +723,7 @@ export function streamInference(
       const tokensOut = Math.floor(fullText.length / 4);
       const tokensIn = Math.floor(userMessage.length / 4);
       memory.logUsage('conversation', tokensIn, tokensOut, Math.floor(elapsed * 1000), toolCalls.length);
-    } catch { /* non-critical */ }
+    } catch (e) { log.debug(`usage logging failed: ${e}`); }
 
     emitter.emit('event', {
       type: 'StreamDone',
@@ -826,7 +826,7 @@ export function runInferenceOneshot(
           Math.floor(elapsed * 1000),
           0,
         );
-      } catch { /* non-critical */ }
+      } catch (e) { log.debug(`oneshot usage logging failed: ${e}`); }
 
       resolve(result);
     });

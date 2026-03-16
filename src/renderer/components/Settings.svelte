@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { agents } from '../stores/agents.svelte';
+  import { api } from '../api';
 
   interface Props {
     onClose: () => void;
   }
 
   let { onClose }: Props = $props();
-  const api = (window as any).atrophy;
 
   type Tab = 'settings' | 'usage' | 'activity' | 'jobs';
   let activeTab = $state<Tab>('settings');

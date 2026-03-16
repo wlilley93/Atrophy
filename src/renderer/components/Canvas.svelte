@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { api } from '../api';
 
   interface Props {
     onClose: () => void;
@@ -7,8 +8,6 @@
   }
 
   let { onClose, onRequestShow }: Props = $props();
-
-  const api = (window as any).atrophy;
 
   let url = $state('');
   let visible = $state(false);

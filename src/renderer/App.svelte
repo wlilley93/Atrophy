@@ -4,9 +4,10 @@
   import { settings } from './stores/settings.svelte';
   import { session } from './stores/session.svelte';
 
+  import { api } from './api';
+
   // Load initial config from main process
   async function init() {
-    const api = (window as any).atrophy;
     if (!api) return;
 
     const cfg = await api.getConfig();

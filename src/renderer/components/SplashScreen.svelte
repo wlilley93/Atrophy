@@ -10,9 +10,9 @@
     onComplete: () => void;
   }
 
-  let { downloading, downloadPercent = 0, onComplete }: Props = $props();
+  import { api } from '../api';
 
-  const api = (window as any).atrophy;
+  let { downloading, downloadPercent = 0, onComplete }: Props = $props();
 
   // Brain frames via Vite glob import (00=healthy, 09=decayed)
   const brainFramePaths: string[] = [];

@@ -98,7 +98,7 @@ function createWindow(): BrowserWindow {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src 'self' file:; font-src 'self'; connect-src 'self' https:; frame-src 'self' blob:",
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src 'self' file:; font-src 'self'; connect-src 'self' https:; frame-src 'self' blob:; form-action 'none'; base-uri 'self'",
         ],
       },
     });
@@ -1801,14 +1801,25 @@ app.whenReady().then(() => {
       let content = '';
       let src = '';
 
-      if (artefactType === 'html' && data.file) {
-        // Read HTML content
+      if (data.file) {
+        // Validate file path - only allow reading from agent data directory
+        const config = getConfig();
+        const agentDataBase = path.resolve(path.dirname(config.DATA_DIR));
+        let resolvedFile: string;
         try {
-          content = fs.readFileSync(data.file, 'utf-8');
-        } catch { /* file missing */ }
-      } else if ((artefactType === 'image' || artefactType === 'video') && data.file) {
-        // Convert to file:// URL for renderer
-        src = `file://${data.file}`;
+          resolvedFile = fs.realpathSync(path.resolve(data.file));
+        } catch {
+          resolvedFile = ''; // path doesn't exist
+        }
+        if (!resolvedFile || !resolvedFile.startsWith(agentDataBase + path.sep)) {
+          log.warn(`artefact display blocked path: ${data.file}`);
+        } else if (artefactType === 'html') {
+          try {
+            content = fs.readFileSync(resolvedFile, 'utf-8');
+          } catch { /* file missing */ }
+        } else if (artefactType === 'image' || artefactType === 'video') {
+          src = `file://${resolvedFile}`;
+        }
       }
 
       mainWindow.webContents.send('artefact:updated', {
@@ -1935,6 +1946,7 @@ app.on('will-quit', () => {
   if (askUserTimer) clearInterval(askUserTimer);
   if (artefactTimer) clearInterval(artefactTimer);
   if (statusTimer) clearInterval(statusTimer);
+  if (journalNudgeTimer) clearTimeout(journalNudgeTimer);
   stopAllInference();
   stopWakeWordListener(() => mainWindow);
   disableKeepAwake();
@@ -1953,6 +1965,20 @@ function gracefulShutdown(signal: string): void {
 }
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// ---------------------------------------------------------------------------
+// Global error handlers - catch unhandled rejections and exceptions
+// ---------------------------------------------------------------------------
+
+process.on('uncaughtException', (error) => {
+  log.error(`uncaughtException: ${error.message}\n${error.stack}`);
+  // Don't exit - Electron can often continue after non-fatal exceptions
+});
+
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason);
+  log.error(`unhandledRejection: ${message}`);
+});
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Keep BUNDLE_ROOT and USER_DATA referenced so they don't get tree-shaken

@@ -5,9 +5,9 @@
     onClose: () => void;
   }
 
-  let { onClose }: Props = $props();
+  import { api } from '../api';
 
-  const api = (window as any).atrophy;
+  let { onClose }: Props = $props();
 
   // Artefact display state
   let content = $state('');

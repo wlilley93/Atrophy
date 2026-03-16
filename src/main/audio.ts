@@ -21,8 +21,12 @@ const log = createLogger('audio');
 // ---------------------------------------------------------------------------
 
 let _chunks: Float32Array[] = [];
+let _totalSamples = 0;
 let _recording = false;
 let _startTime = 0;
+
+// Cap at ~5 minutes of 16kHz mono audio (~19MB) to prevent OOM
+const MAX_SAMPLES = 16000 * 60 * 5;
 
 // ---------------------------------------------------------------------------
 // IPC registration
@@ -31,6 +35,7 @@ let _startTime = 0;
 export function registerAudioHandlers(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('audio:start', () => {
     _chunks = [];
+    _totalSamples = 0;
     _recording = true;
     _startTime = Date.now();
     log.info('recording started');
@@ -82,7 +87,13 @@ export function registerAudioHandlers(getWindow: () => BrowserWindow | null): vo
   // Receive PCM chunks from renderer (Float32Array serialized as ArrayBuffer)
   ipcMain.on('audio:chunk', (_event, buffer: ArrayBuffer) => {
     if (!_recording) return;
-    _chunks.push(new Float32Array(buffer));
+    const chunk = new Float32Array(buffer);
+    if (_totalSamples + chunk.length > MAX_SAMPLES) {
+      log.warn('audio chunk limit reached, ignoring further chunks');
+      return;
+    }
+    _totalSamples += chunk.length;
+    _chunks.push(chunk);
   });
 }
 

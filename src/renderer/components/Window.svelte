@@ -20,7 +20,7 @@
   import { addMessage, completeLast, transcript } from '../stores/transcript.svelte';
   import { getArtifact } from '../stores/artifacts.svelte';
 
-  const api = (window as any).atrophy;
+  import { api } from '../api';
 
   // Brain frames for update check screen
   const brainFramePaths: string[] = [];

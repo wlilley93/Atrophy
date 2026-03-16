@@ -4,6 +4,7 @@
   import { audio } from '../stores/audio.svelte';
   import { storeArtifact } from '../stores/artifacts.svelte';
   import { setEmotion, setEmotionFromText, revertToDefault } from '../stores/emotion-colours.svelte';
+  import { api } from '../api';
 
   let {
     onSubmit: customSubmit,
@@ -70,7 +71,6 @@
     session.inferenceState = 'thinking';
     setEmotion('thinking');
 
-    const api = (window as any).atrophy;
     if (api) {
       try {
         await api.sendMessage(text);
@@ -82,7 +82,6 @@
   }
 
   function stop() {
-    const api = (window as any).atrophy;
     if (api) api.stopInference();
   }
 
@@ -90,7 +89,6 @@
 
   let recordingStarting = false;
   async function startRecording() {
-    const api = (window as any).atrophy;
     if (!api || isRecording || recordingStarting) return;
     recordingStarting = true;
 
@@ -135,7 +133,6 @@
   }
 
   async function stopRecording() {
-    const api = (window as any).atrophy;
     if (!api || !isRecording) return;
 
     isRecording = false;
@@ -165,7 +162,6 @@
   // -- Voice call mode: start/stop --
 
   async function toggleCall() {
-    const api = (window as any).atrophy;
     if (!api) return;
 
     if (callActive) {
@@ -176,7 +172,6 @@
   }
 
   async function startCallMode() {
-    const api = (window as any).atrophy;
     if (!api || callActive) return;
 
     try {
@@ -217,7 +212,6 @@
   }
 
   async function stopCallMode() {
-    const api = (window as any).atrophy;
     callActive = false;
     callStatus = 'idle';
 
@@ -256,7 +250,6 @@
 
   // Wire up streaming listeners and keyboard events
   $effect(() => {
-    const api = (window as any).atrophy;
     if (!api) return;
 
     // Buffer for detecting partial <artifact> tags during streaming.
@@ -310,11 +303,14 @@
         // Classify emotion from complete response and trigger avatar reaction
         setEmotionFromText(fullText);
       }),
-      api.onError((_msg: string) => {
+      api.onError((msg: string) => {
         flushBuffer();
         completeLast();
         session.inferenceState = 'idle';
         revertToDefault();
+        if (msg) {
+          addMessage('system', `Error: ${msg}`);
+        }
       }),
       api.onCompacting(() => {
         session.inferenceState = 'compacting';

@@ -65,7 +65,7 @@
     onSkipped: (key: string) => void;
   } = $props();
 
-  const api = (window as any).atrophy;
+  import { api } from '../api';
 
   // Input values
   let elevenLabsKey = $state('');

@@ -22,9 +22,9 @@
   let downloadPercent = $state(0);
   let voiceId = $state('');
   let errorMessage = $state('');
-  let fileInput: HTMLInputElement;
+  import { api } from '../api';
 
-  const api = (window as any).atrophy;
+  let fileInput: HTMLInputElement;
 
   let { onComplete }: { onComplete?: () => void } = $props();
 

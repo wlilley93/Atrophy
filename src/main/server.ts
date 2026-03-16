@@ -86,9 +86,8 @@ function sendJson(res: http.ServerResponse, data: unknown, status = 200): void {
 function checkAuth(req: http.IncomingMessage): boolean {
   const auth = req.headers.authorization || '';
   if (!auth.startsWith('Bearer ')) return false;
-  const provided = Buffer.from(auth.slice(7));
-  const expected = Buffer.from(serverToken);
-  if (provided.length !== expected.length) return false;
+  const provided = crypto.createHash('sha256').update(auth.slice(7)).digest();
+  const expected = crypto.createHash('sha256').update(serverToken).digest();
   return crypto.timingSafeEqual(provided, expected);
 }
 
@@ -492,6 +491,19 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
     const url = req.url || '/';
     const pathname = url.split('?')[0];
     const method = req.method || 'GET';
+
+    // CORS - restrict to localhost only
+    const origin = req.headers.origin || '';
+    if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+    if (method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
 
     try {
       if (pathname === '/health' && method === 'GET') {
