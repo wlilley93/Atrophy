@@ -365,6 +365,9 @@
     color: var(--text-dim);
     cursor: pointer;
     padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: color 0.15s;
   }
 

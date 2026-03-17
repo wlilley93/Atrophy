@@ -16,7 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
-import { sendMessage, post, setLastUpdateId, downloadTelegramFile } from './telegram';
+import { sendMessage, sendMessageGetId, editMessage, post, setLastUpdateId, downloadTelegramFile } from './telegram';
 import { discoverAgents, getAgentState } from './agent-manager';
 import { streamInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
@@ -350,9 +350,29 @@ async function ensureTopics(groupId: string, state: DaemonState): Promise<Daemon
 
 const DISPATCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minute max per agent dispatch
 
-async function dispatchToAgent(agentName: string, text: string): Promise<string | null> {
+/**
+ * Dispatch a message to an agent with live streaming back to Telegram.
+ *
+ * Sends an initial "Thinking..." message, then edits it in-place as
+ * text streams in. Shows tool use and thinking status. Returns the
+ * final response text, or null on failure.
+ */
+async function dispatchToAgent(
+  agentName: string,
+  text: string,
+  chatId: string,
+  threadId: number,
+): Promise<string | null> {
   const config = getConfig();
   const originalAgent = config.AGENT_NAME;
+
+  // Send initial thinking indicator and capture message_id for edits
+  const manifest = getAgentManifest(agentName);
+  const emoji = (manifest.telegram_emoji as string) || '';
+  const display = (manifest.display_name as string) || agentName.charAt(0).toUpperCase() + agentName.slice(1);
+  const header = emoji ? `${emoji} *${display}*\n\n` : '';
+
+  const msgId = await sendMessageGetId(`${header}_Thinking..._`, chatId, threadId);
 
   try {
     config.reloadForAgent(agentName);
@@ -364,7 +384,31 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
 
     const prompt = `[Telegram message from ${config.USER_NAME}]\n\n${text}`;
     let fullText = '';
+    let streamedText = '';
     const toolsUsed: string[] = [];
+
+    // Throttle edits to avoid Telegram rate limits
+    const EDIT_INTERVAL_MS = 1500;
+    let lastEditTime = 0;
+    let editPending = false;
+
+    const doEdit = async (content: string): Promise<void> => {
+      if (!msgId) return;
+      const now = Date.now();
+      if (now - lastEditTime < EDIT_INTERVAL_MS) {
+        editPending = true;
+        return;
+      }
+      editPending = false;
+      lastEditTime = now;
+      await editMessage(msgId, `${header}${content}`, chatId);
+    };
+
+    // Flush any pending edit that was throttled
+    const flushEdit = async (content: string): Promise<void> => {
+      if (!msgId) return;
+      await editMessage(msgId, `${header}${content}`, chatId);
+    };
 
     await new Promise<void>((resolve, reject) => {
       const emitter = streamInference(prompt, system, cliSessionId);
@@ -374,19 +418,37 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
         reject(new Error('dispatch timeout'));
       }, DISPATCH_TIMEOUT_MS);
 
-      emitter.on('event', (evt: InferenceEvent) => {
+      // Periodically flush throttled edits
+      const flushTimer = setInterval(async () => {
+        if (editPending && streamedText) {
+          await doEdit(streamedText);
+        }
+      }, EDIT_INTERVAL_MS);
+
+      emitter.on('event', async (evt: InferenceEvent) => {
         switch (evt.type) {
+          case 'TextDelta':
+            streamedText += evt.text;
+            await doEdit(streamedText);
+            break;
           case 'ToolUse':
             toolsUsed.push(evt.name);
             log.debug(`[${agentName}] tool -> ${evt.name}`);
+            // Show tool usage in the message
+            await doEdit(`${streamedText}\n\n_Using ${evt.name}..._`);
+            break;
+          case 'Compacting':
+            await doEdit(`${streamedText}\n\n_Compacting context..._`);
             break;
           case 'StreamDone':
             clearTimeout(timer);
+            clearInterval(flushTimer);
             fullText = evt.fullText;
             resolve();
             break;
           case 'StreamError':
             clearTimeout(timer);
+            clearInterval(flushTimer);
             log.error(`[${agentName}] inference error: ${evt.message}`);
             resolve();
             break;
@@ -398,35 +460,27 @@ async function dispatchToAgent(agentName: string, text: string): Promise<string 
       log.debug(`[${agentName}] used tools: ${toolsUsed.join(', ')}`);
     }
 
-    return fullText.trim() || null;
+    const finalText = fullText.trim() || null;
+
+    // Final edit with complete response (removes any trailing tool-use indicators)
+    if (finalText && msgId) {
+      await flushEdit(finalText);
+    } else if (!finalText && msgId) {
+      await flushEdit('_No response_');
+    }
+
+    return finalText;
   } catch (e) {
     log.error(`[${agentName}] dispatch failed: ${e}`);
+    if (msgId) {
+      await editMessage(msgId, `${header}_Error: dispatch failed_`, chatId);
+    }
     return null;
   } finally {
     config.reloadForAgent(originalAgent);
     resetMcpConfig();
     memory.initDb();
   }
-}
-
-/**
- * Send a response to a specific topic thread, prefixed with agent emoji/name.
- */
-async function sendAgentResponse(
-  agentName: string,
-  text: string,
-  chatId: string,
-  threadId: number,
-): Promise<void> {
-  const manifest = getAgentManifest(agentName);
-  const emoji = (manifest.telegram_emoji as string) || '';
-  const display = (manifest.display_name as string) || agentName.charAt(0).toUpperCase() + agentName.slice(1);
-
-  if (emoji) {
-    text = `${emoji} *${display}*\n\n${text}`;
-  }
-
-  await sendMessage(text, chatId, false, threadId);
 }
 
 // ---------------------------------------------------------------------------
@@ -603,10 +657,9 @@ async function pollOnce(): Promise<void> {
 
     log.info(`[${agentName}] Message: ${fullPrompt.slice(0, 80)}`);
 
-    // Dispatch directly - no routing needed
-    const response = await dispatchToAgent(agentName, fullPrompt);
+    // Dispatch with live streaming back to Telegram
+    const response = await dispatchToAgent(agentName, fullPrompt, msgChatId, threadId);
     if (response) {
-      await sendAgentResponse(agentName, response, msgChatId, threadId);
       log.info(`[${agentName}] Responded (${response.length} chars)`);
     } else {
       log.warn(`[${agentName}] No response`);

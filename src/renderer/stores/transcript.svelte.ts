@@ -54,4 +54,5 @@ export function addDivider(text: string): void {
 
 export function clearTranscript(): void {
   transcript.messages = [];
+  transcript.autoScroll = true;
 }

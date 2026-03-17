@@ -778,6 +778,40 @@
   onMount(() => {
     runBootSequence().then(() => resetSilenceTimer());
 
+    // Listen for agent switches triggered by global shortcuts or tray menu
+    if (api && typeof api.onAgentSwitched === 'function') {
+      ipcCleanups.push(api.onAgentSwitched((data: { agentName: string; agentDisplayName: string; customSetup?: string | null }) => {
+        // Skip if we're already on this agent (renderer-driven switch already handled it)
+        if (agents.current === data.agentName) return;
+
+        agents.current = data.agentName;
+        agents.displayName = data.agentDisplayName;
+
+        // Reset inference state so InputBar is not stuck disabled
+        session.inferenceState = 'idle';
+
+        // Unlock renderer-driven switching in case it was in progress
+        _switching = false;
+
+        clearTranscript();
+        playAgentSwitchAnimation();
+
+        // Check if the new agent needs custom setup (e.g. mirror wizard)
+        if (data.customSetup === 'mirror') {
+          mirrorSetupVisible = true;
+        }
+
+        // Fetch opening line for the new agent
+        const gen = ++_switchGeneration;
+        api!.getOpeningLine().then((opening) => {
+          if (gen === _switchGeneration && opening) {
+            addMessage('agent', opening);
+            completeLast();
+          }
+        }).catch(() => {});
+      }));
+    }
+
     // Listen for deferral requests from main process
     if (api && typeof api.on === 'function') {
       ipcCleanups.push(api.on('deferral:request', handleDeferralRequest));
@@ -874,41 +908,46 @@
     _switching = true;
     const gen = ++_switchGeneration;
 
-    const idx = list.indexOf(agents.current);
-    const next = list[(idx + direction + list.length) % list.length];
-    agents.switchDirection = direction;
+    try {
+      const idx = list.indexOf(agents.current);
+      const next = list[(idx + direction + list.length) % list.length];
+      agents.switchDirection = direction;
 
-    if (api) {
-      const result = await api.switchAgent(next);
+      if (api) {
+        const result = await api.switchAgent(next);
 
-      // Another switch happened while we were awaiting - abandon
-      if (gen !== _switchGeneration) { _switching = false; return; }
+        // Another switch happened while we were awaiting - abandon
+        if (gen !== _switchGeneration) return;
 
-      agents.current = result.agentName;
-      agents.displayName = result.agentDisplayName;
+        agents.current = result.agentName;
+        agents.displayName = result.agentDisplayName;
 
-      // Clear transcript for clean slate with new agent
-      clearTranscript();
+        // Reset inference state so InputBar is not stuck disabled
+        session.inferenceState = 'idle';
 
-      playAgentSwitchAnimation();
+        // Clear transcript for clean slate with new agent
+        clearTranscript();
 
-      // Check if the new agent needs custom setup
-      if (result.customSetup === 'mirror') {
-        mirrorSetupVisible = true;
-      }
+        playAgentSwitchAnimation();
 
-      // Fetch opening line for the new agent
-      try {
-        const opening = await api.getOpeningLine();
-        // Discard if another switch happened during the fetch
-        if (gen === _switchGeneration && opening) {
-          addMessage('agent', opening);
-          completeLast();
+        // Check if the new agent needs custom setup
+        if (result.customSetup === 'mirror') {
+          mirrorSetupVisible = true;
         }
-      } catch { /* non-critical */ }
-    }
 
-    _switching = false;
+        // Fetch opening line for the new agent
+        try {
+          const opening = await api.getOpeningLine();
+          // Discard if another switch happened during the fetch
+          if (gen === _switchGeneration && opening) {
+            addMessage('agent', opening);
+            completeLast();
+          }
+        } catch { /* non-critical */ }
+      }
+    } finally {
+      _switching = false;
+    }
   }
 
   // ---------------------------------------------------------------------------

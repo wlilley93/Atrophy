@@ -668,16 +668,18 @@ export class Config {
     this.DISABLED_TOOLS = (_agentManifest.disabled_tools as string[]) || [];
 
     // TTS (per-agent from manifest voice object, matching Python's AGENT.get("voice", {}))
+    // Use || for string IDs so empty string "" falls through to cfg() fallback.
+    // Use ?? for numbers so 0 is preserved as a valid value.
     const voice = (_agentManifest.voice as Record<string, unknown>) || {};
-    this.TTS_BACKEND = (voice.tts_backend as string) ?? cfg('TTS_BACKEND', 'elevenlabs');
+    this.TTS_BACKEND = (voice.tts_backend as string) || cfg('TTS_BACKEND', 'elevenlabs');
     this.ELEVENLABS_API_KEY = cfg('ELEVENLABS_API_KEY', '');
-    this.ELEVENLABS_VOICE_ID = (voice.elevenlabs_voice_id as string) ?? cfg('ELEVENLABS_VOICE_ID', '');
-    this.ELEVENLABS_MODEL = (voice.elevenlabs_model as string) ?? cfg('ELEVENLABS_MODEL', 'eleven_v3');
+    this.ELEVENLABS_VOICE_ID = (voice.elevenlabs_voice_id as string) || cfg('ELEVENLABS_VOICE_ID', '');
+    this.ELEVENLABS_MODEL = (voice.elevenlabs_model as string) || cfg('ELEVENLABS_MODEL', 'eleven_v3');
     this.ELEVENLABS_STABILITY = (voice.elevenlabs_stability as number) ?? cfg('ELEVENLABS_STABILITY', 0.5);
     this.ELEVENLABS_SIMILARITY = (voice.elevenlabs_similarity as number) ?? cfg('ELEVENLABS_SIMILARITY', 0.75);
     this.ELEVENLABS_STYLE = (voice.elevenlabs_style as number) ?? cfg('ELEVENLABS_STYLE', 0.35);
     this.TTS_PLAYBACK_RATE = (voice.playback_rate as number) ?? cfg('TTS_PLAYBACK_RATE', 1.12);
-    this.FAL_VOICE_ID = (voice.fal_voice_id as string) ?? cfg('FAL_VOICE_ID', '');
+    this.FAL_VOICE_ID = (voice.fal_voice_id as string) || cfg('FAL_VOICE_ID', '');
 
     // Audio
     this.INPUT_MODE = cfg('INPUT_MODE', 'dual');

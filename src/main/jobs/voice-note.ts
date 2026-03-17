@@ -12,11 +12,11 @@
  * like the agent genuinely thought of something and reached out.
  */
 
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 
 import { getConfig } from '../config';
 import { createLogger } from '../logger';
+import { convertToOgg, cleanupFiles } from '../audio-convert';
 
 const log = createLogger('voice-note');
 import {
@@ -84,34 +84,6 @@ function gatherContext(): string {
   }
 
   return parts.join('\n\n');
-}
-
-// ---------------------------------------------------------------------------
-// Audio conversion
-// ---------------------------------------------------------------------------
-
-/**
- * Convert audio to OGG Opus format for Telegram voice notes.
- * Returns the output path on success, or null if conversion fails.
- */
-function convertToOgg(inputPath: string): string | null {
-  const base = inputPath.replace(/\.[^.]+$/, '');
-  const outputPath = base + '.ogg';
-
-  try {
-    execSync(
-      `ffmpeg -y -i ${JSON.stringify(inputPath)} -c:a libopus -b:a 64k -vn ${JSON.stringify(outputPath)}`,
-      { stdio: 'pipe', timeout: 30_000 },
-    );
-
-    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
-      return outputPath;
-    }
-  } catch {
-    // ffmpeg not found or timed out
-  }
-
-  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,15 +283,7 @@ export async function run(): Promise<void> {
   storeObservation(result, enrichment);
 
   // Clean up temp files
-  for (const p of [audioPath, oggPath]) {
-    if (p) {
-      try {
-        fs.unlinkSync(p);
-      } catch {
-        /* noop */
-      }
-    }
-  }
+  cleanupFiles(audioPath, oggPath);
 
   reschedule();
 }

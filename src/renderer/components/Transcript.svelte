@@ -44,7 +44,13 @@
   // Watch for new messages
   $effect(() => {
     const msgs = transcript.messages;
-    if (msgs.length === 0) return;
+
+    // Transcript was cleared (agent switch) - cancel all orphaned reveal timers
+    if (msgs.length === 0) {
+      for (const timer of revealTimers.values()) clearInterval(timer);
+      revealTimers.clear();
+      return;
+    }
 
     const last = msgs[msgs.length - 1];
     if (last.role === 'agent' && !last.complete) {
@@ -319,13 +325,13 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="transcript selectable" data-no-drag bind:this={container} onscroll={onScroll} onclick={handleCopyClick}>
   <div class="transcript-inner">
-    {#each transcript.messages as msg (msg.id)}
+    {#each transcript.messages as msg, i (msg.id)}
       {#if msg.role === 'divider'}
         <div class="divider">
           <span class="divider-text">{msg.content}</span>
         </div>
       {:else}
-        {#if msg.role === 'agent' && !msg.content && session.inferenceState !== 'idle'}
+        {#if msg.role === 'agent' && !msg.content && session.inferenceState !== 'idle' && i === transcript.messages.length - 1}
           <!-- Brain cycling indicator while waiting for first token -->
           <div class="thinking-row">
             <ThinkingIndicator />

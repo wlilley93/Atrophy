@@ -123,6 +123,62 @@ export async function sendMessage(
   return allSent;
 }
 
+/**
+ * Send a message and return the message_id (needed for later edits).
+ * Returns null on failure.
+ */
+export async function sendMessageGetId(
+  text: string,
+  chatId = '',
+  threadId?: number,
+): Promise<number | null> {
+  const config = getConfig();
+  const target = chatId || config.TELEGRAM_CHAT_ID;
+  if (!target) {
+    log.warn('TELEGRAM_CHAT_ID not configured');
+    return null;
+  }
+
+  const payload: Record<string, unknown> = {
+    chat_id: target,
+    text,
+    parse_mode: 'Markdown',
+  };
+  if (threadId) payload.message_thread_id = threadId;
+
+  const result = await post('sendMessage', payload) as { message_id?: number } | null;
+  return result?.message_id ?? null;
+}
+
+/**
+ * Edit an existing message's text in-place.
+ * Returns true on success.
+ */
+export async function editMessage(
+  messageId: number,
+  text: string,
+  chatId = '',
+): Promise<boolean> {
+  const config = getConfig();
+  const target = chatId || config.TELEGRAM_CHAT_ID;
+  if (!target) return false;
+
+  // Telegram max message length
+  if (text.length > 4096) {
+    text = text.slice(0, 4093) + '...';
+  }
+
+  const payload: Record<string, unknown> = {
+    chat_id: target,
+    message_id: messageId,
+    text,
+    parse_mode: 'Markdown',
+  };
+
+  const result = await post('editMessageText', payload);
+  return result !== null;
+}
+
 export async function sendButtons(
   text: string,
   buttons: { text: string; callback_data: string }[][],

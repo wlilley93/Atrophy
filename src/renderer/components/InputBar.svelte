@@ -4,6 +4,7 @@
   import { audio } from '../stores/audio.svelte';
   import { storeArtifact } from '../stores/artifacts.svelte';
   import { setEmotion, setEmotionFromText, revertToDefault } from '../stores/emotion-colours.svelte';
+  import { agents } from '../stores/agents.svelte';
   import { api } from '../api';
 
   let {
@@ -248,9 +249,15 @@
     }
   }
 
-  // Wire up streaming listeners and keyboard events
+  // Wire up streaming listeners and keyboard events.
+  // Depends on agents.current so the effect re-runs on agent switch,
+  // tearing down old listeners and creating fresh sync state.
   $effect(() => {
     if (!api) return;
+
+    // Track current agent - creates reactive dependency so the effect
+    // re-runs (cleanup + fresh setup) when the agent changes.
+    const _agent = agents.current; // eslint-disable-line @typescript-eslint/no-unused-vars
 
     // ── Text-audio sync ──
     // When TTS is active, buffer text and only reveal each sentence
@@ -271,6 +278,8 @@
     let syncMode = false;
     // Track if streaming is done (need to reveal remaining text)
     let streamDone = false;
+    // Safety timeout handle - tracked so cleanup can cancel it
+    let safetyTimer: ReturnType<typeof setTimeout> | null = null;
 
     function resetSyncState() {
       rawTextBuffer = '';
@@ -378,23 +387,26 @@
 
         if (!syncMode) {
           revealAll();
+          completeLast();
         } else {
-          // In sync mode - reveal up to last played sentence.
-          // Also set a safety timeout: if TTS fails and never fires
-          // tts:done, reveal all remaining text after 3s so it
-          // doesn't get stuck hidden.
-          setTimeout(() => {
+          // In sync mode, DON'T completeLast() yet - text is still in
+          // rawTextBuffer waiting for TTS events to reveal it.
+          // completeLast() sets msg.complete=true which gates appendToLast(),
+          // so calling it now would permanently lose unrevealed text.
+          // It will be called by tts:queueEmpty or the safety timeout below.
+          safetyTimer = setTimeout(() => {
+            safetyTimer = null;
             const msgs = transcript.messages;
             if (msgs.length > 0) {
               const last = msgs[msgs.length - 1];
-              if (last.role === 'agent' && last.revealed < last.content.length) {
+              if (last.role === 'agent' && !last.complete) {
                 revealAll();
+                completeLast();
               }
             }
           }, 3000);
         }
 
-        completeLast();
         session.inferenceState = 'idle';
         setEmotionFromText(fullText);
       }),
@@ -439,6 +451,7 @@
         // Reveal any remaining text after all audio has played
         if (syncMode) {
           revealAll();
+          completeLast();
           resetSyncState();
         }
       }),
@@ -465,6 +478,7 @@
       unsubs.forEach((fn: () => void) => fn());
       window.removeEventListener('keydown', onGlobalKeydown);
       window.removeEventListener('keyup', onGlobalKeyup);
+      if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
       if (isRecording) stopRecording();
       if (callActive) stopCallMode();
     };

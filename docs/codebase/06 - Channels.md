@@ -187,7 +187,7 @@ The `topic_id` identifies the agent's topic thread within the Topics-enabled gro
 
 The Telegram channel is used by multiple components throughout the system. Understanding which components use it helps explain why the channel needs to be robust and handle concurrent access gracefully.
 
-- **Telegram daemon**: Receives and dispatches routed messages - the main incoming message handler
+- **Telegram daemon**: Receives messages in agent topics and dispatches directly - the main incoming message handler
 - **`ask_user` MCP tool**: Sends questions during conversation and blocks for a reply - used when the agent needs user input mid-task
 - **`send_telegram` MCP tool**: Proactive outreach (rate limited to 5/day) - used for unprompted messages
 - **`heartbeat` job**: Evaluates whether to reach out and sends messages - periodic check-in
@@ -340,8 +340,8 @@ The daemon's poll cycle runs on every interval tick. With Topics mode, routing i
 
 1. **Poll** - Long-polls `getUpdates` with 30-second timeout, `allowed_updates: ['message']`
 2. **Filter** - Only accepts messages from the configured `TELEGRAM_GROUP_ID`
-3. **Intercept utility commands** - `/status`, `/mute` handled directly without routing or dispatch
-4. **Map topic to agent** - Looks up the agent whose `topic_id` matches the message's `message_thread_id`
+3. **Intercept utility commands** - `/status` handled directly without dispatch
+4. **Map topic to agent** - Looks up the agent whose topic matches the message's `message_thread_id` via `topic_map`
 5. **Dispatch** - Invokes the target agent via `dispatchToAgent()`
 6. **Respond** - Sends the agent's response to the same topic thread
 7. **Persist** - Saves `_lastUpdateId` to state file after each poll cycle
@@ -365,10 +365,10 @@ The dispatch sequence is:
 7. Restores the original agent config via `config.reloadForAgent(originalAgent)` and `memory.initDb()`
 8. Returns the response text or `null`
 
-The `sendAgentResponse` function loads the agent's manifest to get `telegram_emoji` and `display_name`, prepends them to the response, and sends via `sendMessage()` with `prefix=false` (to avoid double-prefixing, since the function manually adds the prefix).
+The `sendAgentResponse` function loads the agent's manifest to get `telegram_emoji` and `display_name`, prepends them to the response, and sends via `sendMessage()` with `prefix=false` into the agent's topic thread.
 
 ```typescript
-function sendAgentResponse(agentName: string, text: string): void
+function sendAgentResponse(agentName: string, text: string, chatId: string, threadId: number): void
 ```
 
 ### Race Condition Prevention
@@ -414,22 +414,29 @@ export function releaseLock(): void
 
 ### Utility Commands
 
-The daemon intercepts two utility commands before they reach the router. These commands are handled directly by the daemon without invoking any agent inference.
+The daemon intercepts utility commands before dispatch. The `/status` command can be sent in any topic or in the general thread.
 
 | Command | Action |
 |---------|--------|
-| `/status` | Lists all agents with emoji, display name, slash command, and state (active/muted/disabled). Sends the list as a formatted Markdown message. |
-| `/mute` | Toggles mute on the default agent. With an argument (`/mute agent_name`), toggles mute on a specific agent matched by name or display_name (case-insensitive). Sends a confirmation message. |
+| `/status` | Lists all enabled agents with emoji, display name, and slash command. Sends the list as a formatted Markdown message. |
 
 ### State Persistence
 
-The daemon tracks its position in the Telegram update stream using a state file at `~/.atrophy/.telegram_daemon_state.json`. This file contains a single field - the last processed update ID.
+The daemon tracks its position in the Telegram update stream and the topic-to-agent mapping using a state file at `~/.atrophy/.telegram_daemon_state.json`.
 
 ```json
-{"last_update_id": 123456789}
+{
+  "last_update_id": 123456789,
+  "topic_map": {
+    "42": "xan",
+    "43": "companion"
+  }
+}
 ```
 
-The state is loaded on daemon start and saved after each poll cycle. This ensures the daemon does not re-process old messages after a restart or system reboot. If the state file is missing or corrupt, the daemon starts from update ID 0, which means it will process any pending messages in the Telegram queue.
+The `topic_map` maps Telegram thread IDs (as strings) to agent names. This mapping is built on first run when topics are created, and persists across restarts so the daemon does not need to recreate topics.
+
+The state is loaded on daemon start and saved after each poll cycle. This ensures the daemon does not re-process old messages after a restart or system reboot. If the state file is missing or corrupt, the daemon starts from update ID 0 with an empty topic map, which triggers topic creation for all enabled agents.
 
 ### Daemon Control
 
@@ -445,16 +452,17 @@ The `startDaemon` function performs a complete startup sequence:
 
 1. Checks if already running (returns true immediately if so)
 2. Acquires the instance lock (returns false if another instance is running)
-3. Loads the last update ID from state file
+3. Loads state (last_update_id and topic_map) from state file
 4. Sets the module-level `_lastUpdateId` and syncs to the telegram module via `setLastUpdateId()`
-5. Runs an initial poll immediately (to process any messages that arrived while the daemon was stopped)
-6. Sets up recurring `setInterval` polls at the configured interval
+5. Calls `ensureTopics()` to create missing topic threads for enabled agents
+6. Enters a sequential poll loop (each poll waits for completion before scheduling the next)
 
 The `stopDaemon` function performs the reverse:
 
-1. Clears the poll timer
-2. Sets running flag to false
-3. Releases the instance lock
+1. Sets running flag to false
+2. Aborts any in-flight long-poll via AbortController
+3. Clears the poll timer
+4. Releases the instance lock
 
 ### Operating Modes
 
@@ -462,7 +470,7 @@ The daemon can run in three modes depending on how it is started. All three mode
 
 - **Managed** - started from within the Electron main process via `startDaemon()`, polls on a configurable interval (default 10 seconds). This is the standard mode when the app is running. The daemon stops when the app quits.
 - **Continuous** - as a launchd agent with `KeepAlive: true`, launched via `--telegram-daemon` flag. This mode keeps the daemon running even when the GUI is closed, ensuring Telegram messages are always processed.
-- **Single poll** - one-shot execution for testing or cron-triggered runs. Useful for debugging routing behavior without starting the full daemon loop.
+- **Single poll** - one-shot execution for testing or cron-triggered runs. Useful for debugging dispatch behavior without starting the full daemon loop.
 
 ### launchd Management
 

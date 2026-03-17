@@ -19,7 +19,7 @@ import { loadSystemPrompt } from './context';
 import { Session } from './session';
 import { setActive, setAway, isAway, isMacIdle, getStatus, detectAwayIntent, IDLE_TIMEOUT_SECS } from './status';
 import { detectMoodShift } from './agency';
-import { synthesise, enqueueAudio, setPlaybackCallbacks, clearAudioQueue, playAudio, stopCurrentPlayback, setMuted, isMuted } from './tts';
+import { synthesise, enqueueAudio, setPlaybackCallbacks, clearAudioQueue, playAudio, stopCurrentPlayback, setMuted, isMuted, ttsGeneration } from './tts';
 import { registerAudioHandlers } from './audio';
 import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
 import { discoverAgents, cycleAgent, getAgentState, setAgentState, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, resetDeferralCounter, suspendAgentSession, resumeAgentSession, checkAskRequest, writeAskResponse, cleanupAskFiles } from './agent-manager';
@@ -249,6 +249,22 @@ function getCachedAgents(): ReturnType<typeof discoverAgents> {
 }
 function invalidateAgentCache(): void { _cachedAgents = null; }
 
+/** Check if an agent needs custom setup (e.g. mirror wizard). */
+function getCustomSetup(name: string): string | null {
+  for (const base of [USER_DATA, BUNDLE_ROOT]) {
+    const jsonPath = path.join(base, 'agents', name, 'data', 'agent.json');
+    try {
+      if (!fs.existsSync(jsonPath)) continue;
+      const manifest = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+      if (manifest.custom_setup && !isMirrorSetupComplete(name)) {
+        return manifest.custom_setup;
+      }
+      break;
+    } catch { continue; }
+  }
+  return null;
+}
+
 function rebuildTrayMenu(): void {
   if (!tray) return;
 
@@ -332,14 +348,19 @@ function rebuildTrayMenu(): void {
           config.reloadForAgent(agent.name);
           initDb();
           resetMcpConfig();
+          invalidateContextCache();
           currentAgentName = agent.name;
           setLastActiveAgent(agent.name);
+          invalidateAgentCache();
+
+          setImmediate(() => prefetchContext());
 
           // Notify renderer
           if (mainWindow) {
             mainWindow.webContents.send('agent:switched', {
               agentName: config.AGENT_NAME,
               agentDisplayName: config.AGENT_DISPLAY_NAME,
+              customSetup: getCustomSetup(agent.name),
             });
           }
           rebuildTrayMenu();
@@ -1174,9 +1195,14 @@ Output EXACTLY this format - a single fenced JSON block:
             // Tell renderer about the sentence boundary + whether to wait for audio
             mainWindow.webContents.send('inference:sentenceReady', evt.sentence, evt.index, ttsActive);
             if (ttsActive) {
+              // Capture TTS generation so we can discard results after an agent switch
+              const gen = ttsGeneration();
               synthesise(evt.sentence).then((audioPath) => {
-                if (audioPath) {
+                if (audioPath && gen === ttsGeneration()) {
                   enqueueAudio(audioPath, evt.index);
+                } else if (audioPath) {
+                  // Stale - agent switched during synthesis; clean up temp file
+                  try { fs.unlinkSync(audioPath); } catch { /* best-effort */ }
                 }
               }).catch((e) => { log.warn(`[tts] synthesise error: ${e}`); });
             }
@@ -1293,20 +1319,7 @@ Output EXACTLY this format - a single fenced JSON block:
     // Prefetch context for the new agent during idle
     setImmediate(() => prefetchContext());
 
-    // Check if agent needs custom setup (e.g. Mirror)
-    // Try user-data first, then bundled
-    let customSetup: string | null = null;
-    for (const base of [USER_DATA, BUNDLE_ROOT]) {
-      const jsonPath = path.join(base, 'agents', name, 'data', 'agent.json');
-      try {
-        if (!fs.existsSync(jsonPath)) continue;
-        const manifest = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-        if (manifest.custom_setup && !isMirrorSetupComplete(name)) {
-          customSetup = manifest.custom_setup;
-        }
-        break;
-      } catch { continue; }
-    }
+    const customSetup = getCustomSetup(name);
 
     const c = getConfig();
     return {
@@ -2154,34 +2167,50 @@ app.whenReady().then(() => {
   });
 
   // Agent cycling via global shortcuts
-  function doCycleAgent(direction: 1 | -1): void {
+  let _cycleInProgress = false;
+  async function doCycleAgent(direction: 1 | -1): Promise<void> {
+    if (_cycleInProgress) return; // guard against rapid double-tap
     const cfg = getConfig();
     const target = cycleAgent(direction, cfg.AGENT_NAME);
-    if (target && target !== cfg.AGENT_NAME) {
+    if (!target || target === cfg.AGENT_NAME) return;
+
+    _cycleInProgress = true;
+    try {
       stopAllInference();
       clearAudioQueue();
+
+      // Await session end so summary writes to the correct (old) agent's DB
       if (currentSession && systemPrompt) {
-        currentSession.end(systemPrompt).catch(() => {});
+        try { await currentSession.end(systemPrompt); } catch { /* non-fatal */ }
       }
       currentSession = null;
       systemPrompt = null;
+
       cfg.reloadForAgent(target);
       initDb();
       resetMcpConfig();
+      invalidateContextCache();
       currentAgentName = target;
       setLastActiveAgent(target);
+      invalidateAgentCache();
+
+      setImmediate(() => prefetchContext());
+
       const updated = getConfig();
       mainWindow?.webContents.send('agent:switched', {
         agentName: updated.AGENT_NAME,
         agentDisplayName: updated.AGENT_DISPLAY_NAME,
+        customSetup: getCustomSetup(target),
       });
       rebuildTrayMenu();
+    } finally {
+      _cycleInProgress = false;
     }
   }
 
   // Cmd+Shift+] / [ and Shift+Up / Down - cycle agents
-  globalShortcut.register('CommandOrControl+Shift+]', () => doCycleAgent(1));
-  globalShortcut.register('CommandOrControl+Shift+[', () => doCycleAgent(-1));
+  globalShortcut.register('CommandOrControl+Shift+]', () => { doCycleAgent(1); });
+  globalShortcut.register('CommandOrControl+Shift+[', () => { doCycleAgent(-1); });
   globalShortcut.register('Shift+Up', () => doCycleAgent(-1));
   globalShortcut.register('Shift+Down', () => doCycleAgent(1));
 });

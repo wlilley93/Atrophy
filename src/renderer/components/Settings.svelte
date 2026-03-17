@@ -1427,6 +1427,9 @@
     color: var(--text-dim);
     cursor: pointer;
     padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .close-btn:hover {

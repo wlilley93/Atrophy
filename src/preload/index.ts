@@ -34,6 +34,7 @@ export interface AtrophyAPI {
   switchAgent: (name: string) => Promise<{ agentName: string; agentDisplayName: string; customSetup: string | null }>;
   getAgents: () => Promise<string[]>;
   getAgentsFull: () => Promise<{ name: string; display_name: string; description: string; role: string }[]>;
+  onAgentSwitched: (cb: (data: { agentName: string; agentDisplayName: string; customSetup?: string | null }) => void) => () => void;
 
   // Config
   getConfig: () => Promise<Record<string, unknown>>;
@@ -234,6 +235,7 @@ const api: AtrophyAPI = {
   switchAgent: (name) => ipcRenderer.invoke('agent:switch', name),
   getAgents: () => ipcRenderer.invoke('agent:list'),
   getAgentsFull: () => ipcRenderer.invoke('agent:listFull'),
+  onAgentSwitched: createListener('agent:switched') as AtrophyAPI['onAgentSwitched'],
 
   // Config
   getConfig: () => ipcRenderer.invoke('config:get'),
@@ -397,6 +399,7 @@ const api: AtrophyAPI = {
       'queue:message', 'deferral:request',
       'updater:available', 'updater:not-available', 'updater:progress',
       'updater:downloaded', 'updater:error',
+      'agent:switched',
       'canvas:updated', 'artefact:updated', 'artefact:loading', 'ask:request',
       'inference:artifact', 'inference:contextUsage',
       'journal:nudge', 'status:changed',
