@@ -377,11 +377,21 @@
         streamDone = true;
 
         if (!syncMode) {
-          // Not in sync mode - reveal everything
           revealAll();
         } else {
-          // In sync mode - reveal up to last played sentence,
-          // any remaining text after last sentence plays via tts:done/queueEmpty
+          // In sync mode - reveal up to last played sentence.
+          // Also set a safety timeout: if TTS fails and never fires
+          // tts:done, reveal all remaining text after 3s so it
+          // doesn't get stuck hidden.
+          setTimeout(() => {
+            const msgs = transcript.messages;
+            if (msgs.length > 0) {
+              const last = msgs[msgs.length - 1];
+              if (last.role === 'agent' && last.revealed < last.content.length) {
+                revealAll();
+              }
+            }
+          }, 3000);
         }
 
         completeLast();
