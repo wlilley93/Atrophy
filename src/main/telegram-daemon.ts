@@ -1,13 +1,11 @@
 /**
- * Telegram Topics daemon - one topic per agent, sequential dispatch.
- * Port of channels/telegram_daemon.py (Topics mode).
+ * Telegram daemon - parallel per-agent pollers.
  *
- * Uses Telegram Forum (Topics) mode in a supergroup. On startup, creates
- * a topic for each enabled agent. Messages in a topic go directly to that
- * agent - no routing needed, the topic IS the agent.
+ * Each agent has its own Telegram bot (own token + chat ID). On startup,
+ * discovers all agents with telegram credentials and launches a poller
+ * per agent. No group, no topics, no routing - each bot IS the agent.
  *
  * Can run as:
- *   - Single poll (for launchd interval jobs)
  *   - Continuous loop (KeepAlive daemon)
  *   - Managed from within the Electron main process
  */
@@ -16,10 +14,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
-import { sendMessage, sendMessageGetId, editMessage, post, setLastUpdateId, downloadTelegramFile } from './telegram';
+import { sendMessage, sendMessageGetId, editMessage, post, downloadTelegramFile, setBotProfilePhoto } from './telegram';
 import { discoverAgents, getAgentState } from './agent-manager';
 import { streamInference, resetMcpConfig, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
+import { getReferenceImages } from './jobs/generate-avatar';
 import * as memory from './memory';
 import { createLogger } from './logger';
 
@@ -29,9 +28,20 @@ const log = createLogger('telegram-daemon');
 // Types
 // ---------------------------------------------------------------------------
 
-interface DaemonState {
+interface AgentPollerState {
   last_update_id: number;
-  topic_map: Record<string, string>; // thread_id -> agent_name
+}
+
+interface DaemonState {
+  agents: Record<string, AgentPollerState>;
+}
+
+interface TelegramAgent {
+  name: string;
+  display_name: string;
+  emoji: string;
+  botToken: string;
+  chatId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,13 +54,15 @@ function loadState(): DaemonState {
   try {
     if (fs.existsSync(STATE_FILE)) {
       const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-      return {
-        last_update_id: raw.last_update_id || 0,
-        topic_map: raw.topic_map || {},
-      };
+      // Migrate from old format (had last_update_id + topic_map at top level)
+      if (raw.agents && typeof raw.agents === 'object') {
+        return { agents: raw.agents };
+      }
+      // Old format - start fresh
+      return { agents: {} };
     }
   } catch { /* default */ }
-  return { last_update_id: 0, topic_map: {} };
+  return { agents: {} };
 }
 
 function saveState(state: DaemonState): void {
@@ -270,78 +282,60 @@ function getAgentManifest(agentName: string): Record<string, unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Topic management
+// Agent discovery
 // ---------------------------------------------------------------------------
 
 /**
- * Create a forum topic in a supergroup. Returns the topic thread_id or null.
+ * Discover agents that have telegram credentials configured.
+ * Temporarily reloads config for each agent to read per-agent tokens,
+ * then restores the original agent.
  */
-async function createForumTopic(chatId: string, name: string): Promise<number | null> {
-  const payload: Record<string, unknown> = { chat_id: chatId, name };
-  const result = await post('createForumTopic', payload) as { message_thread_id?: number } | null;
-  if (result) {
-    return result.message_thread_id ?? null;
-  }
-  return null;
-}
+function discoverTelegramAgents(): TelegramAgent[] {
+  const config = getConfig();
+  const originalAgent = config.AGENT_NAME;
+  const agents: TelegramAgent[] = [];
 
-/**
- * Discover enabled agents and return their info with manifest data.
- */
-function discoverEnabledAgents(): { name: string; display_name: string; emoji: string }[] {
-  const agents: { name: string; display_name: string; emoji: string }[] = [];
+  try {
+    for (const agent of discoverAgents()) {
+      const state = getAgentState(agent.name);
+      if (!state.enabled) continue;
 
-  for (const agent of discoverAgents()) {
-    const state = getAgentState(agent.name);
-    if (!state.enabled) {
-      continue;
+      config.reloadForAgent(agent.name);
+
+      const botToken = config.TELEGRAM_BOT_TOKEN;
+      const chatId = config.TELEGRAM_CHAT_ID;
+
+      if (!botToken || !chatId) continue;
+
+      const manifest = getAgentManifest(agent.name);
+      agents.push({
+        name: agent.name,
+        display_name: agent.display_name || agent.name.charAt(0).toUpperCase() + agent.name.slice(1),
+        emoji: (manifest.telegram_emoji as string) || '',
+        botToken,
+        chatId,
+      });
     }
-    const manifest = getAgentManifest(agent.name);
-    agents.push({
-      name: agent.name,
-      display_name: agent.display_name || agent.name.charAt(0).toUpperCase() + agent.name.slice(1),
-      emoji: (manifest.telegram_emoji as string) || '',
-    });
+  } finally {
+    config.reloadForAgent(originalAgent);
   }
 
   return agents;
 }
 
-/**
- * Ensure each enabled agent has a topic in the group. Creates missing ones.
- * Returns the updated state with topic_map populated.
- */
-async function ensureTopics(groupId: string, state: DaemonState): Promise<DaemonState> {
-  const topicMap = state.topic_map;
+// ---------------------------------------------------------------------------
+// Bot profile photo
+// ---------------------------------------------------------------------------
 
-  // Build reverse map: agent_name -> thread_id
-  const agentToTopic: Record<string, string> = {};
-  for (const [threadId, agentName] of Object.entries(topicMap)) {
-    agentToTopic[agentName] = threadId;
+async function setAgentBotPhoto(agentName: string, botToken: string): Promise<void> {
+  const refs = getReferenceImages(agentName);
+  if (refs.length === 0) return;
+  try {
+    await setBotProfilePhoto(refs[0], botToken);
+    log.info(`[${agentName}] Bot profile photo set`);
+  } catch (e) {
+    log.debug(`[${agentName}] Profile photo failed: ${e}`);
   }
-
-  const agents = discoverEnabledAgents();
-
-  for (const agent of agents) {
-    if (agent.name in agentToTopic) {
-      log.debug(`Agent ${agent.name} already has topic ${agentToTopic[agent.name]}`);
-      continue;
-    }
-
-    // Create a new topic for this agent
-    const topicName = agent.emoji ? `${agent.emoji} ${agent.display_name}` : agent.display_name;
-    const threadId = await createForumTopic(groupId, topicName);
-
-    if (threadId) {
-      topicMap[String(threadId)] = agent.name;
-      log.info(`Created topic '${topicName}' (thread_id=${threadId}) for agent ${agent.name}`);
-    } else {
-      log.error(`Failed to create topic for agent ${agent.name}`);
-    }
-  }
-
-  state.topic_map = topicMap;
-  return state;
 }
 
 // ---------------------------------------------------------------------------
@@ -350,18 +344,112 @@ async function ensureTopics(groupId: string, state: DaemonState): Promise<Daemon
 
 const DISPATCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minute max per agent dispatch
 
+// ---------------------------------------------------------------------------
+// Telegram streaming display
+// ---------------------------------------------------------------------------
+
 /**
- * Dispatch a message to an agent with live streaming back to Telegram.
+ * Formats a tool name for display - strips MCP prefixes for readability.
+ * e.g. "mcp__memory__recall" -> "recall"
+ *      "mcp__google__calendar_events" -> "calendar_events"
+ */
+function formatToolName(name: string): string {
+  const parts = name.split('__');
+  return parts.length > 2 ? parts.slice(2).join('__') : parts[parts.length - 1];
+}
+
+/**
+ * Truncate text with ellipsis for display in status lines.
+ */
+function truncate(text: string, maxLen: number): string {
+  const cleaned = text.replace(/\n/g, ' ').trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  return cleaned.slice(0, maxLen - 1) + '\u2026';
+}
+
+/**
+ * Build a rich status display for Telegram showing the full inference process.
  *
- * Sends an initial "Thinking..." message, then edits it in-place as
- * text streams in. Shows tool use and thinking status. Returns the
- * final response text, or null on failure.
+ * Layout:
+ *   [thinking block if present]
+ *   [completed tool calls with results]
+ *   [active tool call if in progress]
+ *   [response text as it streams]
+ */
+function buildStatusDisplay(state: StreamState): string {
+  const parts: string[] = [];
+
+  // Thinking section - show a summary of thinking if present
+  if (state.thinkingText) {
+    const thinkPreview = truncate(state.thinkingText, 200);
+    parts.push(`\u{1f9e0} _${thinkPreview}_`);
+  }
+
+  // Completed tool calls with results
+  for (const tool of state.completedTools) {
+    const name = formatToolName(tool.name);
+    const inputPreview = tool.input ? truncate(tool.input, 120) : '';
+    const resultPreview = tool.result ? truncate(tool.result, 150) : '';
+
+    let line = `\u2705 \`${name}\``;
+    if (inputPreview) line += `  ${inputPreview}`;
+    if (resultPreview) line += `\n    \u2192 _${resultPreview}_`;
+    parts.push(line);
+  }
+
+  // Active tool call (in progress)
+  if (state.activeTool) {
+    const name = formatToolName(state.activeTool.name);
+    const inputPreview = state.activeTool.input ? truncate(state.activeTool.input, 120) : '';
+    let line = `\u23f3 \`${name}\``;
+    if (inputPreview) line += `  ${inputPreview}`;
+    else line += '\u2026';
+    parts.push(line);
+  }
+
+  // Compacting indicator
+  if (state.isCompacting) {
+    parts.push('_Compacting context\u2026_');
+  }
+
+  // Streamed response text
+  if (state.responseText) {
+    if (parts.length > 0) parts.push(''); // blank line separator
+    parts.push(state.responseText);
+  } else if (parts.length === 0) {
+    parts.push('_Thinking\u2026_');
+  }
+
+  return parts.join('\n');
+}
+
+interface ToolCallState {
+  name: string;
+  id: string;
+  input: string;
+  result: string;
+}
+
+interface StreamState {
+  thinkingText: string;
+  activeTool: ToolCallState | null;
+  completedTools: ToolCallState[];
+  responseText: string;
+  isCompacting: boolean;
+}
+
+/**
+ * Dispatch a message to an agent with rich live streaming back to Telegram.
+ *
+ * Shows the full inference process: thinking, tool calls with inputs and
+ * results, compacting, and streamed response text - updated in real-time
+ * by editing the Telegram message.
  */
 async function dispatchToAgent(
   agentName: string,
   text: string,
   chatId: string,
-  threadId: number,
+  botToken: string,
 ): Promise<string | null> {
   const config = getConfig();
   const originalAgent = config.AGENT_NAME;
@@ -372,7 +460,7 @@ async function dispatchToAgent(
   const display = (manifest.display_name as string) || agentName.charAt(0).toUpperCase() + agentName.slice(1);
   const header = emoji ? `${emoji} *${display}*\n\n` : '';
 
-  const msgId = await sendMessageGetId(`${header}_Thinking..._`, chatId, threadId);
+  const msgId = await sendMessageGetId(`${header}_Thinking\u2026_`, chatId, botToken);
 
   try {
     config.reloadForAgent(agentName);
@@ -384,15 +472,23 @@ async function dispatchToAgent(
 
     const prompt = `[Telegram message from ${config.USER_NAME}]\n\n${text}`;
     let fullText = '';
-    let streamedText = '';
     const toolsUsed: string[] = [];
+
+    // Rich streaming state
+    const state: StreamState = {
+      thinkingText: '',
+      activeTool: null,
+      completedTools: [],
+      responseText: '',
+      isCompacting: false,
+    };
 
     // Throttle edits to avoid Telegram rate limits
     const EDIT_INTERVAL_MS = 1500;
     let lastEditTime = 0;
     let editPending = false;
 
-    const doEdit = async (content: string): Promise<void> => {
+    const doEdit = async (): Promise<void> => {
       if (!msgId) return;
       const now = Date.now();
       if (now - lastEditTime < EDIT_INTERVAL_MS) {
@@ -401,14 +497,10 @@ async function dispatchToAgent(
       }
       editPending = false;
       lastEditTime = now;
-      await editMessage(msgId, `${header}${content}`, chatId);
+      const displayText = buildStatusDisplay(state);
+      await editMessage(msgId, `${header}${displayText}`, chatId, botToken);
     };
 
-    // Flush any pending edit that was throttled
-    const flushEdit = async (content: string): Promise<void> => {
-      if (!msgId) return;
-      await editMessage(msgId, `${header}${content}`, chatId);
-    };
 
     await new Promise<void>((resolve, reject) => {
       const emitter = streamInference(prompt, system, cliSessionId);
@@ -420,32 +512,84 @@ async function dispatchToAgent(
 
       // Periodically flush throttled edits
       const flushTimer = setInterval(async () => {
-        if (editPending && streamedText) {
-          await doEdit(streamedText);
+        if (editPending) {
+          await doEdit();
         }
       }, EDIT_INTERVAL_MS);
 
       emitter.on('event', async (evt: InferenceEvent) => {
         switch (evt.type) {
-          case 'TextDelta':
-            streamedText += evt.text;
-            await doEdit(streamedText);
+          case 'ThinkingDelta':
+            state.thinkingText += evt.text;
+            await doEdit();
             break;
-          case 'ToolUse':
+
+          case 'ToolUse': {
+            // If there was a previous active tool, move it to completed
+            if (state.activeTool) {
+              state.completedTools.push(state.activeTool);
+            }
+            state.activeTool = {
+              name: evt.name,
+              id: evt.toolId,
+              input: evt.inputJson || '',
+              result: '',
+            };
             toolsUsed.push(evt.name);
             log.debug(`[${agentName}] tool -> ${evt.name}`);
-            // Show tool usage in the message
-            await doEdit(`${streamedText}\n\n_Using ${evt.name}..._`);
+            await doEdit();
             break;
+          }
+
+          case 'ToolInputDelta':
+            // Accumulate tool input JSON for the active tool
+            if (state.activeTool) {
+              state.activeTool.input += evt.delta;
+              await doEdit();
+            }
+            break;
+
+          case 'ToolResult': {
+            // Match result to tool and move to completed
+            if (state.activeTool) {
+              state.activeTool.result = evt.output;
+              state.completedTools.push(state.activeTool);
+              state.activeTool = null;
+            } else {
+              // Result for a tool we didn't track - add as completed
+              state.completedTools.push({
+                name: evt.toolName || '?',
+                id: evt.toolId,
+                input: '',
+                result: evt.output,
+              });
+            }
+            await doEdit();
+            break;
+          }
+
+          case 'TextDelta':
+            state.responseText += evt.text;
+            // Clear thinking once response starts
+            if (state.thinkingText && state.responseText.length < 20) {
+              state.thinkingText = '';
+            }
+            await doEdit();
+            break;
+
           case 'Compacting':
-            await doEdit(`${streamedText}\n\n_Compacting context..._`);
+            state.isCompacting = true;
+            await doEdit();
             break;
+
           case 'StreamDone':
             clearTimeout(timer);
             clearInterval(flushTimer);
+            state.isCompacting = false;
             fullText = evt.fullText;
             resolve();
             break;
+
           case 'StreamError':
             clearTimeout(timer);
             clearInterval(flushTimer);
@@ -462,18 +606,18 @@ async function dispatchToAgent(
 
     const finalText = fullText.trim() || null;
 
-    // Final edit with complete response (removes any trailing tool-use indicators)
+    // Final edit with complete response (clean - no tool/thinking indicators)
     if (finalText && msgId) {
-      await flushEdit(finalText);
+      await editMessage(msgId, `${header}${finalText}`, chatId, botToken);
     } else if (!finalText && msgId) {
-      await flushEdit('_No response_');
+      await editMessage(msgId, `${header}_No response_`, chatId, botToken);
     }
 
     return finalText;
   } catch (e) {
     log.error(`[${agentName}] dispatch failed: ${e}`);
     if (msgId) {
-      await editMessage(msgId, `${header}_Error: dispatch failed_`, chatId);
+      await editMessage(msgId, `${header}_Error: dispatch failed_`, chatId, botToken);
     }
     return null;
   } finally {
@@ -487,8 +631,8 @@ async function dispatchToAgent(
 // Utility commands
 // ---------------------------------------------------------------------------
 
-async function handleStatusCommand(chatId: string, threadId?: number): Promise<void> {
-  const agents = discoverEnabledAgents();
+async function handleStatusCommand(chatId: string, botToken: string): Promise<void> {
+  const agents = discoverTelegramAgents();
   const lines = ['*Active agents:*\n'];
 
   for (const a of agents) {
@@ -497,42 +641,36 @@ async function handleStatusCommand(chatId: string, threadId?: number): Promise<v
   }
 
   const text = lines.join('\n');
-  await sendMessage(text, chatId, false, threadId);
+  await sendMessage(text, chatId, false, botToken);
 }
 
 // ---------------------------------------------------------------------------
-// Polling
+// Per-agent polling
 // ---------------------------------------------------------------------------
 
-let _state: DaemonState = { last_update_id: 0, topic_map: {} };
+let _state: DaemonState = { agents: {} };
+let _running = false;
+let _pollerTimers: ReturnType<typeof setTimeout>[] = [];
 
-async function pollOnce(): Promise<void> {
+/**
+ * One poll cycle for a single agent's bot. Fetches updates, processes
+ * messages, and dispatches to the agent.
+ */
+async function pollAgent(agent: TelegramAgent): Promise<void> {
   if (!_running) return;
 
-  const config = getConfig();
-  if (!config.TELEGRAM_BOT_TOKEN) {
-    log.warn('TELEGRAM_BOT_TOKEN not configured');
-    return;
-  }
-
-  const groupId = config.TELEGRAM_GROUP_ID;
-  const userId = config.TELEGRAM_CHAT_ID; // Will's personal user ID for auth
-
-  // Use abort controller so stopDaemon() can cancel the long-poll
-  _pollAbort = new AbortController();
+  const agentState = _state.agents[agent.name] || { last_update_id: 0 };
 
   let raw: unknown;
   try {
     raw = await post('getUpdates', {
-      offset: _state.last_update_id + 1,
+      offset: agentState.last_update_id + 1,
       timeout: 30,
       allowed_updates: ['message'],
-    }, 45_000);
+    }, 45_000, agent.botToken);
   } catch (e) {
-    if (!_running) return; // Aborted by stopDaemon
+    if (!_running) return;
     throw e;
-  } finally {
-    _pollAbort = null;
   }
 
   const result = Array.isArray(raw) ? raw as {
@@ -542,7 +680,6 @@ async function pollOnce(): Promise<void> {
       caption?: string;
       from?: { id: number };
       chat?: { id: number };
-      message_thread_id?: number;
       photo?: { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }[];
       voice?: { file_id: string; duration: number; mime_type?: string; file_size?: number };
       document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
@@ -553,7 +690,7 @@ async function pollOnce(): Promise<void> {
   if (!result) return;
 
   for (const update of result) {
-    _state.last_update_id = Math.max(_state.last_update_id, update.update_id);
+    agentState.last_update_id = Math.max(agentState.last_update_id, update.update_id);
 
     const msg = update.message;
     if (!msg) continue;
@@ -563,52 +700,26 @@ async function pollOnce(): Promise<void> {
     const hasMedia = !!(msg.photo || msg.voice || msg.document || msg.video);
     if (!hasText && !hasMedia) continue;
 
-    // Only accept messages from Will in the configured group
-    const senderId = String(msg.from?.id || '');
+    // Only accept messages from the configured chat
     const msgChatId = String(msg.chat?.id || '');
-
-    if (userId && senderId !== userId) {
-      log.debug(`Ignoring message from user ${senderId}`);
-      continue;
-    }
-
-    if (groupId && msgChatId !== groupId) {
-      log.debug(`Ignoring message from chat ${msgChatId}`);
-      continue;
-    }
+    if (msgChatId !== agent.chatId) continue;
 
     const text = (msg.text || '').trim();
-    const threadId = msg.message_thread_id;
 
-    // Handle /status anywhere (text-only)
+    // Handle /status command
     if (text.toLowerCase() === '/status') {
-      await handleStatusCommand(msgChatId, threadId);
-      continue;
-    }
-
-    // Messages must be in a topic to reach an agent
-    if (!threadId) {
-      log.debug(`Ignoring message outside of topic: ${text.slice(0, 40)}`);
-      continue;
-    }
-
-    // Look up which agent owns this topic
-    const agentName = _state.topic_map[String(threadId)];
-    if (!agentName) {
-      log.warn(`No agent mapped to thread_id ${threadId}, ignoring`);
+      await handleStatusCommand(msgChatId, agent.botToken);
       continue;
     }
 
     // Build the prompt from text and/or media
     const promptParts: string[] = [];
-
-    // Handle incoming media - download to agent's media directory
-    const mediaDir = path.join(USER_DATA, 'agents', agentName, 'media');
+    const mediaDir = path.join(USER_DATA, 'agents', agent.name, 'media');
 
     if (msg.photo && msg.photo.length > 0) {
       // Telegram sends multiple sizes - take the largest (last in array)
       const largest = msg.photo[msg.photo.length - 1];
-      const savedPath = await downloadTelegramFile(largest.file_id, mediaDir);
+      const savedPath = await downloadTelegramFile(largest.file_id, mediaDir, undefined, agent.botToken);
       if (savedPath) {
         promptParts.push(`[Telegram photo from Will]\n\n<image saved to: ${savedPath}>`);
       } else {
@@ -617,7 +728,7 @@ async function pollOnce(): Promise<void> {
     }
 
     if (msg.voice) {
-      const savedPath = await downloadTelegramFile(msg.voice.file_id, mediaDir);
+      const savedPath = await downloadTelegramFile(msg.voice.file_id, mediaDir, undefined, agent.botToken);
       if (savedPath) {
         promptParts.push(`[Telegram voice message from Will]\n\n<voice note saved to: ${savedPath}>`);
       } else {
@@ -627,7 +738,7 @@ async function pollOnce(): Promise<void> {
 
     if (msg.document) {
       const docFilename = msg.document.file_name || undefined;
-      const savedPath = await downloadTelegramFile(msg.document.file_id, mediaDir, docFilename);
+      const savedPath = await downloadTelegramFile(msg.document.file_id, mediaDir, docFilename, agent.botToken);
       const label = msg.document.file_name ? `Telegram document from Will: ${msg.document.file_name}` : 'Telegram document from Will';
       if (savedPath) {
         promptParts.push(`[${label}]\n\n<file saved to: ${savedPath}>`);
@@ -637,7 +748,7 @@ async function pollOnce(): Promise<void> {
     }
 
     if (msg.video) {
-      const savedPath = await downloadTelegramFile(msg.video.file_id, mediaDir);
+      const savedPath = await downloadTelegramFile(msg.video.file_id, mediaDir, undefined, agent.botToken);
       if (savedPath) {
         promptParts.push(`[Telegram video from Will]\n\n<video saved to: ${savedPath}>`);
       } else {
@@ -646,7 +757,6 @@ async function pollOnce(): Promise<void> {
     }
 
     // Include text/caption content
-    // A media message can have a caption instead of text
     const messageText = text || (msg.caption || '').trim();
     if (messageText) {
       promptParts.push(messageText);
@@ -655,33 +765,58 @@ async function pollOnce(): Promise<void> {
     const fullPrompt = promptParts.join('\n\n');
     if (!fullPrompt) continue;
 
-    log.info(`[${agentName}] Message: ${fullPrompt.slice(0, 80)}`);
+    log.info(`[${agent.name}] Message: ${fullPrompt.slice(0, 80)}`);
 
     // Dispatch with live streaming back to Telegram
-    const response = await dispatchToAgent(agentName, fullPrompt, msgChatId, threadId);
+    const response = await dispatchToAgent(agent.name, fullPrompt, msgChatId, agent.botToken);
     if (response) {
-      log.info(`[${agentName}] Responded (${response.length} chars)`);
+      log.info(`[${agent.name}] Responded (${response.length} chars)`);
     } else {
-      log.warn(`[${agentName}] No response`);
+      log.warn(`[${agent.name}] No response`);
     }
   }
 
+  _state.agents[agent.name] = agentState;
   saveState(_state);
+}
+
+/**
+ * Per-agent polling loop with random jitter between polls for organic feel.
+ */
+async function runAgentPoller(agent: TelegramAgent): Promise<void> {
+  log.info(`[${agent.name}] Poller started`);
+
+  while (_running) {
+    try {
+      await pollAgent(agent);
+    } catch (e) {
+      if (!_running) return;
+      log.error(`[${agent.name}] Poll error: ${e}`);
+    }
+    if (_running) {
+      // Random jitter: 8-15 seconds for organic feel
+      const jitter = 8000 + Math.random() * 7000;
+      await new Promise((resolve) => {
+        const t = setTimeout(resolve, jitter);
+        _pollerTimers.push(t);
+      });
+    }
+  }
+
+  log.info(`[${agent.name}] Poller stopped`);
 }
 
 // ---------------------------------------------------------------------------
 // Daemon control
 // ---------------------------------------------------------------------------
 
-let _pollTimer: ReturnType<typeof setInterval> | null = null;
-let _running = false;
-let _pollAbort: AbortController | null = null;
-
 /**
- * Start the polling daemon. Acquires an instance lock to prevent
- * duplicate processes. Returns false if another instance is already running.
+ * Start the polling daemon. Discovers agents with telegram credentials
+ * and launches a parallel poller per agent. Acquires an instance lock
+ * to prevent duplicate processes. Returns false if another instance
+ * is already running or no agents have telegram credentials.
  */
-export function startDaemon(intervalMs = 10_000): boolean {
+export function startDaemon(): boolean {
   if (_running) return true;
 
   if (!acquireLock()) {
@@ -691,39 +826,27 @@ export function startDaemon(intervalMs = 10_000): boolean {
 
   _running = true;
   _state = loadState();
-  setLastUpdateId(_state.last_update_id);
+  _pollerTimers = [];
 
-  log.info(`Starting (last_update_id=${_state.last_update_id}, topics=${Object.keys(_state.topic_map).length}, interval=${intervalMs}ms)`);
-
-  // Ensure topics exist before starting the poll loop
-  async function initAndPoll(): Promise<void> {
-    const config = getConfig();
-    if (config.TELEGRAM_GROUP_ID) {
-      try {
-        _state = await ensureTopics(config.TELEGRAM_GROUP_ID, _state);
-        saveState(_state);
-        log.info(`Topics ready: ${Object.keys(_state.topic_map).length} agents`);
-      } catch (e) {
-        log.error(`Failed to ensure topics: ${e}`);
-      }
-    }
-
-    // Sequential polling loop - wait for each poll to complete before scheduling next
-    while (_running) {
-      try {
-        await pollOnce();
-      } catch (e) {
-        log.error(`Poll error: ${e}`);
-      }
-      if (_running) {
-        await new Promise((resolve) => {
-          _pollTimer = setTimeout(resolve, intervalMs) as unknown as ReturnType<typeof setInterval>;
-        });
-      }
-    }
+  const agents = discoverTelegramAgents();
+  if (agents.length === 0) {
+    log.warn('No agents with telegram credentials');
+    releaseLock();
+    _running = false;
+    return false;
   }
 
-  initAndPoll();
+  log.info(`Starting ${agents.length} poller(s): ${agents.map(a => a.name).join(', ')}`);
+
+  // Set bot profile photos (fire-and-forget)
+  for (const agent of agents) {
+    setAgentBotPhoto(agent.name, agent.botToken).catch(() => {});
+  }
+
+  // Launch all pollers in parallel
+  for (const agent of agents) {
+    runAgentPoller(agent);
+  }
 
   return true;
 }
@@ -733,14 +856,8 @@ export function startDaemon(intervalMs = 10_000): boolean {
  */
 export function stopDaemon(): void {
   _running = false;
-  if (_pollTimer) {
-    clearTimeout(_pollTimer as unknown as ReturnType<typeof setTimeout>);
-    _pollTimer = null;
-  }
-  if (_pollAbort) {
-    _pollAbort.abort();
-    _pollAbort = null;
-  }
+  for (const t of _pollerTimers) clearTimeout(t);
+  _pollerTimers = [];
   releaseLock();
   log.info('Stopped');
 }
