@@ -171,8 +171,9 @@ class WorldMonitorClient:
         """Fetch from the API and cache the response.
 
         On success, the new response is stored and the previous response is
-        shifted into ``prev_response``. Delta computation is a placeholder
-        (returns ``None``) and will be filled in Task 2.
+        shifted into ``prev_response``. When a previous response exists,
+        ``compute_delta`` is called and the result is persisted in the
+        ``delta`` column.
 
         On fetch failure, the cached response is returned with
         ``_stale: True`` and ``_cached_at`` injected into the data dict.
@@ -192,7 +193,9 @@ class WorldMonitorClient:
         -------
         (data, delta)
             ``data`` is the parsed response dict (or stale cached dict).
-            ``delta`` is ``None`` (placeholder until Task 2).
+            ``delta`` is a dict of changes from the previous response, or
+            ``None`` when no previous response exists or the endpoint is
+            unrecognised.
 
         Raises
         ------
