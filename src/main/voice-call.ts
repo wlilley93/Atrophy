@@ -1,4 +1,16 @@
 /**
+ * @deprecated - Superseded by voice-agent.ts (hybrid ElevenLabs + Claude Code system).
+ *
+ * voice-agent.ts uses ElevenLabs with a cheap routing LLM (gemini-2.5-flash-lite)
+ * and client tools that hand off heavy work to local Claude Code. This module
+ * used a custom LLM approach where ALL inference went through local Claude Code,
+ * which was slower and higher latency for simple conversational responses.
+ *
+ * This file is kept for reference but should not be used for new integrations.
+ * Use voice-agent.ts instead.
+ *
+ * ---
+ *
  * ElevenLabs Conversational AI voice call - persistent WebSocket session.
  *
  * Instead of per-sentence TTS synthesis, the entire conversation happens
