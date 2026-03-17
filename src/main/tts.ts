@@ -357,6 +357,31 @@ function writeSilentFile(): string {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Concurrency limiter - ElevenLabs allows max 3 concurrent requests.
+// We cap at 2 to leave headroom for caching/opening line synthesis.
+// ---------------------------------------------------------------------------
+
+const MAX_CONCURRENT_TTS = 2;
+let _activeTtsCount = 0;
+const _ttsWaiters: (() => void)[] = [];
+
+async function acquireTtsSlot(): Promise<void> {
+  if (_activeTtsCount < MAX_CONCURRENT_TTS) {
+    _activeTtsCount++;
+    return;
+  }
+  await new Promise<void>((resolve) => _ttsWaiters.push(resolve));
+  _activeTtsCount++;
+}
+
+function releaseTtsSlot(): void {
+  _activeTtsCount--;
+  const next = _ttsWaiters.shift();
+  if (next) next();
+}
+
+// ---------------------------------------------------------------------------
 // Main interface
 // ---------------------------------------------------------------------------
 
@@ -374,12 +399,15 @@ export async function synthesise(text: string): Promise<string | null> {
 
   const config = getConfig();
 
-  // Primary: ElevenLabs streaming
+  // Primary: ElevenLabs streaming (with concurrency limit)
   if (config.ELEVENLABS_API_KEY && config.ELEVENLABS_VOICE_ID) {
+    await acquireTtsSlot();
     try {
       return await synthesiseElevenLabsStream(text);
     } catch (e) {
       log.warn(`ElevenLabs failed (${e}), trying Fal...`);
+    } finally {
+      releaseTtsSlot();
     }
   }
 
