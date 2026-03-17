@@ -17,7 +17,7 @@
   import { audio } from '../stores/audio.svelte';
   import { agents } from '../stores/agents.svelte';
 
-  import { addMessage, completeLast, transcript } from '../stores/transcript.svelte';
+  import { addMessage, completeLast, clearTranscript, transcript } from '../stores/transcript.svelte';
   import { getArtifact } from '../stores/artifacts.svelte';
 
   import { api } from '../api';
@@ -875,6 +875,10 @@
       const result = await api.switchAgent(next);
       agents.current = result.agentName;
       agents.displayName = result.agentDisplayName;
+
+      // Clear transcript for clean slate with new agent
+      clearTranscript();
+
       playAgentSwitchAnimation();
 
       // Check if the new agent needs custom setup
