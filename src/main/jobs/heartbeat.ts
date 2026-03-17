@@ -35,9 +35,11 @@ import { loadSystemPrompt } from '../context';
 import { isAway, isMacIdle } from '../status';
 import { sendNotification } from '../notify';
 import { queueMessage } from '../queue';
-import { sendMessage as sendTelegram } from '../telegram';
+import { sendMessage as sendTelegram, sendVoiceNote, sendButtons } from '../telegram';
 import { registerJob, activeHoursGate } from './index';
 import { createLogger } from '../logger';
+import { synthesise, isElevenLabsExhausted } from '../tts';
+import { convertToOgg, cleanupFiles } from '../audio-convert';
 
 const log = createLogger('heartbeat');
 
@@ -187,51 +189,178 @@ function runHeartbeatInference(
 }
 
 // ---------------------------------------------------------------------------
+// Response parsing
+// ---------------------------------------------------------------------------
+
+export interface HeartbeatParsed {
+  type: 'REACH_OUT' | 'VOICE_NOTE' | 'HEARTBEAT_OK' | 'SUPPRESS' | 'ASK' | 'UNKNOWN';
+  message: string;
+  options?: string[];
+}
+
+export function parseHeartbeatResponse(response: string): HeartbeatParsed {
+  const stripped = response.trim();
+
+  if (stripped.startsWith('[VOICE_NOTE]')) {
+    return { type: 'VOICE_NOTE', message: stripped.slice('[VOICE_NOTE]'.length).trim() };
+  }
+
+  if (stripped.startsWith('[REACH_OUT]')) {
+    return { type: 'REACH_OUT', message: stripped.slice('[REACH_OUT]'.length).trim() };
+  }
+
+  if (stripped.startsWith('[HEARTBEAT_OK]')) {
+    return { type: 'HEARTBEAT_OK', message: stripped.slice('[HEARTBEAT_OK]'.length).trim() };
+  }
+
+  if (stripped.startsWith('[SUPPRESS]')) {
+    return { type: 'SUPPRESS', message: stripped.slice('[SUPPRESS]'.length).trim() };
+  }
+
+  if (stripped.startsWith('[ASK]')) {
+    const content = stripped.slice('[ASK]'.length).trim();
+    const parts = content.split('|').map((s) => s.trim());
+    return {
+      type: 'ASK',
+      message: parts[0],
+      options: parts.slice(1),
+    };
+  }
+
+  return { type: 'UNKNOWN', message: stripped };
+}
+
+// ---------------------------------------------------------------------------
 // Parse response and act
 // ---------------------------------------------------------------------------
 
 async function handleResponse(response: string): Promise<string> {
   const config = getConfig();
-  const stripped = response.trim();
+  const parsed = parseHeartbeatResponse(response);
 
-  if (stripped.startsWith('[REACH_OUT]')) {
-    const message = stripped.slice('[REACH_OUT]'.length).trim();
-    logHeartbeat('REACH_OUT', '', message);
-
-    // Route: Telegram only if Mac is idle (user is away from computer)
-    // Local notification + queue always
-    if (isMacIdle()) {
-      try {
-        await sendTelegram(message);
-        log.info('Sent via Telegram (Mac idle)');
-      } catch (e) {
-        log.error(`Telegram send failed: ${e}`);
-      }
-    } else {
-      log.info('Mac active - local only, skipping Telegram');
+  switch (parsed.type) {
+    case 'REACH_OUT': {
+      logHeartbeat('REACH_OUT', '', parsed.message);
+      await deliverTextMessage(parsed.message, config);
+      return `REACH_OUT: ${parsed.message.slice(0, 80)}`;
     }
 
-    sendNotification(config.AGENT_DISPLAY_NAME, message.slice(0, 200));
-    await queueMessage(message, 'heartbeat');
+    case 'VOICE_NOTE': {
+      logHeartbeat('VOICE_NOTE', '', parsed.message);
+      await deliverVoiceNote(parsed.message, config);
+      return `VOICE_NOTE: ${parsed.message.slice(0, 80)}`;
+    }
 
-    return `REACH_OUT: ${message.slice(0, 80)}`;
+    case 'HEARTBEAT_OK': {
+      logHeartbeat('HEARTBEAT_OK', parsed.message);
+      return `OK: ${parsed.message.slice(0, 80)}`;
+    }
+
+    case 'SUPPRESS': {
+      logHeartbeat('SUPPRESS', parsed.message);
+      return `Suppressed: ${parsed.message.slice(0, 80)}`;
+    }
+
+    case 'ASK': {
+      logHeartbeat('ASK', parsed.message);
+      await deliverAskMessage(parsed.message, parsed.options || ['Yes', 'No'], config);
+      return `ASK: ${parsed.message.slice(0, 80)}`;
+    }
+
+    default: {
+      logHeartbeat('UNKNOWN', parsed.message.slice(0, 500));
+      return `Unknown format: ${parsed.message.slice(0, 80)}`;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Delivery helpers
+// ---------------------------------------------------------------------------
+
+async function deliverTextMessage(message: string, config: ReturnType<typeof getConfig>): Promise<void> {
+  if (isMacIdle()) {
+    try {
+      await sendTelegram(message);
+      log.info('Sent text via Telegram (Mac idle)');
+    } catch (e) {
+      log.error(`Telegram send failed: ${e}`);
+    }
+  } else {
+    log.info('Mac active - local only, skipping Telegram');
   }
 
-  if (stripped.startsWith('[HEARTBEAT_OK]')) {
-    const reason = stripped.slice('[HEARTBEAT_OK]'.length).trim();
-    logHeartbeat('HEARTBEAT_OK', reason);
-    return `OK: ${reason.slice(0, 80)}`;
+  sendNotification(config.AGENT_DISPLAY_NAME, message.slice(0, 200));
+  await queueMessage(message, 'heartbeat');
+}
+
+async function deliverVoiceNote(message: string, config: ReturnType<typeof getConfig>): Promise<void> {
+  // Always queue text + notification regardless of voice success
+  sendNotification(config.AGENT_DISPLAY_NAME, message.slice(0, 200));
+  await queueMessage(message, 'heartbeat');
+
+  // Only send voice via Telegram if Mac is idle
+  if (!isMacIdle()) {
+    log.info('Mac active - local only, skipping voice note');
+    return;
   }
 
-  if (stripped.startsWith('[SUPPRESS]')) {
-    const reason = stripped.slice('[SUPPRESS]'.length).trim();
-    logHeartbeat('SUPPRESS', reason);
-    return `Suppressed: ${reason.slice(0, 80)}`;
+  // Check if ElevenLabs is available
+  if (isElevenLabsExhausted()) {
+    log.info('ElevenLabs exhausted - falling back to text');
+    await sendTelegram(message);
+    return;
   }
 
-  // Unexpected format - log but don't act
-  logHeartbeat('UNKNOWN', stripped.slice(0, 500));
-  return `Unknown format: ${stripped.slice(0, 80)}`;
+  // Synthesise speech
+  let audioPath: string | null = null;
+  try {
+    audioPath = await synthesise(message);
+    if (!audioPath || !fs.existsSync(audioPath) || fs.statSync(audioPath).size === 0) {
+      log.warn('TTS produced no audio - sending as text');
+      await sendTelegram(message);
+      return;
+    }
+  } catch (e) {
+    log.warn(`TTS failed: ${e} - sending as text`);
+    await sendTelegram(message);
+    return;
+  }
+
+  // Convert to OGG for Telegram voice notes
+  const oggPath = convertToOgg(audioPath);
+  const sendPath = oggPath ?? audioPath;
+
+  const success = await sendVoiceNote(sendPath);
+  if (!success) {
+    log.warn('Voice note send failed - sending as text');
+    await sendTelegram(message);
+  } else {
+    log.info('Sent voice note via Telegram');
+  }
+
+  // Clean up temp audio files (MP3 and OGG)
+  cleanupFiles(audioPath, oggPath);
+}
+
+async function deliverAskMessage(
+  question: string,
+  options: string[],
+  config: ReturnType<typeof getConfig>,
+): Promise<void> {
+  if (!isMacIdle()) {
+    log.info('Mac active - skipping Telegram ASK');
+    sendNotification(config.AGENT_DISPLAY_NAME, question.slice(0, 200));
+    return;
+  }
+
+  try {
+    const buttons = [options.map((opt) => ({ text: opt, callback_data: opt.toLowerCase() }))];
+    await sendButtons(question, buttons);
+    log.info(`Sent ASK via Telegram: ${question.slice(0, 60)}`);
+  } catch (e) {
+    log.error(`Telegram ASK failed: ${e}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
