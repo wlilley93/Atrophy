@@ -485,30 +485,7 @@
       disabled={isActive || isRecording || callActive || externalDisabled}
     />
 
-    <!-- Call button (phone icon) - toggle voice call mode -->
-    <button
-      class="call-btn"
-      class:active={callActive}
-      class:listening={callActive && callStatus === 'listening'}
-      class:thinking={callActive && callStatus === 'thinking'}
-      class:speaking={callActive && callStatus === 'speaking'}
-      onclick={toggleCall}
-      disabled={isRecording || (isActive && !callActive)}
-      aria-label={callActive ? 'End call' : 'Start voice call'}
-      title={callActive ? 'End call' : 'Voice call'}
-    >
-      {#if callActive}
-        <!-- Phone off / hang up icon -->
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-          <path d="M23.71 16.67C20.66 13.78 16.54 12 12 12S3.34 13.78.29 16.67a1 1 0 0 0 0 1.41l2.12 2.12a1 1 0 0 0 1.41 0 12.6 12.6 0 0 1 3.51-2.37 1 1 0 0 0 .58-.91V14a13.94 13.94 0 0 1 8.18 0v2.92a1 1 0 0 0 .58.91 12.6 12.6 0 0 1 3.51 2.37 1 1 0 0 0 1.41 0l2.12-2.12a1 1 0 0 0 0-1.41z"/>
-        </svg>
-      {:else}
-        <!-- Phone icon -->
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-        </svg>
-      {/if}
-    </button>
+    <!-- Call button removed - voice calls now handled via ElevenLabs Conversational AI module -->
 
     <!-- Mic button (push-to-talk) -->
     <button
@@ -603,12 +580,8 @@
     opacity: 0.5;
   }
 
-  .call-btn {
-    position: absolute;
-    right: calc(var(--pad) + 82px);
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
+  .UNUSED-call-btn {
+    display: none;
     border: none;
     background: transparent;
     color: rgba(255, 255, 255, 0.4);

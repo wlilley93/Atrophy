@@ -155,6 +155,7 @@ const _emitter = new EventEmitter();
 let _ws: WebSocket | null = null;
 let _active = false;
 let _muted = false;
+let _audioOutputMuted = false;
 let _conversationId: string | null = null;
 let _status: VoiceCallStatus = 'disconnected';
 let _pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -238,6 +239,12 @@ export function isVoiceCallActive(): boolean {
 export function setVoiceCallMuted(muted: boolean): void {
   _muted = muted;
   log.debug(`mic ${muted ? 'muted' : 'unmuted'}`);
+}
+
+/** Mute/unmute audio output. When muted, responses are text-only (no TTS). */
+export function setVoiceCallAudioOutput(enabled: boolean): void {
+  _audioOutputMuted = !enabled;
+  log.debug(`audio output ${enabled ? 'enabled' : 'muted (text-only)'}`);
 }
 
 /**
@@ -557,6 +564,10 @@ function _handleAudioEvent(msg: ConvAIAudio): void {
 }
 
 function _handleAudioOutput(audioBytes: Buffer): void {
+  // When audio output is muted, skip playback - text responses still
+  // come through via the transcript (voice-call:agentResponse IPC)
+  if (_audioOutputMuted) return;
+
   // Forward audio to the renderer for playback via Web Audio API
   _getWindow?.()?.webContents.send('voice-call:audio', audioBytes);
   _emitter.emit('audioReceived', audioBytes);
