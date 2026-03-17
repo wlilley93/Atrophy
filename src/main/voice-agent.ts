@@ -262,8 +262,8 @@ function _startIdleTimer(): void {
   _resetIdleTimer();
   // Don't disconnect while tool calls are in flight
   if (_pendingToolCalls > 0) return;
-  // Don't disconnect if mic is on (continuous listening)
-  if (!_micMuted) return;
+  // Gate applies to ALL modes - mic on or off. Reconnect is ~200ms
+  // which is imperceptible during the natural onset of speech.
 
   _idleDisconnectTimer = setTimeout(() => {
     if (_pendingToolCalls > 0) return; // recheck
@@ -865,16 +865,81 @@ export async function sendText(text: string): Promise<void> {
 }
 
 /**
+ * Simple energy-based voice activity detection.
+ * Returns true if the audio chunk likely contains speech.
+ */
+const VAD_ENERGY_THRESHOLD = 0.01; // tune: lower = more sensitive
+let _vadSpeechDetected = false;
+let _vadSilenceFrames = 0;
+const VAD_SILENCE_FRAMES_TO_STOP = 15; // ~15 chunks of silence before "not speaking"
+
+function _detectVoiceActivity(audio: Float32Array): boolean {
+  let energy = 0;
+  for (let i = 0; i < audio.length; i++) {
+    energy += audio[i] * audio[i];
+  }
+  energy = Math.sqrt(energy / audio.length); // RMS energy
+
+  if (energy > VAD_ENERGY_THRESHOLD) {
+    _vadSpeechDetected = true;
+    _vadSilenceFrames = 0;
+    return true;
+  }
+
+  if (_vadSpeechDetected) {
+    _vadSilenceFrames++;
+    if (_vadSilenceFrames > VAD_SILENCE_FRAMES_TO_STOP) {
+      _vadSpeechDetected = false;
+      _vadSilenceFrames = 0;
+      return false;
+    }
+    return true; // still in speech tail
+  }
+
+  return false;
+}
+
+/**
  * Send raw PCM audio data to the voice agent.
  * Expected format: 16kHz mono Float32Array (-1.0 to 1.0).
+ *
+ * Uses local VAD to gate the connection - only connects when speech is
+ * detected, disconnects after 2s of silence. This means mic-on mode
+ * only bills for actual speaking time, not idle listening.
  */
 export function sendAudioChunk(audio: Float32Array): void {
-  if (!_active || !_ws || _micMuted) return;
-  // Audio chunks only flow when WebSocket is already open (mic mode keeps it connected)
-  if (_ws.readyState !== WebSocket.OPEN) return;
+  if (!_active || _micMuted) return;
 
-  _resetIdleTimer();
+  const hasSpeech = _detectVoiceActivity(audio);
 
+  // If no speech and not connected, skip entirely (free)
+  if (!hasSpeech && (!_ws || _ws.readyState !== WebSocket.OPEN)) return;
+
+  // Speech detected but not connected - reconnect
+  if (hasSpeech && (!_ws || _ws.readyState !== WebSocket.OPEN)) {
+    _ensureConnected().then((ok) => {
+      if (ok) {
+        _resetIdleTimer();
+        // Send this chunk now that we're connected
+        _sendAudioData(audio);
+      }
+    });
+    return;
+  }
+
+  // Connected - send audio and manage idle timer
+  if (_ws && _ws.readyState === WebSocket.OPEN) {
+    _resetIdleTimer();
+    _sendAudioData(audio);
+
+    // If speech just stopped, start the idle timer
+    if (!hasSpeech) {
+      _startIdleTimer();
+    }
+  }
+}
+
+function _sendAudioData(audio: Float32Array): void {
   // Convert Float32Array to 16-bit PCM
   const pcm16 = _float32ToPCM16(audio);
 
