@@ -457,6 +457,7 @@
     inset: 0;
     z-index: 0;
     pointer-events: none;
+    overflow: hidden;
     transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   }
 

@@ -801,14 +801,16 @@
           mirrorSetupVisible = true;
         }
 
-        // Fetch opening line for the new agent
-        const gen = ++_switchGeneration;
-        api!.getOpeningLine().then((opening) => {
-          if (gen === _switchGeneration && opening) {
-            addMessage('agent', opening);
-            completeLast();
-          }
-        }).catch(() => {});
+        // Fetch opening line (skip for agents needing custom setup)
+        if (!data.customSetup) {
+          const gen = ++_switchGeneration;
+          api!.getOpeningLine().then((opening) => {
+            if (gen === _switchGeneration && opening) {
+              addMessage('agent', opening);
+              completeLast();
+            }
+          }).catch(() => {});
+        }
       }));
     }
 
@@ -935,15 +937,20 @@
           mirrorSetupVisible = true;
         }
 
-        // Fetch opening line for the new agent
-        try {
-          const opening = await api.getOpeningLine();
-          // Discard if another switch happened during the fetch
-          if (gen === _switchGeneration && opening) {
-            addMessage('agent', opening);
-            completeLast();
-          }
-        } catch { /* non-critical */ }
+        // Release lock before the opening line fetch (can take seconds)
+        // so the user can click again immediately
+        _switching = false;
+
+        // Fetch opening line (skip for agents needing custom setup)
+        if (!result.customSetup) {
+          try {
+            const opening = await api.getOpeningLine();
+            if (gen === _switchGeneration && opening) {
+              addMessage('agent', opening);
+              completeLast();
+            }
+          } catch { /* non-critical */ }
+        }
       }
     } finally {
       _switching = false;
