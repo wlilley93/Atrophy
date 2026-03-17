@@ -7,7 +7,7 @@ Architecture:
                           compute_delta (Task 2) [done]
   - get_changes/poll    - get_changes, poll_tier, TIERS, helper statics
                           (Task 3) [done]
-  - JSON-RPC server     - Task 4
+  - JSON-RPC server     - Task 4 [done]
 
 Protocol: JSON-RPC 2.0 over stdio (MCP standard transport).
 stdlib only - no pip dependencies.
@@ -15,6 +15,7 @@ stdlib only - no pip dependencies.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import urllib.error
@@ -702,21 +703,788 @@ class WorldMonitorClient:
 
 
 # ---------------------------------------------------------------------------
-# main() - entry point for the MCP JSON-RPC server (added in Task 4)
+# TOOLS list - 21 MCP tool definitions (Task 4)
+# ---------------------------------------------------------------------------
+
+TOOLS = [
+    # ---- Continuous / cached tools (9) ------------------------------------
+    {
+        "name": "worldmonitor_situation",
+        "description": (
+            "Bootstrap endpoint returning a structured situational summary for the "
+            "requested tier. Use 'fast' for near-real-time ops data, 'slow' for "
+            "macro/economic context, or 'both' for a full picture."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tier": {
+                    "type": "string",
+                    "enum": ["fast", "slow", "both"],
+                    "description": "Which bootstrap tier to request (default: fast)",
+                    "default": "fast",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_maritime",
+        "description": (
+            "AIS vessel tracking snapshot. Returns maritime disruptions and optionally "
+            "candidate vessels of interest."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "include_candidates": {
+                    "type": "boolean",
+                    "description": "Include candidate vessels of interest (default: true)",
+                    "default": True,
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_military_flights",
+        "description": (
+            "Real-time military flight tracking. Returns active military aircraft "
+            "positions and identifiers."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_gps_jamming",
+        "description": (
+            "GPS jamming status from GPSJam. Returns hexagonal grid data indicating "
+            "jamming intensity levels globally."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_alerts",
+        "description": (
+            "Israeli Home Front Command (OREF) rocket and missile alerts. Returns active "
+            "alerts and optionally historical alert data."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "include_history": {
+                    "type": "boolean",
+                    "description": "Include historical alert data (default: false)",
+                    "default": False,
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_osint_feed",
+        "description": (
+            "OSINT Telegram feed aggregating open-source intelligence from monitored "
+            "channels. Returns recent posts."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of feed items to return (default: 50)",
+                    "default": 50,
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_conflicts",
+        "description": (
+            "ACLED conflict event data. Returns recent armed conflict events including "
+            "battles, explosions, and civilian targeting incidents."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_thermal",
+        "description": (
+            "Thermal escalation events derived from satellite thermal anomalies. "
+            "Returns active thermal escalations indicating potential fires or explosions."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "max_items": {
+                    "type": "integer",
+                    "description": "Maximum number of thermal escalation items (default: 12)",
+                    "default": 12,
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_get_changes",
+        "description": (
+            "Read cached delta changes across WorldMonitor domains. Returns significant "
+            "changes detected in the last N minutes, optionally filtered by domain."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "since_minutes": {
+                    "type": "integer",
+                    "description": "Look back window in minutes (default: 60)",
+                    "default": 60,
+                },
+                "domains": {
+                    "type": "string",
+                    "description": (
+                        "Comma-separated domain filter, e.g. 'MILITARY,MARITIME'. "
+                        "Leave empty for all domains. Valid domains: MILITARY, MARITIME, "
+                        "ALERTS, OSINT, GPS, ECONOMIC, CONFLICT, THERMAL, TRADE, "
+                        "DISPLACEMENT, INTELLIGENCE."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+    # ---- On-demand tools (12) ---------------------------------------------
+    {
+        "name": "worldmonitor_economic",
+        "description": (
+            "Economic and financial data from multiple sources. Select a series: "
+            "'fred_batch' (US Federal Reserve economic indicators - requires commodities), "
+            "'bis_policy_rates' (BIS central bank policy rates), "
+            "'bis_exchange_rates' (BIS FX rates), "
+            "'bis_credit' (BIS credit data), "
+            "'energy_prices' (global energy price indices)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "series": {
+                    "type": "string",
+                    "enum": ["fred_batch", "bis_policy_rates", "bis_exchange_rates", "bis_credit", "energy_prices"],
+                    "description": "Which economic data series to fetch",
+                },
+                "commodities": {
+                    "type": "string",
+                    "description": "Comma-separated FRED series IDs for fred_batch (e.g. 'GDP,UNRATE,CPIAUCSL')",
+                },
+            },
+            "required": ["series"],
+        },
+    },
+    {
+        "name": "worldmonitor_trade",
+        "description": (
+            "International trade data. Queries: "
+            "'restrictions' (active trade restrictions by country), "
+            "'tariff_trends' (tariff trend data), "
+            "'trade_flows' (bilateral trade flow statistics), "
+            "'trade_barriers' (non-tariff trade barriers)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "enum": ["restrictions", "tariff_trends", "trade_flows", "trade_barriers"],
+                    "description": "Which trade query to run",
+                },
+                "reporting_country": {
+                    "type": "string",
+                    "description": "ISO country code for reporting country (trade_flows)",
+                },
+                "partner_country": {
+                    "type": "string",
+                    "description": "ISO country code for partner country (trade_flows)",
+                },
+                "years": {
+                    "type": "string",
+                    "description": "Comma-separated years (trade_flows, e.g. '2022,2023')",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results (default: 50)",
+                    "default": 50,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "worldmonitor_displacement",
+        "description": (
+            "Population displacement data. Queries: "
+            "'summary' (global displacement summary with flow data), "
+            "'population_exposure' (population exposure within a radius of given coordinates)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "enum": ["summary", "population_exposure"],
+                    "description": "Which displacement query to run",
+                },
+                "lat": {
+                    "type": "number",
+                    "description": "Latitude for population_exposure query",
+                },
+                "lon": {
+                    "type": "number",
+                    "description": "Longitude for population_exposure query",
+                },
+                "radius": {
+                    "type": "number",
+                    "description": "Radius in km for population_exposure query",
+                },
+                "flow_limit": {
+                    "type": "integer",
+                    "description": "Max displacement flows to return (summary, default: 50)",
+                    "default": 50,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "worldmonitor_fleet_report",
+        "description": (
+            "USNI Naval Institute fleet report. Returns current US Navy fleet disposition "
+            "and ship locations."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_aircraft_lookup",
+        "description": (
+            "Batch aircraft details lookup by ICAO hex codes. Returns registration, "
+            "operator, type, and military classification for each aircraft."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hex_codes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of ICAO 24-bit hex codes (e.g. ['AE1234', 'AE5678'])",
+                },
+            },
+            "required": ["hex_codes"],
+        },
+    },
+    {
+        "name": "worldmonitor_wingbits",
+        "description": (
+            "Wingbits crowdsourced ADS-B network status. Returns receiver counts and "
+            "coverage quality metrics."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_deduct_situation",
+        "description": (
+            "AI-powered situational deduction. Submits context text and returns an "
+            "intelligence assessment synthesising current WorldMonitor data streams."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "context": {
+                    "type": "string",
+                    "description": "Context or question for situational deduction",
+                },
+            },
+            "required": ["context"],
+        },
+    },
+    {
+        "name": "worldmonitor_anomalies",
+        "description": (
+            "Infrastructure temporal anomalies. Returns detected anomalies in "
+            "infrastructure patterns that may indicate unusual activity."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_news_summary",
+        "description": (
+            "Summarise a news article by URL. Checks the cache first using cache_key "
+            "to avoid redundant API calls. Returns an AI-generated summary."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "URL of the article to summarise",
+                },
+                "cache_key": {
+                    "type": "string",
+                    "description": "Cache key for this article (e.g. the URL or a slug)",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "worldmonitor_news_digest",
+        "description": (
+            "News feed digest. Returns a curated digest of recent news articles "
+            "across tracked topics."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "variant": {
+                    "type": "string",
+                    "description": "Digest variant or category filter",
+                },
+                "lang": {
+                    "type": "string",
+                    "description": "Language code for digest (e.g. 'en', 'he')",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "worldmonitor_humanitarian",
+        "description": (
+            "Humanitarian situation summaries for one or more regions. Returns "
+            "OCHA-sourced humanitarian data including needs, response, and access."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "regions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of region names or ISO codes (e.g. ['Gaza', 'Sudan'])",
+                },
+            },
+            "required": ["regions"],
+        },
+    },
+    {
+        "name": "worldmonitor_pizzint",
+        "description": (
+            "PIZZINT intelligence status overview. Returns an aggregated intelligence "
+            "picture, optionally including GDELT event data."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "include_gdelt": {
+                    "type": "boolean",
+                    "description": "Include GDELT event data (default: false)",
+                    "default": False,
+                },
+            },
+            "required": [],
+        },
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Handler functions (Task 4)
+# ---------------------------------------------------------------------------
+
+def handle_situation(client: WorldMonitorClient, args: dict) -> str:
+    tier = args.get("tier", "fast")
+    if tier == "both":
+        data_fast, delta_fast = client.fetch_cached("api/bootstrap", params={"tier": "fast"})
+        data_slow, delta_slow = client.fetch_cached("api/bootstrap", params={"tier": "slow"})
+        result = {
+            "fast": data_fast,
+            "slow": data_slow,
+            "delta_fast": delta_fast,
+            "delta_slow": delta_slow,
+        }
+    else:
+        data, delta = client.fetch_cached("api/bootstrap", params={"tier": tier})
+        result = {"data": data, "delta": delta}
+    return json.dumps(result, indent=2)
+
+
+def handle_maritime(client: WorldMonitorClient, args: dict) -> str:
+    include_candidates = args.get("include_candidates", True)
+    params = {"candidates": "true" if include_candidates else "false"}
+    data, delta = client.fetch_cached("api/ais-snapshot", params=params)
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_military_flights(client: WorldMonitorClient, args: dict) -> str:
+    data, delta = client.fetch_cached("api/military-flights")
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_gps_jamming(client: WorldMonitorClient, args: dict) -> str:
+    data, delta = client.fetch_cached("api/gpsjam")
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_alerts(client: WorldMonitorClient, args: dict) -> str:
+    include_history = args.get("include_history", False)
+    params: dict | None = {"history": "true"} if include_history else None
+    data, delta = client.fetch_cached("api/oref-alerts", params=params)
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_osint_feed(client: WorldMonitorClient, args: dict) -> str:
+    limit = int(args.get("limit", 50))
+    data, delta = client.fetch_cached("api/telegram-feed", params={"limit": str(limit)})
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_conflicts(client: WorldMonitorClient, args: dict) -> str:
+    data, delta = client.fetch_cached("api/conflict/v1/list-acled-events")
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_thermal(client: WorldMonitorClient, args: dict) -> str:
+    max_items = int(args.get("max_items", 12))
+    data, delta = client.fetch_cached(
+        "api/thermal/v1/list-thermal-escalations",
+        params={"max_items": str(max_items)},
+    )
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_get_changes(client: WorldMonitorClient, args: dict) -> str:
+    since_minutes = int(args.get("since_minutes", 60))
+    domains_raw = args.get("domains", "")
+    domains: list[str] | None = None
+    if domains_raw:
+        domains = [d.strip().upper() for d in domains_raw.split(",") if d.strip()]
+    changes = client.get_changes(since_minutes=since_minutes, domains=domains)
+    return json.dumps({"changes": changes, "count": len(changes)}, indent=2)
+
+
+def handle_economic(client: WorldMonitorClient, args: dict) -> str:
+    series = args.get("series", "")
+    if series == "fred_batch":
+        commodities_raw = args.get("commodities", "")
+        commodities = [c.strip() for c in commodities_raw.split(",") if c.strip()] if commodities_raw else []
+        data, delta = client.fetch_cached(
+            "api/economic/v1/get-fred-series-batch",
+            method="POST",
+            body={"series": commodities},
+        )
+    elif series == "bis_policy_rates":
+        data, delta = client.fetch_cached("api/economic/v1/get-bis-policy-rates")
+    elif series == "bis_exchange_rates":
+        data, delta = client.fetch_cached("api/economic/v1/get-bis-exchange-rates")
+    elif series == "bis_credit":
+        data, delta = client.fetch_cached("api/economic/v1/get-bis-credit")
+    elif series == "energy_prices":
+        data, delta = client.fetch_cached("api/economic/v1/get-energy-prices")
+    else:
+        return json.dumps({"error": f"Unknown series: {series}"}, indent=2)
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_trade(client: WorldMonitorClient, args: dict) -> str:
+    query = args.get("query", "")
+    limit = int(args.get("limit", 50))
+    if query == "restrictions":
+        reporting = args.get("reporting_country", "")
+        params: dict = {"limit": str(limit)}
+        if reporting:
+            params["countries"] = reporting
+        data, delta = client.fetch_cached("api/trade/v1/get-trade-restrictions", params=params)
+    elif query == "tariff_trends":
+        params = {"limit": str(limit)}
+        data, delta = client.fetch_cached("api/trade/v1/get-tariff-trends", params=params)
+    elif query == "trade_flows":
+        params = {"limit": str(limit)}
+        reporting = args.get("reporting_country", "")
+        partner = args.get("partner_country", "")
+        years_raw = args.get("years", "")
+        if reporting:
+            params["reporting_country"] = reporting
+        if partner:
+            params["partner_country"] = partner
+        if years_raw:
+            params["years"] = years_raw
+        data, delta = client.fetch_cached("api/trade/v1/get-trade-flows", params=params)
+    elif query == "trade_barriers":
+        params = {"limit": str(limit)}
+        reporting = args.get("reporting_country", "")
+        if reporting:
+            params["countries"] = reporting
+        data, delta = client.fetch_cached("api/trade/v1/get-trade-barriers", params=params)
+    else:
+        return json.dumps({"error": f"Unknown query: {query}"}, indent=2)
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_displacement(client: WorldMonitorClient, args: dict) -> str:
+    query = args.get("query", "")
+    if query == "summary":
+        flow_limit = int(args.get("flow_limit", 50))
+        data, delta = client.fetch_cached(
+            "api/displacement/v1/get-displacement-summary",
+            params={"flow_limit": str(flow_limit)},
+        )
+    elif query == "population_exposure":
+        params: dict = {}
+        if "lat" in args:
+            params["lat"] = str(args["lat"])
+        if "lon" in args:
+            params["lon"] = str(args["lon"])
+        if "radius" in args:
+            params["radius"] = str(args["radius"])
+        data, delta = client.fetch_cached("api/displacement/v1/get-population-exposure", params=params)
+    else:
+        return json.dumps({"error": f"Unknown query: {query}"}, indent=2)
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_fleet_report(client: WorldMonitorClient, args: dict) -> str:
+    data, delta = client.fetch_cached("api/military/v1/get-usni-fleet-report")
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_aircraft_lookup(client: WorldMonitorClient, args: dict) -> str:
+    hex_codes = args.get("hex_codes", [])
+    data, delta = client.fetch_cached(
+        "api/military/v1/get-aircraft-details-batch",
+        method="POST",
+        body={"hex_codes": hex_codes},
+    )
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_wingbits(client: WorldMonitorClient, args: dict) -> str:
+    data, delta = client.fetch_cached("api/military/v1/get-wingbits-status")
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_deduct_situation(client: WorldMonitorClient, args: dict) -> str:
+    context = args.get("context", "")
+    data, delta = client.fetch_cached(
+        "api/intelligence/v1/deduct-situation",
+        method="POST",
+        body={"context": context},
+    )
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_anomalies(client: WorldMonitorClient, args: dict) -> str:
+    data, delta = client.fetch_cached("api/infrastructure/v1/list-temporal-anomalies")
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_news_summary(client: WorldMonitorClient, args: dict) -> str:
+    url = args.get("url", "")
+    cache_key_override = args.get("cache_key", url)
+    # Check cache first - if we have a recent response for this cache key, return it
+    if cache_key_override:
+        import sqlite3 as _sqlite3
+        try:
+            con = _sqlite3.connect(client._cache_db)
+            try:
+                cur = con.execute(
+                    "SELECT response, fetched_at FROM cache WHERE cache_key = ?",
+                    (f"api/news/v1/summarize-article?url={cache_key_override}",),
+                )
+                row = cur.fetchone()
+            finally:
+                con.close()
+            if row is not None:
+                cached_data = json.loads(row[0])
+                cached_data["_from_cache"] = True
+                cached_data["_cached_at"] = row[1]
+                return json.dumps({"data": cached_data, "delta": None}, indent=2)
+        except Exception:
+            pass
+    data, delta = client.fetch_cached(
+        "api/news/v1/summarize-article",
+        method="POST",
+        body={"url": url},
+    )
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_news_digest(client: WorldMonitorClient, args: dict) -> str:
+    params: dict = {}
+    variant = args.get("variant", "")
+    lang = args.get("lang", "")
+    if variant:
+        params["variant"] = variant
+    if lang:
+        params["lang"] = lang
+    data, delta = client.fetch_cached("api/news/v1/list-feed-digest", params=params or None)
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_humanitarian(client: WorldMonitorClient, args: dict) -> str:
+    regions = args.get("regions", [])
+    data, delta = client.fetch_cached(
+        "api/conflict/v1/get-humanitarian-summary-batch",
+        method="POST",
+        body={"regions": regions},
+    )
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+def handle_pizzint(client: WorldMonitorClient, args: dict) -> str:
+    include_gdelt = args.get("include_gdelt", False)
+    params: dict | None = {"include_gdelt": "true"} if include_gdelt else None
+    data, delta = client.fetch_cached("api/intelligence/v1/get-pizzint-status", params=params)
+    return json.dumps({"data": data, "delta": delta}, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# HANDLERS dispatch table (Task 4)
+# ---------------------------------------------------------------------------
+
+HANDLERS = {
+    "worldmonitor_situation": handle_situation,
+    "worldmonitor_maritime": handle_maritime,
+    "worldmonitor_military_flights": handle_military_flights,
+    "worldmonitor_gps_jamming": handle_gps_jamming,
+    "worldmonitor_alerts": handle_alerts,
+    "worldmonitor_osint_feed": handle_osint_feed,
+    "worldmonitor_conflicts": handle_conflicts,
+    "worldmonitor_thermal": handle_thermal,
+    "worldmonitor_get_changes": handle_get_changes,
+    "worldmonitor_economic": handle_economic,
+    "worldmonitor_trade": handle_trade,
+    "worldmonitor_displacement": handle_displacement,
+    "worldmonitor_fleet_report": handle_fleet_report,
+    "worldmonitor_aircraft_lookup": handle_aircraft_lookup,
+    "worldmonitor_wingbits": handle_wingbits,
+    "worldmonitor_deduct_situation": handle_deduct_situation,
+    "worldmonitor_anomalies": handle_anomalies,
+    "worldmonitor_news_summary": handle_news_summary,
+    "worldmonitor_news_digest": handle_news_digest,
+    "worldmonitor_humanitarian": handle_humanitarian,
+    "worldmonitor_pizzint": handle_pizzint,
+}
+
+
+# ---------------------------------------------------------------------------
+# JSON-RPC request dispatcher (Task 4)
+# ---------------------------------------------------------------------------
+
+_SERVER_VERSION = "1.0.0"
+
+
+def handle_request(client: WorldMonitorClient, request: dict) -> dict | None:
+    """Dispatch a JSON-RPC request and return a result dict (or None for no reply)."""
+    method = request.get("method", "")
+    params = request.get("params", {}) or {}
+
+    if method == "initialize":
+        return {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "worldmonitor", "version": _SERVER_VERSION},
+        }
+
+    if method == "notifications/initialized":
+        return None
+
+    if method == "tools/list":
+        return {"tools": TOOLS}
+
+    if method == "tools/call":
+        tool_name = params.get("name", "")
+        arguments = params.get("arguments", {}) or {}
+
+        handler = HANDLERS.get(tool_name)
+        if not handler:
+            return {
+                "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
+                "isError": True,
+            }
+        try:
+            result_text = handler(client, arguments)
+            return {"content": [{"type": "text", "text": result_text}]}
+        except Exception as exc:
+            return {
+                "content": [{"type": "text", "text": f"Error: {exc}"}],
+                "isError": True,
+            }
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# main() - entry point for the MCP JSON-RPC server (Task 4)
 # ---------------------------------------------------------------------------
 
 def main() -> None:
     """Start the WorldMonitor MCP server.
 
-    Full JSON-RPC server implementation is deferred to Task 4.
-    Running this module directly will print a placeholder message.
+    Reads env vars, creates a WorldMonitorClient, then loops on stdin
+    line-by-line parsing JSON-RPC 2.0 messages.
+
+    Environment variables:
+      WORLDMONITOR_CACHE_DB   - path to SQLite cache (default: worldmonitor.db)
+      WORLDMONITOR_BASE_URL   - API base URL (optional)
+      WORLDMONITOR_API_KEY    - Bearer token (optional)
     """
-    import sys
-    print(
-        "WorldMonitor MCP server - JSON-RPC server not yet implemented (Task 4).",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+    cache_db = os.environ.get("WORLDMONITOR_CACHE_DB", "worldmonitor.db")
+    base_url = os.environ.get("WORLDMONITOR_BASE_URL", WorldMonitorClient._BASE_URL_DEFAULT)
+    api_key = os.environ.get("WORLDMONITOR_API_KEY") or None
+
+    client = WorldMonitorClient(cache_db=cache_db, base_url=base_url, api_key=api_key)
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+
+        try:
+            request = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        # Notifications (no id field) don't get a response
+        if "id" not in request:
+            handle_request(client, request)
+            continue
+
+        result = handle_request(client, request)
+        if result is None:
+            continue
+
+        response = {"jsonrpc": "2.0", "id": request["id"], "result": result}
+        sys.stdout.write(json.dumps(response) + "\n")
+        sys.stdout.flush()
 
 
 if __name__ == "__main__":
