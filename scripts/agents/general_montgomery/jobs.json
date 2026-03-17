@@ -1,0 +1,23 @@
+{
+  "worldmonitor_fast": {
+    "type": "interval",
+    "interval_seconds": 900,
+    "script": "scripts/agents/general_montgomery/worldmonitor_poll.py",
+    "args": "--tier fast",
+    "description": "Poll fast-moving WorldMonitor endpoints (flights, vessels, alerts, GPS)"
+  },
+  "worldmonitor_medium": {
+    "type": "interval",
+    "interval_seconds": 2700,
+    "script": "scripts/agents/general_montgomery/worldmonitor_poll.py",
+    "args": "--tier medium",
+    "description": "Poll medium-tempo WorldMonitor endpoints (bootstrap, conflicts, thermal)"
+  },
+  "worldmonitor_slow": {
+    "type": "interval",
+    "interval_seconds": 14400,
+    "script": "scripts/agents/general_montgomery/worldmonitor_poll.py",
+    "args": "--tier slow",
+    "description": "Poll slow-moving WorldMonitor endpoints (economic, trade, displacement)"
+  }
+}
