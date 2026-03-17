@@ -438,9 +438,9 @@ export async function synthesise(text: string): Promise<string | null> {
     try {
       return await synthesiseElevenLabsStream(text);
     } catch (e) {
-      // Detect credit exhaustion (401 Unauthorized, 402 Payment Required, 429 Too Many Requests)
+      // Only mark exhausted for genuine credit/auth issues, not transient rate limits
       const errMsg = String(e);
-      if (/ElevenLabs (401|402|429)/.test(errMsg)) {
+      if (/ElevenLabs (401|402)/.test(errMsg)) {
         markElevenLabsExhausted();
       }
       log.warn(`ElevenLabs failed (${e}), trying Fal...`);
