@@ -150,6 +150,20 @@ export interface AtrophyAPI {
   drainAgentQueue: (agentName: string) => Promise<unknown[]>;
   drainAllAgentQueues: () => Promise<Record<string, unknown[]>>;
 
+  // Voice agent
+  voiceAgent: {
+    start: () => Promise<boolean>;
+    stop: () => void;
+    sendText: (text: string) => Promise<void>;
+    status: () => Promise<unknown>;
+    setMic: (muted: boolean) => void;
+    setAudio: (enabled: boolean) => void;
+    onAudio: (cb: (data: ArrayBuffer) => void) => void;
+    onStatus: (cb: (status: string) => void) => void;
+    onTranscript: (cb: (text: string) => void) => void;
+    onResponse: (cb: (text: string) => void) => void;
+  };
+
   // Voice call mode
   startCall: () => Promise<void>;
   stopCall: () => Promise<void>;
@@ -336,6 +350,20 @@ const api: AtrophyAPI = {
   drainAgentQueue: (agentName: string) => ipcRenderer.invoke('queue:drainAgent', agentName),
   drainAllAgentQueues: () => ipcRenderer.invoke('queue:drainAll'),
 
+  // Voice agent
+  voiceAgent: {
+    start: () => ipcRenderer.invoke('voice-agent:start'),
+    stop: () => ipcRenderer.invoke('voice-agent:stop'),
+    sendText: (text: string) => ipcRenderer.invoke('voice-agent:sendText', text),
+    status: () => ipcRenderer.invoke('voice-agent:status'),
+    setMic: (muted: boolean) => ipcRenderer.invoke('voice-agent:setMic', muted),
+    setAudio: (enabled: boolean) => ipcRenderer.invoke('voice-agent:setAudio', enabled),
+    onAudio: (cb: (data: ArrayBuffer) => void) => ipcRenderer.on('voice-agent:audio', (_e, data) => cb(data)),
+    onStatus: (cb: (status: string) => void) => ipcRenderer.on('voice-agent:status', (_e, status) => cb(status)),
+    onTranscript: (cb: (text: string) => void) => ipcRenderer.on('voice-agent:userTranscript', (_e, text) => cb(text)),
+    onResponse: (cb: (text: string) => void) => ipcRenderer.on('voice-agent:agentResponse', (_e, text) => cb(text)),
+  },
+
   // Voice call mode
   startCall: () => ipcRenderer.invoke('call:start', null, null),
   stopCall: () => ipcRenderer.invoke('call:stop'),
@@ -376,6 +404,9 @@ const api: AtrophyAPI = {
       'avatar:download-complete', 'avatar:download-error',
       'mirror:avatarProgress',
       'call:statusChanged',
+      'voice-agent:audio', 'voice-agent:status',
+      'voice-agent:userTranscript', 'voice-agent:agentResponse',
+      'voice-agent:agentResponseCorrection',
       'app:shutdownRequested',
       'bundle:ready', 'bundle:downloadProgress',
     ]);

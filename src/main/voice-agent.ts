@@ -686,15 +686,26 @@ export async function provisionAgent(agentName: string): Promise<string | null> 
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket URL resolution
+// WebSocket URL resolution (with TTL cache to skip HTTP on reconnects)
 // ---------------------------------------------------------------------------
+
+let _cachedSignedUrl: string | null = null;
+let _cachedSignedUrlTime = 0;
+const SIGNED_URL_TTL_MS = 50_000; // URLs expire after 60s, cache for 50s
 
 /**
  * Get the WebSocket URL for connecting to the agent.
  * Prefers signed URLs (avoids exposing API key in the URL).
+ * Caches the signed URL for up to 50s to avoid redundant HTTP round-trips.
  */
 async function getWebSocketUrl(agentId: string): Promise<string | null> {
   const config = getConfig();
+
+  // Return cached signed URL if still valid
+  if (_cachedSignedUrl && (Date.now() - _cachedSignedUrlTime) < SIGNED_URL_TTL_MS) {
+    log.debug('using cached signed URL');
+    return _cachedSignedUrl;
+  }
 
   // Try signed URL first (preferred - more secure)
   try {
@@ -711,6 +722,8 @@ async function getWebSocketUrl(agentId: string): Promise<string | null> {
       const data = (await resp.json()) as { signed_url?: string };
       if (data.signed_url) {
         log.debug('using signed URL');
+        _cachedSignedUrl = data.signed_url;
+        _cachedSignedUrlTime = Date.now();
         return data.signed_url;
       }
     }
@@ -1058,12 +1071,21 @@ function _handleUserTranscript(msg: ConvAIUserTranscript): void {
   _getWindow?.()?.webContents.send('voice-agent:userTranscript', text);
 }
 
+// Skip TTS for very short responses - just show text
+let _skipNextAudio = false;
+
 function _handleAgentResponse(msg: ConvAIAgentResponse): void {
   const text = msg.agent_response_event.agent_response;
   log.debug(`agent said: "${text.slice(0, 80)}"`);
 
   _emitter.emit('agentResponse', text);
   _getWindow?.()?.webContents.send('voice-agent:agentResponse', text);
+
+  // For very short responses, skip TTS audio - just display text
+  if (text.length < 20) {
+    _skipNextAudio = true;
+    log.debug('short response - skipping TTS audio');
+  }
 
   // Agent finished speaking - start idle disconnect countdown
   _startIdleTimer();
@@ -1076,6 +1098,10 @@ function _handleAgentResponseCorrection(msg: ConvAIAgentResponseCorrection): voi
 }
 
 function _handleAudioEvent(msg: ConvAIAudio): void {
+  if (_skipNextAudio) {
+    _skipNextAudio = false;
+    return;
+  }
   const audioBytes = Buffer.from(msg.audio_event.audio_base_64, 'base64');
   _handleAudioOutput(audioBytes);
 }
@@ -1347,7 +1373,9 @@ async function _handleRecallMemory(params: Record<string, unknown>): Promise<str
       return `${i + 1}. [${source}]${timeStr}${score}: ${content}`;
     });
 
-    return `Found ${results.length} memories:\n\n${formatted.join('\n\n')}`;
+    let result = `Found ${results.length} memories:\n\n${formatted.join('\n\n')}`;
+    if (result.length > 500) result = result.slice(0, 497) + '...';
+    return result;
   } catch (err) {
     log.error(`memory recall failed: ${err}`);
 
@@ -1366,7 +1394,9 @@ async function _handleRecallMemory(params: Record<string, unknown>): Promise<str
         const formatted = rows.map(
           (r, i) => `${i + 1}. [${r.timestamp}] ${r.role}: ${r.content.slice(0, 200)}`,
         );
-        return `Found ${rows.length} matching conversations:\n\n${formatted.join('\n\n')}`;
+        let result = `Found ${rows.length} matching conversations:\n\n${formatted.join('\n\n')}`;
+        if (result.length > 500) result = result.slice(0, 497) + '...';
+        return result;
       }
     } catch { /* fall through */ }
 

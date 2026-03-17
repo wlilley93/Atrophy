@@ -1402,6 +1402,38 @@ Output EXACTLY this format - a single fenced JSON block:
     return isKeepAwakeActive();
   });
 
+  // ── Voice agent ──
+
+  ipcMain.handle('voice-agent:start', async () => {
+    const { startVoiceAgent } = await import('./voice-agent');
+    return startVoiceAgent();
+  });
+
+  ipcMain.handle('voice-agent:stop', () => {
+    const { stopVoiceAgent } = require('./voice-agent');
+    stopVoiceAgent();
+  });
+
+  ipcMain.handle('voice-agent:sendText', async (_event, text: string) => {
+    const { sendText } = await import('./voice-agent');
+    await sendText(text);
+  });
+
+  ipcMain.handle('voice-agent:status', () => {
+    const { getVoiceAgentStatus } = require('./voice-agent');
+    return getVoiceAgentStatus();
+  });
+
+  ipcMain.handle('voice-agent:setMic', (_event, muted: boolean) => {
+    const { setMicMuted } = require('./voice-agent');
+    setMicMuted(muted);
+  });
+
+  ipcMain.handle('voice-agent:setAudio', (_event, enabled: boolean) => {
+    const { setAudioOutputEnabled } = require('./voice-agent');
+    setAudioOutputEnabled(enabled);
+  });
+
   // ── Telegram daemon ──
 
   ipcMain.handle('telegram:startDaemon', () => {
@@ -1908,6 +1940,21 @@ app.whenReady().then(() => {
     }
   } else {
     log.debug(`Telegram daemon skipped: token=${!!config.TELEGRAM_BOT_TOKEN} groupId=${!!config.TELEGRAM_GROUP_ID}`);
+  }
+
+  // Configure voice agent window reference
+  import('./voice-agent').then(({ configureVoiceAgent }) => {
+    configureVoiceAgent({
+      getWindow: () => mainWindow,
+      setCliSessionId: (id: string) => { if (currentSession) currentSession.setCliSessionId(id); },
+    });
+  });
+
+  // Pre-provision ElevenLabs agent (non-blocking, no cost until WebSocket connects)
+  if (config.ELEVENLABS_API_KEY) {
+    import('./voice-agent').then(({ provisionAgent }) => {
+      provisionAgent(config.AGENT_NAME).catch(() => { /* non-critical */ });
+    });
   }
 
   // Sentinel timer - coherence check every 5 minutes
