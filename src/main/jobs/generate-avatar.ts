@@ -35,7 +35,7 @@ const DEFAULT_IMAGE_HEIGHT = 1024;
 // Types
 // ---------------------------------------------------------------------------
 
-interface AgentManifest {
+export interface AgentManifest {
   display_name?: string;
   appearance?: AppearanceSpec;
   [key: string]: unknown;
@@ -56,7 +56,7 @@ interface FalImage {
   content_type?: string;
 }
 
-interface FalResult {
+export interface FalResult {
   images?: FalImage[];
   request_id?: string;
 }
@@ -65,7 +65,7 @@ interface FalResult {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function loadAgentManifest(agentName: string): AgentManifest {
+export function loadAgentManifest(agentName: string): AgentManifest {
   const paths = [
     path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json'),
   ];
@@ -81,7 +81,7 @@ function loadAgentManifest(agentName: string): AgentManifest {
   return {};
 }
 
-function getFalKey(): string {
+export function getFalKey(): string {
   const key = process.env.FAL_KEY || '';
   if (!key) {
     throw new Error('FAL_KEY environment variable is not set');
@@ -109,7 +109,7 @@ function audioDir(agentName: string): string {
  * Get reference images from the agent's avatar/Reference directory.
  * Returns empty array if no references found.
  */
-function getReferenceImages(agentName: string): string[] {
+export function getReferenceImages(agentName: string): string[] {
   const refDir = referenceDir(agentName);
   if (!fs.existsSync(refDir)) return [];
 
@@ -125,7 +125,7 @@ function getReferenceImages(agentName: string): string[] {
  * Upload a local image to Fal's CDN for use as an IP adapter reference.
  * Returns the uploaded URL.
  */
-async function uploadToFal(imagePath: string): Promise<string> {
+export async function uploadToFal(imagePath: string): Promise<string> {
   const falKey = getFalKey();
   const data = fs.readFileSync(imagePath);
   const ext = path.extname(imagePath).toLowerCase();
@@ -173,7 +173,7 @@ async function uploadToFal(imagePath: string): Promise<string> {
 /**
  * Download an image from a URL and save it to the given path.
  */
-async function downloadImage(url: string, destPath: string): Promise<void> {
+export async function downloadImage(url: string, destPath: string): Promise<void> {
   const resp = await fetch(url, { signal: AbortSignal.timeout(60_000) });
   if (!resp.ok) {
     throw new Error(`Image download failed: ${resp.status}`);
@@ -315,7 +315,7 @@ export async function generateFace(
 /**
  * Call Fal AI's queue API and wait for the result.
  */
-async function falGenerate(
+export async function falGenerate(
   falKey: string,
   args: Record<string, unknown>,
 ): Promise<FalResult> {

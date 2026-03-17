@@ -33,6 +33,8 @@ vi.mock('../telegram', () => ({
   sendMessage: vi.fn(),
   sendVoiceNote: vi.fn(),
   sendButtons: vi.fn(),
+  sendPhoto: vi.fn(),
+  pollCallback: vi.fn(),
 }));
 vi.mock('../tts', () => ({
   synthesise: vi.fn(),
@@ -41,6 +43,14 @@ vi.mock('../tts', () => ({
 vi.mock('../audio-convert', () => ({
   convertToOgg: vi.fn(),
   cleanupFiles: vi.fn(),
+}));
+vi.mock('./generate-avatar', () => ({
+  getFalKey: () => 'test-key',
+  getReferenceImages: () => [],
+  uploadToFal: vi.fn(),
+  falGenerate: vi.fn(),
+  downloadImage: vi.fn(),
+  loadAgentManifest: () => ({}),
 }));
 vi.mock('./index', () => ({
   registerJob: vi.fn(),
@@ -62,6 +72,11 @@ describe('parseHeartbeatResponse', () => {
   it('parses VOICE_NOTE prefix', () => {
     const result = parseHeartbeatResponse('[VOICE_NOTE] I was just thinking about our conversation');
     expect(result).toEqual({ type: 'VOICE_NOTE', message: 'I was just thinking about our conversation' });
+  });
+
+  it('parses SELFIE prefix', () => {
+    const result = parseHeartbeatResponse('[SELFIE] Thinking of you while reading in the sun');
+    expect(result).toEqual({ type: 'SELFIE', message: 'Thinking of you while reading in the sun' });
   });
 
   it('parses HEARTBEAT_OK prefix', () => {

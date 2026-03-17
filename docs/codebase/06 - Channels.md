@@ -4,20 +4,20 @@ External communication channels beyond the direct conversation interface. The ch
 
 ## Architecture
 
-Telegram uses Topics mode - a single group with Topics (Forum mode) enabled, where each agent gets its own topic thread. The bot is shared across all agents, and routing is handled structurally by Telegram itself rather than by application-level logic. Messages sent to a topic are dispatched directly to the corresponding agent, and each agent's responses go back to its own topic.
+Each agent has its own dedicated Telegram bot - its own token, its own chat, and its own profile photo set from the agent's reference images. The daemon runs parallel per-agent pollers with randomised jitter so activity feels organic rather than mechanical. A dispatch mutex serialises inference so the Config singleton and Claude CLI are never contested between pollers.
 
-This replaces the previous flat-chat architecture where all agents shared a single conversation and a router (pattern matching + LLM classification) decided which agent should respond. Topics mode eliminates the need for routing entirely - the topic ID tells the daemon exactly which agent the message is for.
+This replaces the previous Topics mode architecture where all agents shared a single bot and a single group with forum threads. The per-agent bot model eliminates group management entirely - no shared group, no topic IDs, no routing logic.
 
 ```
-Telegram Bot API (Topics-enabled group)
+Telegram Bot API (one bot per agent)
   |
-src/main/telegram-daemon.ts  (single poller)
+src/main/telegram-daemon.ts  (parallel per-agent pollers)
   |
-Topic ID -> agent mapping      (no router needed)
+discoverTelegramAgents()       (agents with bot token + chat ID configured)
   |
-Sequential dispatch             (one agent at a time)
+withDispatchLock()             (mutex - one agent dispatches at a time)
   |
-src/main/telegram.ts            (send to agent's topic)
+src/main/telegram.ts           (send via agent's own bot token)
 ```
 
 ---
@@ -28,34 +28,56 @@ This module implements the Telegram Bot API integration using pure HTTP via `fet
 
 The module provides three layers of functionality: low-level API helpers, message sending/receiving primitives, and high-level convenience methods for common interaction patterns.
 
+All sending and receiving functions accept an optional `botToken` parameter. When provided it overrides the token from config, which allows parallel per-agent pollers to call telegram functions without switching global config state.
+
 ### Internal API Helper
 
-The `apiUrl` function constructs Telegram API URLs from the configured bot token and a method name. It reads the token from the current config, meaning it automatically uses the correct token after an agent switch.
+The `apiUrl` function constructs Telegram API URLs from the given bot token (or the current config's token as a fallback) and a method name.
 
 ```typescript
-function apiUrl(method: string): string
+function apiUrl(method: string, botToken?: string): string
 ```
 
 The `post` function is the generic POST helper used by all Bot API calls. It handles the complete request lifecycle - checking that the bot token is configured, sending the JSON payload, parsing the response, and returning the result. All calls use a 15-second timeout via `AbortSignal.timeout(15_000)` to prevent the app from hanging on network issues. Errors are logged but never thrown, so callers always get a clean return value (the result object on success, or `null` on failure).
 
 ```typescript
-async function post(method: string, payload: Record<string, unknown>): Promise<unknown | null>
+async function post(method: string, payload: Record<string, unknown>, botToken?: string): Promise<unknown | null>
 ```
 
 ### Sending
 
-The module provides three sending methods, each handling a different message type. All three support optional emoji-prefixed agent identification.
+The module provides three sending methods, each handling a different message type. All three support optional emoji-prefixed agent identification and an optional `botToken` override for per-agent bot dispatch.
 
-The `sendMessage` function sends a plain Markdown-formatted text message. Messages are sent to the agent's topic thread within the group by default. When `prefix=true` (the default), it prepends the agent's emoji and display name (e.g. "moon *Xan*") so the recipient knows which agent is speaking, though this is less critical in Topics mode since each topic is already scoped to one agent.
+The `sendMessage` function sends a plain Markdown-formatted text message. When `prefix=true` (the default), it prepends the agent's emoji and display name (e.g. "moon *Xan*") so the recipient knows which agent is speaking.
 
 ```typescript
 export async function sendMessage(
   text: string,
-  chatId?: string,    // defaults to config.TELEGRAM_GROUP_ID
-  prefix?: boolean,   // defaults to true
-  topicId?: number,   // defaults to agent's TELEGRAM_TOPIC_ID
+  chatId?: string,     // defaults to config TELEGRAM_CHAT_ID
+  prefix?: boolean,    // defaults to true
+  botToken?: string,   // overrides config token for per-agent bots
 ): Promise<boolean>
 ```
+
+The `sendMessageGetId` function is identical to `sendMessage` but returns the `message_id` of the sent message rather than a boolean. This is used by the daemon for streaming responses - the ID is needed so the daemon can edit the message in-place as inference output arrives.
+
+```typescript
+export async function sendMessageGetId(text: string, chatId?: string, botToken?: string): Promise<number | null>
+```
+
+The `editMessage` function edits an existing message's text in-place via the `editMessageText` Bot API method. Input is truncated to 4096 characters (Telegram's per-message limit) before sending. Returns `true` on success or `false` on failure. This is used by the daemon to stream inference output into the initial "Thinking..." placeholder message.
+
+```typescript
+export async function editMessage(messageId: number, text: string, chatId?: string, botToken?: string): Promise<boolean>
+```
+
+The `sendPhoto` function sends an image file as a Telegram photo message. It reads the file into a `Buffer`, detects the content type from the file extension, and uploads via multipart form data. Supports `.jpg`/`.jpeg`, `.png`, `.gif`, and `.webp`. The optional `prefix` flag prepends the agent's emoji and display name (defaults to `true`).
+
+```typescript
+export async function sendPhoto(filePath: string, caption?: string, chatId?: string, prefix?: boolean, botToken?: string): Promise<boolean>
+```
+
+This function is used by the `heartbeat` job to deliver selfie images. Multipart form data is built manually (same approach as `sendVoiceNote`) with a 30-second upload timeout.
 
 The `sendButtons` function sends a message with an inline keyboard - rows of tappable buttons that appear below the message. This is used for confirmation prompts (Yes/No) and permission requests. It returns the `message_id` for tracking which message the user responds to.
 
@@ -65,6 +87,7 @@ export async function sendButtons(
   buttons: { text: string; callback_data: string }[][],
   chatId?: string,
   prefix?: boolean,
+  botToken?: string,
 ): Promise<number | null>
 ```
 
@@ -82,6 +105,7 @@ export async function sendVoiceNote(
   caption?: string,
   chatId?: string,
   prefix?: boolean,
+  botToken?: string,
 ): Promise<boolean>
 ```
 
@@ -99,7 +123,7 @@ The receiving functions use Telegram's long-polling approach rather than webhook
 The `flushOldUpdates` function consumes all pending updates from the Telegram API without processing them. This is called before any polling operation to ensure the poller only sees fresh messages, preventing stale responses from previous sessions.
 
 ```typescript
-async function flushOldUpdates(): Promise<void>
+async function flushOldUpdates(botToken?: string): Promise<void>
 ```
 
 The `pollCallback` function long-polls for an inline keyboard callback. It polls in 30-second windows until a `callback_query` from the target user (matched by `from.id`) is received. When a callback arrives, it automatically answers the callback query via `answerCallbackQuery` (which removes the loading spinner in the Telegram client). Returns the `callback_data` string or `null` on timeout.
@@ -108,6 +132,7 @@ The `pollCallback` function long-polls for an inline keyboard callback. It polls
 export async function pollCallback(
   timeoutSecs?: number,  // default 120
   chatId?: string,
+  botToken?: string,
 ): Promise<string | null>
 ```
 
@@ -119,6 +144,7 @@ The `pollReply` function long-polls for a text message reply. It uses the same p
 export async function pollReply(
   timeoutSecs?: number,  // default 120
   chatId?: string,
+  botToken?: string,
 ): Promise<string | null>
 ```
 
@@ -132,6 +158,7 @@ The `askConfirm` function sends a confirmation prompt with Yes/No buttons and wa
 export async function askConfirm(
   text: string,
   timeoutSecs?: number,  // default 120
+  botToken?: string,
 ): Promise<boolean | null>
 ```
 
@@ -141,6 +168,7 @@ The `askQuestion` function sends a question and waits for a free-text reply. It 
 export async function askQuestion(
   text: string,
   timeoutSecs?: number,  // default 120
+  botToken?: string,
 ): Promise<string | null>
 ```
 
@@ -148,52 +176,77 @@ export async function askQuestion(
 
 Bot command registration makes agent names appear in Telegram's autocomplete menu. When the user types `/` in the chat, they see a list of all agents with their descriptions, making it easy to address a specific agent.
 
-The `registerBotCommands` function scans all discovered agents via `discoverAgents()` and builds a command list. Each agent gets a `/<agent_name>` command with its description from the manifest (truncated to Telegram's 256-character limit). Two utility commands are appended: `/status` (show active agents) and `/mute` (toggle agent muting). The full list is sent to the Telegram API via `setMyCommands`.
+The `registerBotCommands` function scans all discovered agents via `discoverAgents()` and builds a command list. Each agent gets a `/<agent_name>` command with its description from the manifest (truncated to Telegram's 256-character limit). Two utility commands are appended: `/status` (show active agents) and `/mute` (toggle agent muting). The full list is sent to the Telegram API via `setMyCommands`. An optional `botToken` targets a specific agent's bot.
 
 ```typescript
-export async function registerBotCommands(): Promise<boolean>
+export async function registerBotCommands(botToken?: string): Promise<boolean>
 ```
 
 The `clearBotCommands` function removes all bot commands via `deleteMyCommands` API. This is used during cleanup or when the agent roster changes significantly.
 
 ```typescript
-export async function clearBotCommands(): Promise<boolean>
+export async function clearBotCommands(botToken?: string): Promise<boolean>
+```
+
+### Bot Profile Photo
+
+The `setBotProfilePhoto` function sets the bot's profile photo via the `setMyPhoto` Bot API method. It reads the image file, uploads it as multipart form data, and returns a boolean indicating success. This is called on daemon startup for each agent to set the bot's avatar from the agent's reference image.
+
+```typescript
+export async function setBotProfilePhoto(imagePath: string, botToken?: string): Promise<boolean>
 ```
 
 ### Update ID Tracking
 
-The module maintains a module-level `_lastUpdateId` variable that tracks the highest processed update ID. This prevents re-processing old messages after a restart or reconnection. The variable is shared between the telegram module and the daemon via `setLastUpdateId()`, ensuring both components agree on which updates have been processed.
+Each per-agent poller in the daemon maintains its own `lastUpdateId` in per-agent state. This prevents re-processing old messages after a restart or reconnection. Each poller independently tracks its own offset into the update stream for its bot.
 
-When calling `getUpdates`, the offset is set to `_lastUpdateId + 1`, telling the Telegram API to only return updates newer than the last processed one. This is a standard Telegram pattern that ensures exactly-once processing of messages.
+When calling `getUpdates`, the offset is set to `lastUpdateId + 1`, telling the Telegram API to only return updates newer than the last processed one. This is a standard Telegram pattern that ensures exactly-once processing of messages.
 
 ### Configuration
 
-Each agent's Telegram configuration comes from its `agent.json` manifest. All agents share a single bot and group, but each has its own topic thread ID.
+Each agent's Telegram configuration comes from its `agent.json` manifest. Each agent has its own bot token and chat ID. Xan (the primary agent) falls back to the global `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars if per-agent fields are not set.
 
 ```json
 {
-  "telegram": {
-    "bot_token_env": "TELEGRAM_BOT_TOKEN",
-    "group_id_env": "TELEGRAM_GROUP_ID",
-    "topic_id": 42
-  },
+  "telegram_bot_token": "7123456789:AAH...",
+  "telegram_chat_id": "-1001234567890",
   "telegram_emoji": "\ud83c\udf19"
 }
 ```
 
-The `topic_id` identifies the agent's topic thread within the Topics-enabled group. The `telegram_emoji` appears before the agent's name in outgoing messages - less critical in Topics mode since each topic is already scoped to one agent, but still used for visual consistency.
+The `telegram_bot_token` is the Bot API token from @BotFather for this agent's dedicated bot. The `telegram_chat_id` is the 1:1 chat ID between the user and that bot (auto-detected by the Settings UI after the token is saved). The `telegram_emoji` appears before the agent's name in outgoing messages for visual identification.
 
 ### Usage
 
 The Telegram channel is used by multiple components throughout the system. Understanding which components use it helps explain why the channel needs to be robust and handle concurrent access gracefully.
 
-- **Telegram daemon**: Receives messages in agent topics and dispatches directly - the main incoming message handler
+- **Telegram daemon**: Polls each agent's own bot for incoming messages and dispatches to inference - the main incoming message handler
 - **`ask_user` MCP tool**: Sends questions during conversation and blocks for a reply - used when the agent needs user input mid-task
 - **`send_telegram` MCP tool**: Proactive outreach (rate limited to 5/day) - used for unprompted messages
-- **`heartbeat` job**: Evaluates whether to reach out and sends messages - periodic check-in
+- **`heartbeat` job**: Evaluates whether to reach out and sends messages, voice notes (`[VOICE_NOTE]`), selfie images (`[SELFIE]` via `sendPhoto()`), and interactive button questions (`[ASK]`) - periodic check-in
 - **`gift` job**: Delivers unprompted notes - monthly creative outreach
 - **`voice-note` job**: Sends spontaneous voice notes (OGG Opus via `sendVoiceNote()`) - audio-based outreach
 - **`run-task` job**: `telegram_voice` delivery method sends task output as voice notes - scheduled task delivery
+- **`sendPhoto`**: Used by heartbeat selfie delivery to send image files via the agent's own bot
+
+### Error Handling and Resilience
+
+The `post` function implements several layers of defensive handling beyond the basic timeout.
+
+**Flood control (429 RetryAfter)**: When Telegram returns a 429 rate-limit response, `post` reads the `parameters.retry_after` field from the response body. If the required wait is 30 seconds or less, it sleeps for that duration and retries the request automatically. If the ban exceeds 30 seconds, the message is dropped (logged as a warning) rather than blocking the caller for a long time.
+
+**Exponential backoff on network errors**: If a request fails due to a network error (fetch throws) rather than an API error, `post` retries up to 3 times with delays of 1s, 2s, and 3s between attempts. This handles transient connectivity blips without requiring the caller to implement retry logic.
+
+**Markdown fallback**: Two wrapper functions handle Markdown parse failures gracefully.
+
+```typescript
+async function postWithMarkdownFallback(method: string, payload: Record<string, unknown>, botToken?: string): Promise<unknown | null>
+async function editWithMarkdownFallback(messageId: number, text: string, chatId: string, botToken: string): Promise<boolean>
+```
+
+Both functions first attempt the request with `parse_mode: 'Markdown'`. If Telegram returns a 400 error indicating a Markdown parsing failure, they automatically retry with `parse_mode` omitted, sending the content as plain text. This prevents messages from being silently dropped when the agent's response contains Markdown syntax that Telegram rejects (unmatched backticks, nested formatting, etc.).
+
+**"message is not modified" suppression**: The `editMessage` function treats Telegram's 400 "message is not modified" error as a success instead of a failure. This error occurs frequently during streaming edits when the content hasn't changed between throttle windows - treating it as a failure would log noise and return `false` to the caller despite nothing actually going wrong.
 
 ### Implementation Notes
 
@@ -201,17 +254,18 @@ The implementation makes several deliberate technical choices that affect reliab
 
 - Uses `fetch()` (Node built-in undici) - no `requests`, `urllib`, or `telegram` library dependency. This avoids version conflicts and keeps the module self-contained.
 - Long-polling with `getUpdates` (no webhooks). Simpler infrastructure requirements - no public URL, SSL certificate, or reverse proxy needed.
-- Tracks `_lastUpdateId` globally to avoid re-processing old updates. Shared between the telegram module and daemon via setter function.
+- All sending/receiving functions accept an optional `botToken` param so the daemon's parallel pollers can call them without mutating global config state.
+- Each agent poller tracks its own `lastUpdateId` independently in per-agent state, preventing cross-agent update offset collisions.
 - `flushOldUpdates()` consumes pending updates before any polling operation, preventing stale responses from interfering with fresh interactions.
 - All API calls have a 15-second timeout (`AbortSignal.timeout(15_000)`). Long enough for normal API calls, short enough to detect network issues quickly.
 - Errors are logged but don't throw - functions return `null`/`false` on failure. This fail-soft approach prevents a Telegram API error from crashing the entire application.
-- Multipart form data is built manually with `Buffer` for voice note uploads (30-second timeout). The extended timeout accommodates audio files that can be several hundred kilobytes.
+- Multipart form data is built manually with `Buffer` for voice note and photo uploads (30-second timeout). The extended timeout accommodates audio files that can be several hundred kilobytes.
 
 ---
 
 ## src/main/router.ts - Message Router (Legacy)
 
-> **Note:** The router is no longer used by the Telegram daemon. With Topics mode, each agent has its own topic thread, so routing is handled structurally by Telegram rather than by application logic. The router module remains in the codebase for potential use by other subsystems but is not part of the active Telegram message flow.
+> **Note:** The router is no longer used by the Telegram daemon. With per-agent bots, each agent has its own dedicated bot and chat, so routing is unnecessary - incoming messages are already scoped to the correct agent by which bot received them. The router module remains in the codebase for potential use by other subsystems but is not part of the active Telegram message flow.
 
 The router is a two-tier routing system that was originally used to decide which agent(s) should handle an incoming Telegram message. The first tier uses pattern matching (free, instant), and the second tier uses a lightweight LLM call (costs one Haiku inference). This tiered approach means most messages are routed without any LLM cost, while ambiguous messages still get intelligent routing.
 
@@ -332,26 +386,41 @@ The `enqueueRoute` function appends a route entry and keeps only the last 50 ent
 
 ## src/main/telegram-daemon.ts - Polling Daemon
 
-The polling daemon is the single-process component responsible for receiving Telegram messages from the Topics-enabled group, mapping them to agents by topic ID, and dispatching responses. It runs as either a managed timer within the Electron main process or as a standalone launchd agent. The key architectural decision is sequential dispatch - agents process messages one at a time, never concurrently.
+The polling daemon is responsible for receiving Telegram messages from each agent's dedicated bot and dispatching responses. It runs parallel per-agent pollers with randomised jitter, and a dispatch mutex ensures inference (which mutates the Config singleton and Claude CLI session) runs for only one agent at a time. The daemon runs as either a managed timer within the Electron main process or as a standalone launchd agent.
 
 ### How It Works
 
-The daemon's poll cycle runs on every interval tick. With Topics mode, routing is structural - the topic ID on each incoming message directly identifies the target agent, eliminating the need for the router module. Each step builds on the previous one, and failures at any step are caught and logged without stopping the daemon.
+On startup, `discoverTelegramAgents()` finds all agents that have both `telegram_bot_token` and `telegram_chat_id` configured. For each discovered agent a `runAgentPoller()` loop starts independently. Each loop:
 
-1. **Poll** - Long-polls `getUpdates` with 30-second timeout, `allowed_updates: ['message']`
-2. **Filter** - Only accepts messages from the configured `TELEGRAM_GROUP_ID`
+1. **Wait with jitter** - sleeps 8-15 seconds (randomised) between polls for organic feel
+2. **Poll** - calls `getUpdates` on the agent's own bot token, `allowed_updates: ['message']`
 3. **Intercept utility commands** - `/status` handled directly without dispatch
-4. **Map topic to agent** - Looks up the agent whose topic matches the message's `message_thread_id` via `topic_map`
-5. **Dispatch** - Invokes the target agent via `dispatchToAgent()`
-6. **Respond** - Sends the agent's response to the same topic thread
-7. **Persist** - Saves `_lastUpdateId` to state file after each poll cycle
+4. **Dispatch** - for each incoming message, calls `withDispatchLock()` to acquire the mutex, then invokes `dispatchToAgent()`
+5. **Respond** - streams the agent's response back into the same chat via `editMessage()`
+6. **Persist** - saves per-agent `lastUpdateId` to state after each poll
+
+### Agent Discovery
+
+```typescript
+async function discoverTelegramAgents(): Promise<TelegramAgentConfig[]>
+```
+
+Scans all agents via `discoverAgents()`, loads each manifest, and returns those with `telegram_bot_token` and `telegram_chat_id` set (either in the manifest directly or via global config fallback for Xan). Disabled and muted agents are excluded.
+
+```typescript
+interface TelegramAgentConfig {
+  name: string;
+  botToken: string;
+  chatId: string;
+}
+```
 
 ### Agent Dispatch
 
-The `dispatchToAgent` function handles the complex process of temporarily switching the application's context to a different agent, running inference, and switching back. This is necessary because the config, database, and prompt system are all agent-scoped - you cannot run inference for agent B while agent A's config is loaded.
+The `dispatchToAgent` function handles temporarily switching the application's context to the target agent, running inference, and returning the response. This context switch is necessary because config, database, and prompt system are all agent-scoped.
 
 ```typescript
-async function dispatchToAgent(agentName: string, text: string): Promise<string | null>
+async function dispatchToAgent(agentName: string, text: string, chatId: string, botToken: string): Promise<string | null>
 ```
 
 The dispatch sequence is:
@@ -359,28 +428,49 @@ The dispatch sequence is:
 1. Saves the current agent name for later restoration
 2. Calls `config.reloadForAgent(agentName)` and `memory.initDb()` to switch context to the target agent
 3. Loads the system prompt via `loadSystemPrompt()` using the target agent's prompts
-4. Gets the last CLI session ID from memory for session continuity (so the agent resumes its existing conversation context)
-5. Prepends `[Telegram message from the user]` to the message text so the agent knows the message came from Telegram
-6. Runs `streamInference()` and collects the full response (tool calls are logged but the streaming events are not forwarded to the renderer)
-7. Restores the original agent config via `config.reloadForAgent(originalAgent)` and `memory.initDb()`
-8. Returns the response text or `null`
+4. Gets the last CLI session ID from memory for session continuity
+5. Prepends `[Telegram message from the user]` to the message text
+6. Sends an initial "Thinking..." placeholder message via `sendMessageGetId()` using the agent's `botToken`
+7. Streams inference via `streamInference()`. As events arrive, the placeholder is periodically edited (throttled to once every 1.5 seconds) with a progressively richer display:
+   - **Elapsed time counter** - a live status line "12s | 3 tools" is appended below the streamed text while inference is running. Elapsed time counts up from the moment inference starts.
+   - **Thinking blockquotes** - `ThinkingDeltaEvent` content is rendered as `> _thinking preview..._` (truncated to 400 chars). Extended thinking is surfaced inline rather than hidden.
+   - **Tool input display** - `ToolUseEvent` appends a formatted line showing a human-readable summary of tool arguments via `formatToolInput()`. For example, `recall` shows the query string rather than raw JSON.
+   - **Tool result stats** - `ToolResultEvent` content is formatted per tool type via `formatToolResult()`: search tools show "5 matches", file reads show "42 lines", writes show "wrote 3 lines", edits show "applied", general results show "3 results".
+   - Compacting status is surfaced inline when the CLI context window is compacted mid-stream.
+8. Performs a final `editMessage()` with the complete response, prefixed with the agent's emoji and display name, and a stats footer line `_18s | 3 tools | ~42.5 tokens_` showing elapsed time, tool call count, and approximate token usage.
+9. Restores the original agent config via `config.reloadForAgent(originalAgent)` and `memory.initDb()`
+10. Returns the response text or `null`
 
-The `sendAgentResponse` function loads the agent's manifest to get `telegram_emoji` and `display_name`, prepends them to the response, and sends via `sendMessage()` with `prefix=false` into the agent's topic thread.
+### Dispatch Mutex
 
 ```typescript
-function sendAgentResponse(agentName: string, text: string, chatId: string, threadId: number): void
+async function withDispatchLock<T>(fn: () => Promise<T>): Promise<T>
 ```
+
+A simple promise-chaining mutex. All calls to `dispatchToAgent` are wrapped in `withDispatchLock()`, which serialises inference across all parallel pollers. This prevents:
+
+- Two agents from concurrently mutating the Config singleton
+- Two Claude CLI processes from competing for the same session context
+- Interleaved writes to overlapping database tables
+
+Pollers themselves continue running in parallel - only the dispatch (inference) step is serialised.
 
 ### Race Condition Prevention
 
-Sequential dispatch is the core safety mechanism. Even though Topics mode means each message targets a single agent, messages from different topics can arrive in the same poll batch. Without sequential dispatch, two agents could simultaneously write to the same database, compete for the Claude CLI session, or produce interleaved responses.
-
-- **No concurrent agents** - agent A completes all tool calls and inference before agent B starts. This is enforced by `await` on each dispatch.
+- **Dispatch mutex** - `withDispatchLock()` ensures only one agent dispatches at a time, while pollers themselves stay parallel.
 - **Instance lock** - `O_EXLOCK` on macOS (with pid-check fallback on other platforms) prevents two daemon instances from running simultaneously. Only one process can hold the lock.
-- **Single poller** - one process owns the update offset, preventing contention on `getUpdates` that could cause duplicate message processing.
-- **Isolated memory** - each agent has its own SQLite database, so there are no cross-agent write conflicts. The config switch changes which database is active.
+- **Per-bot polling** - each poller owns its own update offset for its bot, eliminating contention on `getUpdates`.
+- **Isolated memory** - each agent has its own SQLite database, so there are no cross-agent write conflicts at the DB layer.
 
-The only concurrent Telegram activity is cron jobs (heartbeat, morning brief) sending messages independently. This is safe because they're independent fire-and-forget POSTs that don't read from or write to the shared update offset.
+The only concurrent Telegram activity outside the daemon is cron jobs (heartbeat, morning brief) sending messages independently. This is safe because they're independent fire-and-forget POSTs.
+
+### Message Deduplication
+
+The daemon uses a hash-based deduplication cache to prevent the same message from being dispatched twice. This guards against edge cases where a network hiccup causes the same update to appear in consecutive polls before the offset is advanced.
+
+Each incoming message is hashed (message text + message ID). Before dispatch, the hash is checked against an in-memory cache with a 5-second expiry window. If the hash is already present and was seen within the last 5 seconds, the message is silently dropped. If it is new (or older than 5 seconds), the hash is recorded and dispatch proceeds.
+
+The cache holds at most 200 entries. When the limit is reached, the oldest entry is evicted to keep memory bounded.
 
 ### Instance Locking
 
@@ -414,36 +504,35 @@ export function releaseLock(): void
 
 ### Utility Commands
 
-The daemon intercepts utility commands before dispatch. The `/status` command can be sent in any topic or in the general thread.
+The daemon intercepts utility commands before dispatch. The `/status` command can be sent to any agent's bot.
 
 | Command | Action |
 |---------|--------|
-| `/status` | Lists all enabled agents with emoji, display name, and slash command. Sends the list as a formatted Markdown message. |
+| `/status` | Lists all enabled agents with emoji, display name, and bot presence indicator. Sends the list as a formatted Markdown message. |
 
 ### State Persistence
 
-The daemon tracks its position in the Telegram update stream and the topic-to-agent mapping using a state file at `~/.atrophy/.telegram_daemon_state.json`.
+The daemon tracks per-agent polling state in `~/.atrophy/.telegram_daemon_state.json`.
 
 ```json
 {
-  "last_update_id": 123456789,
-  "topic_map": {
-    "42": "xan",
-    "43": "companion"
+  "agents": {
+    "xan": { "last_update_id": 123456789 },
+    "companion": { "last_update_id": 987654321 }
   }
 }
 ```
 
-The `topic_map` maps Telegram thread IDs (as strings) to agent names. This mapping is built on first run when topics are created, and persists across restarts so the daemon does not need to recreate topics.
+Each agent's `last_update_id` is saved after every successful poll cycle. On daemon start, each poller loads its agent's saved offset so no messages are re-processed after a restart or reboot. If the state file is missing or an agent entry is absent, the poller begins from update ID 0.
 
-The state is loaded on daemon start and saved after each poll cycle. This ensures the daemon does not re-process old messages after a restart or system reboot. If the state file is missing or corrupt, the daemon starts from update ID 0 with an empty topic map, which triggers topic creation for all enabled agents.
+Bot profile photos are set on daemon startup: `setBotProfilePhoto()` is called for each discovered agent using the agent's reference image from `avatar/source/face.png` (if it exists).
 
 ### Daemon Control
 
 Three functions control the daemon's lifecycle. They are called from the Electron main process via IPC handlers or from the command-line entry point.
 
 ```typescript
-export function startDaemon(intervalMs?: number): boolean  // default 10000
+export function startDaemon(): boolean
 export function stopDaemon(): void
 export function isDaemonRunning(): boolean
 ```
@@ -452,23 +541,22 @@ The `startDaemon` function performs a complete startup sequence:
 
 1. Checks if already running (returns true immediately if so)
 2. Acquires the instance lock (returns false if another instance is running)
-3. Loads state (last_update_id and topic_map) from state file
-4. Sets the module-level `_lastUpdateId` and syncs to the telegram module via `setLastUpdateId()`
-5. Calls `ensureTopics()` to create missing topic threads for enabled agents
-6. Enters a sequential poll loop (each poll waits for completion before scheduling the next)
+3. Calls `discoverTelegramAgents()` to find all configured agents
+4. Loads per-agent state (last_update_id) from state file
+5. Sets bot profile photos from agent reference images
+6. Starts a `runAgentPoller()` loop for each discovered agent (all run in parallel)
 
 The `stopDaemon` function performs the reverse:
 
-1. Sets running flag to false
-2. Aborts any in-flight long-poll via AbortController
-3. Clears the poll timer
-4. Releases the instance lock
+1. Sets a running flag to false (all poller loops check this flag)
+2. Aborts any in-flight long-polls via per-poller AbortControllers
+3. Releases the instance lock
 
 ### Operating Modes
 
 The daemon can run in three modes depending on how it is started. All three modes use the same polling and dispatch logic - they differ only in lifecycle management.
 
-- **Managed** - started from within the Electron main process via `startDaemon()`, polls on a configurable interval (default 10 seconds). This is the standard mode when the app is running. The daemon stops when the app quits.
+- **Managed** - started from within the Electron main process via `startDaemon()`. This is the standard mode when the app is running. The daemon stops when the app quits.
 - **Continuous** - as a launchd agent with `KeepAlive: true`, launched via `--telegram-daemon` flag. This mode keeps the daemon running even when the GUI is closed, ensuring Telegram messages are always processed.
 - **Single poll** - one-shot execution for testing or cron-triggered runs. Useful for debugging dispatch behavior without starting the full daemon loop.
 

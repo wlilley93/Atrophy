@@ -785,6 +785,32 @@ Each agent can have its own voice configuration, allowing different agents to so
 
 The TTS module handles one-shot synthesis and queued playback for normal chat. The next two modules cover background listening (wake word detection) and continuous conversation (voice call mode), both of which build on the audio and STT foundations described above.
 
+### ElevenLabs Credit Exhaustion
+
+The TTS module tracks ElevenLabs API failures to handle credit exhaustion gracefully. When `synthesise()` catches an error containing HTTP status 401, 402, or 429 from ElevenLabs, it calls `markElevenLabsExhausted()` which starts a 30-minute cooldown. During cooldown, `isElevenLabsExhausted()` returns true and the ElevenLabs tier is skipped entirely - synthesis falls through to Fal then macOS `say`.
+
+```typescript
+export const COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+export function markElevenLabsExhausted(): void;
+export function isElevenLabsExhausted(): boolean;
+export function resetElevenLabsStatus(): void;
+```
+
+The cooldown auto-resets after 30 minutes. `resetElevenLabsStatus()` allows manual recovery. This is used by heartbeat voice note delivery to decide whether to attempt voice synthesis or fall back to text.
+
+### src/main/audio-convert.ts - Shared Audio Conversion
+
+Shared utilities for audio format conversion, extracted from the voice-note job for reuse by both `voice-note.ts` and `heartbeat.ts`.
+
+```typescript
+export function convertToOgg(inputPath: string): string | null;
+export function cleanupFiles(...paths: (string | null | undefined)[]): void;
+```
+
+`convertToOgg` shells out to `ffmpeg` (via `execFileSync` for safety - no shell injection) to convert any audio file to OGG Opus at 64kbps. This is the format required for Telegram voice notes (the `sendVoice` API). Returns the output path on success, null on failure (ffmpeg not found, timeout, empty output). 30-second timeout.
+
+`cleanupFiles` removes temp audio files, accepting nulls safely. Used after voice note delivery to clean up both the MP3 source and OGG output.
+
 ---
 
 ## src/main/wake-word.ts - Wake Word Detection

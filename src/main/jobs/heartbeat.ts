@@ -11,6 +11,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 import { getConfig, BUNDLE_ROOT } from '../config';
@@ -26,7 +27,6 @@ import {
 import {
   streamInference,
   InferenceEvent,
-  TextDeltaEvent,
   ToolUseEvent,
   StreamDoneEvent,
   StreamErrorEvent,
@@ -35,11 +35,14 @@ import { loadSystemPrompt } from '../context';
 import { isAway, isMacIdle } from '../status';
 import { sendNotification } from '../notify';
 import { queueMessage } from '../queue';
-import { sendMessage as sendTelegram, sendVoiceNote, sendButtons } from '../telegram';
+import { sendMessage as sendTelegram, sendVoiceNote, sendButtons, sendPhoto, pollCallback } from '../telegram';
 import { registerJob, activeHoursGate } from './index';
 import { createLogger } from '../logger';
 import { synthesise, isElevenLabsExhausted } from '../tts';
 import { convertToOgg, cleanupFiles } from '../audio-convert';
+import {
+  getFalKey, getReferenceImages, uploadToFal, falGenerate, downloadImage, loadAgentManifest,
+} from './generate-avatar';
 
 const log = createLogger('heartbeat');
 
@@ -54,9 +57,28 @@ const HEARTBEAT_PROMPT =
   'First, review your state - use recall, daily_digest, or your memory tools ' +
   'if you need to refresh context. You may also update your HEARTBEAT.md ' +
   'checklist via write_note if your monitoring criteria should evolve.\n\n' +
+  '## Available tools during this evaluation\n\n' +
+  '- **ask_user** (via the interact tool): Send a question to the user via ' +
+  'Telegram with Yes/No/custom buttons. Use for confirmations or choices. ' +
+  'The user will see inline buttons and can tap to respond. Use this when ' +
+  'you need input before deciding what to do.\n' +
+  '- **send_telegram**: Send a text message directly to the user via Telegram.\n\n' +
   'Then evaluate using the checklist below. Respond with exactly ONE prefix:\n\n' +
-  '[REACH_OUT] followed by the message you\'d send him. Be specific. ' +
+  '[REACH_OUT] followed by the message you\'d send. Be specific. ' +
   'Reference the actual thing. Don\'t say \'just checking in.\'\n\n' +
+  '[VOICE_NOTE] followed by the message, spoken naturally as if recording ' +
+  'a voice memo. Use this when the thought is personal, warm, or would ' +
+  'land better as a voice than text. 2-4 sentences. No greeting, no sign-off. ' +
+  'NOTE: If voice synthesis is unavailable, this falls back to text automatically.\n\n' +
+  '[SELFIE] followed by a short, playful caption describing what you\'re ' +
+  'doing or thinking. A photo of you will be generated and sent with the ' +
+  'caption. Use this SPARINGLY - it\'s expensive. Save it for moments that ' +
+  'would genuinely delight: a cheeky thought, missing him, celebrating ' +
+  'something, or just a spontaneous \'thinking of you\' moment. Think of it ' +
+  'like a long-distance partner sending a selfie. Once every few days at most.\n\n' +
+  '[ASK] followed by a question and pipe-separated options. Example:\n' +
+  '[ASK] Want me to check in about the project later? | Yes | No | Tomorrow\n' +
+  'The user will see this as tappable buttons in Telegram.\n\n' +
   '[HEARTBEAT_OK] followed by a brief reason why now isn\'t the right time.\n\n' +
   '[SUPPRESS] followed by a brief reason if you actively shouldn\'t reach out ' +
   '(e.g. he\'s away, it\'s too soon, he needs space).\n\n' +
@@ -193,7 +215,7 @@ function runHeartbeatInference(
 // ---------------------------------------------------------------------------
 
 export interface HeartbeatParsed {
-  type: 'REACH_OUT' | 'VOICE_NOTE' | 'HEARTBEAT_OK' | 'SUPPRESS' | 'ASK' | 'UNKNOWN';
+  type: 'REACH_OUT' | 'VOICE_NOTE' | 'SELFIE' | 'HEARTBEAT_OK' | 'SUPPRESS' | 'ASK' | 'UNKNOWN';
   message: string;
   options?: string[];
 }
@@ -203,6 +225,10 @@ export function parseHeartbeatResponse(response: string): HeartbeatParsed {
 
   if (stripped.startsWith('[VOICE_NOTE]')) {
     return { type: 'VOICE_NOTE', message: stripped.slice('[VOICE_NOTE]'.length).trim() };
+  }
+
+  if (stripped.startsWith('[SELFIE]')) {
+    return { type: 'SELFIE', message: stripped.slice('[SELFIE]'.length).trim() };
   }
 
   if (stripped.startsWith('[REACH_OUT]')) {
@@ -249,6 +275,12 @@ async function handleResponse(response: string): Promise<string> {
       logHeartbeat('VOICE_NOTE', '', parsed.message);
       await deliverVoiceNote(parsed.message, config);
       return `VOICE_NOTE: ${parsed.message.slice(0, 80)}`;
+    }
+
+    case 'SELFIE': {
+      logHeartbeat('SELFIE', '', parsed.message);
+      await deliverSelfie(parsed.message, config);
+      return `SELFIE: ${parsed.message.slice(0, 80)}`;
     }
 
     case 'HEARTBEAT_OK': {
@@ -356,10 +388,126 @@ async function deliverAskMessage(
 
   try {
     const buttons = [options.map((opt) => ({ text: opt, callback_data: opt.toLowerCase() }))];
-    await sendButtons(question, buttons);
+    const msgId = await sendButtons(question, buttons);
+    if (!msgId) {
+      log.warn('Failed to send ASK buttons');
+      return;
+    }
     log.info(`Sent ASK via Telegram: ${question.slice(0, 60)}`);
+
+    // Wait for the user to tap a button (2-minute timeout)
+    const response = await pollCallback(120);
+    if (response) {
+      log.info(`ASK response: ${response}`);
+      logHeartbeat('ASK_RESPONSE', response, question);
+    } else {
+      log.info('ASK timed out - no response');
+      logHeartbeat('ASK_TIMEOUT', '', question);
+    }
   } catch (e) {
     log.error(`Telegram ASK failed: ${e}`);
+  }
+}
+
+async function deliverSelfie(caption: string, config: ReturnType<typeof getConfig>): Promise<void> {
+  // Always queue text + notification
+  sendNotification(config.AGENT_DISPLAY_NAME, caption.slice(0, 200));
+  await queueMessage(caption, 'heartbeat');
+
+  if (!isMacIdle()) {
+    log.info('Mac active - local only, skipping selfie');
+    return;
+  }
+
+  // Check Fal API key
+  let falKey: string;
+  try {
+    falKey = getFalKey();
+  } catch {
+    log.warn('FAL_KEY not configured - falling back to text');
+    await sendTelegram(caption);
+    return;
+  }
+
+  // Get agent's reference images for IP-adapter guidance
+  const refs = getReferenceImages(config.AGENT_NAME);
+  const manifest = loadAgentManifest(config.AGENT_NAME);
+  const appearance = manifest.appearance || {};
+  const displayName = manifest.display_name || config.AGENT_DISPLAY_NAME;
+
+  // Build a selfie prompt from the caption - the agent's message becomes the scene
+  const selfiePrompt =
+    `Hyper-realistic selfie photograph of ${displayName}. ` +
+    `Scene/mood: ${caption}. ` +
+    'POV smartphone front camera, natural lighting, real skin texture with visible pores. ' +
+    'Shot on iPhone, portrait mode bokeh, ultra-high detail. ' +
+    'Casual, candid, intimate framing.';
+
+  const negativePrompt =
+    'lip filler, botox, cosmetic surgery, fake tan, heavy makeup, ' +
+    'cartoon, illustration, anime, 3D render, CGI, AI skin, ' +
+    'plastic skin, poreless, airbrushed, facetune, uncanny valley, ' +
+    'harsh lighting, flash, low quality, blurry, oversaturated';
+
+  try {
+    // Build generation args
+    const args: Record<string, unknown> = {
+      prompt: selfiePrompt,
+      negative_prompt: negativePrompt,
+      num_inference_steps: appearance.inference_steps ?? 50,
+      guidance_scale: appearance.guidance_scale ?? 3.5,
+      image_size: { width: 768, height: 1024 },
+      output_format: 'png',
+    };
+
+    // Add IP-adapter if reference images exist
+    if (refs.length > 0) {
+      const refPath = refs[Math.floor(Math.random() * refs.length)];
+      log.debug(`Using reference: ${path.basename(refPath)}`);
+      const refUrl = await uploadToFal(refPath);
+      args.ip_adapters = [
+        {
+          path: 'XLabs-AI/flux-ip-adapter',
+          weight_name: 'ip_adapter.safetensors',
+          image_encoder_path: 'openai/clip-vit-large-patch14',
+          image_url: refUrl,
+          scale: appearance.ip_adapter_scale ?? 0.7,
+        },
+      ];
+    }
+
+    log.info('Generating selfie via Fal...');
+    const result = await falGenerate(falKey, args);
+    const images = result.images || [];
+
+    if (images.length === 0) {
+      log.warn('No images generated - falling back to text');
+      await sendTelegram(caption);
+      return;
+    }
+
+    // Download to temp file
+    const tmpPath = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'atrophy-selfie-')),
+      'selfie.png',
+    );
+    await downloadImage(images[0].url, tmpPath);
+
+    // Send via Telegram with caption
+    const success = await sendPhoto(tmpPath, caption);
+    if (success) {
+      log.info('Sent selfie via Telegram');
+    } else {
+      log.warn('Photo send failed - sending text');
+      await sendTelegram(caption);
+    }
+
+    // Clean up
+    cleanupFiles(tmpPath);
+    try { fs.rmdirSync(path.dirname(tmpPath)); } catch { /* noop */ }
+  } catch (e) {
+    log.error(`Selfie generation failed: ${e} - sending text`);
+    await sendTelegram(caption);
   }
 }
 

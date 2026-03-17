@@ -259,11 +259,8 @@ export interface AgentManifest {
     fal_voice_id: string;
     playback_rate: number;
   };
-  telegram: {
-    bot_token_env: string;   // e.g. 'TELEGRAM_BOT_TOKEN'
-    group_id_env: string;    // e.g. 'TELEGRAM_GROUP_ID'
-    topic_id: number;        // agent's topic thread ID in the group
-  };
+  telegram_bot_token?: string;   // per-agent bot API token (falls back to global TELEGRAM_BOT_TOKEN)
+  telegram_chat_id?: string;     // per-agent chat ID (falls back to global TELEGRAM_CHAT_ID)
   display: {
     window_width: number;    // always 622
     window_height: number;   // always 830
@@ -301,7 +298,7 @@ The internal functions handle the individual steps of agent creation - name slug
 
 **`writeIfMissing(filePath: string, content: string): void`** - Creates parent directories and writes file only if it does not already exist. This is the key to idempotency - re-running agent creation never overwrites existing prompt files that may have been customised.
 
-**`buildManifest(opts, name): AgentManifest`** - Assembles the full manifest from options with defaults. Description is truncated to 120 characters (117 + `'...'`). Telegram config uses the shared `TELEGRAM_BOT_TOKEN` and `TELEGRAM_GROUP_ID` env vars, with a per-agent `topic_id` that identifies the agent's topic thread within the Topics-enabled group.
+**`buildManifest(opts, name): AgentManifest`** - Assembles the full manifest from options with defaults. Description is truncated to 120 characters (117 + `'...'`). `telegram_bot_token` and `telegram_chat_id` are left empty in the generated manifest - they must be filled in via the Settings UI or by editing `agent.json` directly after the agent is created.
 
 **`generateSystemPrompt(opts, name): string`** - Template-based system prompt (typically 500-800 words). Sections: Origin, Who You Are, Character, Relationship with user, Values, Constraints, Friction, Voice, Capabilities (CONVERSATION, MEMORY, RESEARCH, REFLECTION, WRITING, SCHEDULING, MONITORING), Session Behaviour, Opening Line. Unset sections use the placeholder `(To be written.)`.
 
@@ -554,7 +551,7 @@ The observer uses a mix of direct database access and shared memory module funct
 
 ## src/main/jobs/heartbeat.ts - Periodic Check-In
 
-The heartbeat is the companion's mechanism for deciding whether to reach out to the user unprompted. Every 30 minutes, it gathers context about active threads, time since last interaction, and recent session activity, then asks the companion to evaluate whether reaching out would be a gift or noise. If the companion decides to reach out, it fires a macOS notification and queues the message for the next app launch. If the Mac is idle (suggesting the user is away from the computer), it also sends via Telegram to reach them on their phone. This is a port of `scripts/agents/companion/heartbeat.py`.
+The heartbeat is the companion's mechanism for deciding whether to reach out to the user unprompted, and if so, in what form. Every 30 minutes, it gathers context about active threads, time since last interaction, and recent session activity, then asks the companion to evaluate whether reaching out would be a gift or noise. If the companion decides to reach out, it can send a text message, a synthesised voice note, a generated image (selfie), or an interactive question with inline buttons. Local notification and queue delivery apply for text outreach. Telegram delivery (for all types) only happens when the Mac is idle - suggesting the user is away from the computer.
 
 What makes the heartbeat distinctive compared to other jobs is that it uses `streamInference()` with full tool access rather than a simple oneshot call. This means the companion can use its memory tools (recall, daily_digest, write_note) during the evaluation, giving it access to the same context it would have during a conversation. The trade-off is that heartbeat runs are more expensive than observer or sleep-cycle runs.
 
@@ -591,7 +588,7 @@ The heartbeat follows a multi-stage evaluation process with two early-exit gates
 4. Gather context (see below)
 5. Get last CLI session ID for session continuity
 6. Run inference with full tool access via `streamInference()` (not oneshot - the heartbeat can use memory tools)
-7. Parse the response for one of three prefixes: `[REACH_OUT]`, `[HEARTBEAT_OK]`, `[SUPPRESS]`
+7. Parse the response for one of six prefixes: `[REACH_OUT]`, `[VOICE_NOTE]`, `[SELFIE]`, `[ASK]`, `[HEARTBEAT_OK]`, `[SUPPRESS]`
 8. Act on the decision (see below)
 
 ### Context Gathering
@@ -625,20 +622,27 @@ Unlike most other jobs that use simple oneshot inference, the heartbeat uses the
 
 ### Prompt Structure
 
-The `HEARTBEAT_PROMPT` constant (hardcoded, approximately 400 chars) instructs the agent to review its state using memory tools, evaluate using the checklist, and respond with exactly one of three prefixes. The prompt is deliberately concise - the checklist document provides the detailed evaluation criteria.
+The `HEARTBEAT_PROMPT` constant (hardcoded, approximately 400 chars) instructs the agent to review its state using memory tools, evaluate using the checklist, and respond with exactly one of six prefixes. The prompt also describes the two delivery tools available to the agent: `ask_user` (interactive Telegram inline buttons) and `send_telegram` (direct message). The prompt is deliberately concise - the checklist document provides the detailed evaluation criteria.
 
 ### Response Handling
 
-The companion's response is parsed for one of three structured prefixes, and the appropriate action is taken based on which prefix is found.
+The companion's response is parsed for one of six structured prefixes, and the appropriate action is taken based on which prefix is found.
 
 | Prefix | Action |
 |--------|--------|
 | `[REACH_OUT]` | Log to heartbeats table. If Mac is idle (`isMacIdle()`), send via Telegram. Always send macOS notification (truncated to 200 chars) and queue message with source `'heartbeat'` |
+| `[VOICE_NOTE]` | Synthesise speech via `synthesise()`, convert to OGG Opus via `convertToOgg()`, send as Telegram voice note via `sendVoiceNote()`. If ElevenLabs credits are exhausted (401/402/429) or TTS fails, falls back to sending text via `sendMessage()`. The 30-min ElevenLabs cooldown is tracked in module state |
+| `[SELFIE]` | Generate image via Fal AI Flux using the agent's IP-adapter reference images. The agent's caption text becomes the scene description. Send as Telegram photo via `sendPhoto()`. Used sparingly - generation is expensive |
+| `[ASK]` | Send Telegram inline buttons via `sendButtons()`. Poll for callback response via `pollCallback()` (2-minute timeout). Log result via `logHeartbeat()` |
 | `[HEARTBEAT_OK]` | Log reason to heartbeats table |
 | `[SUPPRESS]` | Log reason to heartbeats table |
 | Unknown format | Log first 500 chars to heartbeats table as `'UNKNOWN'` |
 
 All decisions are logged via `logHeartbeat(decision, reason, message?)`, creating an audit trail that the introspect job can later review.
+
+### ElevenLabs Credit Exhaustion
+
+If ElevenLabs returns 401, 402, or 429 during a `[VOICE_NOTE]` delivery, a 30-minute cooldown is set in module state. During the cooldown, voice note requests automatically fall back to plain text via `sendMessage()`. The cooldown resets after 30 minutes.
 
 ### Error Handling
 
@@ -659,7 +663,9 @@ The heartbeat has the widest dependency set of any job, reflecting its need to a
 - `../status` (`isAway`, `isMacIdle`)
 - `../notify` (`sendNotification`)
 - `../queue` (`queueMessage`)
-- `../telegram` (`sendMessage`)
+- `../telegram` (`sendMessage`, `sendVoiceNote`, `sendPhoto`, `sendButtons`, `pollCallback`)
+- `../tts` (`synthesise`)
+- `../audio-convert` (`convertToOgg`)
 - `./index` (`registerJob`, `activeHoursGate`)
 
 ---
@@ -1415,7 +1421,7 @@ export async function run(): Promise<void>
 
 The voice note follows a multi-stage pipeline from context gathering through TTS synthesis to Telegram delivery, with enrichment and observation storage as side effects.
 
-1. Check Telegram config - skip if `TELEGRAM_BOT_TOKEN` or `TELEGRAM_GROUP_ID` not set
+1. Check Telegram config - skip if agent's `telegram_bot_token` or `telegram_chat_id` not set
 2. Check active hours - reschedule if outside window
 3. Gather context (threads, observations, conversation turns)
 4. Generate thought via `runInferenceOneshot()`
@@ -1458,10 +1464,11 @@ The voice note job makes two inference calls - the main thought generation and a
 
 ### Audio Conversion
 
-Telegram voice notes require OGG Opus format. The `convertToOgg()` function handles the conversion using ffmpeg, with graceful fallback to the original MP3 if ffmpeg is unavailable.
+Telegram voice notes require OGG Opus format. Conversion is handled by `convertToOgg()`, which lives in the shared `src/main/audio-convert.ts` module. It was extracted from this file into a standalone module so that both `voice-note.ts` and `heartbeat.ts` can use it without duplication.
 
 ```typescript
-function convertToOgg(inputPath: string): string | null
+// src/main/audio-convert.ts
+export function convertToOgg(inputPath: string): string | null
 ```
 Runs the following ffmpeg command with a 30-second timeout:
 ```bash
@@ -1498,7 +1505,7 @@ Both the original audio file and the OGG conversion are deleted after sending. E
 
 The voice note job has a broad dependency set, spanning inference, TTS, Telegram, memory, and cron.
 
-- `child_process` (`execSync`) - ffmpeg conversion
+- `../audio-convert` (`convertToOgg`) - shared OGG conversion module, also used by heartbeat
 - `../config` (`getConfig`)
 - `../memory` (`getDb`, `getActiveThreads`, `getRecentObservations`, `writeObservation`)
 - `../inference` (`runInferenceOneshot`)

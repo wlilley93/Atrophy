@@ -90,11 +90,8 @@ This is the technical configuration file for the agent. All fields:
     "playback_rate": 1.12
   },
 
-  "telegram": {
-    "bot_token_env": "TELEGRAM_BOT_TOKEN",
-    "group_id_env": "TELEGRAM_GROUP_ID",
-    "topic_id": 6
-  },
+  "telegram_bot_token": "",
+  "telegram_chat_id": "",
 
   "display": {
     "window_width": 622,

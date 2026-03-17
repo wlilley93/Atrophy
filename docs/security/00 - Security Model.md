@@ -164,7 +164,7 @@ Each agent's data is fully isolated from other agents through filesystem separat
 - Separate database file per agent
 - Separate data directory (`~/.atrophy/agents/<name>/data/`)
 - Separate Obsidian subdirectory for notes
-- Separate Telegram topic thread per agent (each agent's `topic_id` in `agent.json` scopes it to its own conversation within the shared group)
+- Separate Telegram bot per agent (each agent's `telegram_bot_token` and `telegram_chat_id` in `agent.json` scopes it to its own 1:1 bot conversation)
 
 ### No Telemetry or Exfiltration
 
@@ -504,19 +504,16 @@ The following table documents all files that contain sensitive data, their permi
 
 ### Agent Configuration Security
 
-Agent manifests (`agents/<name>/data/agent.json`) reference secrets by environment variable name, not by value. This indirection means manifests can be committed to version control, shared between machines, or inspected by the companion without exposing actual credentials.
+Agent manifests (`agents/<name>/data/agent.json`) store per-agent Telegram credentials directly as fields. Global fallback credentials remain in `.env` with restricted permissions (mode 0600).
 
 ```json
 {
-  "telegram": {
-    "bot_token_env": "TELEGRAM_BOT_TOKEN",
-    "group_id_env": "TELEGRAM_GROUP_ID",
-    "topic_id": 8
-  }
+  "telegram_bot_token": "7123456789:AAH...",
+  "telegram_chat_id": "-1001234567890"
 }
 ```
 
-The system reads the actual token and group ID from `process.env` at runtime, resolving the environment variable names to their values. The `topic_id` is a non-secret numeric ID that identifies the agent's topic thread within the group. This pattern keeps secrets in exactly one place (the `.env` file) while allowing the rest of the configuration to be transparent.
+The `telegram_bot_token` is the Bot API token from @BotFather for this agent's dedicated bot. The `telegram_chat_id` is the 1:1 chat ID auto-detected by the Settings UI. Both are stored in the agent manifest directly - they are not cross-agent secrets (each bot is scoped to one agent). Global fallback values (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) in `.env` are used by agents that have not been individually configured (typically Xan).
 
 ### Claude CLI Environment
 

@@ -250,7 +250,7 @@
         api.getAgents(),
       ]);
       agents.current = cfg.agentName || '';
-      agents.displayName = cfg.agentDisplayName || cfg.agentName || '';
+      agents.displayName = cfg.agentDisplayName || '';
       agents.list = agentList || [];
 
       // Apply config-driven defaults
@@ -603,7 +603,7 @@
           api.getAgents(),
         ]);
         agents.current = (cfg as Record<string, string>).agentName || '';
-        agents.displayName = (cfg as Record<string, string>).agentDisplayName || (cfg as Record<string, string>).agentName || '';
+        agents.displayName = (cfg as Record<string, string>).agentDisplayName || '';
         agents.list = (agentList as string[]) || [];
 
         // Fetch opening line for the (possibly new) agent

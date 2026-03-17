@@ -74,26 +74,20 @@ Configuration for text-to-speech synthesis. Supports multiple TTS backends.
 
 ---
 
-## telegram
+## telegram (top-level fields)
 
-Telegram integration using Topics mode - each agent gets its own topic thread in a shared group. Used for async communication (heartbeats, `ask_user`, `send_telegram` tools).
+Each agent can have its own dedicated Telegram bot. The daemon uses these per-agent fields directly. If omitted, the global `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars are used as a fallback (Xan relies on this fallback by default).
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `bot_token_env` | string | Yes | Name of the environment variable containing the Telegram bot token (shared across agents). |
-| `group_id_env` | string | Yes | Name of the environment variable containing the Telegram group ID (the Topics-enabled group). |
-| `topic_id` | number | Yes | The topic thread ID for this agent within the group. Each agent has its own topic. |
-
-The `bot_token_env` and `group_id_env` values are environment variable **names**, not the actual tokens. The `topic_id` is a numeric ID assigned by Telegram when the topic is created.
+| `telegram_bot_token` | string | No | Bot API token from @BotFather for this agent's dedicated bot. |
+| `telegram_chat_id` | string | No | Chat ID for the 1:1 conversation with this agent's bot. Auto-detected by the Settings UI after the token is saved. |
 
 **Example:**
 ```json
 {
-  "telegram": {
-    "bot_token_env": "TELEGRAM_BOT_TOKEN",
-    "group_id_env": "TELEGRAM_GROUP_ID",
-    "topic_id": 42
-  }
+  "telegram_bot_token": "7123456789:AAH...",
+  "telegram_chat_id": "-1001234567890"
 }
 ```
 
@@ -179,11 +173,8 @@ No manifest field is needed — `config.py` derives the path from `BUNDLE_ROOT.n
     "fal_voice_id": "",
     "playback_rate": 1.0
   },
-  "telegram": {
-    "bot_token_env": "TELEGRAM_BOT_TOKEN",
-    "group_id_env": "TELEGRAM_GROUP_ID",
-    "topic_id": 2
-  },
+  "telegram_bot_token": "7123456789:AAH...",
+  "telegram_chat_id": "-1001234567890",
   "display": {
     "window_width": 622,
     "window_height": 830,
@@ -222,11 +213,8 @@ The Mirror uses `custom_setup` to trigger a dedicated setup flow (photo upload, 
     "elevenlabs_style": 0.1,
     "playback_rate": 1.0
   },
-  "telegram": {
-    "bot_token_env": "TELEGRAM_BOT_TOKEN",
-    "group_id_env": "TELEGRAM_GROUP_ID",
-    "topic_id": 4
-  },
+  "telegram_bot_token": "8987654321:BBZ...",
+  "telegram_chat_id": "-1009876543210",
   "display": {
     "window_width": 622,
     "window_height": 830,

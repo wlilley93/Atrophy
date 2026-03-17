@@ -247,6 +247,16 @@ function getMcpConfigPath(): string {
     };
   }
 
+  // WorldMonitor intelligence API server
+  servers.worldmonitor = {
+    command: config.PYTHON_PATH,
+    args: [path.join(config.MCP_DIR, 'worldmonitor_server.py')],
+    env: {
+      WORLDMONITOR_CACHE_DB: path.join(os.homedir(), '.atrophy', 'worldmonitor_cache.db'),
+      WORLDMONITOR_BASE_URL: 'https://api.worldmonitor.app',
+    },
+  };
+
   // Import global MCP servers from Claude Code settings
   const globalSettings = path.join(os.homedir(), '.claude', 'settings.json');
   if (fs.existsSync(globalSettings)) {
@@ -308,10 +318,31 @@ export interface CompactingEvent {
   type: 'Compacting';
 }
 
+export interface ToolInputDeltaEvent {
+  type: 'ToolInputDelta';
+  toolId: string;
+  delta: string;
+}
+
+export interface ToolResultEvent {
+  type: 'ToolResult';
+  toolId: string;
+  toolName: string;
+  output: string;
+}
+
+export interface ThinkingDeltaEvent {
+  type: 'ThinkingDelta';
+  text: string;
+}
+
 export type InferenceEvent =
   | TextDeltaEvent
   | SentenceReadyEvent
   | ToolUseEvent
+  | ToolInputDeltaEvent
+  | ToolResultEvent
+  | ThinkingDeltaEvent
   | StreamDoneEvent
   | StreamErrorEvent
   | CompactingEvent;
@@ -557,7 +588,7 @@ export function streamInference(
 
   const agencyContext = buildAgencyContext(userMessage);
   let sessionId = cliSessionId || uuidv4();
-  const allowedTools = 'mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*,mcp__shell__*,mcp__github__*';
+  const allowedTools = 'mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*,mcp__shell__*,mcp__github__*,mcp__worldmonitor__*';
 
   // Resolve model from config, validate against whitelist
   const model = ALLOWED_MODELS.has(config.CLAUDE_MODEL) ? config.CLAUDE_MODEL : DEFAULT_MODEL;
@@ -732,6 +763,25 @@ export function streamInference(
                 }
               }
             }
+          } else if (delta.type === 'input_json_delta') {
+            // Tool input streaming
+            const partial = (delta.partial_json as string) || '';
+            if (partial) {
+              emitter.emit('event', {
+                type: 'ToolInputDelta',
+                toolId: String(inner.index ?? ''),
+                delta: partial,
+              } as ToolInputDeltaEvent);
+            }
+          } else if (delta.type === 'thinking_delta') {
+            // Thinking block streaming
+            const thinkText = (delta.thinking as string) || '';
+            if (thinkText) {
+              emitter.emit('event', {
+                type: 'ThinkingDelta',
+                text: thinkText,
+              } as ThinkingDeltaEvent);
+            }
           }
         }
 
@@ -766,6 +816,22 @@ export function streamInference(
               inputJson: JSON.stringify(block.input || {}),
             } as ToolUseEvent);
           }
+        }
+        continue;
+      }
+
+      // Tool result - output from a tool call
+      if (evtType === 'tool_result' || evtType === 'tool') {
+        const toolId = (event.tool_use_id as string) || (event.id as string) || '';
+        const toolName = (event.name as string) || '';
+        const output = (event.output as string) || (event.content as string) || '';
+        if (output) {
+          emitter.emit('event', {
+            type: 'ToolResult',
+            toolId,
+            toolName,
+            output: output.slice(0, 2000), // Cap to prevent huge payloads
+          } as ToolResultEvent);
         }
         continue;
       }

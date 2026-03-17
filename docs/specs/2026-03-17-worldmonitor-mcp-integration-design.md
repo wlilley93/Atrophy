@@ -34,7 +34,7 @@ A shared MCP server (`mcp/worldmonitor_server.py`) that gives any Atrophy agent 
                     |  - HTTP client layer         |
                     |  - Response cache (SQLite)   |
                     |  - Delta detection engine    |
-                    |  - Tool definitions (17+)    |
+                    |  - Tool definitions (21)      |
                     +------+-------------+--------+
                            |             |
               +------------v--+   +------v----------+
@@ -66,18 +66,25 @@ SQLite database at `~/.atrophy/worldmonitor_cache.db`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS cache (
-    endpoint    TEXT PRIMARY KEY,
+    cache_key   TEXT PRIMARY KEY,     -- full URL with query params (e.g. "api/bootstrap?tier=fast")
+    endpoint    TEXT NOT NULL,        -- base endpoint path (for querying by domain)
     response    TEXT NOT NULL,        -- raw JSON response
     fetched_at  TEXT NOT NULL,        -- ISO 8601 timestamp
     prev_response TEXT,               -- previous response (for diffing)
     delta       TEXT                  -- computed delta JSON
 );
 
+CREATE INDEX IF NOT EXISTS idx_cache_endpoint ON cache(endpoint);
+
 CREATE TABLE IF NOT EXISTS poll_state (
     tier        TEXT PRIMARY KEY,     -- fast, medium, slow
     last_poll   TEXT NOT NULL         -- ISO 8601 timestamp
 );
 ```
+
+**Cache key format:** Full URL path with query parameters, e.g. `api/bootstrap?tier=fast` and `api/bootstrap?tier=slow` are separate cache entries. This prevents collisions for parameterised endpoints.
+
+**Cache eviction:** On each write, delete `prev_response` values older than 7 days to bound storage growth. The cache DB stores full API payloads (maritime snapshots can be large), so unbounded prev_response accumulation would bloat the DB over weeks.
 
 ### 3.2 HTTP Client Layer
 
@@ -86,6 +93,7 @@ CREATE TABLE IF NOT EXISTS poll_state (
 - Timeout: 30 seconds per request
 - User-Agent: `Atrophy/1.0 (WorldMonitor MCP)`
 - For POST endpoints: JSON body via `Content-Type: application/json`
+- **Optional auth:** If `WORLDMONITOR_API_KEY` env var is set, send as `Authorization: Bearer <key>` header on all requests. Currently no auth is required, but this provides a forward-compatible hook if WorldMonitor adds authentication later.
 
 ### 3.3 Tool Definitions
 
@@ -103,7 +111,9 @@ CREATE TABLE IF NOT EXISTS poll_state (
 | `worldmonitor_thermal` | `thermal/v1/list-thermal-escalations` | `max_items` (int, default: 12) | Satellite thermal anomalies |
 | `worldmonitor_get_changes` | (reads cache deltas) | `since_minutes` (int, default: 60), `domains` (optional comma-separated filter) | Pre-diffed summary of changes by domain |
 
-#### On-demand tools (live fetch, no caching)
+#### On-demand tools (live fetch, cached when polled)
+
+On-demand tools fetch live data when called interactively by the agent. However, the slow-tier polling job also calls economic, trade, displacement, fleet, and anomaly endpoints on a 4-hour cycle. When polled, responses are cached and deltas computed using the same cache DB - this allows `worldmonitor_get_changes` to include slow-tier shifts. When called interactively, these tools always fetch fresh data but update the cache as a side effect.
 
 | Tool | Endpoint(s) | Parameters | Returns |
 |------|------------|------------|---------|
@@ -115,7 +125,7 @@ CREATE TABLE IF NOT EXISTS poll_state (
 | `worldmonitor_wingbits` | `military/v1/get-wingbits-status` | none | Wingbits ADS-B detection status |
 | `worldmonitor_deduct_situation` | `intelligence/v1/deduct-situation` | `context` (string) | AI-generated situation assessment |
 | `worldmonitor_anomalies` | `infrastructure/v1/list-temporal-anomalies` | none | Detected baseline pattern anomalies |
-| `worldmonitor_news_summary` | `news/v1/summarize-article` | `url` (string) | Article summarisation |
+| `worldmonitor_news_summary` | `news/v1/summarize-article` (POST), `news/v1/summarize-article-cache` (GET) | `url` (string), `cache_key` (optional - if provided, checks cache first) | Article summarisation. Checks cache endpoint first if cache_key given, falls back to POST for fresh summarisation. |
 | `worldmonitor_news_digest` | `news/v1/list-feed-digest` | `variant` (default: full), `lang` (default: en) | News feed digest |
 | `worldmonitor_humanitarian` | `conflict/v1/get-humanitarian-summary-batch` | `regions` (list) | Humanitarian situation summaries |
 | `worldmonitor_pizzint` | `intelligence/v1/get-pizzint-status` | `include_gdelt` (bool, default: true) | PIZZINT intelligence status |
@@ -172,21 +182,79 @@ When a cached tool is called:
      - `[INTEL/WM/THERMAL] New thermal escalation detected near Zaporizhzhia, Ukraine`
 5. Update `poll_state` table with current timestamp for the tier
 
-### 4.3 Library Reuse
+### 4.3 Library Reuse and Code Structure
 
-The poll script does NOT spawn the MCP server as a subprocess. Instead, the worldmonitor_server.py is structured so that its fetch, cache, and diff logic can be imported as a Python module:
+The poll script does NOT spawn the MCP server as a subprocess. Instead, `worldmonitor_server.py` is designed with a clean class-based separation from the start:
+
+```python
+# worldmonitor_server.py - structured for dual use
+
+class WorldMonitorClient:
+    """Stateless API client + cache manager. All state via constructor params."""
+
+    def __init__(self, cache_db: str, base_url: str = "https://api.worldmonitor.app",
+                 api_key: str | None = None):
+        self.cache_db = cache_db
+        self.base_url = base_url
+        self.api_key = api_key
+        # NO module-level globals, NO env var reads in the class
+
+    def fetch(self, endpoint: str, params: dict = None, method: str = "GET", body: dict = None) -> dict: ...
+    def fetch_cached(self, endpoint: str, params: dict = None) -> tuple[dict, dict | None]: ...  # (data, delta)
+    def poll_tier(self, tier: str) -> list[dict]: ...  # returns list of significant changes
+    def get_changes(self, since_minutes: int = 60, domains: list = None) -> list[dict]: ...
+
+# MCP stdio entry point - only runs when executed directly
+def main():
+    """JSON-RPC 2.0 stdio loop. Reads env vars, creates WorldMonitorClient, dispatches tools."""
+    client = WorldMonitorClient(
+        cache_db=os.environ.get("WORLDMONITOR_CACHE_DB", ...),
+        base_url=os.environ.get("WORLDMONITOR_BASE_URL", ...),
+        api_key=os.environ.get("WORLDMONITOR_API_KEY"),
+    )
+    # ... stdio JSON-RPC loop using client ...
+
+if __name__ == "__main__":
+    main()
+```
+
+The poll script imports the class directly:
 
 ```python
 # worldmonitor_poll.py
+import sys, os, sqlite3
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'mcp'))
 from worldmonitor_server import WorldMonitorClient
 
-client = WorldMonitorClient(cache_db=CACHE_DB, base_url=BASE_URL)
-changes = client.poll_tier("fast")
+CACHE_DB = os.path.expanduser("~/.atrophy/worldmonitor_cache.db")
+MONTGOMERY_DB = os.path.expanduser("~/.atrophy/agents/general_montgomery/data/memory.db")
+
+client = WorldMonitorClient(cache_db=CACHE_DB)
+changes = client.poll_tier(sys.argv[2])  # --tier fast|medium|slow
+
+# File observations directly into Montgomery's SQLite memory DB
+# This writes to the same observations table that memory_server.py reads
 for change in changes:
-    file_observation(change)
+    file_observation(MONTGOMERY_DB, change)
+
+def file_observation(db_path: str, change: dict):
+    """Write an observation directly to the agent's memory.db.
+
+    Same table and format as memory_server.py's handle_observe().
+    Uses the observations table with columns: id, content, category,
+    created_at, active.
+    """
+    conn = sqlite3.connect(db_path)
+    content = f"[INTEL/WM/{change['domain']}] {change['summary']}"
+    conn.execute(
+        "INSERT INTO observations (content, category, created_at, active) VALUES (?, ?, ?, 1)",
+        (content, "intelligence", change['timestamp'])
+    )
+    conn.commit()
+    conn.close()
 ```
 
-This avoids the overhead of JSON-RPC for batch polling while keeping all API/cache/diff logic in one place.
+**Key design constraint:** The poll script writes directly to Montgomery's `memory.db` SQLite file - the same database that `memory_server.py` reads from. This avoids needing to spawn the memory server as a subprocess. SQLite handles concurrent readers/writer safely at this scale (one writer every 15 mins, readers during conversation).
 
 ---
 
@@ -194,7 +262,9 @@ This avoids the overhead of JSON-RPC for batch polling while keeping all API/cac
 
 ### 5.1 MCP Config Generation
 
-Both apps (Python `inference.py` and Electron `inference.ts`) add the worldmonitor server to the generated MCP config:
+Both apps (Python `inference.py` and Electron `inference.ts`) need two changes:
+
+**1. Add worldmonitor to the MCP config:**
 
 ```json
 {
@@ -210,6 +280,15 @@ Both apps (Python `inference.py` and Electron `inference.ts`) add the worldmonit
 ```
 
 The server is added for ALL agents (it's shared), but only Montgomery's prompts instruct him to use it actively.
+
+**2. Add `mcp__worldmonitor__*` to the Claude CLI `--allowedTools` string:**
+
+In `inference.ts` (line ~560), the allowed tools are hardcoded:
+```
+mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*,mcp__shell__*,mcp__github__*
+```
+
+Add `mcp__worldmonitor__*` to this list. Without this, Claude CLI will reject all WorldMonitor tool calls. The equivalent change is needed in the Python app's `inference.py`.
 
 ### 5.2 Montgomery's Heartbeat Prompt
 
@@ -295,9 +374,43 @@ mcp/
 
 scripts/agents/general_montgomery/
   worldmonitor_poll.py                # Polling cron job
+  jobs.json                           # Job definitions for cron system (NEW - Montgomery has no jobs.json yet)
 
 ~/.atrophy/
   worldmonitor_cache.db               # Created at runtime (gitignored)
+```
+
+**Montgomery's `jobs.json`** (new file - the cron system reads from `scripts/agents/<name>/jobs.json`):
+
+```json
+{
+  "jobs": [
+    {
+      "name": "worldmonitor_fast",
+      "script": "worldmonitor_poll.py",
+      "args": ["--tier", "fast"],
+      "interval_mins": 15,
+      "active_start": 7,
+      "active_end": 22
+    },
+    {
+      "name": "worldmonitor_medium",
+      "script": "worldmonitor_poll.py",
+      "args": ["--tier", "medium"],
+      "interval_mins": 45,
+      "active_start": 7,
+      "active_end": 22
+    },
+    {
+      "name": "worldmonitor_slow",
+      "script": "worldmonitor_poll.py",
+      "args": ["--tier", "slow"],
+      "interval_mins": 240,
+      "active_start": 7,
+      "active_end": 22
+    }
+  ]
+}
 ```
 
 ### Modified files
@@ -306,6 +419,7 @@ scripts/agents/general_montgomery/
 # Both Python and Electron apps:
 core/inference.py / src/main/inference.ts
   - Add worldmonitor to MCP config generation
+  - Add mcp__worldmonitor__* to --allowedTools string
 
 # Montgomery prompts (Obsidian canonical + local fallback):
 Agent Workspace/general_montgomery/skills/tools.md
@@ -319,7 +433,7 @@ agents/general_montgomery/prompts/heartbeat.md
 
 # Cron registration:
 scripts/cron.py / src/main/cron.ts
-  - Register three new launchd plists
+  - Register three new launchd plists (reads from jobs.json)
 ```
 
 ---
@@ -327,7 +441,7 @@ scripts/cron.py / src/main/cron.ts
 ## 7. Error Handling
 
 - **API unreachable:** Return cached data with `stale: true` flag and `cached_at` timestamp. Do not file stale data as new observations.
-- **API returns error:** Log to `~/.atrophy/logs/worldmonitor.log`, return cached data if available.
+- **API returns error:** Log to `~/.atrophy/logs/general_montgomery/worldmonitor_<tier>.log` (follows existing cron log pattern). MCP server logs to `~/.atrophy/logs/worldmonitor_server.log`. Return cached data if available.
 - **Cache DB missing:** Create on first access with schema from section 3.1.
 - **Poll job fails:** Log error, exit cleanly. launchd will retry on next interval.
 - **Rate limiting:** No auth/rate limiting observed, but if 429 responses appear, implement exponential backoff with max 3 retries.

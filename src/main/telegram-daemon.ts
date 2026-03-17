@@ -339,10 +339,58 @@ async function setAgentBotPhoto(agentName: string, botToken: string): Promise<vo
 }
 
 // ---------------------------------------------------------------------------
+// Dispatch mutex - serialises agent dispatches to prevent Config singleton
+// race conditions. Pollers run in parallel, but only one dispatch at a time.
+// ---------------------------------------------------------------------------
+
+let _dispatchQueue: Promise<void> = Promise.resolve();
+
+function withDispatchLock<T>(fn: () => Promise<T>): Promise<T> {
+  let resolve: () => void;
+  const next = new Promise<void>((r) => { resolve = r; });
+  const prev = _dispatchQueue;
+  _dispatchQueue = next;
+  return prev.then(async () => {
+    try {
+      return await fn();
+    } finally {
+      resolve!();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Agent dispatch
 // ---------------------------------------------------------------------------
 
 const DISPATCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minute max per agent dispatch
+
+// ---------------------------------------------------------------------------
+// Message deduplication
+// ---------------------------------------------------------------------------
+
+const DEDUP_WINDOW_MS = 5000;
+const DEDUP_CACHE_SIZE = 200;
+const _dedupCache = new Map<string, number>(); // hash -> timestamp
+
+function isDuplicate(agentName: string, text: string): boolean {
+  const hash = `${agentName}:${text.slice(0, 200)}`;
+  const now = Date.now();
+
+  // Evict old entries
+  if (_dedupCache.size > DEDUP_CACHE_SIZE) {
+    for (const [k, ts] of _dedupCache) {
+      if (now - ts > DEDUP_WINDOW_MS * 2) _dedupCache.delete(k);
+    }
+  }
+
+  const lastSeen = _dedupCache.get(hash);
+  if (lastSeen && now - lastSeen < DEDUP_WINDOW_MS) {
+    return true;
+  }
+  _dedupCache.set(hash, now);
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Telegram streaming display
@@ -368,41 +416,151 @@ function truncate(text: string, maxLen: number): string {
 }
 
 /**
+ * Format elapsed time as human-readable string.
+ */
+function formatElapsed(ms: number): string {
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const remSecs = secs % 60;
+  return `${mins}m ${remSecs}s`;
+}
+
+/**
+ * Extract stats from a tool result for concise display.
+ * e.g. Read: "42 lines", Grep: "5 matches", Edit: "changed 3 lines"
+ */
+function formatToolResult(toolName: string, input: string, result: string): string {
+  const name = formatToolName(toolName).toLowerCase();
+
+  // Count lines in result
+  const lines = result.split('\n').filter((l) => l.trim()).length;
+
+  // Try to extract meaningful stats based on tool type
+  if (name === 'read' || name === 'cat') {
+    return `${lines} lines`;
+  }
+  if (name === 'grep' || name === 'search') {
+    const matchCount = (result.match(/\n/g) || []).length;
+    return matchCount > 0 ? `${matchCount} matches` : 'no matches';
+  }
+  if (name === 'glob' || name === 'find') {
+    return `${lines} files`;
+  }
+  if (name === 'write' || name === 'write_note') {
+    return `wrote ${lines} lines`;
+  }
+  if (name === 'edit') {
+    return 'applied';
+  }
+  if (name === 'bash' || name === 'shell' || name === 'execute') {
+    if (lines === 0) return 'done';
+    return `${lines} lines output`;
+  }
+  if (name === 'recall' || name === 'memory' || name === 'search_memory') {
+    return lines > 0 ? `${lines} results` : 'no results';
+  }
+  if (name === 'remember') {
+    return 'saved';
+  }
+
+  // Generic fallback
+  if (lines === 0) return 'done';
+  if (lines <= 3) return truncate(result, 80);
+  return `${lines} lines`;
+}
+
+/**
+ * Parse tool input JSON to extract a concise argument summary.
+ * e.g. Read("src/main/config.ts"), Grep("pattern", "path")
+ */
+function formatToolInput(toolName: string, inputJson: string): string {
+  if (!inputJson) return '';
+  try {
+    const parsed = JSON.parse(inputJson);
+    const name = formatToolName(toolName).toLowerCase();
+
+    if (name === 'read' || name === 'cat') {
+      const p = parsed.file_path || parsed.path || '';
+      return p ? `\`${path.basename(p)}\`` : '';
+    }
+    if (name === 'grep' || name === 'search') {
+      const pattern = parsed.pattern || parsed.query || '';
+      return pattern ? `"${truncate(pattern, 30)}"` : '';
+    }
+    if (name === 'glob' || name === 'find') {
+      return parsed.pattern ? `"${truncate(parsed.pattern, 30)}"` : '';
+    }
+    if (name === 'write' || name === 'write_note') {
+      const p = parsed.file_path || parsed.path || parsed.title || '';
+      return p ? `\`${path.basename(p)}\`` : '';
+    }
+    if (name === 'edit') {
+      const p = parsed.file_path || parsed.path || '';
+      return p ? `\`${path.basename(p)}\`` : '';
+    }
+    if (name === 'bash' || name === 'shell' || name === 'execute') {
+      const cmd = parsed.command || '';
+      return cmd ? `\`${truncate(cmd, 40)}\`` : '';
+    }
+    if (name === 'recall' || name === 'memory' || name === 'search_memory') {
+      const q = parsed.query || parsed.action || '';
+      return q ? `"${truncate(q, 40)}"` : '';
+    }
+    if (name === 'remember') {
+      const content = parsed.content || parsed.text || '';
+      return content ? `"${truncate(content, 40)}"` : '';
+    }
+    // Generic: show first string value
+    for (const v of Object.values(parsed)) {
+      if (typeof v === 'string' && v.length > 0) {
+        return `"${truncate(v, 40)}"`;
+      }
+    }
+  } catch { /* not valid JSON yet */ }
+  return '';
+}
+
+/**
  * Build a rich status display for Telegram showing the full inference process.
  *
  * Layout:
- *   [thinking block if present]
- *   [completed tool calls with results]
+ *   [elapsed time]
+ *   [thinking block as blockquote if present]
+ *   [completed tool calls with stats]
  *   [active tool call if in progress]
+ *   [compacting indicator]
  *   [response text as it streams]
  */
 function buildStatusDisplay(state: StreamState): string {
   const parts: string[] = [];
+  const elapsed = formatElapsed(Date.now() - state.startTime);
 
-  // Thinking section - show a summary of thinking if present
+  // Thinking section - show as blockquote
   if (state.thinkingText) {
-    const thinkPreview = truncate(state.thinkingText, 200);
-    parts.push(`\u{1f9e0} _${thinkPreview}_`);
+    const thinkPreview = truncate(state.thinkingText, 400);
+    parts.push(`> _${thinkPreview}_`);
+    parts.push('');
   }
 
-  // Completed tool calls with results
+  // Completed tool calls with stats
   for (const tool of state.completedTools) {
     const name = formatToolName(tool.name);
-    const inputPreview = tool.input ? truncate(tool.input, 120) : '';
-    const resultPreview = tool.result ? truncate(tool.result, 150) : '';
+    const inputDisplay = formatToolInput(tool.name, tool.input);
+    const resultDisplay = tool.result ? formatToolResult(tool.name, tool.input, tool.result) : 'done';
 
     let line = `\u2705 \`${name}\``;
-    if (inputPreview) line += `  ${inputPreview}`;
-    if (resultPreview) line += `\n    \u2192 _${resultPreview}_`;
+    if (inputDisplay) line += ` ${inputDisplay}`;
+    line += ` - _${resultDisplay}_`;
     parts.push(line);
   }
 
   // Active tool call (in progress)
   if (state.activeTool) {
     const name = formatToolName(state.activeTool.name);
-    const inputPreview = state.activeTool.input ? truncate(state.activeTool.input, 120) : '';
+    const inputDisplay = formatToolInput(state.activeTool.name, state.activeTool.input);
     let line = `\u23f3 \`${name}\``;
-    if (inputPreview) line += `  ${inputPreview}`;
+    if (inputDisplay) line += ` ${inputDisplay}`;
     else line += '\u2026';
     parts.push(line);
   }
@@ -412,12 +570,20 @@ function buildStatusDisplay(state: StreamState): string {
     parts.push('_Compacting context\u2026_');
   }
 
+  // Status line with elapsed time
+  if (!state.responseText) {
+    const toolCount = state.completedTools.length + (state.activeTool ? 1 : 0);
+    const statusParts = [elapsed];
+    if (toolCount > 0) statusParts.push(`${toolCount} tools`);
+    parts.push(`_${statusParts.join(' | ')}_`);
+  }
+
   // Streamed response text
   if (state.responseText) {
     if (parts.length > 0) parts.push(''); // blank line separator
     parts.push(state.responseText);
   } else if (parts.length === 0) {
-    parts.push('_Thinking\u2026_');
+    parts.push(`_Thinking\u2026 ${elapsed}_`);
   }
 
   return parts.join('\n');
@@ -433,9 +599,11 @@ interface ToolCallState {
 interface StreamState {
   thinkingText: string;
   activeTool: ToolCallState | null;
+  pendingTools: Map<string, ToolCallState>;
   completedTools: ToolCallState[];
   responseText: string;
   isCompacting: boolean;
+  startTime: number;
 }
 
 /**
@@ -475,12 +643,15 @@ async function dispatchToAgent(
     const toolsUsed: string[] = [];
 
     // Rich streaming state
+    const startTime = Date.now();
     const state: StreamState = {
       thinkingText: '',
       activeTool: null,
+      pendingTools: new Map(),
       completedTools: [],
       responseText: '',
       isCompacting: false,
+      startTime,
     };
 
     // Throttle edits to avoid Telegram rate limits
@@ -525,38 +696,43 @@ async function dispatchToAgent(
             break;
 
           case 'ToolUse': {
-            // If there was a previous active tool, move it to completed
-            if (state.activeTool) {
-              state.completedTools.push(state.activeTool);
-            }
-            state.activeTool = {
+            // Track new tool - don't move active to completed yet (wait for result)
+            const toolState: ToolCallState = {
               name: evt.name,
               id: evt.toolId,
               input: evt.inputJson || '',
               result: '',
             };
+            state.activeTool = toolState;
+            state.pendingTools.set(evt.toolId, toolState);
             toolsUsed.push(evt.name);
             log.debug(`[${agentName}] tool -> ${evt.name}`);
             await doEdit();
             break;
           }
 
-          case 'ToolInputDelta':
-            // Accumulate tool input JSON for the active tool
-            if (state.activeTool) {
-              state.activeTool.input += evt.delta;
+          case 'ToolInputDelta': {
+            // Accumulate tool input JSON - look up by ID to handle parallel calls
+            const tool = state.pendingTools.get(evt.toolId) || state.activeTool;
+            if (tool) {
+              tool.input += evt.delta;
               await doEdit();
             }
             break;
+          }
 
           case 'ToolResult': {
-            // Match result to tool and move to completed
-            if (state.activeTool) {
-              state.activeTool.result = evt.output;
-              state.completedTools.push(state.activeTool);
-              state.activeTool = null;
+            // Match result to tool by ID across pending tools
+            const tool = state.pendingTools.get(evt.toolId);
+            if (tool) {
+              tool.result = evt.output;
+              state.pendingTools.delete(evt.toolId);
+              state.completedTools.push(tool);
+              if (state.activeTool?.id === evt.toolId) {
+                state.activeTool = null;
+              }
             } else {
-              // Result for a tool we didn't track - add as completed
+              // Result for a tool we didn't track
               state.completedTools.push({
                 name: evt.toolName || '?',
                 id: evt.toolId,
@@ -605,12 +781,23 @@ async function dispatchToAgent(
     }
 
     const finalText = fullText.trim() || null;
+    const elapsed = formatElapsed(Date.now() - startTime);
 
-    // Final edit with complete response (clean - no tool/thinking indicators)
+    // Build stats footer
+    const statsParts = [elapsed];
+    if (toolsUsed.length) statsParts.push(`${toolsUsed.length} tools`);
+    const charCount = finalText ? finalText.length : 0;
+    if (charCount > 0) {
+      const approxTokens = Math.round(charCount / 4);
+      statsParts.push(`~${approxTokens} tokens`);
+    }
+    const statsLine = `\n\n_${statsParts.join(' | ')}_`;
+
+    // Final edit with complete response + stats
     if (finalText && msgId) {
-      await editMessage(msgId, `${header}${finalText}`, chatId, botToken);
+      await editMessage(msgId, `${header}${finalText}${statsLine}`, chatId, botToken);
     } else if (!finalText && msgId) {
-      await editMessage(msgId, `${header}_No response_`, chatId, botToken);
+      await editMessage(msgId, `${header}_No response_${statsLine}`, chatId, botToken);
     }
 
     return finalText;
@@ -708,7 +895,7 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
 
     // Handle /status command
     if (text.toLowerCase() === '/status') {
-      await handleStatusCommand(msgChatId, agent.botToken);
+      await withDispatchLock(() => handleStatusCommand(msgChatId, agent.botToken));
       continue;
     }
 
@@ -765,10 +952,18 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     const fullPrompt = promptParts.join('\n\n');
     if (!fullPrompt) continue;
 
+    // Deduplicate - skip if same message received within 5s
+    if (isDuplicate(agent.name, fullPrompt)) {
+      log.debug(`[${agent.name}] Skipping duplicate message`);
+      continue;
+    }
+
     log.info(`[${agent.name}] Message: ${fullPrompt.slice(0, 80)}`);
 
-    // Dispatch with live streaming back to Telegram
-    const response = await dispatchToAgent(agent.name, fullPrompt, msgChatId, agent.botToken);
+    // Dispatch with lock to prevent Config singleton race between parallel pollers
+    const response = await withDispatchLock(() =>
+      dispatchToAgent(agent.name, fullPrompt, msgChatId, agent.botToken),
+    );
     if (response) {
       log.info(`[${agent.name}] Responded (${response.length} chars)`);
     } else {
@@ -797,7 +992,11 @@ async function runAgentPoller(agent: TelegramAgent): Promise<void> {
       // Random jitter: 8-15 seconds for organic feel
       const jitter = 8000 + Math.random() * 7000;
       await new Promise((resolve) => {
-        const t = setTimeout(resolve, jitter);
+        const t = setTimeout(() => {
+          const idx = _pollerTimers.indexOf(t);
+          if (idx !== -1) _pollerTimers.splice(idx, 1);
+          resolve(undefined);
+        }, jitter);
         _pollerTimers.push(t);
       });
     }

@@ -51,14 +51,12 @@ Paste your API key from [fal.ai](https://fal.ai). Enables image generation capab
 
 ### Telegram
 
-The wizard walks you through the full Telegram setup:
+The wizard walks you through the Telegram setup for the primary agent (Xan):
 
 1. **Create a bot** via [@BotFather](https://t.me/BotFather) on Telegram and paste the bot token
-2. **Create a group** and enable Topics (Forum mode) in group settings
-3. **Add the bot** to the group as an admin
-4. **Create one topic per agent** - each agent gets its own topic thread
+2. **Start a chat** with the bot - the chat ID is auto-detected once you send a message
 
-The wizard captures the bot token and the group ID (`TELEGRAM_GROUP_ID`). Each agent sends and receives messages in its own topic, so conversations stay cleanly separated - no routing logic needed. This replaces the previous flat-chat model where all agents shared a single chat and a router decided who should respond.
+Each agent gets its own dedicated bot. After the initial setup, add bot tokens for additional agents via Settings - each agent in the agent list has a "Telegram" section where you can paste its token and auto-detect the chat ID. Bot profile photos are set automatically from each agent's reference images on daemon startup.
 
 ### Google
 

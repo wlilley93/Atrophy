@@ -43,7 +43,7 @@ Open with the gear icon or **Cmd+,**. All changes can be applied immediately (in
 | **Heartbeat** | Active hours and check interval for unprompted outreach |
 | **Paths** | Obsidian vault path, database path (read-only) |
 | **Google** | Connect/disconnect Google Workspace |
-| **Telegram** | Bot token, group ID, daemon start/stop |
+| **Telegram** | Per-agent bot token, auto-detect chat ID, daemon start/stop |
 | **App** | Reset setup wizard |
 | **About** | Version info |
 
@@ -59,7 +59,8 @@ API keys and tokens are stored separately from other settings, with restricted f
 |-----|---------|
 | `ELEVENLABS_API_KEY` | ElevenLabs TTS |
 | `FAL_KEY` | Fal.ai image/video/TTS |
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot API |
+| `TELEGRAM_BOT_TOKEN` | Global Telegram Bot API token (fallback for agents without per-agent config) |
+| `TELEGRAM_CHAT_ID` | Global Telegram chat ID (fallback for agents without per-agent config) |
 | `OPENAI_API_KEY` | OpenAI API (if needed by MCP servers) |
 | `ANTHROPIC_API_KEY` | Anthropic API (if needed by MCP servers) |
 
@@ -122,13 +123,12 @@ Each agent can have its own voice, heartbeat schedule, Telegram bot, and display
 
 ### Telegram
 
-Telegram uses Topics mode - one group with one topic per agent. All agents share a single bot and group, but each agent has its own topic thread for clean separation.
+Each agent has its own dedicated Telegram bot. The bot token and chat ID can be set per-agent in `agent.json`, or fall back to the global values in `config.json` / `.env` (Xan uses the global fallback by default).
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `TELEGRAM_BOT_TOKEN` | (none) | Telegram bot token (shared across agents) |
-| `TELEGRAM_GROUP_ID` | (none) | Telegram group ID (the group with Topics enabled) |
-| `TELEGRAM_TOPIC_ID` | (none) | This agent's topic thread ID within the group |
+| `telegram_bot_token` | (none) | Bot API token from @BotFather for this agent's dedicated bot |
+| `telegram_chat_id` | (none) | Chat ID for the 1:1 conversation with this agent's bot (auto-detected in Settings) |
 
 ### Display
 

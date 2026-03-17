@@ -4,6 +4,38 @@ All notable changes to Atrophy.
 
 ---
 
+## Unreleased
+
+### Telegram
+
+- **Per-agent bots** - each agent gets its own Telegram bot with unique token, chat ID, and profile photo (set from reference images). Replaces Topics mode (single group with forum threads).
+- Parallel per-agent pollers with 8-15s random jitter for organic feel
+- Dispatch mutex (`withDispatchLock()`) prevents Config singleton race conditions between parallel pollers
+- Per-agent telegram config in Settings UI (bot token + auto-detect chat ID)
+- `TELEGRAM_GROUP_ID` and `threadId` removed throughout
+- `setBotProfilePhoto()` sets bot avatar from agent reference images on daemon startup
+- **Streaming inference** - Telegram daemon streams responses back in real-time by editing the message as text arrives. Shows "Thinking..." immediately, updates with streamed text (throttled to every 1.5s), displays tool usage indicators, and does a final edit with the complete response.
+- New `sendMessageGetId()` and `editMessage()` functions in telegram.ts for message streaming
+- New `sendPhoto()` documented for photo delivery
+- **Flood control** - retry on 429 with wait, drop if >30s ban, exponential backoff on network errors (3 attempts, 1s/2s/3s delays)
+- **Markdown fallback** - sends as plain text if Markdown parsing fails; "message is not modified" treated as success during streaming edits
+- **Rich streaming display** - elapsed time counter, tool input summaries, tool result stats (line counts, match counts, etc.), thinking blockquotes, final stats footer with elapsed/tools/tokens
+- **Message deduplication** - 5s window hash cache (200-entry max) prevents duplicate message processing
+
+### Heartbeat
+
+- **Voice notes** - heartbeat can now send voice notes via `[VOICE_NOTE]` prefix. Synthesises speech via ElevenLabs, converts to OGG Opus, sends as Telegram voice note. Falls back to text automatically.
+- **Selfie images** - heartbeat can generate and send selfie images via `[SELFIE]` prefix. Uses Fal AI Flux with agent's reference images for face consistency. Agent decides when to use (sparingly - expensive).
+- **Interactive questions** - `[ASK]` prefix sends Telegram inline buttons with custom options, polls for callback response (2-min timeout)
+- Updated heartbeat prompt with all new prefixes and MCP tool awareness
+
+### Voice
+
+- **ElevenLabs credit exhaustion tracking** - detects 401/402/429 errors, enters 30-minute cooldown where ElevenLabs is skipped and fallbacks used
+- **Shared audio conversion** - extracted `convertToOgg` and `cleanupFiles` into `src/main/audio-convert.ts` for reuse by voice-note and heartbeat jobs
+
+---
+
 ## 1.2.7 - 2026-03-16
 
 ### UI

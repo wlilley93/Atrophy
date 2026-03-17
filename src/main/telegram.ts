@@ -26,7 +26,9 @@ function apiUrl(method: string, botToken?: string): string {
   return `https://api.telegram.org/bot${token}/${method}`;
 }
 
-async function post(method: string, payload: Record<string, unknown>, timeoutMs = 15_000, botToken?: string): Promise<unknown | null> {
+const MAX_RETRIES = 3;
+
+export async function post(method: string, payload: Record<string, unknown>, timeoutMs = 15_000, botToken?: string): Promise<unknown | null> {
   const token = botToken || getConfig().TELEGRAM_BOT_TOKEN;
   if (!token) {
     log.warn('TELEGRAM_BOT_TOKEN not configured');
@@ -37,23 +39,89 @@ async function post(method: string, payload: Record<string, unknown>, timeoutMs 
   const pollTimeout = (payload.timeout as number) || 0;
   const fetchTimeout = pollTimeout > 0 ? (pollTimeout + 10) * 1000 : 15_000;
 
-  try {
-    const resp = await fetch(apiUrl(method, botToken), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(fetchTimeout),
-    });
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const resp = await fetch(apiUrl(method, botToken), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(fetchTimeout),
+      });
 
-    const data = await resp.json() as { ok: boolean; result?: unknown; description?: string };
-    if (data.ok) return data.result ?? null;
+      const data = await resp.json() as {
+        ok: boolean;
+        result?: unknown;
+        description?: string;
+        parameters?: { retry_after?: number };
+      };
 
-    log.error(`API error: ${data.description || JSON.stringify(data)}`);
-    return null;
-  } catch (e) {
-    log.error(`error: ${e}`);
-    return null;
+      if (data.ok) return data.result ?? null;
+
+      // Flood control - Telegram asks us to wait
+      if (resp.status === 429 && data.parameters?.retry_after) {
+        const wait = data.parameters.retry_after;
+        if (wait > 30) {
+          log.warn(`Rate limited for ${wait}s - dropping ${method}`);
+          return null;
+        }
+        log.debug(`Rate limited - waiting ${wait}s before retry`);
+        await new Promise((r) => setTimeout(r, wait * 1000));
+        continue;
+      }
+
+      // "message is not modified" is not a real error - happens when editing
+      // with identical content. Return success.
+      if (data.description?.includes('message is not modified')) {
+        return data.result ?? {};
+      }
+
+      log.error(`API error: ${data.description || JSON.stringify(data)}`);
+      return null;
+    } catch (e) {
+      if (attempt < MAX_RETRIES - 1) {
+        log.debug(`${method} attempt ${attempt + 1} failed: ${e} - retrying`);
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      log.error(`${method} failed after ${MAX_RETRIES} attempts: ${e}`);
+      return null;
+    }
   }
+
+  return null;
+}
+
+/**
+ * Send a message with Markdown, falling back to plain text if Markdown parsing fails.
+ */
+async function postWithMarkdownFallback(
+  payload: Record<string, unknown>,
+  botToken?: string,
+): Promise<unknown | null> {
+  // Try with Markdown first
+  const result = await post('sendMessage', payload, 15_000, botToken);
+  if (result !== null) return result;
+
+  // If Markdown fails, retry without parse_mode
+  const plainPayload = { ...payload };
+  delete plainPayload.parse_mode;
+  log.debug('Send failed - retrying without Markdown');
+  return post('sendMessage', plainPayload, 15_000, botToken);
+}
+
+/**
+ * Edit a message with Markdown, falling back to plain text if Markdown parsing fails.
+ */
+async function editWithMarkdownFallback(
+  payload: Record<string, unknown>,
+  botToken?: string,
+): Promise<unknown | null> {
+  const result = await post('editMessageText', payload, 15_000, botToken);
+  if (result !== null) return result;
+
+  const plainPayload = { ...payload };
+  delete plainPayload.parse_mode;
+  return post('editMessageText', plainPayload, 15_000, botToken);
 }
 
 // ---------------------------------------------------------------------------
@@ -85,7 +153,7 @@ export async function sendMessage(
       text,
       parse_mode: 'Markdown',
     };
-    const result = await post('sendMessage', payload, 15_000, botToken);
+    const result = await postWithMarkdownFallback(payload, botToken);
     if (result) {
       log.debug(`Sent message (${text.length} chars)`);
       return true;
@@ -143,7 +211,7 @@ export async function sendMessageGetId(
     parse_mode: 'Markdown',
   };
 
-  const result = await post('sendMessage', payload, 15_000, botToken) as { message_id?: number } | null;
+  const result = await postWithMarkdownFallback(payload, botToken) as { message_id?: number } | null;
   return result?.message_id ?? null;
 }
 
@@ -173,7 +241,7 @@ export async function editMessage(
     parse_mode: 'Markdown',
   };
 
-  const result = await post('editMessageText', payload, 15_000, botToken);
+  const result = await editWithMarkdownFallback(payload, botToken);
   return result !== null;
 }
 
@@ -606,8 +674,7 @@ interface BotCommand {
 }
 
 function buildCommands(): BotCommand[] {
-  // Topics mode - each agent has its own topic, no per-agent commands needed.
-  // Only register utility commands.
+  // Per-agent bots - each agent has its own bot, only utility commands needed.
   return [
     { command: 'status', description: 'Show which agents are active' },
   ];
@@ -798,7 +865,7 @@ export async function setBotProfilePhoto(photoPath: string, botToken?: string): 
 }
 
 // Export for daemon access
-export { post, post as _post, _lastUpdateId, apiUrl };
+export { _lastUpdateId, apiUrl };
 export function setLastUpdateId(id: number): void {
   _lastUpdateId = id;
 }
