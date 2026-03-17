@@ -202,12 +202,10 @@
       if (newVersion) {
         updateStatus = 'downloaded';
         updateVersion = newVersion;
-        // Restart to load the new bundle
-        setTimeout(() => {
-          api.restartForUpdate?.();
-        }, 500);
-        // Don't continue boot - app is restarting
-        return;
+        // Bundle downloaded - continue boot instead of restarting.
+        // The hot bundle loads on next normal restart. Restarting here
+        // causes an infinite loop because the frozen app version doesn't
+        // change, so the update check finds the same "newer" version again.
       }
 
       updateStatus = 'up-to-date';
