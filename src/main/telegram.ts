@@ -21,14 +21,14 @@ let _lastUpdateId = 0;
 // API helpers
 // ---------------------------------------------------------------------------
 
-function apiUrl(method: string): string {
-  const config = getConfig();
-  return `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/${method}`;
+function apiUrl(method: string, botToken?: string): string {
+  const token = botToken || getConfig().TELEGRAM_BOT_TOKEN;
+  return `https://api.telegram.org/bot${token}/${method}`;
 }
 
-async function post(method: string, payload: Record<string, unknown>, timeoutMs = 15_000): Promise<unknown | null> {
-  const config = getConfig();
-  if (!config.TELEGRAM_BOT_TOKEN) {
+async function post(method: string, payload: Record<string, unknown>, timeoutMs = 15_000, botToken?: string): Promise<unknown | null> {
+  const token = botToken || getConfig().TELEGRAM_BOT_TOKEN;
+  if (!token) {
     log.warn('TELEGRAM_BOT_TOKEN not configured');
     return null;
   }
@@ -38,7 +38,7 @@ async function post(method: string, payload: Record<string, unknown>, timeoutMs 
   const fetchTimeout = pollTimeout > 0 ? (pollTimeout + 10) * 1000 : 15_000;
 
   try {
-    const resp = await fetch(apiUrl(method), {
+    const resp = await fetch(apiUrl(method, botToken), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -64,7 +64,7 @@ export async function sendMessage(
   text: string,
   chatId = '',
   prefix = true,
-  threadId?: number,
+  botToken?: string,
 ): Promise<boolean> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -85,8 +85,7 @@ export async function sendMessage(
       text,
       parse_mode: 'Markdown',
     };
-    if (threadId) payload.message_thread_id = threadId;
-    const result = await post('sendMessage', payload);
+    const result = await post('sendMessage', payload, 15_000, botToken);
     if (result) {
       log.debug(`Sent message (${text.length} chars)`);
       return true;
@@ -115,8 +114,7 @@ export async function sendMessage(
       text: chunk,
       parse_mode: 'Markdown',
     };
-    if (threadId) payload.message_thread_id = threadId;
-    const result = await post('sendMessage', payload);
+    const result = await post('sendMessage', payload, 15_000, botToken);
     if (!result) allSent = false;
   }
   log.debug(`Sent message (${text.length} chars, split)`);
@@ -130,7 +128,7 @@ export async function sendMessage(
 export async function sendMessageGetId(
   text: string,
   chatId = '',
-  threadId?: number,
+  botToken?: string,
 ): Promise<number | null> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -144,9 +142,8 @@ export async function sendMessageGetId(
     text,
     parse_mode: 'Markdown',
   };
-  if (threadId) payload.message_thread_id = threadId;
 
-  const result = await post('sendMessage', payload) as { message_id?: number } | null;
+  const result = await post('sendMessage', payload, 15_000, botToken) as { message_id?: number } | null;
   return result?.message_id ?? null;
 }
 
@@ -158,6 +155,7 @@ export async function editMessage(
   messageId: number,
   text: string,
   chatId = '',
+  botToken?: string,
 ): Promise<boolean> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -175,7 +173,7 @@ export async function editMessage(
     parse_mode: 'Markdown',
   };
 
-  const result = await post('editMessageText', payload);
+  const result = await post('editMessageText', payload, 15_000, botToken);
   return result !== null;
 }
 
@@ -184,7 +182,7 @@ export async function sendButtons(
   buttons: { text: string; callback_data: string }[][],
   chatId = '',
   prefix = true,
-  threadId?: number,
+  botToken?: string,
 ): Promise<number | null> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -203,8 +201,7 @@ export async function sendButtons(
     parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: buttons },
   };
-  if (threadId) payload.message_thread_id = threadId;
-  const result = await post('sendMessage', payload) as { message_id?: number } | null;
+  const result = await post('sendMessage', payload, 15_000, botToken) as { message_id?: number } | null;
 
   if (result) {
     log.debug(`Sent buttons (${text.length} chars)`);
@@ -263,7 +260,7 @@ async function sendFileUpload(
   caption: string,
   chatId: string,
   prefix: boolean,
-  threadId?: number,
+  botToken?: string,
   timeoutMs = 30_000,
 ): Promise<boolean> {
   const config = getConfig();
@@ -281,7 +278,6 @@ async function sendFileUpload(
     const boundary = `----FormBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
 
     const fields: Record<string, string> = { chat_id: target };
-    if (threadId) fields.message_thread_id = String(threadId);
     if (caption) {
       fields.caption = caption;
       fields.parse_mode = 'Markdown';
@@ -289,7 +285,7 @@ async function sendFileUpload(
 
     const body = buildMultipartBody(fields, { name: fieldName, path: filePath, contentType }, boundary);
 
-    const resp = await fetch(apiUrl(method), {
+    const resp = await fetch(apiUrl(method, botToken), {
       method: 'POST',
       headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
       body,
@@ -318,14 +314,14 @@ export async function sendVoiceNote(
   caption = '',
   chatId = '',
   prefix = true,
-  threadId?: number,
+  botToken?: string,
 ): Promise<boolean> {
   const isOgg = audioPath.endsWith('.ogg') || audioPath.endsWith('.oga');
   const method = isOgg ? 'sendVoice' : 'sendAudio';
   const fieldName = isOgg ? 'voice' : 'audio';
   const contentType = isOgg ? 'audio/ogg' : 'audio/mpeg';
 
-  return sendFileUpload(method, fieldName, audioPath, contentType, caption, chatId, prefix, threadId);
+  return sendFileUpload(method, fieldName, audioPath, contentType, caption, chatId, prefix, botToken);
 }
 
 export async function sendPhoto(
@@ -333,7 +329,7 @@ export async function sendPhoto(
   caption = '',
   chatId = '',
   prefix = true,
-  threadId?: number,
+  botToken?: string,
 ): Promise<boolean> {
   // Detect content type from extension
   const ext = path.extname(filePath).toLowerCase();
@@ -346,7 +342,7 @@ export async function sendPhoto(
   };
   const contentType = mimeMap[ext] || 'image/jpeg';
 
-  return sendFileUpload('sendPhoto', 'photo', filePath, contentType, caption, chatId, prefix, threadId);
+  return sendFileUpload('sendPhoto', 'photo', filePath, contentType, caption, chatId, prefix, botToken);
 }
 
 export async function sendVideo(
@@ -354,7 +350,7 @@ export async function sendVideo(
   caption = '',
   chatId = '',
   prefix = true,
-  threadId?: number,
+  botToken?: string,
 ): Promise<boolean> {
   const ext = path.extname(filePath).toLowerCase();
   const mimeMap: Record<string, string> = {
@@ -367,7 +363,7 @@ export async function sendVideo(
   const contentType = mimeMap[ext] || 'video/mp4';
 
   // Videos can be large - allow 60s timeout
-  return sendFileUpload('sendVideo', 'video', filePath, contentType, caption, chatId, prefix, threadId, 60_000);
+  return sendFileUpload('sendVideo', 'video', filePath, contentType, caption, chatId, prefix, botToken, 60_000);
 }
 
 export async function sendDocument(
@@ -375,9 +371,9 @@ export async function sendDocument(
   caption = '',
   chatId = '',
   prefix = true,
-  threadId?: number,
+  botToken?: string,
 ): Promise<boolean> {
-  return sendFileUpload('sendDocument', 'document', filePath, 'application/octet-stream', caption, chatId, prefix, threadId);
+  return sendFileUpload('sendDocument', 'document', filePath, 'application/octet-stream', caption, chatId, prefix, botToken);
 }
 
 /**
@@ -392,14 +388,14 @@ export async function sendArtefact(
   caption = '',
   chatId = '',
   prefix = true,
-  threadId?: number,
+  botToken?: string,
 ): Promise<boolean> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atrophy-artefact-'));
   const tmpPath = path.join(tmpDir, filename);
 
   try {
     fs.writeFileSync(tmpPath, content, 'utf-8');
-    return await sendDocument(tmpPath, caption, chatId, prefix, threadId);
+    return await sendDocument(tmpPath, caption, chatId, prefix, botToken);
   } finally {
     try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
     try { fs.rmdirSync(tmpDir); } catch { /* ignore */ }
@@ -425,16 +421,18 @@ export async function downloadTelegramFile(
   fileId: string,
   destDir: string,
   filename?: string,
+  botToken?: string,
 ): Promise<string | null> {
   const config = getConfig();
-  if (!config.TELEGRAM_BOT_TOKEN) {
+  const token = botToken || config.TELEGRAM_BOT_TOKEN;
+  if (!token) {
     log.warn('TELEGRAM_BOT_TOKEN not configured');
     return null;
   }
 
   try {
     // Step 1: call getFile to get the file_path
-    const fileInfo = await post('getFile', { file_id: fileId }) as {
+    const fileInfo = await post('getFile', { file_id: fileId }, 15_000, botToken) as {
       file_id: string;
       file_path?: string;
       file_size?: number;
@@ -446,7 +444,7 @@ export async function downloadTelegramFile(
     }
 
     // Step 2: download the file
-    const downloadUrl = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${fileInfo.file_path}`;
+    const downloadUrl = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
     const resp = await fetch(downloadUrl, {
       signal: AbortSignal.timeout(60_000),
     });
@@ -492,6 +490,7 @@ async function flushOldUpdates(): Promise<void> {
 export async function pollCallback(
   timeoutSecs = 120,
   chatId = '',
+  botToken?: string,
 ): Promise<string | null> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -506,7 +505,7 @@ export async function pollCallback(
       offset: _lastUpdateId + 1,
       timeout: pollTime,
       allowed_updates: ['callback_query', 'message'],
-    }, (pollTime + 10) * 1000);
+    }, (pollTime + 10) * 1000, botToken);
     const result = Array.isArray(raw) ? raw as { update_id: number; callback_query?: { id: string; from?: { id: number }; data?: string } }[] : null;
 
     if (!result) {
@@ -521,7 +520,7 @@ export async function pollCallback(
 
       const cb = update.callback_query;
       if (cb && String(cb.from?.id) === target) {
-        await post('answerCallbackQuery', { callback_query_id: cb.id });
+        await post('answerCallbackQuery', { callback_query_id: cb.id }, 15_000, botToken);
         return cb.data ?? null;
       }
     }
@@ -533,6 +532,7 @@ export async function pollCallback(
 export async function pollReply(
   timeoutSecs = 120,
   chatId = '',
+  botToken?: string,
 ): Promise<string | null> {
   const config = getConfig();
   const target = chatId || config.TELEGRAM_CHAT_ID;
@@ -547,7 +547,7 @@ export async function pollReply(
       offset: _lastUpdateId + 1,
       timeout: pollTime,
       allowed_updates: ['message'],
-    }, (pollTime + 10) * 1000);
+    }, (pollTime + 10) * 1000, botToken);
     const result = Array.isArray(raw) ? raw as { update_id: number; message?: { from?: { id: number }; text?: string } }[] : null;
 
     if (!result) {
@@ -764,6 +764,37 @@ export async function discoverChatId(
 
   log.warn('Chat ID discovery timed out');
   return null;
+}
+
+/**
+ * Set the bot's profile photo from a local image file.
+ */
+export async function setBotProfilePhoto(photoPath: string, botToken?: string): Promise<boolean> {
+  const token = botToken || getConfig().TELEGRAM_BOT_TOKEN;
+  if (!token) return false;
+
+  try {
+    const boundary = `----FormBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const body = buildMultipartBody({}, { name: 'photo', path: photoPath, contentType: 'image/png' }, boundary);
+
+    const resp = await fetch(apiUrl('setMyProfilePhoto', token), {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      body,
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    const result = await resp.json() as { ok: boolean };
+    if (result.ok) {
+      log.info('Bot profile photo updated');
+      return true;
+    }
+    log.warn(`setMyProfilePhoto failed: ${JSON.stringify(result)}`);
+    return false;
+  } catch (e) {
+    log.warn(`setMyProfilePhoto error: ${e}`);
+    return false;
+  }
 }
 
 // Export for daemon access
