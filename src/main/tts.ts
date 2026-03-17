@@ -17,6 +17,36 @@ import { createLogger } from './logger';
 const log = createLogger('tts');
 
 // ---------------------------------------------------------------------------
+// ElevenLabs credit exhaustion tracking
+// ---------------------------------------------------------------------------
+
+/** Cooldown period after detecting credit exhaustion (30 minutes). */
+export const COOLDOWN_MS = 30 * 60 * 1000;
+
+let _elevenLabsExhaustedAt: number | null = null;
+
+/** Mark ElevenLabs as credit-exhausted. Starts a cooldown timer. */
+export function markElevenLabsExhausted(): void {
+  _elevenLabsExhaustedAt = Date.now();
+  log.warn(`ElevenLabs credits exhausted - skipping for ${COOLDOWN_MS / 60_000} minutes`);
+}
+
+/** Check if ElevenLabs is in credit-exhaustion cooldown. Auto-resets after COOLDOWN_MS. */
+export function isElevenLabsExhausted(): boolean {
+  if (_elevenLabsExhaustedAt === null) return false;
+  if (Date.now() - _elevenLabsExhaustedAt > COOLDOWN_MS) {
+    _elevenLabsExhaustedAt = null;
+    return false;
+  }
+  return true;
+}
+
+/** Reset credit exhaustion status (for testing or manual recovery). */
+export function resetElevenLabsStatus(): void {
+  _elevenLabsExhaustedAt = null;
+}
+
+// ---------------------------------------------------------------------------
 // Temp file management
 // ---------------------------------------------------------------------------
 
@@ -400,11 +430,16 @@ export async function synthesise(text: string): Promise<string | null> {
   const config = getConfig();
 
   // Primary: ElevenLabs streaming (with concurrency limit)
-  if (config.ELEVENLABS_API_KEY && config.ELEVENLABS_VOICE_ID) {
+  if (config.ELEVENLABS_API_KEY && config.ELEVENLABS_VOICE_ID && !isElevenLabsExhausted()) {
     await acquireTtsSlot();
     try {
       return await synthesiseElevenLabsStream(text);
     } catch (e) {
+      // Detect credit exhaustion (401 Unauthorized, 402 Payment Required, 429 Too Many Requests)
+      const errMsg = String(e);
+      if (/\b(401|402|429)\b/.test(errMsg)) {
+        markElevenLabsExhausted();
+      }
       log.warn(`ElevenLabs failed (${e}), trying Fal...`);
     } finally {
       releaseTtsSlot();
@@ -548,16 +583,26 @@ export function enqueueAudio(audioPath: string, index: number): void {
   }
 }
 
+// Monotonic generation counter - incremented on clearAudioQueue so that
+// in-flight synthesise() promises from a previous agent can be discarded.
+let _ttsGeneration = 0;
+
+/** Return the current TTS generation. Callers should capture this before
+ *  starting synthesis and compare after - if it changed, discard the result. */
+export function ttsGeneration(): number { return _ttsGeneration; }
+
 /**
  * Clear all pending audio and stop the currently playing clip.
  */
 export function clearAudioQueue(): void {
+  _ttsGeneration++;
   // Clean up temp files from pending queue items
   for (const item of _queue) {
     try { fs.unlinkSync(item.audioPath); } catch { /* best-effort cleanup */ }
   }
   _queue = [];
   _nextExpectedIndex = 0;
+  _playing = false;
   if (_waitTimer) { clearTimeout(_waitTimer); _waitTimer = null; }
   stopCurrentPlayback();
 }
