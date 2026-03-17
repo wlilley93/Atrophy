@@ -9,7 +9,7 @@
 
   let { onClose }: Props = $props();
 
-  type Tab = 'settings' | 'usage' | 'activity' | 'jobs' | 'updates';
+  type Tab = 'settings' | 'usage' | 'activity' | 'jobs' | 'updates' | 'console';
   let activeTab = $state<Tab>('settings');
 
   // ---------------------------------------------------------------------------
@@ -129,6 +129,13 @@
   let agentChatId = $state('');
   let agentTelegramDiscovering = $state(false);
   let agentTelegramStatus = $state('');
+
+  // Console
+  interface LogEntry { timestamp: number; level: string; tag: string; message: string }
+  let logEntries = $state<LogEntry[]>([]);
+  let logFilter = $state('');
+  let logAutoScroll = $state(true);
+  let logCleanup: (() => void) | null = null;
 
   // Password visibility toggles
   let showElevenlabsKey = $state(false);
@@ -561,6 +568,28 @@
     if (tab === 'activity') loadActivity();
     if (tab === 'jobs') loadJobs();
     if (tab === 'updates') loadUpdatesTab();
+    if (tab === 'console') loadConsole();
+  }
+
+  async function loadConsole() {
+    const buffer = await api?.getLogBuffer();
+    if (buffer) logEntries = buffer;
+    scrollConsole();
+    // Subscribe to live entries
+    if (logCleanup) logCleanup();
+    logCleanup = api?.onLogEntry((entry) => {
+      logEntries = [...logEntries, entry];
+      if (logEntries.length > 500) logEntries = logEntries.slice(-500);
+      scrollConsole();
+    }) || null;
+  }
+
+  function scrollConsole() {
+    if (!logAutoScroll) return;
+    requestAnimationFrame(() => {
+      const el = document.getElementById('console-scroll');
+      if (el) el.scrollTop = el.scrollHeight;
+    });
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -580,6 +609,7 @@
         <button class="tab" class:active={activeTab === 'activity'} onclick={() => switchTab('activity')}>Activity</button>
         <button class="tab" class:active={activeTab === 'jobs'} onclick={() => switchTab('jobs')}>Jobs</button>
         <button class="tab" class:active={activeTab === 'updates'} onclick={() => switchTab('updates')}>Updates</button>
+        <button class="tab" class:active={activeTab === 'console'} onclick={() => switchTab('console')}>Console</button>
       </div>
       <button class="close-btn" onclick={onClose} aria-label="Close settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1430,12 +1460,107 @@
             {/if}
           </div>
         {/if}
+
+      {:else if activeTab === 'console'}
+        <!-- Console tab -->
+        <div class="console-controls">
+          <input
+            type="text"
+            class="console-filter"
+            placeholder="Filter (tag or text)..."
+            bind:value={logFilter}
+          />
+          <label class="console-autoscroll">
+            <input type="checkbox" bind:checked={logAutoScroll} />
+            Auto-scroll
+          </label>
+          <button class="daemon-btn" onclick={() => { logEntries = []; }}>Clear</button>
+        </div>
+        <div
+          class="console-output"
+          id="console-scroll"
+        >
+          {#each logEntries.filter(e => !logFilter || e.tag.includes(logFilter) || e.message.toLowerCase().includes(logFilter.toLowerCase())) as entry}
+            <div class="console-line level-{entry.level}">
+              <span class="console-time">{new Date(entry.timestamp).toLocaleTimeString('en-GB', { hour12: false })}</span>
+              <span class="console-level">{entry.level.slice(0, 4).toUpperCase()}</span>
+              <span class="console-tag">[{entry.tag}]</span>
+              <span class="console-msg">{entry.message}</span>
+            </div>
+          {/each}
+        </div>
+
       {/if}
     </div>
   </div>
 </div>
 
 <style>
+  /* Console */
+  .console-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 8px;
+  }
+  .console-filter {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .console-autoscroll {
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+  .console-output {
+    flex: 1;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+    min-height: 300px;
+    max-height: 500px;
+  }
+  .console-line {
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .console-time {
+    color: var(--text-dim);
+    margin-right: 6px;
+  }
+  .console-level {
+    margin-right: 4px;
+    font-weight: 600;
+    min-width: 36px;
+    display: inline-block;
+  }
+  .console-tag {
+    color: var(--text-secondary);
+    margin-right: 4px;
+  }
+  .console-msg {
+    color: var(--text-primary);
+  }
+  .level-debug .console-level { color: var(--text-dim); }
+  .level-info .console-level { color: #5ce0d6; }
+  .level-warn .console-level { color: #f0c060; }
+  .level-error .console-level { color: #ff6b6b; }
+  .level-error .console-msg { color: #ff6b6b; }
+
   .settings-overlay {
     position: absolute;
     inset: 0;

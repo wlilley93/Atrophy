@@ -430,6 +430,9 @@ export async function synthesise(text: string): Promise<string | null> {
   const config = getConfig();
 
   // Primary: ElevenLabs streaming (with concurrency limit)
+  if (!config.ELEVENLABS_API_KEY) log.debug('ElevenLabs skipped: no API key');
+  else if (!config.ELEVENLABS_VOICE_ID) log.debug('ElevenLabs skipped: no voice ID');
+  else if (isElevenLabsExhausted()) log.debug('ElevenLabs skipped: credits exhausted (cooldown active)');
   if (config.ELEVENLABS_API_KEY && config.ELEVENLABS_VOICE_ID && !isElevenLabsExhausted()) {
     await acquireTtsSlot();
     try {

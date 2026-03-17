@@ -26,5 +26,6 @@
     "active_end": 23,
     "interval_mins": 60
   },
-  "custom_setup": "mirror"
+  "custom_setup": "mirror",
+  "default_enabled": false
 }

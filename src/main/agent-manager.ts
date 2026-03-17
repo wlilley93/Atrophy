@@ -123,9 +123,30 @@ function saveStates(states: Record<string, unknown>): void {
 export function getAgentState(agentName: string): AgentState {
   const states = loadStates();
   const state = states[agentName] as Partial<AgentState> | undefined;
+
+  // If no explicit enabled state, check manifest for default_enabled flag
+  let defaultEnabled = true;
+  if (state?.enabled === undefined) {
+    try {
+      const { USER_DATA, BUNDLE_ROOT } = require('./config');
+      for (const base of [
+        path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json'),
+        path.join(BUNDLE_ROOT, 'agents', agentName, 'data', 'agent.json'),
+      ]) {
+        if (fs.existsSync(base)) {
+          const manifest = JSON.parse(fs.readFileSync(base, 'utf-8'));
+          if (manifest.default_enabled === false) {
+            defaultEnabled = false;
+          }
+          break;
+        }
+      }
+    } catch { /* use default */ }
+  }
+
   return {
     muted: state?.muted ?? false,
-    enabled: state?.enabled ?? true,
+    enabled: state?.enabled ?? defaultEnabled,
   };
 }
 

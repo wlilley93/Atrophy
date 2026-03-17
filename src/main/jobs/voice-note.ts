@@ -223,10 +223,15 @@ export async function run(): Promise<void> {
       'and wanted to share it. No greeting. No sign-off. Just the thought.';
   }
 
+  // Include current time so the agent knows when it is
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const dayStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
   let result: string;
   try {
     result = await runInferenceOneshot(
-      [{ role: 'user', content: `${context}\n\n---\n\n${prompt}` }],
+      [{ role: 'user', content: `Current time: ${timeStr}, ${dayStr}\n\n${context}\n\n---\n\n${prompt}` }],
       `You are ${config.AGENT_DISPLAY_NAME}. Generate a short, natural voice note.`,
     );
   } catch (e) {

@@ -1549,7 +1549,7 @@
   <!-- Mirror custom setup (shown when switching to Mirror for the first time) -->
   {#if mirrorSetupVisible}
     <MirrorSetup
-      onComplete={() => { mirrorSetupVisible = false; }}
+      onComplete={() => { mirrorSetupVisible = false; api?.setAgentState('mirror', { enabled: true }); }}
       onSkip={() => { mirrorSetupVisible = false; cycleAgent(1); }}
     />
   {/if}

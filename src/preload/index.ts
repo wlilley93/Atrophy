@@ -141,6 +141,10 @@ export interface AtrophyAPI {
   setTelegramBotPhoto: (agentName: string, botToken: string) => Promise<boolean>;
   getTelegramAgentConfig: (agentName: string) => Promise<{ botToken: string; chatId: string }>;
 
+  // Logs
+  getLogBuffer: () => Promise<{ timestamp: number; level: string; tag: string; message: string }[]>;
+  onLogEntry: (cb: (entry: { timestamp: number; level: string; tag: string; message: string }) => void) => () => void;
+
   // Mirror setup
   mirrorUploadPhoto: (photoData: ArrayBuffer, filename: string) => Promise<string>;
   mirrorGenerateAvatar: () => Promise<string[]>;
@@ -348,6 +352,14 @@ const api: AtrophyAPI = {
     ipcRenderer.invoke('telegram:setBotPhoto', agentName, botToken),
   getTelegramAgentConfig: (agentName) =>
     ipcRenderer.invoke('telegram:getAgentConfig', agentName),
+
+  // Logs
+  getLogBuffer: () => ipcRenderer.invoke('logs:getBuffer'),
+  onLogEntry: (cb) => {
+    const handler = (_event: unknown, entry: { timestamp: number; level: string; tag: string; message: string }) => cb(entry);
+    ipcRenderer.on('logs:entry', handler);
+    return () => ipcRenderer.removeListener('logs:entry', handler);
+  },
 
   // Mirror setup
   mirrorUploadPhoto: (photoData, filename) => ipcRenderer.invoke('mirror:uploadPhoto', photoData, filename),

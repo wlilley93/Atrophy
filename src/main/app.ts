@@ -43,7 +43,7 @@ import { parseArtifacts } from './artifact-parser';
 import { loadCachedOpening, generateOpening, cacheNextOpening, getStaticFallback } from './opening';
 import { getHotBundlePaths, checkForBundleUpdate, getActiveBundleVersion, getPendingBundleInfo, clearHotBundle } from './bundle-updater';
 import type { HotBundlePaths } from './bundle-updater';
-import { createLogger } from './logger';
+import { createLogger, setLogForwarder, getLogBuffer } from './logger';
 
 const log = createLogger('main');
 
@@ -480,6 +480,19 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('config:reload', () => {
     reloadConfig();
+  });
+
+  // ── Logs ──
+
+  ipcMain.handle('logs:getBuffer', () => {
+    return getLogBuffer();
+  });
+
+  // Forward live log entries to renderer
+  setLogForwarder((entry) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('logs:entry', entry);
+    }
   });
 
   ipcMain.handle('config:get', () => {
