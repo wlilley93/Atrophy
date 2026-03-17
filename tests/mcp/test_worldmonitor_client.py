@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """Unit tests for WorldMonitorClient.
 
+Test classes:
+  TestCacheSchema           - schema creation and idempotency
+  TestCacheKey              - cache key construction
+  TestFetchBootstrapLive    - live API fetch (WM_LIVE_TESTS=1 only)
+  TestFetchCachedLive       - live cache integration (WM_LIVE_TESTS=1 only)
+  TestFetchCachedStaleOffline - stale fallback with no network
+  TestDeltaDetection        - delta engine: array diff, numeric delta, routing
+  TestGetChanges            - get_changes, poll helpers, domain mapping
+
 Run all (including live):  WM_LIVE_TESTS=1 python -m pytest tests/mcp/test_worldmonitor_client.py -v
 Run offline only:          python -m pytest tests/mcp/test_worldmonitor_client.py -v
 """

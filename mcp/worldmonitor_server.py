@@ -2,9 +2,11 @@
 """WorldMonitor MCP server for the Atrophy companion agent.
 
 Architecture:
-  - WorldMonitorClient  - HTTP fetch + SQLite cache (this task)
-  - Delta detection     - Task 2
-  - get_changes/poll    - Task 3
+  - WorldMonitorClient  - HTTP fetch + SQLite cache (Task 1) [done]
+  - Delta detection     - _compute_array_delta, _compute_numeric_delta,
+                          compute_delta (Task 2) [done]
+  - get_changes/poll    - get_changes, poll_tier, TIERS, helper statics
+                          (Task 3) [done]
   - JSON-RPC server     - Task 4
 
 Protocol: JSON-RPC 2.0 over stdio (MCP standard transport).
