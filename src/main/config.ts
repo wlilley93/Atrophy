@@ -80,7 +80,6 @@ const ALLOWED_ENV_KEYS = new Set([
   'FAL_KEY',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_CHAT_ID',
-  'TELEGRAM_GROUP_ID',
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
 ]);
@@ -492,7 +491,6 @@ export class Config {
   // Telegram
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_CHAT_ID: string;
-  TELEGRAM_GROUP_ID: string;
 
   // Notifications
   NOTIFICATIONS_ENABLED: boolean;
@@ -591,7 +589,6 @@ export class Config {
     this.HEARTBEAT_INTERVAL_MINS = 30;
     this.TELEGRAM_BOT_TOKEN = '';
     this.TELEGRAM_CHAT_ID = '';
-    this.TELEGRAM_GROUP_ID = '';
     this.NOTIFICATIONS_ENABLED = true;
     this.SILENCE_TIMER_ENABLED = true;
     this.SILENCE_TIMER_MINUTES = 5;
@@ -666,6 +663,16 @@ export class Config {
     this.WAKE_WORDS = (_agentManifest.wake_words as string[]) || [`hey ${name}`, name];
     this.TELEGRAM_EMOJI = (_agentManifest.telegram_emoji as string) || '';
     this.DISABLED_TOOLS = (_agentManifest.disabled_tools as string[]) || [];
+
+    // Per-agent telegram credentials (fall back to global)
+    this.TELEGRAM_BOT_TOKEN =
+      (_agentManifest.telegram_bot_token as string) ||
+      process.env.TELEGRAM_BOT_TOKEN ||
+      cfg('TELEGRAM_BOT_TOKEN', '');
+    this.TELEGRAM_CHAT_ID =
+      (_agentManifest.telegram_chat_id as string) ||
+      process.env.TELEGRAM_CHAT_ID ||
+      cfg('TELEGRAM_CHAT_ID', '');
 
     // TTS (per-agent from manifest voice object, matching Python's AGENT.get("voice", {}))
     // Use || for string IDs so empty string "" falls through to cfg() fallback.
@@ -749,12 +756,6 @@ export class Config {
     this.HEARTBEAT_ACTIVE_START = (hb.active_start as number) ?? cfg('HEARTBEAT_ACTIVE_START', 9);
     this.HEARTBEAT_ACTIVE_END = (hb.active_end as number) ?? cfg('HEARTBEAT_ACTIVE_END', 22);
     this.HEARTBEAT_INTERVAL_MINS = (hb.interval_mins as number) ?? cfg('HEARTBEAT_INTERVAL_MINS', 30);
-
-    // Telegram - system-level credentials, shared by all agents.
-    // One bot, one group. Topics mode - each agent gets its own topic thread.
-    this.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || cfg('TELEGRAM_BOT_TOKEN', '');
-    this.TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || cfg('TELEGRAM_CHAT_ID', '');
-    this.TELEGRAM_GROUP_ID = process.env.TELEGRAM_GROUP_ID || cfg('TELEGRAM_GROUP_ID', '');
 
     // Notifications
     this.NOTIFICATIONS_ENABLED = cfg('NOTIFICATIONS_ENABLED', true);
@@ -854,6 +855,8 @@ const AGENT_KEY_ROOT: Record<string, string> = {
   WAKE_WORDS: 'wake_words',
   TELEGRAM_EMOJI: 'telegram_emoji',
   DISABLED_TOOLS: 'disabled_tools',
+  TELEGRAM_BOT_TOKEN: 'telegram_bot_token',
+  TELEGRAM_CHAT_ID: 'telegram_chat_id',
 };
 
 export function saveAgentConfig(
