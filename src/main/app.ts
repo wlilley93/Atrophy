@@ -62,6 +62,7 @@ const _hotBundle: HotBundlePaths | null = process.env.ATROPHY_HOT_BOOT === '1'
 // ---------------------------------------------------------------------------
 
 let mainWindow: BrowserWindow | null = null;
+let _forceQuit = false;
 let tray: Tray | null = null;
 let trayUsesBrainIcon = false;
 let isMenuBarMode = false;
@@ -171,21 +172,12 @@ function createWindow(): BrowserWindow {
     }
   });
 
-  // Intercept close to show shutdown animation
-  let allowClose = false;
-  let shutdownTimer: ReturnType<typeof setTimeout> | null = null;
+  // Close hides the window - app stays in tray. Only tray Quit actually exits.
   win.on('close', (e) => {
-    if (!allowClose) {
+    if (!_forceQuit) {
       e.preventDefault();
-      win.webContents.send('app:shutdownRequested');
-      // Safety timeout - force quit if renderer doesn't respond in 5s
-      if (!shutdownTimer) {
-        shutdownTimer = setTimeout(() => {
-          allowClose = true;
-          win.close();
-          app.quit();
-        }, 5000);
-      }
+      win.hide();
+      if (process.platform === 'darwin') app.dock?.hide();
     }
   });
 
@@ -193,12 +185,10 @@ function createWindow(): BrowserWindow {
     mainWindow = null;
   });
 
-  // Allow actual close after shutdown animation (called from IPC)
+  // Actual quit - called from tray menu only
   try { ipcMain.removeHandler('app:shutdown'); } catch { /* first time */ }
   ipcMain.handle('app:shutdown', () => {
-    if (shutdownTimer) { clearTimeout(shutdownTimer); shutdownTimer = null; }
-    allowClose = true;
-    win.close();
+    _forceQuit = true;
     app.quit();
   });
 
@@ -287,10 +277,12 @@ function rebuildTrayMenu(): void {
       label: 'Show Window',
       accelerator: 'CommandOrControl+Shift+Space',
       click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
+        if (!mainWindow) {
+          mainWindow = createWindow();
         }
+        mainWindow.show();
+        mainWindow.focus();
+        if (process.platform === 'darwin') app.dock?.show();
       },
     },
     {
@@ -385,14 +377,8 @@ function rebuildTrayMenu(): void {
     }] : []),
     {
       label: 'Quit',
-      accelerator: 'CommandOrControl+Q',
       click: () => {
-        // Skip shutdown animation when quitting from tray - quit immediately
-        if (mainWindow) {
-          mainWindow.removeAllListeners('close');
-          mainWindow.destroy();
-          mainWindow = null;
-        }
+        _forceQuit = true;
         app.quit();
       },
     },
@@ -2153,7 +2139,31 @@ app.whenReady().then(() => {
     return;
   }
 
-  // Create window
+  // Register global shortcut for all modes (Cmd+Shift+Space toggles window)
+  globalShortcut.register('CommandOrControl+Shift+Space', () => {
+    if (!mainWindow) {
+      mainWindow = createWindow();
+      mainWindow.show();
+      mainWindow.focus();
+      if (process.platform === 'darwin') app.dock?.show();
+    } else if (mainWindow.isVisible()) {
+      mainWindow.hide();
+      if (process.platform === 'darwin') app.dock?.hide();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+      if (process.platform === 'darwin') app.dock?.show();
+    }
+  });
+
+  // Menu bar mode - tray only, no window on launch.
+  // Window created on demand via tray "Show" or global shortcut.
+  if (isMenuBarMode) {
+    createTray();
+    return;
+  }
+
+  // GUI mode - create window immediately
   mainWindow = createWindow();
 
   // Start journal nudge timer (silence-based, once per session)
@@ -2182,19 +2192,6 @@ app.whenReady().then(() => {
 
   // Always create tray icon (brain in macOS menu bar)
   createTray();
-
-  // Global shortcuts
-  // Cmd+Shift+Space - toggle window visibility
-  globalShortcut.register('CommandOrControl+Shift+Space', () => {
-    if (mainWindow) {
-      if (mainWindow.isVisible()) {
-        mainWindow.hide();
-      } else {
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    }
-  });
 
   // Agent cycling via global shortcuts
   let _cycleInProgress = false;
@@ -2245,10 +2242,19 @@ app.whenReady().then(() => {
   globalShortcut.register('Shift+Down', () => doCycleAgent(1));
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
+// Cmd+Q hides the window instead of quitting. Only tray Quit sets _forceQuit.
+app.on('before-quit', (e) => {
+  if (!_forceQuit) {
+    e.preventDefault();
+    if (mainWindow) {
+      mainWindow.hide();
+      if (process.platform === 'darwin') app.dock?.hide();
+    }
   }
+});
+
+app.on('window-all-closed', () => {
+  // Never quit on window close - app lives in tray
 });
 
 app.on('activate', () => {
@@ -2257,6 +2263,7 @@ app.on('activate', () => {
   } else {
     mainWindow.show();
   }
+  if (process.platform === 'darwin') app.dock?.show();
 });
 
 app.on('will-quit', () => {
