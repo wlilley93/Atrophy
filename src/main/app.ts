@@ -62,6 +62,7 @@ const _hotBundle: HotBundlePaths | null = process.env.ATROPHY_HOT_BOOT === '1'
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let trayUsesBrainIcon = false;
 let isMenuBarMode = false;
 let currentSession: Session | null = null;
 let systemPrompt: string | null = null;
@@ -402,6 +403,7 @@ function createTray(): void {
     if (brainPath) {
       trayIcon = nativeImage.createFromPath(brainPath);
       trayIcon.setTemplateImage(true);
+      trayUsesBrainIcon = !trayIcon.isEmpty();
       log.info(`[tray] loaded brain icon: ${trayIcon.getSize().width}x${trayIcon.getSize().height} empty=${trayIcon.isEmpty()}`);
     } else {
       // Procedural orb fallback (44px for @2x tray)
@@ -432,7 +434,11 @@ function createTray(): void {
  */
 export function updateTrayState(state: TrayState): void {
   if (!tray) return;
-  tray.setImage(getTrayIcon(state));
+  // Don't overwrite the hand-crafted brain template icon with the procedural orb -
+  // the brain icon auto-adapts to macOS light/dark via template image rendering.
+  if (!trayUsesBrainIcon) {
+    tray.setImage(getTrayIcon(state));
+  }
   // Always rebuild menu to update status dot text
   rebuildTrayMenu();
 }
