@@ -189,8 +189,15 @@ export async function startVoiceCall(agentName?: string): Promise<boolean> {
 
   const config = getConfig();
 
+  // Voice call requires ElevenLabs - without it, use regular text chat
   if (!config.ELEVENLABS_API_KEY) {
-    log.error('cannot start voice call - no ELEVENLABS_API_KEY');
+    log.info('no ELEVENLABS_API_KEY - use regular text chat instead');
+    return false;
+  }
+
+  // Only connect if at least one voice feature is needed
+  if (_muted && _audioOutputMuted) {
+    log.info('both mic and audio output muted - use regular text chat instead');
     return false;
   }
 
@@ -413,8 +420,17 @@ function _connect(url: string): void {
     _clearPingTimer();
 
     if (_active) {
-      // Unexpected disconnect while call should be active
-      log.warn('unexpected disconnect - call ended');
+      // Check for ElevenLabs credit/quota issues
+      const reason = (event.reason || '').toLowerCase();
+      if (reason.includes('credit') || reason.includes('quota') || reason.includes('limit') || event.code === 4003) {
+        log.warn('ElevenLabs credits exhausted or quota reached - falling back to text-only');
+        _getWindow?.()?.webContents.send('voice-call:status', 'credits_exhausted');
+        _getWindow?.()?.webContents.send('inference:textDelta',
+          '\n\n_ElevenLabs credits exhausted. Switching to text-only mode._');
+      } else {
+        log.warn('unexpected disconnect - call ended');
+      }
+
       _active = false;
       _cleanup();
     }
@@ -676,6 +692,14 @@ function _runInferenceAndStream(userText: string): void {
         log.error(`inference error during voice call: ${evt.message}`);
         _getWindow?.()?.webContents.send('inference:error', evt.message);
         _emitter.emit('error', `Inference error: ${evt.message}`);
+
+        // If Claude hit a rate limit or died (e.g. exit 143), notify user
+        // via text in the transcript rather than failing silently
+        if (evt.message.includes('143') || evt.message.includes('rate') || evt.message.includes('overloaded')) {
+          const notice = 'Claude is temporarily unavailable. Try again in a moment.';
+          _getWindow?.()?.webContents.send('inference:textDelta', `\n\n_${notice}_`);
+          _getWindow?.()?.webContents.send('inference:done', notice);
+        }
         break;
     }
   });
