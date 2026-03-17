@@ -865,14 +865,27 @@
   // Agent cycling
   // ---------------------------------------------------------------------------
 
+  let _switchGeneration = 0; // monotonic counter to discard stale openings
+  let _switching = false;
+
   async function cycleAgent(direction: number) {
     const list = agents.list;
     if (list.length < 2) return;
+    if (_switching) return; // block rapid switches
+
+    _switching = true;
+    const gen = ++_switchGeneration;
+
     const idx = list.indexOf(agents.current);
     const next = list[(idx + direction + list.length) % list.length];
     agents.switchDirection = direction;
+
     if (api) {
       const result = await api.switchAgent(next);
+
+      // Another switch happened while we were awaiting - abandon
+      if (gen !== _switchGeneration) { _switching = false; return; }
+
       agents.current = result.agentName;
       agents.displayName = result.agentDisplayName;
 
@@ -889,12 +902,15 @@
       // Fetch opening line for the new agent
       try {
         const opening = await api.getOpeningLine();
-        if (opening) {
+        // Discard if another switch happened during the fetch
+        if (gen === _switchGeneration && opening) {
           addMessage('agent', opening);
           completeLast();
         }
       } catch { /* non-critical */ }
     }
+
+    _switching = false;
   }
 
   // ---------------------------------------------------------------------------
