@@ -282,38 +282,64 @@
       bootDecayFrame = 0;
       bootDecayOpacity = 1;
 
-      const decayDone = new Promise<void>((resolve) => {
-        bootDecayTimer = setInterval(() => {
-          if (bootDecayFrame < brainFramePaths.length - 1) {
-            bootDecayFrame++;
-          } else {
-            if (bootDecayTimer) { clearInterval(bootDecayTimer); bootDecayTimer = null; }
-            // Hold on final frame briefly, then fade out
-            setTimeout(() => {
-              bootDecayOpacity = 0;
-              setTimeout(() => {
-                bootDecayVisible = false;
-                resolve();
-              }, 500);
-            }, 300);
-          }
-        }, 200);
-      });
-
-      // Fetch opening line in parallel with the animation
+      // Fetch opening line in parallel with the brain decay animation.
+      // Boot screen stays visible until BOTH the animation finishes
+      // AND the opening line is ready to stream.
+      let openingReady = false;
+      let animationDone = false;
       let opening: string | null = null;
+
+      const dismissBoot = () => {
+        if (!openingReady || !animationDone) return;
+        bootDecayOpacity = 0;
+        setTimeout(() => {
+          bootDecayVisible = false;
+          if (opening) {
+            addMessage('agent', opening);
+            completeLast();
+          }
+        }, 500);
+      };
+
+      // Start brain decay animation
+      bootDecayTimer = setInterval(() => {
+        if (bootDecayFrame < brainFramePaths.length - 1) {
+          bootDecayFrame++;
+        } else {
+          if (bootDecayTimer) { clearInterval(bootDecayTimer); bootDecayTimer = null; }
+          // Hold on final frame - don't fade out yet
+          if (openingReady) {
+            // Opening already arrived - dismiss immediately
+            animationDone = true;
+            dismissBoot();
+          } else {
+            // Opening still loading - loop the last few frames while waiting
+            animationDone = true;
+            const loopStart = Math.max(0, brainFramePaths.length - 3);
+            bootDecayTimer = setInterval(() => {
+              bootDecayFrame = bootDecayFrame >= brainFramePaths.length - 1
+                ? loopStart
+                : bootDecayFrame + 1;
+            }, 400);
+          }
+        }
+      }, 200);
+
+      // Fetch opening line
       try {
         opening = await api.getOpeningLine();
       } catch {
-        // use default
+        // use default - treat as ready with no opening
+      }
+      openingReady = true;
+
+      // Stop any looping animation
+      if (animationDone && bootDecayTimer) {
+        clearInterval(bootDecayTimer);
+        bootDecayTimer = null;
       }
 
-      await decayDone;
-
-      if (opening) {
-        addMessage('agent', opening);
-        completeLast();
-      }
+      dismissBoot();
     }
     // Splash dismisses itself via onComplete when decay finishes + download done
   }
