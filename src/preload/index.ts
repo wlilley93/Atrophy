@@ -136,7 +136,10 @@ export interface AtrophyAPI {
   startTelegramDaemon: () => Promise<boolean>;
   stopTelegramDaemon: () => Promise<void>;
   isTelegramDaemonRunning: () => Promise<boolean>;
-  discoverTelegramChatId: (botToken: string) => Promise<{ chatId: string; username?: string } | null>;
+  discoverTelegramChatId: (botToken: string, agentName?: string) => Promise<{ chatId: string; username?: string } | null>;
+  saveTelegramBotToken: (agentName: string, botToken: string) => Promise<void>;
+  setTelegramBotPhoto: (agentName: string, botToken: string) => Promise<boolean>;
+  getTelegramAgentConfig: (agentName: string) => Promise<{ botToken: string; chatId: string }>;
 
   // Mirror setup
   mirrorUploadPhoto: (photoData: ArrayBuffer, filename: string) => Promise<string>;
@@ -337,7 +340,14 @@ const api: AtrophyAPI = {
   startTelegramDaemon: () => ipcRenderer.invoke('telegram:startDaemon'),
   stopTelegramDaemon: () => ipcRenderer.invoke('telegram:stopDaemon'),
   isTelegramDaemonRunning: () => ipcRenderer.invoke('telegram:isRunning'),
-  discoverTelegramChatId: (botToken) => ipcRenderer.invoke('telegram:discoverChatId', botToken),
+  discoverTelegramChatId: (botToken, agentName) =>
+    ipcRenderer.invoke('telegram:discoverChatId', botToken, agentName),
+  saveTelegramBotToken: (agentName, botToken) =>
+    ipcRenderer.invoke('telegram:saveAgentBotToken', agentName, botToken),
+  setTelegramBotPhoto: (agentName, botToken) =>
+    ipcRenderer.invoke('telegram:setBotPhoto', agentName, botToken),
+  getTelegramAgentConfig: (agentName) =>
+    ipcRenderer.invoke('telegram:getAgentConfig', agentName),
 
   // Mirror setup
   mirrorUploadPhoto: (photoData, filename) => ipcRenderer.invoke('mirror:uploadPhoto', photoData, filename),

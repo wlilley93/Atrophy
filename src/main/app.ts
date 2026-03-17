@@ -586,7 +586,7 @@ function registerIpcHandlers(): void {
     'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL', 'ELEVENLABS_STABILITY',
     'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
     'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
-    'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
+    'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
     'DISABLED_TOOLS', 'WAKE_WORDS',
   ]);
   const userKeys = new Set([
@@ -1461,15 +1461,44 @@ Output EXACTLY this format - a single fenced JSON block:
     return isDaemonRunning();
   });
 
-  ipcMain.handle('telegram:discoverChatId', async (_event, botToken: string) => {
+  ipcMain.handle('telegram:discoverChatId', async (_event, botToken: string, agentName?: string) => {
     const result = await discoverChatId(botToken);
     if (result) {
-      // Auto-save the discovered chat ID
-      saveEnvVar('TELEGRAM_CHAT_ID', result.chatId);
-      process.env.TELEGRAM_CHAT_ID = result.chatId;
       const c = getConfig();
-      (c as unknown as Record<string, unknown>).TELEGRAM_CHAT_ID = result.chatId;
+      const targetAgent = agentName || c.AGENT_NAME;
+      saveAgentConfig(targetAgent, { TELEGRAM_CHAT_ID: result.chatId });
+      if (targetAgent === c.AGENT_NAME) {
+        (c as unknown as Record<string, unknown>).TELEGRAM_CHAT_ID = result.chatId;
+      }
     }
+    return result;
+  });
+
+  ipcMain.handle('telegram:saveAgentBotToken', async (_event, agentName: string, botToken: string) => {
+    saveAgentConfig(agentName, { TELEGRAM_BOT_TOKEN: botToken });
+    const c = getConfig();
+    if (agentName === c.AGENT_NAME) {
+      (c as unknown as Record<string, unknown>).TELEGRAM_BOT_TOKEN = botToken;
+    }
+  });
+
+  ipcMain.handle('telegram:setBotPhoto', async (_event, agentName: string, botToken: string) => {
+    const { getReferenceImages } = await import('./jobs/generate-avatar');
+    const { setBotProfilePhoto } = await import('./telegram');
+    const refs = getReferenceImages(agentName);
+    if (refs.length === 0) return false;
+    return setBotProfilePhoto(refs[0], botToken);
+  });
+
+  ipcMain.handle('telegram:getAgentConfig', async (_event, agentName: string) => {
+    const c = getConfig();
+    const original = c.AGENT_NAME;
+    c.reloadForAgent(agentName);
+    const result = {
+      botToken: c.TELEGRAM_BOT_TOKEN ? '***' : '',
+      chatId: c.TELEGRAM_CHAT_ID,
+    };
+    c.reloadForAgent(original);
     return result;
   });
 
@@ -1943,7 +1972,7 @@ app.whenReady().then(() => {
   // Auto-start Telegram daemon if configured.
   // Always polls for incoming messages (user can chat via Telegram even when active).
   // Outgoing messages (heartbeat, cron, etc.) route to Telegram topics only when away.
-  if (config.TELEGRAM_BOT_TOKEN && (config.TELEGRAM_GROUP_ID || config.TELEGRAM_CHAT_ID)) {
+  if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID) {
     const started = startDaemon();
     if (started) {
       log.info('Telegram daemon auto-started');
@@ -1952,7 +1981,7 @@ app.whenReady().then(() => {
       log.warn('Telegram daemon failed to start (lock held by another instance?)');
     }
   } else {
-    log.debug(`Telegram daemon skipped: token=${!!config.TELEGRAM_BOT_TOKEN} groupId=${!!config.TELEGRAM_GROUP_ID}`);
+    log.debug(`Telegram daemon skipped: token=${!!config.TELEGRAM_BOT_TOKEN} chatId=${!!config.TELEGRAM_CHAT_ID}`);
   }
 
   // Configure voice agent window reference

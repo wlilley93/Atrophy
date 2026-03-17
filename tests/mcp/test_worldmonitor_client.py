@@ -256,5 +256,268 @@ class TestFetchCachedStaleOffline(unittest.TestCase):
             self._client.fetch_cached("api/gpsjam/summary", params={})
 
 
+class TestDeltaDetection(unittest.TestCase):
+    """Unit tests for the delta detection engine (Task 2)."""
+
+    def setUp(self):
+        self._db_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self._db_path = self._db_file.name
+        self._db_file.close()
+        self._client = WorldMonitorClient(cache_db=self._db_path)
+
+    def tearDown(self):
+        try:
+            os.unlink(self._db_path)
+        except FileNotFoundError:
+            pass
+
+    def test_array_diff_detects_new_and_removed(self):
+        before = [{"hex": "A1", "callsign": "AAL1"}, {"hex": "B2", "callsign": "BAW2"}]
+        after = [{"hex": "A1", "callsign": "AAL1"}, {"hex": "C3", "callsign": "SAS3"}]
+        result = WorldMonitorClient._compute_array_delta(before, after, "hex")
+
+        self.assertEqual(result["count_before"], 2)
+        self.assertEqual(result["count_after"], 2)
+        self.assertEqual(len(result["added"]), 1)
+        self.assertEqual(result["added"][0]["hex"], "C3")
+        self.assertEqual(len(result["removed"]), 1)
+        self.assertEqual(result["removed"][0]["hex"], "B2")
+
+    def test_numeric_delta_flags_significant_move(self):
+        before = {"rate": 100.0}
+        after = {"rate": 110.0}
+        result = WorldMonitorClient._compute_numeric_delta(before, after, "rate", threshold=0.05)
+
+        self.assertAlmostEqual(result["pct_change"], 0.1)
+        self.assertTrue(result["significant"])
+        self.assertEqual(result["field"], "rate")
+
+    def test_numeric_delta_ignores_small_move(self):
+        before = {"rate": 100.0}
+        after = {"rate": 102.0}
+        result = WorldMonitorClient._compute_numeric_delta(before, after, "rate", threshold=0.05)
+
+        self.assertAlmostEqual(result["pct_change"], 0.02)
+        self.assertFalse(result["significant"])
+
+    def test_compute_delta_military_flights(self):
+        before = json.dumps({
+            "flights": [
+                {"hex": "AAAA", "callsign": "RCH1"},
+                {"hex": "BBBB", "callsign": "RCH2"},
+            ]
+        })
+        after = json.dumps({
+            "flights": [
+                {"hex": "AAAA", "callsign": "RCH1"},
+                {"hex": "CCCC", "callsign": "RCH3"},
+            ]
+        })
+        result = self._client.compute_delta("api/military-flights", before, after)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result["added"]), 1)
+        self.assertEqual(result["added"][0]["hex"], "CCCC")
+        self.assertEqual(len(result["removed"]), 1)
+        self.assertEqual(result["removed"][0]["hex"], "BBBB")
+
+    def test_compute_delta_gpsjam(self):
+        before = json.dumps({
+            "hexes": [
+                {"id": "h1", "level": "high"},
+                {"id": "h2", "level": "low"},
+            ]
+        })
+        after = json.dumps({
+            "hexes": [
+                {"id": "h1", "level": "high"},
+                {"id": "h2", "level": "high"},
+                {"id": "h3", "level": "high"},
+            ]
+        })
+        result = self._client.compute_delta("api/gpsjam", before, after)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["high_hexes_before"], 1)
+        self.assertEqual(result["high_hexes_after"], 3)
+        self.assertEqual(result["new_high_hexes"], 2)
+        self.assertTrue(result["significant"])
+
+    def test_compute_delta_unknown_endpoint_returns_none(self):
+        result = self._client.compute_delta(
+            "api/unknown-endpoint",
+            json.dumps({"x": 1}),
+            json.dumps({"x": 2}),
+        )
+        self.assertIsNone(result)
+
+    def test_numeric_delta_zero_division(self):
+        before = {"rate": 0}
+        after = {"rate": 50}
+        result = WorldMonitorClient._compute_numeric_delta(before, after, "rate")
+        self.assertEqual(result["pct_change"], 0.0)
+        self.assertFalse(result["significant"])
+
+
+class TestGetChanges(unittest.TestCase):
+    """Tests for get_changes and related helpers (Task 3)."""
+
+    def setUp(self):
+        self._db_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self._db_path = self._db_file.name
+        self._db_file.close()
+        self._client = WorldMonitorClient(
+            cache_db=self._db_path,
+            base_url="http://127.0.0.1:19999",  # unreachable - tests use seeded data
+        )
+
+    def tearDown(self):
+        try:
+            os.unlink(self._db_path)
+        except FileNotFoundError:
+            pass
+
+    def _seed_cache_with_delta(
+        self,
+        endpoint: str,
+        payload: dict,
+        delta: dict,
+        minutes_ago: int = 10,
+    ) -> None:
+        """Insert a cache row with a pre-computed delta directly."""
+        import datetime as dt
+        fetched_at = (
+            dt.datetime.now(tz=dt.timezone.utc) - dt.timedelta(minutes=minutes_ago)
+        ).isoformat()
+        con = sqlite3.connect(self._db_path)
+        con.execute(
+            """
+            INSERT OR REPLACE INTO cache
+                (cache_key, endpoint, response, fetched_at, prev_response, delta)
+            VALUES (?, ?, ?, ?, NULL, ?)
+            """,
+            (
+                endpoint,
+                endpoint,
+                json.dumps(payload),
+                fetched_at,
+                json.dumps(delta),
+            ),
+        )
+        con.commit()
+        con.close()
+
+    def test_get_changes_returns_recent_deltas(self):
+        delta = {
+            "added": [{"hex": "ZZZZ", "callsign": "TEST"}],
+            "removed": [],
+            "count_before": 1,
+            "count_after": 2,
+        }
+        self._seed_cache_with_delta(
+            "api/military-flights",
+            {"flights": []},
+            delta,
+            minutes_ago=5,
+        )
+
+        results = self._client.get_changes(since_minutes=60)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["endpoint"], "api/military-flights")
+        self.assertEqual(results[0]["domain"], "MILITARY")
+        self.assertIn("added", results[0]["delta"])
+
+    def test_get_changes_filters_by_domain(self):
+        military_delta = {
+            "added": [{"hex": "AAAA"}],
+            "removed": [],
+            "count_before": 0,
+            "count_after": 1,
+        }
+        maritime_delta = {
+            "added": [{"name": "Strait Alpha"}],
+            "removed": [],
+            "count_before": 0,
+            "count_after": 1,
+        }
+        self._seed_cache_with_delta(
+            "api/military-flights",
+            {"flights": []},
+            military_delta,
+            minutes_ago=5,
+        )
+        self._seed_cache_with_delta(
+            "api/ais-snapshot",
+            {"disruptions": []},
+            maritime_delta,
+            minutes_ago=5,
+        )
+
+        results = self._client.get_changes(since_minutes=60, domains=["MILITARY"])
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["domain"], "MILITARY")
+
+    def test_get_changes_excludes_old_deltas(self):
+        delta = {
+            "added": [{"hex": "AAAA"}],
+            "removed": [],
+            "count_before": 0,
+            "count_after": 1,
+        }
+        # Seed a delta from 2 hours ago
+        self._seed_cache_with_delta(
+            "api/military-flights",
+            {"flights": []},
+            delta,
+            minutes_ago=120,
+        )
+
+        results = self._client.get_changes(since_minutes=60)
+        self.assertEqual(len(results), 0)
+
+    def test_is_significant_array_added(self):
+        delta = {"added": [{"id": "x"}], "removed": [], "count_before": 0, "count_after": 1}
+        self.assertTrue(WorldMonitorClient._is_significant(delta))
+
+    def test_is_significant_empty_arrays(self):
+        delta = {"added": [], "removed": [], "count_before": 2, "count_after": 2}
+        self.assertFalse(WorldMonitorClient._is_significant(delta))
+
+    def test_endpoint_to_domain_mapping(self):
+        cases = [
+            ("api/military-flights", "MILITARY"),
+            ("api/ais-snapshot", "MARITIME"),
+            ("api/oref-alerts", "ALERTS"),
+            ("api/telegram-feed", "OSINT"),
+            ("api/gpsjam", "GPS"),
+            ("api/conflict/v1/list-acled-events", "CONFLICT"),
+            ("api/thermal/v1/list-thermal-escalations", "THERMAL"),
+            ("api/trade/v1/get-trade-restrictions", "TRADE"),
+            ("api/displacement/v1/get-displacement-summary", "DISPLACEMENT"),
+            ("api/something-completely-unknown", "UNKNOWN"),
+        ]
+        for endpoint, expected_domain in cases:
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(
+                    WorldMonitorClient._endpoint_to_domain(endpoint),
+                    expected_domain,
+                )
+
+    def test_summarize_delta_array(self):
+        delta = {"added": [1, 2], "removed": [3], "count_before": 5, "count_after": 6}
+        summary = WorldMonitorClient._summarize_delta("MILITARY", delta)
+        self.assertIn("MILITARY", summary)
+        self.assertIn("+2", summary)
+        self.assertIn("-1", summary)
+
+    def test_summarize_delta_gpsjam(self):
+        delta = {"new_high_hexes": 3, "high_hexes_before": 1, "high_hexes_after": 4, "significant": True}
+        summary = WorldMonitorClient._summarize_delta("GPS", delta)
+        self.assertIn("GPS", summary)
+        self.assertIn("3", summary)
+
+
 if __name__ == "__main__":
     unittest.main()
