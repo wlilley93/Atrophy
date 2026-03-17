@@ -1548,7 +1548,10 @@
 
   <!-- Mirror custom setup (shown when switching to Mirror for the first time) -->
   {#if mirrorSetupVisible}
-    <MirrorSetup onComplete={() => { mirrorSetupVisible = false; }} />
+    <MirrorSetup
+      onComplete={() => { mirrorSetupVisible = false; }}
+      onSkip={() => { mirrorSetupVisible = false; cycleAgent(1); }}
+    />
   {/if}
 
   <!-- Status bar - response time and context usage -->

@@ -26,7 +26,7 @@
 
   let fileInput: HTMLInputElement;
 
-  let { onComplete }: { onComplete?: () => void } = $props();
+  let { onComplete, onSkip }: { onComplete?: () => void; onSkip?: () => void } = $props();
 
   // Listen for generation progress
   let progressCleanup: (() => void) | null = null;
@@ -92,7 +92,7 @@
   }
 
   function skipSetup() {
-    onComplete?.();
+    (onSkip || onComplete)?.();
   }
 
   // ---------------------------------------------------------------------------
