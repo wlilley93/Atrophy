@@ -1969,19 +1969,16 @@ app.whenReady().then(() => {
   // Prefetch context data during startup idle time
   setImmediate(() => prefetchContext());
 
-  // Auto-start Telegram daemon if configured.
-  // Always polls for incoming messages (user can chat via Telegram even when active).
-  // Outgoing messages (heartbeat, cron, etc.) route to Telegram topics only when away.
-  if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID) {
+  // Auto-start Telegram daemon. It discovers all agents with telegram
+  // credentials and launches a poller per agent - doesn't depend on
+  // which agent is currently active.
+  {
     const started = startDaemon();
     if (started) {
       log.info('Telegram daemon auto-started');
-      registerBotCommands().catch(() => { /* non-critical */ });
     } else {
-      log.warn('Telegram daemon failed to start (lock held by another instance?)');
+      log.debug('Telegram daemon not started (no agents with credentials, or lock held)');
     }
-  } else {
-    log.debug(`Telegram daemon skipped: token=${!!config.TELEGRAM_BOT_TOKEN} chatId=${!!config.TELEGRAM_CHAT_ID}`);
   }
 
   // Configure voice agent window reference
