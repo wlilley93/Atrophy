@@ -123,6 +123,13 @@
   let telegramDiscovering = $state(false);
   let telegramDiscoverStatus = $state('');
 
+  // Per-agent telegram config
+  let agentTelegramEditing = $state<string | null>(null);
+  let agentBotToken = $state('');
+  let agentChatId = $state('');
+  let agentTelegramDiscovering = $state(false);
+  let agentTelegramStatus = $state('');
+
   // Password visibility toggles
   let showElevenlabsKey = $state(false);
   let showFalKey = $state(false);
@@ -592,21 +599,90 @@
           <div class="agent-list">
             {#each agentList as agent}
               <div class="agent-row" class:current={agent.name === agents.current}>
-                <div class="agent-info">
-                  <span class="agent-name-label" class:bold={agent.name === agents.current}>
-                    {agent.display_name || agent.name}
-                  </span>
-                  {#if agent.role}
-                    <span class="agent-role">{agent.role}</span>
-                  {/if}
+                <div class="agent-row-main">
+                  <div class="agent-info">
+                    <span class="agent-name-label" class:bold={agent.name === agents.current}>
+                      {agent.display_name || agent.name}
+                    </span>
+                    {#if agent.role}
+                      <span class="agent-role">{agent.role}</span>
+                    {/if}
+                  </div>
+                  <div class="agent-actions">
+                    {#if agent.name === agents.current}
+                      <span class="agent-active-label">active</span>
+                    {:else}
+                      <button class="small-btn" onclick={() => switchToAgent(agent.name)}>Switch</button>
+                    {/if}
+                    <button
+                      class="agent-telegram-btn"
+                      class:active={agentTelegramEditing === agent.name}
+                      onclick={async () => {
+                        if (agentTelegramEditing === agent.name) {
+                          agentTelegramEditing = null;
+                        } else {
+                          agentTelegramEditing = agent.name;
+                          agentBotToken = '';
+                          agentChatId = '';
+                          agentTelegramStatus = '';
+                          const cfg = await api?.getTelegramAgentConfig(agent.name);
+                          if (cfg) {
+                            agentBotToken = cfg.botToken || '';
+                            agentChatId = cfg.chatId || '';
+                            if (cfg.botToken && cfg.chatId) agentTelegramStatus = 'Connected';
+                          }
+                        }
+                      }}
+                    >
+                      Telegram
+                    </button>
+                  </div>
                 </div>
-                <div class="agent-actions">
-                  {#if agent.name === agents.current}
-                    <span class="agent-active-label">active</span>
-                  {:else}
-                    <button class="small-btn" onclick={() => switchToAgent(agent.name)}>Switch</button>
-                  {/if}
-                </div>
+                {#if agentTelegramEditing === agent.name}
+                  <div class="agent-telegram-config">
+                    <label class="field">
+                      <span class="field-label">Bot Token</span>
+                      <input type="password" bind:value={agentBotToken} class="field-input" placeholder="From @BotFather" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">Chat ID</span>
+                      <input type="text" bind:value={agentChatId} class="field-input" placeholder="Auto-detected" readonly />
+                    </label>
+                    {#if agentBotToken && agentBotToken !== '***' && !agentChatId}
+                      <div class="field row">
+                        <button
+                          class="daemon-btn"
+                          disabled={agentTelegramDiscovering}
+                          onclick={async () => {
+                            agentTelegramDiscovering = true;
+                            agentTelegramStatus = 'Send any message to the bot...';
+                            await api?.saveTelegramBotToken(agent.name, agentBotToken);
+                            const result = await api?.discoverTelegramChatId(agentBotToken, agent.name);
+                            agentTelegramDiscovering = false;
+                            if (result) {
+                              agentChatId = result.chatId;
+                              agentTelegramStatus = 'Connected';
+                              await api?.setTelegramBotPhoto(agent.name, agentBotToken);
+                            } else {
+                              agentTelegramStatus = 'Timed out - try again';
+                            }
+                          }}
+                        >
+                          {agentTelegramDiscovering ? 'Listening...' : 'Auto-detect'}
+                        </button>
+                        <span class="field-info">{agentTelegramStatus}</span>
+                      </div>
+                    {:else if agentBotToken && agentChatId}
+                      <span class="field-info connected">{agentTelegramStatus || 'Connected'}</span>
+                    {/if}
+                    <button class="daemon-btn" onclick={async () => {
+                      if (agentBotToken && agentBotToken !== '***') {
+                        await api?.saveTelegramBotToken(agent.name, agentBotToken);
+                      }
+                      agentTelegramEditing = null;
+                    }}>Done</button>
+                  </div>
+                {/if}
               </div>
             {/each}
           </div>
@@ -1494,8 +1570,7 @@
 
   .agent-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
     padding: 8px 12px;
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.02);
@@ -1503,6 +1578,44 @@
 
   .agent-row.current {
     background: rgba(100, 140, 255, 0.08);
+  }
+
+  .agent-row-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .agent-telegram-btn {
+    font-size: 11px;
+    padding: 2px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .agent-telegram-btn:hover {
+    background: var(--accent);
+  }
+
+  .agent-telegram-btn.active {
+    background: var(--accent);
+    border-color: rgba(100, 140, 255, 0.4);
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .agent-telegram-config {
+    padding: 8px 0 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .agent-telegram-config .field-input {
+    font-size: 12px;
   }
 
   .agent-info {
