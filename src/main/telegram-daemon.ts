@@ -416,6 +416,13 @@ function truncate(text: string, maxLen: number): string {
 }
 
 /**
+ * Escape Markdown special characters to prevent parse failures.
+ */
+function escapeMarkdown(text: string): string {
+  return text.replace(/[_*`\[\]()~>#+=|{}.!\\-]/g, '\\$&');
+}
+
+/**
  * Format elapsed time as human-readable string.
  */
 function formatElapsed(ms: number): string {
@@ -536,10 +543,10 @@ function buildStatusDisplay(state: StreamState): string {
   const parts: string[] = [];
   const elapsed = formatElapsed(Date.now() - state.startTime);
 
-  // Thinking section - show as blockquote
+  // Thinking section - show as blockquote (escaped to prevent Markdown breakage)
   if (state.thinkingText) {
-    const thinkPreview = truncate(state.thinkingText, 400);
-    parts.push(`> _${thinkPreview}_`);
+    const thinkPreview = escapeMarkdown(truncate(state.thinkingText, 400));
+    parts.push(`> ${thinkPreview}`);
     parts.push('');
   }
 
@@ -550,8 +557,8 @@ function buildStatusDisplay(state: StreamState): string {
     const resultDisplay = tool.result ? formatToolResult(tool.name, tool.input, tool.result) : 'done';
 
     let line = `\u2705 \`${name}\``;
-    if (inputDisplay) line += ` ${inputDisplay}`;
-    line += ` - _${resultDisplay}_`;
+    if (inputDisplay) line += ` ${escapeMarkdown(inputDisplay)}`;
+    line += ` - ${escapeMarkdown(resultDisplay)}`;
     parts.push(line);
   }
 
@@ -560,7 +567,7 @@ function buildStatusDisplay(state: StreamState): string {
     const name = formatToolName(state.activeTool.name);
     const inputDisplay = formatToolInput(state.activeTool.name, state.activeTool.input);
     let line = `\u23f3 \`${name}\``;
-    if (inputDisplay) line += ` ${inputDisplay}`;
+    if (inputDisplay) line += ` ${escapeMarkdown(inputDisplay)}`;
     else line += '\u2026';
     parts.push(line);
   }
