@@ -5,6 +5,10 @@
  * discovers all agents with telegram credentials and launches a poller
  * per agent. No group, no topics, no routing - each bot IS the agent.
  *
+ * Messages flow through the central switchboard:
+ *   Telegram poll -> Envelope -> switchboard -> agent router -> inference
+ *   Response -> Envelope -> switchboard -> telegram handler -> Telegram API
+ *
  * Can run as:
  *   - Continuous loop (KeepAlive daemon)
  *   - Managed from within the Electron main process
@@ -21,8 +25,16 @@ import { loadSystemPrompt } from './context';
 import { getReferenceImages } from './jobs/generate-avatar';
 import * as memory from './memory';
 import { createLogger } from './logger';
+import { switchboard, type Envelope } from './switchboard';
+import { AgentRouter, defaultConfigForAgent, type AgentRouterConfig } from './agent-router';
 
 const log = createLogger('telegram-daemon');
+
+// ---------------------------------------------------------------------------
+// Agent routers - one per agent, created on daemon start
+// ---------------------------------------------------------------------------
+
+const _agentRouters: Map<string, AgentRouter> = new Map();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -967,15 +979,25 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
 
     log.info(`[${agent.name}] Message: ${fullPrompt.slice(0, 80)}`);
 
-    // Dispatch with lock to prevent Config singleton race between parallel pollers
-    const response = await withDispatchLock(() =>
-      dispatchToAgent(agent.name, fullPrompt, msgChatId, agent.botToken),
+    // Route through switchboard - create an Envelope and let the
+    // switchboard deliver it to the agent's router
+    const envelope = switchboard.createEnvelope(
+      `telegram:${agent.name}`,
+      `agent:${agent.name}`,
+      fullPrompt,
+      {
+        type: 'user',
+        priority: 'normal',
+        replyTo: `telegram:${agent.name}`,
+        metadata: {
+          chatId: msgChatId,
+          botToken: agent.botToken,
+          agentName: agent.name,
+        },
+      },
     );
-    if (response) {
-      log.info(`[${agent.name}] Responded (${response.length} chars)`);
-    } else {
-      log.warn(`[${agent.name}] No response`);
-    }
+
+    await switchboard.route(envelope);
   }
 
   _state.agents[agent.name] = agentState;
@@ -1010,6 +1032,70 @@ async function runAgentPoller(agent: TelegramAgent): Promise<void> {
   }
 
   log.info(`[${agent.name}] Poller stopped`);
+}
+
+// ---------------------------------------------------------------------------
+// Switchboard integration
+// ---------------------------------------------------------------------------
+
+/**
+ * Register an agent's message handlers with the switchboard.
+ *
+ * Creates two handlers per agent:
+ *   1. agent:{name} - receives inbound messages, runs inference via
+ *      dispatchToAgent (with full streaming display logic intact)
+ *   2. telegram:{name} - receives response envelopes, sends text to
+ *      Telegram (used when responses arrive from other agents or system)
+ */
+function registerAgentSwitchboard(agent: TelegramAgent): void {
+  // Register telegram response handler - receives envelopes addressed
+  // to this agent's Telegram channel and sends them via Telegram API
+  switchboard.register(`telegram:${agent.name}`, async (envelope: Envelope) => {
+    // If this is a response from the agent's own inference, the streaming
+    // display already sent it. Only send here for cross-agent messages
+    // or system notifications that arrive via the switchboard.
+    const fromSelf = envelope.from === `agent:${agent.name}`;
+    if (fromSelf && envelope.metadata?.streamedToTelegram) {
+      // Already sent during streaming - skip to avoid duplicate
+      return;
+    }
+
+    if (envelope.text) {
+      await sendMessage(envelope.text, agent.chatId, false, agent.botToken);
+      log.debug(`[${agent.name}] Telegram response sent (${envelope.text.length} chars)`);
+    }
+  });
+
+  // Create agent router - handles inbound messages to agent:{name}
+  // The router filters messages and calls our callback for accepted ones
+  const routerConfig = defaultConfigForAgent(agent.name);
+  const router = new AgentRouter(agent.name, routerConfig, async (envelope: Envelope) => {
+    // Extract Telegram-specific metadata for streaming display
+    const chatId = (envelope.metadata?.chatId as string) || agent.chatId;
+    const botToken = (envelope.metadata?.botToken as string) || agent.botToken;
+
+    // Dispatch with lock to prevent Config singleton race
+    const response = await withDispatchLock(() =>
+      dispatchToAgent(agent.name, envelope.text, chatId, botToken),
+    );
+
+    if (response) {
+      log.info(`[${agent.name}] Responded via switchboard (${response.length} chars)`);
+    } else {
+      log.warn(`[${agent.name}] No response via switchboard`);
+    }
+
+    // Return the response text - the agent router will create a response
+    // envelope and route it back. We mark it as already streamed to Telegram
+    // so the telegram handler doesn't send it again.
+    // Note: we return void here because dispatchToAgent already handles
+    // the Telegram display (streaming edits). The response routing for
+    // cross-agent replies is handled by the agent router automatically.
+    return undefined;
+  });
+
+  _agentRouters.set(agent.name, router);
+  log.info(`[${agent.name}] Switchboard handlers registered`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1049,6 +1135,11 @@ export function startDaemon(): boolean {
     setAgentBotPhoto(agent.name, agent.botToken).catch(() => {});
   }
 
+  // Register switchboard handlers for each agent
+  for (const agent of agents) {
+    registerAgentSwitchboard(agent);
+  }
+
   // Launch all pollers in parallel
   for (const agent of agents) {
     runAgentPoller(agent);
@@ -1059,11 +1150,26 @@ export function startDaemon(): boolean {
 
 /**
  * Stop the polling daemon and release the instance lock.
+ * Tears down agent routers and unregisters switchboard handlers.
  */
 export function stopDaemon(): void {
   _running = false;
   for (const t of _pollerTimers) clearTimeout(t);
   _pollerTimers = [];
+
+  // Tear down agent routers
+  for (const [name, router] of _agentRouters) {
+    router.destroy();
+  }
+  _agentRouters.clear();
+
+  // Unregister telegram response handlers
+  for (const address of switchboard.getRegisteredAddresses()) {
+    if (address.startsWith('telegram:')) {
+      switchboard.unregister(address);
+    }
+  }
+
   releaseLock();
   log.info('Stopped');
 }

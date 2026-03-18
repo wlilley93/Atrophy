@@ -44,6 +44,7 @@ import { loadCachedOpening, generateOpening, cacheNextOpening, getStaticFallback
 import { getHotBundlePaths, checkForBundleUpdate, getActiveBundleVersion, getPendingBundleInfo, clearHotBundle } from './bundle-updater';
 import type { HotBundlePaths } from './bundle-updater';
 import { createLogger, setLogForwarder, getLogBuffer } from './logger';
+import { switchboard, type Envelope } from './switchboard';
 
 const log = createLogger('main');
 
@@ -1134,6 +1135,18 @@ Output EXACTLY this format - a single fenced JSON block:
 
   // ── Inference ──
 
+  // Register desktop GUI handler with the switchboard.
+  // This handler receives response envelopes from agents (e.g. cross-agent
+  // messages that need to be displayed in the desktop GUI).
+  {
+    const agentName = getConfig().AGENT_NAME;
+    switchboard.register(`desktop:${agentName}`, async (envelope: Envelope) => {
+      if (!mainWindow) return;
+      // Display cross-agent or system messages in the GUI
+      mainWindow.webContents.send('inference:done', envelope.text);
+    });
+  }
+
   ipcMain.handle('inference:send', (_event, text: string) => {
     if (!mainWindow) {
       log.warn('inference:send called but mainWindow is null');
@@ -1173,7 +1186,25 @@ Output EXACTLY this format - a single fenced JSON block:
         log.info(`Away intent detected: "${awayIntent}"`);
       }
 
-      // Stream inference
+      // Record the message through the switchboard for logging/observability.
+      // Desktop inference is handled inline below (not routed through the
+      // switchboard's handler delivery) because the GUI has deeply integrated
+      // streaming display (TTS, artifacts, session management) that cannot
+      // be decoupled without breaking the user experience.
+      const agentName = currentAgentName || getConfig().AGENT_NAME;
+      switchboard.record(switchboard.createEnvelope(
+        `desktop:${agentName}`,
+        `agent:${agentName}`,
+        text,
+        {
+          type: 'user',
+          priority: 'normal',
+          replyTo: `desktop:${agentName}`,
+          metadata: { source: 'desktop-gui' },
+        },
+      ));
+
+      // Stream inference (existing logic - unchanged)
       const emitter = streamInference(
         text,
         systemPrompt,

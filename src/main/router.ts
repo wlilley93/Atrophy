@@ -1,4 +1,15 @@
 /**
+ * @deprecated - Replaced by switchboard.ts + agent-router.ts.
+ *
+ * This legacy router used two-tier routing (explicit + LLM-based) for a
+ * single-bot multi-agent Telegram setup. The new architecture uses the
+ * central switchboard with per-agent routers instead. Each agent now has
+ * its own Telegram bot, so routing decisions happen at the switchboard
+ * level, not at the message parsing level.
+ *
+ * Kept for reference. Will be removed in a future cleanup pass.
+ *
+ * Original description:
  * Telegram message router - routes incoming messages to the right agent(s).
  * Port of channels/router.py.
  *
