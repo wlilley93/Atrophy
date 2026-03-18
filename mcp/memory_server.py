@@ -9,10 +9,12 @@ Protocol: JSON-RPC 2.0 over stdio (MCP standard transport).
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 _version_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "VERSION")
@@ -73,6 +75,10 @@ def _resolve_docs_dir():
     return None
 
 DOCS_DIR = _resolve_docs_dir()
+
+# Switchboard file-based message queue
+# The Electron app polls this file and processes envelopes via the switchboard.
+SWITCHBOARD_QUEUE = os.path.join(os.path.expanduser("~"), ".atrophy", ".switchboard_queue.json")
 
 TOOLS = [
     # ── Group 1: memory - Core recall and search ──
@@ -249,7 +255,33 @@ TOOLS = [
             "required": ["action"],
         },
     },
-    # ── Group 6: display - Visual and UI tools ──
+    # ── Group 6: switchboard - Inter-agent and channel messaging ──
+    {
+        "name": "switchboard",
+        "description": (
+            "Send messages through the central switchboard to other agents, "
+            "channels, or the system. Actions: send_message (send to a specific "
+            "address), broadcast (send to all agents), query_status (check "
+            "switchboard state), route_response (redirect your response to a "
+            "different channel)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["send_message", "broadcast", "query_status", "route_response"],
+                },
+                "to": {"type": "string", "description": "Destination address (e.g. agent:companion, telegram:xan, system)"},
+                "text": {"type": "string", "description": "Message text"},
+                "priority": {"type": "string", "enum": ["normal", "high", "system"], "default": "normal"},
+                "reply_to": {"type": "string", "description": "Where responses should go (defaults to your channel)"},
+                "channel": {"type": "string", "description": "Target channel for route_response (e.g. desktop:xan, telegram:xan)"},
+            },
+            "required": ["action"],
+        },
+    },
+    # ── Group 7: display - Visual and UI tools ──
     {
         "name": "display",
         "description": (
@@ -282,7 +314,7 @@ TOOLS = [
             "required": ["action"],
         },
     },
-    # ── Group 7: tools - Custom tool management ──
+    # ── Group 8: tools - Custom tool management ──
     {
         "name": "tools",
         "description": (
@@ -2083,6 +2115,117 @@ def handle_defer_to_agent(args):
     return f"Deferring to {display_name}. Stand by."
 
 
+# ── Switchboard handlers ──
+
+# Agents with system-level switchboard access (broadcast, route_response)
+_SWITCHBOARD_SYSTEM_AGENTS = {"xan"}
+
+
+def _enqueue_switchboard(envelope):
+    """Append an envelope to the switchboard queue file with file locking.
+
+    The Electron app polls ~/.atrophy/.switchboard_queue.json and processes
+    envelopes via the main-process switchboard.
+    """
+    queue_path = Path(SWITCHBOARD_QUEUE)
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = queue_path.with_suffix(".lock")
+
+    with open(lock_path, "w") as lock_fd:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        try:
+            queue = []
+            if queue_path.exists():
+                try:
+                    queue = json.loads(queue_path.read_text())
+                except (json.JSONDecodeError, OSError):
+                    queue = []
+            queue.append(envelope)
+            queue = queue[-100:]  # keep last 100
+            queue_path.write_text(json.dumps(queue, indent=2))
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+
+
+def handle_switchboard_send_message(args):
+    """Send a message to a specific switchboard address."""
+    to = args.get("to", "")
+    text = args.get("text", "")
+    if not to or not text:
+        return "Error: 'to' and 'text' are required"
+
+    envelope = {
+        "from": f"agent:{AGENT_NAME}",
+        "to": to,
+        "text": text,
+        "type": "agent",
+        "priority": args.get("priority", "normal"),
+        "replyTo": args.get("reply_to", f"agent:{AGENT_NAME}"),
+        "timestamp": int(time.time() * 1000),
+    }
+    _enqueue_switchboard(envelope)
+    return f"Message queued for {to}"
+
+
+def handle_switchboard_broadcast(args):
+    """Broadcast a message to all agents via the switchboard."""
+    # Access control - only system agents can broadcast
+    if AGENT_NAME not in _SWITCHBOARD_SYSTEM_AGENTS:
+        return f"Error: {AGENT_NAME} does not have permission to broadcast. Only system agents can use this action."
+
+    text = args.get("text", "")
+    if not text:
+        return "Error: 'text' is required"
+
+    envelope = {
+        "from": f"agent:{AGENT_NAME}",
+        "to": "agent:*",
+        "text": text,
+        "type": "system",
+        "priority": args.get("priority", "system"),
+        "replyTo": f"agent:{AGENT_NAME}",
+        "timestamp": int(time.time() * 1000),
+    }
+    _enqueue_switchboard(envelope)
+    return "Broadcast queued to all agents"
+
+
+def handle_switchboard_query_status(args):
+    """Read recent switchboard activity from the log file."""
+    log_path = os.path.join(os.path.expanduser("~"), ".atrophy", ".switchboard_log.json")
+    if os.path.exists(log_path):
+        try:
+            with open(log_path) as f:
+                recent = json.load(f)[-20:]
+        except (json.JSONDecodeError, OSError):
+            return "Error reading switchboard log."
+        lines = []
+        for e in recent:
+            lines.append(f"{e.get('from', '')} -> {e.get('to', '')}: {e.get('text', '')[:60]}")
+        return "\n".join(lines) if lines else "No recent messages"
+    return "No switchboard activity logged yet"
+
+
+def handle_switchboard_route_response(args):
+    """Write a routing directive to redirect the next response to a different channel."""
+    # Access control - only system agents can route responses
+    if AGENT_NAME not in _SWITCHBOARD_SYSTEM_AGENTS:
+        return f"Error: {AGENT_NAME} does not have permission to route responses. Only system agents can use this action."
+
+    channel = args.get("channel", "")
+    if not channel:
+        return "Error: 'channel' is required"
+
+    directive = {
+        "from": f"agent:{AGENT_NAME}",
+        "directive": "route_next_response",
+        "channel": channel,
+        "timestamp": int(time.time() * 1000),
+    }
+    _enqueue_switchboard(directive)
+    return f"Next response will be routed to {channel}"
+
+
 def handle_render_canvas(args):
     """Write HTML to the canvas content file for display."""
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2613,6 +2756,12 @@ _ACTION_ROUTES = {
         "update_emotional_state": handle_update_emotional_state,
         "update_trust": handle_update_trust,
     },
+    "switchboard": {
+        "send_message": handle_switchboard_send_message,
+        "broadcast": handle_switchboard_broadcast,
+        "query_status": handle_switchboard_query_status,
+        "route_response": handle_switchboard_route_response,
+    },
     "display": {
         "render_canvas": handle_render_canvas,
         "render_memory_graph": handle_render_memory_graph,
@@ -2652,6 +2801,7 @@ HANDLERS = {
     "reflect": lambda args: _route_grouped("reflect", args),
     "notes": lambda args: _route_grouped("notes", args),
     "interact": lambda args: _route_grouped("interact", args),
+    "switchboard": lambda args: _route_grouped("switchboard", args),
     "display": lambda args: _route_grouped("display", args),
     "tools": lambda args: _route_grouped("tools", args),
     # Standalone tools
