@@ -512,3 +512,34 @@ When porting any module, **read the Python source first**:
 - Manual full sync: `/sync-project-docs`
 - Project skills are in Obsidian - use `/project-skills` to discover them
 - For full system docs, read `/Users/williamlilley/Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind/CLAUDE.md`
+
+---
+
+## 12. Switchboard Architecture (v1.3.2+)
+
+All messages flow through a central switchboard (`src/main/switchboard.ts`). Every message is wrapped in an Envelope with `from`, `to`, `text`, `type`, `priority`, and `replyTo` fields.
+
+### Addresses
+- `telegram:<agent>` - Telegram bot for an agent
+- `desktop:<agent>` - Desktop GUI for an agent
+- `agent:<agent>` - Agent's inference engine
+- `system` - System-level broadcasts
+- `agent:*` - Broadcast to all agents
+
+### Key modules
+- `switchboard.ts` - Singleton message router with handler registry
+- `agent-router.ts` - Per-agent filter (accept/reject rules, queue depth, system access)
+- Telegram daemon creates envelopes and routes through switchboard
+- Desktop GUI records through switchboard for observability
+
+### Agent-to-agent communication
+Agents can message each other via the `switchboard` MCP tool:
+- `send_message` - send to a specific address
+- `broadcast` - send to all agents (Xan only)
+- `query_status` - check recent switchboard activity
+- `route_response` - redirect response to a different channel
+
+### Adding a new channel
+1. Register handler with `switchboard.register(address, handler)`
+2. Create envelopes from inbound messages
+3. Handle outbound envelopes in the handler

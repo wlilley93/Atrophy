@@ -32,28 +32,60 @@ export interface Envelope {
 
 export type MessageHandler = (envelope: Envelope) => Promise<void>;
 
+/**
+ * Service directory entry - metadata about a registered handler.
+ * Agents can query the directory to discover available channels,
+ * other agents, and system services.
+ */
+export interface ServiceEntry {
+  address: string;       // e.g. "telegram:xan", "agent:companion"
+  type: 'channel' | 'agent' | 'system' | 'webhook' | 'mcp';
+  description: string;   // human-readable description
+  capabilities?: string[]; // what this service can do
+  registeredAt: number;  // timestamp
+}
+
 // ---------------------------------------------------------------------------
 // Switchboard
 // ---------------------------------------------------------------------------
 
 const MAX_LOG_SIZE = 200;
+const QUEUE_POLL_INTERVAL = 2000; // ms
 
 class Switchboard {
   private handlers: Map<string, MessageHandler> = new Map();
+  private directory: Map<string, ServiceEntry> = new Map();
   private messageLog: Envelope[] = [];
+  private queuePollTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
-   * Register a handler for an address pattern.
+   * Register a handler for an address with service metadata.
    * Supports exact match ("agent:xan") and wildcard patterns ("agent:*").
-   * Wildcard handlers are invoked when a message targets a broadcast
-   * address like "agent:*", or when no exact match is found.
    */
-  register(address: string, handler: MessageHandler): void {
+  register(address: string, handler: MessageHandler, meta?: Partial<ServiceEntry>): void {
     if (this.handlers.has(address)) {
       log.warn(`Overwriting existing handler for ${address}`);
     }
     this.handlers.set(address, handler);
-    log.info(`Registered handler: ${address}`);
+
+    // Infer service type from address prefix
+    const inferType = (): ServiceEntry['type'] => {
+      if (address.startsWith('agent:')) return 'agent';
+      if (address.startsWith('telegram:') || address.startsWith('desktop:')) return 'channel';
+      if (address.startsWith('webhook:')) return 'webhook';
+      if (address.startsWith('mcp:')) return 'mcp';
+      return 'system';
+    };
+
+    this.directory.set(address, {
+      address,
+      type: meta?.type || inferType(),
+      description: meta?.description || address,
+      capabilities: meta?.capabilities,
+      registeredAt: Date.now(),
+    });
+
+    log.info(`Registered handler: ${address} (${this.directory.get(address)!.type})`);
   }
 
   /**
@@ -184,6 +216,125 @@ class Switchboard {
    */
   getRegisteredAddresses(): string[] {
     return Array.from(this.handlers.keys());
+  }
+
+  // -----------------------------------------------------------------------
+  // Service directory - agents can discover available channels and services
+  // -----------------------------------------------------------------------
+
+  /**
+   * Get the full service directory. Agents call this via MCP to discover
+   * what channels, agents, and services are available for routing.
+   */
+  getDirectory(): ServiceEntry[] {
+    return Array.from(this.directory.values());
+  }
+
+  /**
+   * Get directory entries filtered by type.
+   */
+  getDirectoryByType(type: ServiceEntry['type']): ServiceEntry[] {
+    return this.getDirectory().filter(e => e.type === type);
+  }
+
+  /**
+   * Get a single service entry by address.
+   */
+  getService(address: string): ServiceEntry | undefined {
+    return this.directory.get(address);
+  }
+
+  // -----------------------------------------------------------------------
+  // MCP queue polling - processes envelopes from Python MCP servers
+  // -----------------------------------------------------------------------
+
+  /**
+   * Start polling the MCP queue file for envelopes from agent MCP tools.
+   * The MCP memory server (Python) writes to ~/.atrophy/.switchboard_queue.json
+   * and this polls it every 2 seconds.
+   */
+  startQueuePolling(): void {
+    if (this.queuePollTimer) return;
+
+    const fs = require('fs');
+    const path = require('path');
+    const queuePath = path.join(
+      process.env.HOME || '/tmp',
+      '.atrophy',
+      '.switchboard_queue.json',
+    );
+
+    this.queuePollTimer = setInterval(async () => {
+      try {
+        if (!fs.existsSync(queuePath)) return;
+
+        const raw = fs.readFileSync(queuePath, 'utf8');
+        const envelopes: Envelope[] = JSON.parse(raw);
+
+        if (envelopes.length === 0) return;
+
+        // Clear the queue file
+        fs.writeFileSync(queuePath, '[]');
+
+        // Process each envelope
+        for (const env of envelopes) {
+          log.info(`Queue: ${env.from} -> ${env.to} "${env.text?.slice(0, 60)}"`);
+          try {
+            await this.route(env);
+          } catch (err) {
+            log.error(`Queue envelope error: ${err}`);
+          }
+        }
+      } catch {
+        // File might be locked or malformed - skip this cycle
+      }
+    }, QUEUE_POLL_INTERVAL);
+
+    log.info('Started MCP queue polling');
+  }
+
+  /**
+   * Stop queue polling.
+   */
+  stopQueuePolling(): void {
+    if (this.queuePollTimer) {
+      clearInterval(this.queuePollTimer);
+      this.queuePollTimer = null;
+      log.info('Stopped MCP queue polling');
+    }
+  }
+
+  /**
+   * Write the service directory and recent message log to disk so MCP
+   * servers can read them for query_status and discover actions.
+   */
+  writeStateForMCP(): void {
+    const fs = require('fs');
+    const path = require('path');
+    const stateDir = path.join(process.env.HOME || '/tmp', '.atrophy');
+
+    // Write directory
+    const dirPath = path.join(stateDir, '.switchboard_directory.json');
+    try {
+      fs.writeFileSync(dirPath, JSON.stringify(this.getDirectory(), null, 2));
+    } catch {
+      // Non-fatal
+    }
+
+    // Write recent log
+    const logPath = path.join(stateDir, '.switchboard_log.json');
+    try {
+      const recent = this.messageLog.slice(-50).map(e => ({
+        from: e.from,
+        to: e.to,
+        text: e.text.slice(0, 120),
+        type: e.type,
+        timestamp: e.timestamp,
+      }));
+      fs.writeFileSync(logPath, JSON.stringify(recent, null, 2));
+    } catch {
+      // Non-fatal
+    }
   }
 }
 

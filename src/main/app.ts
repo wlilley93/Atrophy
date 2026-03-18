@@ -2012,6 +2012,13 @@ app.whenReady().then(() => {
     }
   }
 
+  // Start switchboard MCP queue polling - processes envelopes from
+  // agent MCP tools (Python subprocess writes, TypeScript reads).
+  switchboard.startQueuePolling();
+
+  // Periodically write switchboard state for MCP servers to read.
+  setInterval(() => switchboard.writeStateForMCP(), 5000);
+
   // Configure voice agent window reference
   import('./voice-agent').then(({ configureVoiceAgent }) => {
     configureVoiceAgent({

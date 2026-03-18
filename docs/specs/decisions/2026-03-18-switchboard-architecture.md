@@ -154,3 +154,19 @@ Agents don't know about the switchboard directly. They interact through:
 3. **Response routing** - handled automatically by their agent router
 
 This means agents can learn to use inter-agent communication through their MCP tools, and could theoretically build new integrations (e.g. Xan could create a cron job that sends a daily summary to all agents via the switchboard).
+
+### MCP Tools for Agents
+
+Agents interact with the switchboard via a `switchboard` MCP tool group on the memory server. Since the MCP server is a Python subprocess and the switchboard is TypeScript, communication is via a file-based queue (`~/.atrophy/.switchboard_queue.json`).
+
+Available actions:
+- `send_message(to, text, priority?, reply_to?)` - send to any address
+- `broadcast(text, priority?)` - send to all agents (Xan only)
+- `query_status()` - read recent switchboard activity log
+- `route_response(channel)` - redirect next response to a different channel
+
+The Electron app polls the queue file and processes envelopes through the switchboard.
+
+Access control:
+- Xan: all actions (system_access: true)
+- Other agents: send_message, query_status only
