@@ -374,6 +374,45 @@ TOOLS = [
             "properties": {},
         },
     },
+    # ── Group 9: mcp - MCP server self-service ──
+    {
+        "name": "mcp",
+        "description": (
+            "Manage MCP servers at runtime. Actions: list_servers (discover all available "
+            "MCP servers and which are active for you), activate_server (enable an MCP "
+            "server for yourself), deactivate_server (disable an MCP server), "
+            "scaffold_server (create a new custom MCP server from a specification)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list_servers", "activate_server", "deactivate_server", "scaffold_server"],
+                },
+                "server_name": {"type": "string", "description": "Server name (for activate/deactivate)"},
+                "name": {"type": "string", "description": "New server name - lowercase, underscores (for scaffold_server)"},
+                "description": {"type": "string", "description": "What the server does (for scaffold_server)"},
+                "tools": {
+                    "type": "array",
+                    "description": "Tool definitions for scaffold_server",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Tool name"},
+                            "description": {"type": "string", "description": "Tool description"},
+                            "parameters": {
+                                "type": "object",
+                                "description": "Parameter definitions - keys are param names, values have type and description",
+                            },
+                        },
+                        "required": ["name", "description"],
+                    },
+                },
+            },
+            "required": ["action"],
+        },
+    },
 ]
 
 # ── Custom tool loading ──
@@ -2713,6 +2752,423 @@ def handle_delete_tool(args):
     return f"Tool '{bare_name}' deleted. It will be removed from the tool list on next session."
 
 
+# ── MCP self-service handlers ──
+
+# Metadata for bundled MCP servers (mirrors mcp-registry.ts BUNDLED_SERVER_META)
+_BUNDLED_MCP_META = {
+    "memory_server": {
+        "name": "memory",
+        "description": "Memory and recall - SQLite-backed conversation history, observations, threads, bookmarks, notes",
+    },
+    "google_server": {
+        "name": "google",
+        "description": "Google Workspace - Gmail, Calendar, Drive, Sheets, Docs, YouTube via gws CLI",
+    },
+    "shell_server": {
+        "name": "shell",
+        "description": "Sandboxed shell access - scoped commands with allowlist, path restrictions, timeout",
+    },
+    "github_server": {
+        "name": "github",
+        "description": "GitHub operations - repos, issues, PRs, search via gh CLI",
+    },
+    "worldmonitor_server": {
+        "name": "worldmonitor",
+        "description": "WorldMonitor intelligence API - news, events, geopolitical data with delta detection",
+    },
+    "puppeteer_proxy": {
+        "name": "puppeteer",
+        "description": "Web browsing proxy - puppeteer with injection detection and content sandboxing",
+    },
+}
+
+
+def _discover_mcp_servers():
+    """Discover all available MCP servers (bundled + custom).
+
+    Returns a dict of {server_name: {name, description, bundled, path}}.
+    """
+    atrophy_base = os.path.expanduser("~/.atrophy")
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    servers = {}
+
+    # 1. Bundled servers in project_root/mcp/
+    bundled_dir = os.path.join(project_root, "mcp")
+    if os.path.isdir(bundled_dir):
+        for fname in sorted(os.listdir(bundled_dir)):
+            if not fname.endswith(".py"):
+                continue
+            base = fname.removesuffix(".py")
+            meta = _BUNDLED_MCP_META.get(base)
+            if meta:
+                servers[meta["name"]] = {
+                    "name": meta["name"],
+                    "description": meta["description"],
+                    "bundled": True,
+                    "path": os.path.join(bundled_dir, fname),
+                }
+            else:
+                # Unknown bundled server - derive name
+                name = base.removesuffix("_server").removesuffix("_proxy")
+                servers[name] = {
+                    "name": name,
+                    "description": f"Bundled MCP server: {name}",
+                    "bundled": True,
+                    "path": os.path.join(bundled_dir, fname),
+                }
+
+    # 2. Custom servers in ~/.atrophy/mcp/custom/
+    custom_dir = os.path.join(atrophy_base, "mcp", "custom")
+    if os.path.isdir(custom_dir):
+        for entry in sorted(os.listdir(custom_dir)):
+            entry_path = os.path.join(custom_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            server_py = os.path.join(entry_path, "server.py")
+            if not os.path.isfile(server_py):
+                continue
+            meta_json = os.path.join(entry_path, "meta.json")
+            description = f"Custom MCP server: {entry}"
+            if os.path.isfile(meta_json):
+                try:
+                    with open(meta_json, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    description = meta.get("description", description)
+                except Exception:
+                    pass
+            servers[entry] = {
+                "name": entry,
+                "description": description,
+                "bundled": False,
+                "path": server_py,
+            }
+
+    # 3. Also check switchboard directory for any MCP entries not yet covered
+    switchboard_dir_path = os.path.join(atrophy_base, ".switchboard_directory.json")
+    if os.path.isfile(switchboard_dir_path):
+        try:
+            with open(switchboard_dir_path, "r", encoding="utf-8") as f:
+                directory = json.load(f)
+            for entry in directory:
+                if entry.get("type") != "mcp":
+                    continue
+                addr = entry.get("address", "")
+                if addr.startswith("mcp:"):
+                    name = addr[4:]
+                    if name not in servers:
+                        servers[name] = {
+                            "name": name,
+                            "description": entry.get("description", f"MCP server: {name}"),
+                            "bundled": False,
+                            "path": None,
+                        }
+        except Exception:
+            pass
+
+    return servers
+
+
+def _read_agent_manifest():
+    """Read the current agent's manifest."""
+    atrophy_base = os.path.expanduser("~/.atrophy")
+    agent = os.environ.get("AGENT", "xan")
+    manifest_path = os.path.join(atrophy_base, "agents", agent, "data", "agent.json")
+    if os.path.isfile(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                return json.load(f), manifest_path
+        except Exception:
+            pass
+    return {}, manifest_path
+
+
+def _write_agent_manifest(manifest, manifest_path):
+    """Write the agent manifest back to disk."""
+    tmp_path = manifest_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+    os.replace(tmp_path, manifest_path)
+
+
+def handle_mcp_list_servers(args):
+    """List all available MCP servers and which are active for this agent."""
+    servers = _discover_mcp_servers()
+    manifest, _ = _read_agent_manifest()
+    mcp_config = manifest.get("mcp", {})
+    include_list = mcp_config.get("include", [])
+    exclude_list = mcp_config.get("exclude", [])
+
+    agent = os.environ.get("AGENT", "xan")
+
+    if not servers:
+        return "No MCP servers found."
+
+    parts = [f"### MCP servers (agent: {agent})\n"]
+    for name, info in sorted(servers.items()):
+        if name in include_list:
+            status = "ACTIVE"
+        elif name in exclude_list:
+            status = "EXCLUDED"
+        else:
+            status = "available"
+        source = "bundled" if info.get("bundled") else "custom"
+        parts.append(f"- **{name}** [{status}] ({source}) - {info['description']}")
+
+    parts.append(f"\nActive: {', '.join(include_list) if include_list else '(none explicitly set)'}")
+    parts.append(f"Excluded: {', '.join(exclude_list) if exclude_list else '(none)'}")
+    return "\n".join(parts)
+
+
+def handle_mcp_activate_server(args):
+    """Activate an MCP server for the current agent."""
+    server_name = args.get("server_name", "").strip()
+    if not server_name:
+        return "Error: server_name is required."
+
+    # Verify the server exists
+    servers = _discover_mcp_servers()
+    if server_name not in servers:
+        available = ", ".join(sorted(servers.keys()))
+        return f"Error: unknown server '{server_name}'. Available: {available}"
+
+    manifest, manifest_path = _read_agent_manifest()
+    if not manifest:
+        return "Error: could not read agent manifest."
+
+    mcp_config = manifest.setdefault("mcp", {})
+    include_list = mcp_config.setdefault("include", [])
+    exclude_list = mcp_config.setdefault("exclude", [])
+
+    # Add to include if not present
+    if server_name not in include_list:
+        include_list.append(server_name)
+
+    # Remove from exclude if present
+    if server_name in exclude_list:
+        exclude_list.remove(server_name)
+
+    _write_agent_manifest(manifest, manifest_path)
+    agent = os.environ.get("AGENT", "xan")
+    return (
+        f"Activated MCP server '{server_name}' for {agent}. "
+        f"Active servers: {', '.join(include_list)}. "
+        f"Changes take effect on next session."
+    )
+
+
+def handle_mcp_deactivate_server(args):
+    """Deactivate an MCP server for the current agent."""
+    server_name = args.get("server_name", "").strip()
+    if not server_name:
+        return "Error: server_name is required."
+
+    manifest, manifest_path = _read_agent_manifest()
+    if not manifest:
+        return "Error: could not read agent manifest."
+
+    mcp_config = manifest.setdefault("mcp", {})
+    include_list = mcp_config.setdefault("include", [])
+    exclude_list = mcp_config.setdefault("exclude", [])
+
+    # Remove from include if present
+    if server_name in include_list:
+        include_list.remove(server_name)
+
+    # Add to exclude if not present
+    if server_name not in exclude_list:
+        exclude_list.append(server_name)
+
+    _write_agent_manifest(manifest, manifest_path)
+    agent = os.environ.get("AGENT", "xan")
+    return (
+        f"Deactivated MCP server '{server_name}' for {agent}. "
+        f"Active servers: {', '.join(include_list) if include_list else '(none)'}. "
+        f"Changes take effect on next session."
+    )
+
+
+def handle_mcp_scaffold_server(args):
+    """Create a new custom MCP server from a specification."""
+    name = args.get("name", "").strip()
+    description = args.get("description", "").strip()
+    tools = args.get("tools", [])
+
+    if not name:
+        return "Error: name is required."
+    if not description:
+        return "Error: description is required."
+    if not tools or not isinstance(tools, list):
+        return "Error: tools is required (array of tool definitions)."
+
+    # Validate name format
+    import re
+    if not re.match(r"^[a-z][a-z0-9_]*$", name):
+        return "Error: name must be lowercase, start with a letter, and use only letters, digits, underscores."
+
+    atrophy_base = os.path.expanduser("~/.atrophy")
+    server_dir = os.path.join(atrophy_base, "mcp", "custom", name)
+    server_py = os.path.join(server_dir, "server.py")
+    meta_json = os.path.join(server_dir, "meta.json")
+
+    if os.path.isdir(server_dir):
+        return f"Error: server '{name}' already exists at {server_dir}. Remove it first or choose a different name."
+
+    os.makedirs(server_dir, exist_ok=True)
+
+    # Build tool handler stubs
+    handler_funcs = []
+    tool_defs = []
+    dispatch_cases = []
+
+    for tool in tools:
+        tname = tool.get("name", "").strip()
+        tdesc = tool.get("description", "")
+        tparams = tool.get("parameters", {})
+
+        if not tname:
+            continue
+
+        # Build inputSchema from parameters
+        properties = {}
+        for pname, pdef in tparams.items():
+            properties[pname] = {
+                "type": pdef.get("type", "string"),
+                "description": pdef.get("description", ""),
+            }
+
+        input_schema = {
+            "type": "object",
+            "properties": properties,
+        }
+
+        handler_funcs.append(
+            f'def handle_{tname}(args):\n'
+            f'    """{tdesc}"""\n'
+            f'    # TODO: implement {tname}\n'
+            f'    return f"{tname} not yet implemented - received args: {{args}}"'
+        )
+
+        tool_defs.append({
+            "name": tname,
+            "description": tdesc,
+            "inputSchema": input_schema,
+        })
+
+        dispatch_cases.append(
+            f'        elif tool_name == "{tname}":\n'
+            f'            result = handle_{tname}(arguments)'
+        )
+
+    handlers_code = "\n\n\n".join(handler_funcs)
+    tools_json = json.dumps(tool_defs, indent=4)
+    dispatch_code = "\n".join(dispatch_cases)
+
+    server_content = f'''#!/usr/bin/env python3
+"""{description}
+
+Auto-generated MCP server. Protocol: JSON-RPC 2.0 over stdio.
+"""
+from __future__ import annotations
+
+import json
+import sys
+
+
+# -- Tool handlers --
+
+{handlers_code}
+
+
+# -- Tool definitions --
+
+TOOLS = {tools_json}
+
+
+# -- JSON-RPC 2.0 server --
+
+def handle_request(request):
+    method = request.get("method", "")
+    params = request.get("params", {{}})
+
+    if method == "initialize":
+        return {{
+            "protocolVersion": "2024-11-05",
+            "capabilities": {{"tools": {{}}}},
+            "serverInfo": {{"name": "{name}", "version": "1.0.0"}},
+        }}
+
+    if method == "notifications/initialized":
+        return None
+
+    if method == "tools/list":
+        return {{"tools": TOOLS}}
+
+    if method == "tools/call":
+        tool_name = params.get("name", "")
+        arguments = params.get("arguments", {{}})
+
+        if False:
+            pass
+{dispatch_code}
+        else:
+            return {{
+                "content": [{{"type": "text", "text": f"Unknown tool: {{tool_name}}"}}],
+                "isError": True,
+            }}
+        return {{"content": [{{"type": "text", "text": result}}]}}
+
+    return None
+
+
+def main():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            request = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if "id" not in request:
+            handle_request(request)
+            continue
+        result = handle_request(request)
+        if result is None:
+            continue
+        response = {{"jsonrpc": "2.0", "id": request["id"], "result": result}}
+        sys.stdout.write(json.dumps(response) + "\\n")
+        sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+    with open(server_py, "w", encoding="utf-8") as f:
+        f.write(server_content)
+    os.chmod(server_py, 0o755)
+
+    # Write meta.json
+    meta = {
+        "name": name,
+        "description": description,
+        "capabilities": [t.get("name", "") for t in tools if t.get("name")],
+    }
+    with open(meta_json, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+        f.write("\n")
+
+    return (
+        f"Created MCP server '{name}' at {server_dir}/\n"
+        f"Files:\n"
+        f"  - {server_py} ({len(tools)} tool stubs)\n"
+        f"  - {meta_json}\n\n"
+        f"To activate it, use: mcp action=activate_server server_name={name}\n"
+        f"Then restart your session for changes to take effect."
+    )
+
+
 # ── Action routing for consolidated tools ──
 
 _ACTION_ROUTES = {
@@ -2775,6 +3231,12 @@ _ACTION_ROUTES = {
         "edit_tool": handle_edit_tool,
         "delete_tool": handle_delete_tool,
     },
+    "mcp": {
+        "list_servers": handle_mcp_list_servers,
+        "activate_server": handle_mcp_activate_server,
+        "deactivate_server": handle_mcp_deactivate_server,
+        "scaffold_server": handle_mcp_scaffold_server,
+    },
 }
 
 
@@ -2804,6 +3266,7 @@ HANDLERS = {
     "switchboard": lambda args: _route_grouped("switchboard", args),
     "display": lambda args: _route_grouped("display", args),
     "tools": lambda args: _route_grouped("tools", args),
+    "mcp": lambda args: _route_grouped("mcp", args),
     # Standalone tools
     "review_audit": handle_review_audit,
     "self_status": handle_self_status,

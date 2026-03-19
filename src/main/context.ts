@@ -120,6 +120,17 @@ export function loadSystemPrompt(): string {
     'Use read_note to access them when a situation calls for it. ' +
     'They cover: tools usage, introspection protocols, gifts, and morning briefings.';
 
+  // System reference - agents know about the switchboard and their wiring
+  base += '\n\n---\n\n## System Reference\n\n' +
+    'You are running inside Atrophy, a companion agent system. ' +
+    'All messages flow through a central switchboard as Envelopes with from/to addresses. ' +
+    'Your channels, MCP servers, and scheduled jobs are defined in your agent manifest at ' +
+    '~/.atrophy/agents/' + config.AGENT_NAME + '/data/agent.json.\n\n' +
+    'Available switchboard tools: send_message, broadcast, query_status. ' +
+    'Available MCP tools: mcp_list_servers, mcp_activate_server, mcp_deactivate_server, mcp_scaffold_server.\n\n' +
+    'For the full system reference, read the file at: ' +
+    path.join(BUNDLE_ROOT, 'docs', 'agent-reference.md');
+
   // Append agent roster for deferral awareness
   const roster = getAgentRoster(config.AGENT_NAME);
   if (roster.length > 0) {

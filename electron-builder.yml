@@ -43,6 +43,8 @@ mac:
       to: db
       filter:
         - "**/*.sql"
+    - from: docs/agent-reference.md
+      to: docs/agent-reference.md
     - from: resources/icons/
       to: icons
       filter:
