@@ -884,7 +884,7 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     message?: {
       text?: string;
       caption?: string;
-      from?: { id: number };
+      from?: { id: number; is_bot?: boolean };
       chat?: { id: number };
       photo?: { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }[];
       voice?: { file_id: string; duration: number; mime_type?: string; file_size?: number };
@@ -900,6 +900,9 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
 
     const msg = update.message;
     if (!msg) continue;
+
+    // Ignore messages from other bots (prevents cross-talk with CCBot etc.)
+    if (msg.from?.is_bot) continue;
 
     // A message has content if it has text, caption, or any media attachment
     const hasText = !!(msg.text?.trim());
