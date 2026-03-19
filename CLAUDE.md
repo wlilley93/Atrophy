@@ -24,7 +24,7 @@ The original Python app lives at `/Users/williamlilley/Projects/Claude Code Proj
 ### What stays as Python subprocesses
 
 - **MCP servers** (`mcp/memory_server.py`, `mcp/google_server.py`) -- spawned by Claude CLI over stdio. Already copied to this repo.
-- **Scripts** (`scripts/agents/companion/run_task.py`, `evolve.py`, `converse.py`, `check_reminders.py`) -- standalone launchd jobs.
+- **Scripts** (`scripts/agents/companion/run_task.py`, `evolve.py`, `converse.py`, `check_reminders.py`) -- still Python, but now spawned by the in-process cron scheduler (`channels/cron/`) instead of launchd. Output routed through switchboard.
 - **Google auth** (`scripts/google_auth.py`) -- OAuth flow with bundled credentials.
 - **Claude CLI** (`claude` binary) -- remains the inference engine, spawned as subprocess.
 
@@ -65,8 +65,12 @@ src/
         api.ts               # Bot API helpers (send, edit, download, bot commands)
         daemon.ts            # Per-agent polling, dispatch, streaming display
         index.ts             # Barrel re-exports
+      cron/                  # In-process cron scheduler (replaces launchd)
+        scheduler.ts         # Timer management, cron expression parsing
+        runner.ts            # Job execution, output capture, envelope creation
+        index.ts             # Barrel re-exports
+    mcp-registry.ts          # MCP server registry, per-agent config builder
     server.ts                # HTTP API server (port of server.py)
-    cron.ts                  # launchd job management (port of scripts/cron.py)
     install.ts               # Login item installer
 
   preload/
@@ -102,9 +106,8 @@ mcp/                         # PYTHON -- bundled, not rewritten
   memory_server.py
   google_server.py
 
-scripts/                     # PYTHON -- standalone launchd jobs
+scripts/                     # PYTHON -- standalone scripts
   google_auth.py
-  cron.py
   agents/companion/
 
 db/
@@ -297,11 +300,11 @@ Express.js in main process. Same endpoints: `/health`, `/chat`, `/chat/stream` (
 | `display/canvas.py` | `Canvas.svelte` | PIP webview overlay |
 | `display/artefact.py` | `Artefact.svelte` | Full-bleed artefact + gallery |
 
-### 3.13 `scripts/cron.py` -> `src/main/cron.ts`
+### 3.13 `scripts/cron.py` -> `src/main/channels/cron/`
 
 Source: `source_repo/scripts/cron.py`
 
-launchd plist generation. Use `plist` npm package for XML. Write to `~/Library/LaunchAgents/`, run `launchctl load/unload`.
+In-process cron scheduler via the switchboard. Jobs are defined in each agent's manifest (`agent.json`) and timed with setTimeout/setInterval. Output is captured and routed through the switchboard as Envelopes. The app is expected to always run in the tray.
 
 ### 3.14 Login Item
 
@@ -442,7 +445,7 @@ Auto-update via `electron-updater` + GitHub Releases.
 
 ### Phase 7: Setup & Peripherals
 26. `SetupWizard.svelte`
-27. `telegram.ts`, `server.ts`, `cron.ts`
+27. `telegram.ts`, `server.ts`, `channels/cron/`
 28. `embeddings.ts`, `vector-search.ts`
 29. Verify: first-launch works end-to-end
 
@@ -475,11 +478,12 @@ Auto-update via `electron-updater` + GitHub Releases.
 ## 9. Key Decisions
 
 1. **MCP servers stay as Python.** Spawned by Claude CLI, not by us.
-2. **Scripts stay as Python.** Standalone launchd jobs.
+2. **Scripts stay as Python.** Spawned by the in-process cron scheduler.
 3. **Svelte 5 with runes, no component library.** UI is bespoke.
 4. **Audio via Web Audio API.** Recording in renderer, whisper in main.
 5. **Embeddings via Transformers.js.** WASM, no Python dependency.
 6. **One inference process.** Claude CLI runs in main process only.
+7. **Cron is in-process.** Jobs run via `channels/cron/` inside the Electron app, not launchd. The app lives in the tray and is always running.
 
 ---
 
@@ -519,20 +523,21 @@ When porting any module, **read the Python source first**:
 
 ---
 
-## 12. Switchboard Architecture (v1.3.2+)
+## 12. Switchboard Architecture
 
-All messages flow through a central switchboard (`src/main/channels/switchboard.ts`). Every message is wrapped in an Envelope with `from`, `to`, `text`, `type`, `priority`, and `replyTo` fields.
+The switchboard is the nervous system. Every message, job output, agent lifecycle event, and MCP operation flows through it as an Envelope. See `docs/specs/architecture/CLAUDE-switchboard-v2.md` for the full spec.
 
-### Addresses
-- `telegram:<agent>` - Telegram bot for an agent
-- `desktop:<agent>` - Desktop GUI for an agent
-- `agent:<agent>` - Agent's inference engine
-- `system` - System-level broadcasts
+### Address space
+- `agent:<name>` - Agent inference engines (xan, companion, mirror, etc.)
+- `telegram:<name>` - Telegram bot per agent
+- `desktop:<name>` - Desktop GUI
+- `cron:<name>` - Cron scheduler per agent (inbound job results)
+- `cron:<name>.<job>` - Specific job result source
+- `mcp:<server>` - MCP server service
+- `system` - System broadcasts
 - `agent:*` - Broadcast to all agents
 
 ### Directory structure
-
-All channel and routing code lives under `src/main/channels/`:
 
 ```
 src/main/channels/
@@ -541,18 +546,91 @@ src/main/channels/
   telegram/             # Telegram channel adapter
     api.ts              # Bot API helpers (send, edit, download, bot commands)
     daemon.ts           # Per-agent polling, dispatch, streaming display
-    index.ts            # Barrel re-exports for clean imports
+    index.ts            # Barrel re-exports
+  cron/                 # Cron channel adapter (in-process scheduler)
+    scheduler.ts        # Timer management, reads jobs from manifests
+    runner.ts           # Job execution, output capture, envelope creation
+    index.ts            # Barrel re-exports
 ```
 
-To add a new channel (e.g. Discord, Slack, webhook):
-1. Create `channels/<name>/` with `api.ts`, `daemon.ts`, `index.ts`
-2. In `daemon.ts`: create Envelopes from inbound messages, route via `switchboard.route()`
-3. Register outbound handler: `switchboard.register('<name>:<agent>', handler)`
-4. The agent-router handles filtering and response routing automatically
+### Agent manifest (agent.json) - extended
+
+The manifest is the single source of truth for agent wiring. Beyond identity/voice/display, it now includes:
+
+```json
+{
+  "channels": {
+    "telegram": { "bot_token_env": "XAN_TELEGRAM_BOT_TOKEN", "chat_id_env": "XAN_TELEGRAM_CHAT_ID" },
+    "desktop": { "enabled": true }
+  },
+  "mcp": {
+    "include": ["memory", "shell", "github", "google", "worldmonitor"],
+    "exclude": [],
+    "custom": {}
+  },
+  "jobs": {
+    "morning_brief": { "schedule": "0 7 * * *", "script": "scripts/agents/companion/morning_brief.py", "route_output_to": "self", "notify_via": "telegram" }
+  },
+  "router": {
+    "accept_from": ["*"], "reject_from": [], "max_queue_depth": 20,
+    "system_access": true, "can_address_agents": true
+  }
+}
+```
+
+### Cron scheduler
+
+Jobs run in-process via `channels/cron/`. The app is expected to always be running in the tray.
+
+1. On boot, `cronScheduler` reads each agent's manifest `jobs` section and sets up timers
+2. When a timer fires, `runner.ts` spawns the script, captures output
+3. Output is wrapped in an Envelope: `from: "cron:<agent>.<job>"`, `to: "agent:<agent>"`
+4. Agent processes the output through inference and decides what to do (forward to Telegram, store in memory, stay quiet)
+5. History of the last 100 runs kept in-memory
+
+### MCP registry (`src/main/mcp-registry.ts`)
+
+Per-agent MCP configuration, managed through a structured discovery and activation system.
+
+- **discover()** - scans `BUNDLE_ROOT/mcp/` and `USER_DATA/mcp/custom/` for servers
+- **buildConfigForAgent(name)** - generates per-agent `config.json` from manifest's `mcp.include`
+- **activateForAgent / deactivateForAgent** - runtime MCP server management (flags session restart)
+- **scaffoldServer(name, description, tools)** - generates new Python MCP servers from a template
+- **registerWithSwitchboard()** - registers `mcp:<name>` addresses in the service directory
+
+Agents can self-serve MCP via switchboard tools: list servers, activate/deactivate, scaffold new ones.
+
+### Agent creation flow (`create-agent.ts`)
+
+`createAgent(opts)` now does full wiring:
+1. Scaffold filesystem (dirs, prompts, soul, heartbeat, db)
+2. Write manifest with channels/mcp/jobs/router config
+3. Register `agent:<name>` with switchboard
+4. Schedule cron jobs via `cronScheduler.registerAgent()`
+5. Build per-agent MCP config via `mcpRegistry.buildConfigForAgent()`
+6. Announce new agent via system envelope
+
+`wireAgent(name, manifest)` is exported for re-wiring at boot time.
+
+### Boot sequence (`app.ts`)
+
+1. `initDb()` - database
+2. `mcpRegistry.discover()` + `registerWithSwitchboard()` - MCP server discovery
+3. `discoverAgents()` + `wireAgent()` per agent - switchboard registration, cron, MCP
+4. `cronScheduler.start()` - start all job timers
+5. `startDaemon()` - Telegram polling
+6. `switchboard.startQueuePolling()` - MCP queue file polling
+7. Periodic `switchboard.writeStateForMCP()` - state dump for Python MCP servers
 
 ### Agent-to-agent communication
-Agents can message each other via the `switchboard` MCP tool:
+Agents can message each other via switchboard MCP tools:
 - `send_message` - send to a specific address
 - `broadcast` - send to all agents (Xan only)
 - `query_status` - check recent switchboard activity
 - `route_response` - redirect response to a different channel
+
+### Adding a new channel
+1. Create `channels/<name>/` with `api.ts`, `daemon.ts`, `index.ts`
+2. In `daemon.ts`: create Envelopes from inbound messages, route via `switchboard.route()`
+3. Register outbound handler: `switchboard.register('<name>:<agent>', handler)`
+4. The agent-router handles filtering and response routing automatically

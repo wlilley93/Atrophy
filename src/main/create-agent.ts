@@ -7,6 +7,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import Database from 'better-sqlite3';
 import { BUNDLE_ROOT, USER_DATA } from './config';
+import { switchboard } from './channels/switchboard';
+import { cronScheduler } from './channels/cron';
+import { mcpRegistry } from './mcp-registry';
+import { defaultConfigForAgent, type AgentRouterConfig } from './channels/agent-router';
+import { createLogger } from './logger';
+
+const log = createLogger('create-agent');
 
 // ---------------------------------------------------------------------------
 // Types
@@ -84,6 +91,37 @@ export interface CreateAgentOptions {
   // Telegram credentials (stored in agent.json env key references)
   telegramBotToken?: string;
   telegramChatId?: string;
+
+  // Channels - which communication channels to wire up
+  channels?: {
+    telegram?: { bot_token_env?: string; chat_id_env?: string };
+    desktop?: { enabled?: boolean };
+  };
+
+  // MCP - which servers to activate
+  mcp?: {
+    include?: string[];
+    exclude?: string[];
+    custom?: Record<string, { command: string; args: string[]; env?: Record<string, string>; description?: string }>;
+  };
+
+  // Jobs - scheduled tasks (cron expressions)
+  jobs?: Record<string, {
+    cron?: string;
+    script: string;
+    description?: string;
+    args?: string[];
+    type?: 'calendar' | 'interval';
+    interval_seconds?: number;
+    route_output_to?: string;
+    notify_via?: string;
+  }>;
+
+  // Router - message filtering config
+  router?: AgentRouterConfig;
+
+  // Whether to register with the switchboard on creation (default: true)
+  wireOnCreate?: boolean;
 }
 
 export interface AgentManifest {
@@ -119,6 +157,34 @@ export interface AgentManifest {
     resolution: number;
   };
   disabled_tools?: string[];
+
+  // Switchboard v2 - wiring config
+  channels?: {
+    telegram?: { bot_token_env: string; chat_id_env: string };
+    desktop?: { enabled: boolean };
+  };
+  mcp?: {
+    include: string[];
+    exclude: string[];
+    custom: Record<string, { command: string; args: string[]; env?: Record<string, string>; description?: string }>;
+  };
+  jobs?: Record<string, {
+    cron?: string;
+    script: string;
+    description?: string;
+    args?: string[];
+    type?: 'calendar' | 'interval';
+    interval_seconds?: number;
+    route_output_to?: string;
+    notify_via?: string;
+  }>;
+  router?: {
+    accept_from: string[];
+    reject_from: string[];
+    max_queue_depth: number;
+    system_access: boolean;
+    can_address_agents: boolean;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +271,39 @@ function buildManifest(opts: CreateAgentOptions, name: string): AgentManifest {
   if (disabled && disabled.length > 0) {
     manifest.disabled_tools = disabled;
   }
+
+  // Channels
+  manifest.channels = {
+    desktop: { enabled: true },
+  };
+  if (opts.telegramBotToken || opts.channels?.telegram) {
+    manifest.channels.telegram = {
+      bot_token_env: opts.channels?.telegram?.bot_token_env || `${name.toUpperCase()}_TELEGRAM_BOT_TOKEN`,
+      chat_id_env: opts.channels?.telegram?.chat_id_env || `${name.toUpperCase()}_TELEGRAM_CHAT_ID`,
+    };
+  }
+
+  // MCP - default to core servers, allow customization
+  manifest.mcp = {
+    include: opts.mcp?.include || ['memory', 'shell', 'github'],
+    exclude: opts.mcp?.exclude || [],
+    custom: opts.mcp?.custom || {},
+  };
+
+  // Jobs - from opts or default empty
+  if (opts.jobs && Object.keys(opts.jobs).length > 0) {
+    manifest.jobs = opts.jobs;
+  }
+
+  // Router - per-agent message filtering
+  const isElevated = name === 'xan';
+  manifest.router = {
+    accept_from: opts.router?.acceptFrom || ['*'],
+    reject_from: opts.router?.rejectFrom || [],
+    max_queue_depth: opts.router?.maxQueueDepth || (isElevated ? 20 : 10),
+    system_access: opts.router?.systemAccess || isElevated,
+    can_address_agents: opts.router?.canAddressAgents !== false,
+  };
 
   return manifest;
 }
@@ -539,5 +638,88 @@ export function createAgent(opts: CreateAgentOptions): AgentManifest {
     initDatabase(dbPath);
   }
 
+  // -- Switchboard wiring ---------------------------------------------------
+  // Wire up the agent with the switchboard, channels, cron, and MCP.
+  // Can be skipped during setup wizard (wire later once config is complete).
+  if (opts.wireOnCreate !== false) {
+    wireAgent(name, manifest);
+  }
+
   return manifest;
+}
+
+/**
+ * Wire an agent into the switchboard ecosystem.
+ * Registers the agent's router, channels, scheduled jobs, and MCP config.
+ * Safe to call multiple times - handlers are overwritten, not duplicated.
+ */
+export function wireAgent(name: string, manifest: AgentManifest): void {
+  log.info(`Wiring agent "${name}" into switchboard`);
+
+  // 1. Register agent with switchboard via agent-router
+  const routerConfig = manifest.router
+    ? {
+        acceptFrom: manifest.router.accept_from,
+        rejectFrom: manifest.router.reject_from,
+        maxQueueDepth: manifest.router.max_queue_depth,
+        systemAccess: manifest.router.system_access,
+        canAddressAgents: manifest.router.can_address_agents,
+      }
+    : defaultConfigForAgent(name);
+
+  // The agent-router is created and registered by the inference layer
+  // when the agent starts processing messages. Here we register a
+  // placeholder that logs undelivered messages until inference is ready.
+  if (!switchboard.hasHandler(`agent:${name}`)) {
+    switchboard.register(`agent:${name}`, async (envelope) => {
+      log.debug(`agent:${name} received envelope (inference not active): ${envelope.text.slice(0, 80)}`);
+    }, {
+      type: 'agent',
+      description: manifest.description || name,
+      capabilities: deriveCapabilities(manifest),
+    });
+  }
+
+  // 2. Schedule cron jobs (in-process, no launchd)
+  if (manifest.jobs && Object.keys(manifest.jobs).length > 0) {
+    try {
+      cronScheduler.registerAgent(name, manifest.jobs);
+      log.info(`Registered ${Object.keys(manifest.jobs).length} job(s) for ${name}`);
+    } catch (e) {
+      log.warn(`Failed to register cron jobs for ${name}: ${e}`);
+    }
+  }
+
+  // 3. Build per-agent MCP config
+  if (manifest.mcp) {
+    try {
+      mcpRegistry.buildConfigForAgent(name);
+      log.info(`Built MCP config for ${name}: [${manifest.mcp.include.join(', ')}]`);
+    } catch (e) {
+      log.warn(`Failed to build MCP config for ${name}: ${e}`);
+    }
+  }
+
+  // 4. Announce new agent to the system
+  switchboard.route(switchboard.createEnvelope(
+    'system',
+    'agent:*',
+    `Agent "${manifest.display_name || name}" is online.`,
+    { type: 'system', priority: 'system' },
+  )).catch((e) => log.debug(`Announce failed (expected if no other agents): ${e}`));
+}
+
+/**
+ * Derive capabilities list from manifest for the service directory.
+ */
+function deriveCapabilities(manifest: AgentManifest): string[] {
+  const caps: string[] = ['conversation', 'memory'];
+  if (manifest.channels?.telegram) caps.push('telegram');
+  if (manifest.channels?.desktop?.enabled) caps.push('desktop');
+  if (manifest.jobs && Object.keys(manifest.jobs).length > 0) caps.push('scheduled-jobs');
+  if (manifest.mcp?.include?.length) {
+    for (const s of manifest.mcp.include) caps.push(`mcp:${s}`);
+  }
+  if (manifest.router?.system_access) caps.push('system-access');
+  return caps;
 }

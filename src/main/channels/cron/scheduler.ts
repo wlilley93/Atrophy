@@ -1,0 +1,460 @@
+/**
+ * In-process job scheduler - replaces launchd for job timing.
+ *
+ * The app runs persistently in the tray, so we schedule jobs with
+ * native setTimeout/setInterval instead of generating launchd plists.
+ * Jobs are defined per-agent in jobs.json files. Supports calendar-based
+ * (cron expression) and interval-based scheduling.
+ *
+ * Singleton - import { cronScheduler } from './scheduler'.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { BUNDLE_ROOT } from '../../config';
+import { switchboard } from '../switchboard';
+import { runJob } from './runner';
+import { createLogger } from '../../logger';
+
+const log = createLogger('cron-scheduler');
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/**
+ * Job definition - matches the format in jobs.json.
+ */
+export interface JobDefinition {
+  cron?: string;                // cron expression: "min hour dom month dow"
+  script: string;               // relative path to script
+  description?: string;
+  args?: string[];
+  type?: 'calendar' | 'interval';
+  interval_seconds?: number;
+  route_output_to?: string;     // 'self' | specific address | undefined
+  notify_via?: string;          // channel to notify: 'telegram' | 'desktop' | undefined
+}
+
+/**
+ * Runtime state for a scheduled job.
+ */
+export interface ScheduledJob {
+  name: string;
+  agent: string;
+  definition: JobDefinition;
+  timer: ReturnType<typeof setTimeout> | ReturnType<typeof setInterval> | null;
+  nextRun: Date | null;
+  lastRun: Date | null;
+  running: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Cron expression parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a cron field value against the current date field.
+ * Returns true if the field matches. Supports '*' (any) and
+ * specific numeric values.
+ */
+function fieldMatches(field: string, value: number): boolean {
+  if (field === '*') return true;
+  return parseInt(field, 10) === value;
+}
+
+/**
+ * Calculate the next run time for a 5-field cron expression.
+ *
+ * Format: "minute hour day-of-month month day-of-week"
+ * Supports '*' (any) and specific numbers. Does not support
+ * ranges, lists, or step values - the existing jobs.json uses
+ * simple expressions only.
+ *
+ * Scans forward minute-by-minute from the start time, capped at
+ * 400 days to prevent infinite loops.
+ */
+export function getNextRun(cronStr: string, after?: Date): Date {
+  const parts = cronStr.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    throw new Error(`Invalid cron expression: '${cronStr}' - need 5 fields: min hour dom month dow`);
+  }
+
+  const [cronMin, cronHour, cronDom, cronMonth, cronDow] = parts;
+
+  // Start from the next minute after the reference time
+  const start = after ? new Date(after.getTime()) : new Date();
+  start.setSeconds(0, 0);
+  start.setMinutes(start.getMinutes() + 1);
+
+  // Scan forward up to ~400 days (576,000 minutes)
+  const MAX_ITERATIONS = 576_000;
+
+  const candidate = new Date(start.getTime());
+  for (let i = 0; i < MAX_ITERATIONS; i++) {
+    const min = candidate.getMinutes();
+    const hour = candidate.getHours();
+    const dom = candidate.getDate();
+    // JavaScript months are 0-indexed, cron months are 1-indexed
+    const month = candidate.getMonth() + 1;
+    const dow = candidate.getDay(); // 0 = Sunday, matches cron convention
+
+    if (
+      fieldMatches(cronMin, min) &&
+      fieldMatches(cronHour, hour) &&
+      fieldMatches(cronDom, dom) &&
+      fieldMatches(cronMonth, month) &&
+      fieldMatches(cronDow, dow)
+    ) {
+      return candidate;
+    }
+
+    candidate.setMinutes(candidate.getMinutes() + 1);
+  }
+
+  // Should not reach here for valid cron expressions
+  throw new Error(`Could not find next run for cron: '${cronStr}' within 400 days`);
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler
+// ---------------------------------------------------------------------------
+
+class CronScheduler {
+  private jobs: Map<string, ScheduledJob> = new Map();
+  private started = false;
+
+  /**
+   * Register all jobs for an agent. Reads the jobs from the provided
+   * definitions and sets up timers (if the scheduler is already started).
+   */
+  registerAgent(agentName: string, jobs: Record<string, JobDefinition>): void {
+    for (const [jobName, definition] of Object.entries(jobs)) {
+      const key = `${agentName}.${jobName}`;
+      const existing = this.jobs.get(key);
+      if (existing?.timer) {
+        // Clear existing timer before re-registering
+        if (existing.definition.type === 'interval') {
+          clearInterval(existing.timer as ReturnType<typeof setInterval>);
+        } else {
+          clearTimeout(existing.timer as ReturnType<typeof setTimeout>);
+        }
+      }
+
+      const job: ScheduledJob = {
+        name: jobName,
+        agent: agentName,
+        definition,
+        timer: null,
+        nextRun: null,
+        lastRun: null,
+        running: false,
+      };
+
+      this.jobs.set(key, job);
+      log.info(`Registered job: ${key} - ${definition.description || definition.script}`);
+
+      if (this.started) {
+        this.scheduleJob(job);
+      }
+    }
+
+    log.info(`Registered ${Object.keys(jobs).length} job(s) for agent '${agentName}'`);
+  }
+
+  /**
+   * Remove all jobs for an agent and clear their timers.
+   */
+  unregisterAgent(agentName: string): void {
+    const keysToRemove: string[] = [];
+
+    for (const [key, job] of this.jobs) {
+      if (job.agent === agentName) {
+        this.clearTimer(job);
+        keysToRemove.push(key);
+      }
+    }
+
+    for (const key of keysToRemove) {
+      this.jobs.delete(key);
+    }
+
+    // Unregister switchboard address
+    switchboard.unregister(`cron:${agentName}`);
+
+    log.info(`Unregistered ${keysToRemove.length} job(s) for agent '${agentName}'`);
+  }
+
+  /**
+   * Start all scheduled timers.
+   */
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+
+    for (const job of this.jobs.values()) {
+      this.scheduleJob(job);
+    }
+
+    log.info(`Started scheduler with ${this.jobs.size} job(s)`);
+  }
+
+  /**
+   * Stop all timers.
+   */
+  stop(): void {
+    this.started = false;
+
+    for (const job of this.jobs.values()) {
+      this.clearTimer(job);
+    }
+
+    log.info('Stopped scheduler');
+  }
+
+  /**
+   * Return all scheduled jobs with their next/last run times.
+   */
+  getSchedule(): ScheduledJob[] {
+    return Array.from(this.jobs.values());
+  }
+
+  /**
+   * Update the cron expression for an existing job, reschedule its timer,
+   * and persist the change to jobs.json on disk.
+   */
+  editJobSchedule(agentName: string, jobName: string, cronStr: string): void {
+    const key = `${agentName}.${jobName}`;
+    const job = this.jobs.get(key);
+
+    if (!job) {
+      log.warn(`editJobSchedule: job '${key}' not found`);
+      return;
+    }
+
+    // Validate the new cron expression by parsing it
+    getNextRun(cronStr);
+
+    // Update in-memory definition
+    job.definition.cron = cronStr;
+
+    // Clear existing timer and reschedule
+    this.clearTimer(job);
+    if (this.started) {
+      this.scheduleJob(job);
+    }
+
+    // Persist to jobs.json on disk
+    const jobsPath = path.join(BUNDLE_ROOT, 'scripts', 'agents', agentName, 'jobs.json');
+    try {
+      let allJobs: Record<string, Record<string, unknown>> = {};
+      if (fs.existsSync(jobsPath)) {
+        allJobs = JSON.parse(fs.readFileSync(jobsPath, 'utf-8'));
+      }
+      if (allJobs[jobName]) {
+        allJobs[jobName].cron = cronStr;
+        fs.writeFileSync(jobsPath, JSON.stringify(allJobs, null, 2));
+        log.info(`editJobSchedule: updated '${key}' cron to '${cronStr}'`);
+      } else {
+        log.warn(`editJobSchedule: job '${jobName}' not found in jobs.json for agent '${agentName}'`);
+      }
+    } catch (err) {
+      log.error(`editJobSchedule: failed to update jobs.json for '${key}': ${err}`);
+    }
+  }
+
+  /**
+   * Immediately trigger a job by name.
+   */
+  async runNow(agentName: string, jobName: string): Promise<void> {
+    const key = `${agentName}.${jobName}`;
+    const job = this.jobs.get(key);
+
+    if (!job) {
+      log.warn(`Job '${key}' not found`);
+      return;
+    }
+
+    log.info(`Manual trigger: ${key}`);
+    await this.executeJob(job);
+  }
+
+  /**
+   * Register switchboard addresses for agents that have cron jobs.
+   * Each agent gets a `cron:<agent>` address so other parts of the
+   * system can send control messages to the scheduler.
+   */
+  registerWithSwitchboard(): void {
+    const agents = new Set<string>();
+    for (const job of this.jobs.values()) {
+      agents.add(job.agent);
+    }
+
+    for (const agentName of agents) {
+      const address = `cron:${agentName}`;
+      if (!switchboard.hasHandler(address)) {
+        switchboard.register(address, async (envelope) => {
+          log.info(`Received switchboard message: ${envelope.text}`);
+
+          // Support "run <jobName>" commands
+          const match = envelope.text.match(/^run\s+(\S+)$/i);
+          if (match) {
+            await this.runNow(agentName, match[1]);
+          }
+        }, {
+          type: 'system',
+          description: `Cron scheduler for ${agentName}`,
+          capabilities: ['run-job', 'schedule'],
+        });
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Private helpers
+  // -----------------------------------------------------------------------
+
+  /**
+   * Set up the timer for a single job based on its type.
+   */
+  private scheduleJob(job: ScheduledJob): void {
+    const key = `${job.agent}.${job.name}`;
+    const jobType = job.definition.type || 'calendar';
+
+    if (jobType === 'interval' && job.definition.interval_seconds) {
+      // Interval-based job - use setInterval
+      const intervalMs = job.definition.interval_seconds * 1000;
+      job.nextRun = new Date(Date.now() + intervalMs);
+
+      job.timer = setInterval(() => {
+        this.executeJob(job).catch((err) => {
+          log.error(`Interval job '${key}' failed: ${err}`);
+        });
+      }, intervalMs);
+
+      log.info(`Scheduled interval job '${key}': every ${job.definition.interval_seconds}s`);
+    } else if (job.definition.cron) {
+      // Calendar-based job - calculate next run, use setTimeout, then reschedule
+      this.scheduleCalendarJob(job);
+    } else {
+      log.warn(`Job '${key}' has no cron expression or interval - skipping`);
+    }
+  }
+
+  /**
+   * Schedule a calendar-based job. Calculates the next run time from
+   * the cron expression, sets a setTimeout, and reschedules after firing.
+   */
+  private scheduleCalendarJob(job: ScheduledJob): void {
+    const key = `${job.agent}.${job.name}`;
+
+    try {
+      const nextRun = getNextRun(job.definition.cron!);
+      const delayMs = nextRun.getTime() - Date.now();
+
+      job.nextRun = nextRun;
+
+      // Cap delay at 24 hours - for jobs further out, we re-check daily
+      // (setTimeout has a max safe delay of ~24.8 days but shorter
+      //  intervals let us handle clock drift and DST changes)
+      const MAX_DELAY_MS = 24 * 60 * 60 * 1000;
+      const actualDelay = Math.min(delayMs, MAX_DELAY_MS);
+
+      job.timer = setTimeout(() => {
+        if (delayMs <= MAX_DELAY_MS) {
+          // Time to fire
+          this.executeJob(job)
+            .catch((err) => {
+              log.error(`Calendar job '${key}' failed: ${err}`);
+            })
+            .finally(() => {
+              // Reschedule for next occurrence
+              if (this.started) {
+                this.scheduleCalendarJob(job);
+              }
+            });
+        } else {
+          // Not yet time - re-check with updated delay
+          if (this.started) {
+            this.scheduleCalendarJob(job);
+          }
+        }
+      }, actualDelay);
+
+      log.info(`Scheduled calendar job '${key}': next run ${nextRun.toISOString()} (in ${Math.round(delayMs / 1000)}s)`);
+    } catch (err) {
+      log.error(`Failed to schedule calendar job '${key}': ${err}`);
+    }
+  }
+
+  /**
+   * Execute a job - calls the runner and updates state.
+   */
+  private async executeJob(job: ScheduledJob): Promise<void> {
+    const key = `${job.agent}.${job.name}`;
+
+    if (job.running) {
+      log.warn(`Job '${key}' is already running - skipping`);
+      return;
+    }
+
+    job.running = true;
+    log.info(`Executing job: ${key}`);
+
+    try {
+      await runJob(job.agent, job.name, job.definition);
+      job.lastRun = new Date();
+    } catch (err) {
+      log.error(`Job '${key}' execution error: ${err}`);
+      job.lastRun = new Date();
+    } finally {
+      job.running = false;
+    }
+  }
+
+  /**
+   * Clear the timer for a job.
+   */
+  private clearTimer(job: ScheduledJob): void {
+    if (!job.timer) return;
+
+    const jobType = job.definition.type || 'calendar';
+    if (jobType === 'interval') {
+      clearInterval(job.timer as ReturnType<typeof setInterval>);
+    } else {
+      clearTimeout(job.timer as ReturnType<typeof setTimeout>);
+    }
+    job.timer = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Job file loading helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Load jobs.json for a given agent from the bundle.
+ */
+export function loadJobsFile(agentName: string): Record<string, JobDefinition> {
+  const jobsPath = path.join(BUNDLE_ROOT, 'scripts', 'agents', agentName, 'jobs.json');
+  if (!fs.existsSync(jobsPath)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(jobsPath, 'utf-8'));
+  } catch (err) {
+    log.error(`Failed to load jobs.json for '${agentName}': ${err}`);
+    return {};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Singleton
+// ---------------------------------------------------------------------------
+
+export const cronScheduler = new CronScheduler();
+
+/**
+ * Edit the cron schedule for a job. Standalone wrapper around the singleton.
+ */
+export function editJobSchedule(agentName: string, jobName: string, cronStr: string): void {
+  cronScheduler.editJobSchedule(agentName, jobName, cronStr);
+}

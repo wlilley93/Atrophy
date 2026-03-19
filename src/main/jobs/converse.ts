@@ -17,7 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig, BUNDLE_ROOT, USER_DATA } from '../config';
 import { runInferenceOneshot } from '../inference';
-import { editJobSchedule } from '../cron';
+import { editJobSchedule } from '../channels/cron';
 import { createLogger } from '../logger';
 
 const log = createLogger('converse');
@@ -305,7 +305,7 @@ function reschedule(): void {
   const newCron = `${minute} ${hour} ${target.getDate()} ${target.getMonth() + 1} *`;
 
   try {
-    editJobSchedule('converse', newCron);
+    editJobSchedule(getConfig().AGENT_NAME, 'converse', newCron);
     const dateStr = target.toISOString().split('T')[0];
     log.info(`Rescheduled to ${dateStr} at ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
   } catch (e) {

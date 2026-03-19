@@ -30,7 +30,9 @@ import { getAllAgentsUsage, getAllActivity } from './usage';
 import { startServer, stopServer } from './server';
 import { startDaemon, stopDaemon, isDaemonRunning } from './channels/telegram';
 import { registerBotCommands, discoverChatId, sendMessage as sendTelegramMessage } from './channels/telegram';
-import { listJobs, toggleCron, runJobNow, getJobHistory, readJobLog } from './cron';
+import { cronScheduler } from './channels/cron';
+import { mcpRegistry } from './mcp-registry';
+import { wireAgent } from './create-agent';
 import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
 import { registerCallHandlers } from './call';
@@ -1413,26 +1415,38 @@ Output EXACTLY this format - a single fenced JSON block:
     await ensureAvatarAssets(c.AGENT_NAME, mainWindow);
   });
 
-  // ── Cron ──
+  // ── Cron (in-process scheduler via switchboard) ──
 
-  ipcMain.handle('cron:list', () => {
-    return listJobs();
+  ipcMain.handle('cron:schedule', () => {
+    return cronScheduler.getSchedule();
   });
 
-  ipcMain.handle('cron:toggle', (_event, enabled: boolean) => {
-    toggleCron(enabled);
+  ipcMain.handle('cron:runNow', (_event, agentName: string, jobName: string) => {
+    return cronScheduler.runNow(agentName, jobName);
   });
 
-  ipcMain.handle('cron:run', (_event, name: string) => {
-    return runJobNow(name);
+  ipcMain.handle('cron:schedulerStatus', () => {
+    return {
+      schedule: cronScheduler.getSchedule(),
+    };
   });
 
-  ipcMain.handle('cron:history', () => {
-    return getJobHistory();
+  // ── MCP Registry ──
+
+  ipcMain.handle('mcp:list', () => {
+    return mcpRegistry.getRegistry();
   });
 
-  ipcMain.handle('cron:readLog', (_event, name: string, lines?: number) => {
-    return readJobLog(name, lines);
+  ipcMain.handle('mcp:forAgent', (_event, agentName: string) => {
+    return mcpRegistry.getForAgent(agentName);
+  });
+
+  ipcMain.handle('mcp:activate', (_event, agentName: string, serverName: string) => {
+    mcpRegistry.activateForAgent(agentName, serverName);
+  });
+
+  ipcMain.handle('mcp:deactivate', (_event, agentName: string, serverName: string) => {
+    mcpRegistry.deactivateForAgent(agentName, serverName);
   });
 
   // ── Keep Awake ──
@@ -2000,9 +2014,44 @@ app.whenReady().then(() => {
   // Prefetch context data during startup idle time
   setImmediate(() => prefetchContext());
 
-  // Auto-start Telegram daemon. It discovers all agents with telegram
-  // credentials and launches a poller per agent - doesn't depend on
-  // which agent is currently active.
+  // ── Switchboard v2 boot sequence ──
+  // 1. Initialize MCP registry - discover available servers
+  try {
+    mcpRegistry.discover();
+    mcpRegistry.registerWithSwitchboard();
+    log.info(`MCP registry: ${mcpRegistry.getRegistry().length} server(s) discovered`);
+  } catch (e) {
+    log.warn(`MCP registry init failed (non-fatal): ${e}`);
+  }
+
+  // 2. Wire all discovered agents through switchboard
+  {
+    const agents = discoverAgents();
+    for (const agent of agents) {
+      try {
+        const manifestPath = path.join(USER_DATA, 'agents', agent.name, 'data', 'agent.json');
+        if (fs.existsSync(manifestPath)) {
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+          wireAgent(agent.name, manifest);
+        }
+      } catch (e) {
+        log.warn(`Failed to wire agent "${agent.name}": ${e}`);
+      }
+    }
+    log.info(`Switchboard: ${agents.length} agent(s) wired`);
+  }
+
+  // 3. Start cron scheduler (in-process, replaces launchd for job timing)
+  try {
+    cronScheduler.start();
+    const schedule = cronScheduler.getSchedule();
+    log.info(`Cron scheduler: ${schedule.length} job(s) scheduled`);
+  } catch (e) {
+    log.warn(`Cron scheduler start failed (non-fatal): ${e}`);
+  }
+
+  // 4. Auto-start Telegram daemon. It discovers all agents with telegram
+  // credentials and launches a poller per agent.
   {
     const started = startDaemon();
     if (started) {
@@ -2012,11 +2061,11 @@ app.whenReady().then(() => {
     }
   }
 
-  // Start switchboard MCP queue polling - processes envelopes from
+  // 5. Start switchboard MCP queue polling - processes envelopes from
   // agent MCP tools (Python subprocess writes, TypeScript reads).
   switchboard.startQueuePolling();
 
-  // Periodically write switchboard state for MCP servers to read.
+  // 6. Periodically write switchboard state for MCP servers to read.
   setInterval(() => switchboard.writeStateForMCP(), 5000);
 
   // Configure voice agent window reference

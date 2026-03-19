@@ -121,12 +121,10 @@ export interface AtrophyAPI {
   // Inline artifacts (emitted from agent response text)
   onArtifact: (cb: (artifact: { id: string; type: string; title: string; language: string; content: string }) => void) => () => void;
 
-  // Jobs / Cron
-  getJobs: () => Promise<unknown[]>;
-  toggleCron: (enabled: boolean) => Promise<void>;
-  runJob: (name: string) => Promise<unknown>;
-  getJobHistory: () => Promise<unknown[]>;
-  readJobLog: (name: string, lines?: number) => Promise<string>;
+  // Jobs / Cron (v2 - in-process scheduler)
+  getSchedule: () => Promise<unknown[]>;
+  runJobNow: (agentName: string, jobName: string) => Promise<void>;
+  getSchedulerStatus: () => Promise<{ schedule: unknown[] }>;
 
   // Keep Awake
   toggleKeepAwake: () => Promise<boolean>;
@@ -329,12 +327,10 @@ const api: AtrophyAPI = {
   // Inline artifacts
   onArtifact: createListener('inference:artifact') as AtrophyAPI['onArtifact'],
 
-  // Jobs / Cron
-  getJobs: () => ipcRenderer.invoke('cron:list'),
-  toggleCron: (enabled) => ipcRenderer.invoke('cron:toggle', enabled),
-  runJob: (name) => ipcRenderer.invoke('cron:run', name),
-  getJobHistory: () => ipcRenderer.invoke('cron:history'),
-  readJobLog: (name, lines) => ipcRenderer.invoke('cron:readLog', name, lines),
+  // Jobs / Cron (v2 - in-process scheduler)
+  getSchedule: () => ipcRenderer.invoke('cron:schedule'),
+  runJobNow: (agentName: string, jobName: string) => ipcRenderer.invoke('cron:runNow', agentName, jobName),
+  getSchedulerStatus: () => ipcRenderer.invoke('cron:schedulerStatus'),
 
   // Keep Awake
   toggleKeepAwake: () => ipcRenderer.invoke('keepAwake:toggle'),

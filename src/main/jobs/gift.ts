@@ -18,7 +18,7 @@ import { runInferenceOneshot } from '../inference';
 import { loadPrompt } from '../prompts';
 import { queueMessage } from '../queue';
 import { sendNotification } from '../notify';
-import { editJobSchedule } from '../cron';
+import { editJobSchedule } from '../channels/cron';
 import { createLogger } from '../logger';
 
 const log = createLogger('gift');
@@ -171,7 +171,7 @@ function reschedule(): void {
   const newCron = `${minute} ${hour} ${dom} ${month} *`;
 
   try {
-    editJobSchedule('gift', newCron);
+    editJobSchedule(getConfig().AGENT_NAME, 'gift', newCron);
     log.info(
       `Rescheduled to ${target.toISOString().split('T')[0]} ` +
       `at ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,

@@ -19,7 +19,7 @@ import * as path from 'path';
 import { getConfig, USER_DATA } from '../config';
 import { runInferenceOneshot } from '../inference';
 import { loadPrompt } from '../prompts';
-import { editJobSchedule } from '../cron';
+import { editJobSchedule } from '../channels/cron';
 import { createLogger } from '../logger';
 
 const log = createLogger('introspect');
@@ -551,7 +551,7 @@ function reschedule(): void {
   const newCron = `${minute} ${hour} ${target.getDate()} ${target.getMonth() + 1} *`;
 
   try {
-    editJobSchedule('introspect', newCron);
+    editJobSchedule(getConfig().AGENT_NAME, 'introspect', newCron);
     const pad = (n: number): string => String(n).padStart(2, '0');
     log.info(
       `Rescheduled to ${target.toISOString().slice(0, 10)} at ${pad(hour)}:${pad(minute)}`,

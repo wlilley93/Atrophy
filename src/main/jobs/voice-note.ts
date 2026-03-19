@@ -29,7 +29,7 @@ import { runInferenceOneshot } from '../inference';
 import { loadPrompt } from '../prompts';
 import { synthesise } from '../tts';
 import { sendVoiceNote, sendMessage } from '../channels/telegram';
-import { editJobSchedule } from '../cron';
+import { editJobSchedule } from '../channels/cron';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -114,7 +114,7 @@ function reschedule(): void {
   const cron = `${nextRun.getMinutes()} ${nextRun.getHours()} ${nextRun.getDate()} ${nextRun.getMonth() + 1} *`;
 
   try {
-    editJobSchedule('voice_note', cron);
+    editJobSchedule(getConfig().AGENT_NAME, 'voice_note', cron);
   } catch (e) {
     log.error(`Failed to reschedule: ${e}`);
     return;

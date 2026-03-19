@@ -11,13 +11,12 @@
  *   runInferenceOneshot()  - blocking, returns full response (for summaries)
  */
 
-import { spawn, execSync, ChildProcess } from 'child_process';
-import * as fs from 'fs';
+import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
-import { getConfig, USER_DATA } from './config';
+import { getConfig } from './config';
 import { classifyEffort, EffortLevel } from './thinking';
 import {
   timeOfDayContext,
@@ -187,96 +186,28 @@ function cleanEnv(): NodeJS.ProcessEnv {
 }
 
 // ---------------------------------------------------------------------------
-// MCP config generation
+// MCP config generation - delegates to McpRegistry for per-agent configs
 // ---------------------------------------------------------------------------
+
+import { mcpRegistry } from './mcp-registry';
 
 let _mcpConfigPath: string | null = null;
 
 export function resetMcpConfig(): void {
   _mcpConfigPath = null;
+  mcpRegistry.clearCache();
 }
 
+/**
+ * Get MCP config path for the current agent.
+ * Uses the McpRegistry to build a per-agent config based on the agent's manifest.
+ */
 function getMcpConfigPath(): string {
-  if (_mcpConfigPath) return _mcpConfigPath;
-
-  const config = getConfig();
-  // Write config to user data dir (not inside the app bundle, which may be read-only)
-  const configPath = path.join(USER_DATA, 'mcp', 'config.json');
-
-  const servers: Record<string, unknown> = {
-    memory: {
-      command: config.PYTHON_PATH,
-      args: [config.MCP_SERVER_SCRIPT],
-      env: {
-        COMPANION_DB: config.DB_PATH,
-        OBSIDIAN_VAULT: config.OBSIDIAN_VAULT,
-        OBSIDIAN_AGENT_DIR: config.OBSIDIAN_AGENT_DIR,
-        OBSIDIAN_AGENT_NOTES: config.OBSIDIAN_AGENT_NOTES,
-        TELEGRAM_BOT_TOKEN: config.TELEGRAM_BOT_TOKEN || '',
-        TELEGRAM_CHAT_ID: config.TELEGRAM_CHAT_ID || '',
-        AGENT: config.AGENT_NAME,
-      },
-    },
-    puppeteer: {
-      command: config.PYTHON_PATH,
-      args: [path.join(config.MCP_DIR, 'puppeteer_proxy.py')],
-      env: {
-        PUPPETEER_LAUNCH_OPTIONS: JSON.stringify({ headless: true }),
-      },
-    },
-    shell: {
-      command: config.PYTHON_PATH,
-      args: [path.join(config.MCP_DIR, 'shell_server.py')],
-      env: {
-        SHELL_WORKING_DIR: os.homedir(),
-        SHELL_TIMEOUT: '30',
-        SHELL_MAX_OUTPUT: '32000',
-      },
-    },
-    github: {
-      command: config.PYTHON_PATH,
-      args: [path.join(config.MCP_DIR, 'github_server.py')],
-    },
-  };
-
-  // Google MCP server - only if configured
-  if (config.GOOGLE_CONFIGURED) {
-    servers.google = {
-      command: config.PYTHON_PATH,
-      args: [config.MCP_GOOGLE_SCRIPT],
-    };
+  const agentName = getConfig().AGENT_NAME;
+  if (_mcpConfigPath && !mcpRegistry.needsRestart(agentName)) {
+    return _mcpConfigPath;
   }
-
-  // WorldMonitor intelligence API server
-  servers.worldmonitor = {
-    command: config.PYTHON_PATH,
-    args: [path.join(config.MCP_DIR, 'worldmonitor_server.py')],
-    env: {
-      WORLDMONITOR_CACHE_DB: path.join(os.homedir(), '.atrophy', 'worldmonitor_cache.db'),
-      WORLDMONITOR_BASE_URL: 'https://api.worldmonitor.app',
-    },
-  };
-
-  // Import global MCP servers from Claude Code settings
-  const globalSettings = path.join(os.homedir(), '.claude', 'settings.json');
-  if (fs.existsSync(globalSettings)) {
-    try {
-      const settings = JSON.parse(fs.readFileSync(globalSettings, 'utf-8'));
-      const mcpServers = settings.mcpServers || {};
-      for (const [name, server] of Object.entries(mcpServers)) {
-        if (!(name in servers)) {
-          servers[name] = server;
-        }
-      }
-    } catch (e) { log.debug(`failed to import global MCP settings: ${e}`); }
-  }
-
-  const mcpConfig = { mcpServers: servers };
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  // Atomic write: tmp file + rename to avoid partial reads by concurrent spawns
-  const tmpPath = configPath + '.tmp';
-  fs.writeFileSync(tmpPath, JSON.stringify(mcpConfig, null, 2), { mode: 0o600 });
-  fs.renameSync(tmpPath, configPath);
+  const configPath = mcpRegistry.buildConfigForAgent(agentName);
   _mcpConfigPath = configPath;
   return configPath;
 }

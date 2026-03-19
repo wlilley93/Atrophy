@@ -4,6 +4,63 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.4.0
+
+### Switchboard v2 - unified message architecture
+
+The switchboard is now the nervous system of the entire app. Every message, job output, agent lifecycle event, and MCP operation flows through it as an Envelope.
+
+### New: In-process cron scheduler (`channels/cron/`)
+- **Replaces launchd** for job scheduling - the app runs in the tray, jobs run in-process
+- Jobs defined per-agent in the manifest's `jobs` section
+- Calendar (cron expression) and interval-based scheduling via setTimeout/setInterval
+- Job output wrapped in Envelopes and routed through the switchboard
+- Agents process their own job output via inference and decide what to do (forward to Telegram, store in memory, stay quiet)
+- History of last 100 runs kept in-memory
+- `cron:<agent>` addresses registered in service directory
+- Deleted `src/main/cron.ts` (old launchd plist generator)
+
+### New: MCP registry (`mcp-registry.ts`)
+- **Per-agent MCP configuration** - each agent's manifest declares which servers it needs
+- Discovers bundled servers (`mcp/*.py`) and user-installed servers (`~/.atrophy/mcp/custom/`)
+- `buildConfigForAgent()` generates per-agent `config.json` for Claude CLI
+- **Runtime self-service** - agents can activate/deactivate MCP servers via manifest updates
+- **Server scaffolding** - `scaffoldServer()` generates new Python MCP servers from a template
+- Dirty flag + restart detection so sessions rebuild config when MCP changes
+- All servers registered as `mcp:<name>` in the switchboard service directory
+
+### New: Full agent creation wiring (`create-agent.ts`)
+- `createAgent()` now performs complete system wiring, not just filesystem scaffolding
+- Registers `agent:<name>` with switchboard
+- Schedules cron jobs via `cronScheduler.registerAgent()`
+- Builds per-agent MCP config via `mcpRegistry.buildConfigForAgent()`
+- Announces new agent to all others via system envelope
+- Exported `wireAgent()` for re-wiring at boot time
+
+### Extended agent manifest (`agent.json`)
+- New `channels` section - declares Telegram, desktop connectivity
+- New `mcp` section - `include`/`exclude`/`custom` server lists
+- New `jobs` section - scheduled tasks with routing config
+- New `router` section - per-agent message filtering (accept/reject/queue depth/permissions)
+
+### Unified boot sequence (`app.ts`)
+- MCP registry discovery and switchboard registration
+- All agents wired via `wireAgent()` from manifest
+- Cron scheduler started with all registered jobs
+- New IPC handlers for cron v2 and MCP registry
+
+### New: Agent self-reference document (`docs/agent-reference.md`)
+- Written for agents, not developers
+- Covers switchboard, MCP tools, channels, jobs, self-service, file paths
+- Injected into agent context when they need to understand the system
+
+### Address space
+- `cron:<agent>` and `cron:<agent>.<job>` - cron scheduler addresses
+- `mcp:<server>` - MCP server service addresses
+- All existing addresses unchanged
+
+---
+
 ## 1.3.5
 
 ### Channels refactor
