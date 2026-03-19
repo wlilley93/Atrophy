@@ -4,7 +4,7 @@ All notable changes to Atrophy.
 
 ---
 
-## 1.3.4
+## 1.3.5
 
 ### Channels refactor
 
