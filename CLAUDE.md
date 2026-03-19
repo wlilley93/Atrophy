@@ -58,9 +58,13 @@ src/
     stt.ts                   # Speech-to-text via whisper.cpp (port of voice/stt.py)
     audio.ts                 # Audio recording management
     wake-word.ts             # Wake word detection (port of voice/wake_word.py)
-    telegram.ts              # Telegram Bot API client (port of channels/telegram.py)
-    telegram-daemon.ts       # Telegram polling daemon using Topics mode (1 topic per agent)
-    router.ts                # Message routing (legacy - not used by Telegram daemon)
+    channels/                # Message routing and channel adapters
+      switchboard.ts         # Central message router - all messages flow through here
+      agent-router.ts        # Per-agent filter/queue between switchboard and inference
+      telegram/              # Telegram channel adapter
+        api.ts               # Bot API helpers (send, edit, download, bot commands)
+        daemon.ts            # Per-agent polling, dispatch, streaming display
+        index.ts             # Barrel re-exports
     server.ts                # HTTP API server (port of server.py)
     cron.ts                  # launchd job management (port of scripts/cron.py)
     install.ts               # Login item installer
@@ -270,8 +274,8 @@ These are straightforward TypeScript translations:
 | `core/notify.py` | `src/main/notify.ts` | Notifications |
 | `core/prompts.py` | `src/main/prompts.ts` | Prompt loading |
 | `core/context.py` | `src/main/context.ts` | Context assembly |
-| `channels/telegram.py` | `src/main/telegram.ts` | Bot API client |
-| `channels/router.py` | `src/main/router.ts` | Message routing (legacy - no longer used by daemon) |
+| `channels/telegram.py` | `src/main/channels/telegram/api.ts` | Bot API client |
+| `channels/router.py` | Deleted | Replaced by `channels/switchboard.ts` + `channels/agent-router.ts` |
 
 ### 3.10 `core/embeddings.py` -> `src/main/embeddings.ts`
 
@@ -517,7 +521,7 @@ When porting any module, **read the Python source first**:
 
 ## 12. Switchboard Architecture (v1.3.2+)
 
-All messages flow through a central switchboard (`src/main/switchboard.ts`). Every message is wrapped in an Envelope with `from`, `to`, `text`, `type`, `priority`, and `replyTo` fields.
+All messages flow through a central switchboard (`src/main/channels/switchboard.ts`). Every message is wrapped in an Envelope with `from`, `to`, `text`, `type`, `priority`, and `replyTo` fields.
 
 ### Addresses
 - `telegram:<agent>` - Telegram bot for an agent
@@ -526,11 +530,25 @@ All messages flow through a central switchboard (`src/main/switchboard.ts`). Eve
 - `system` - System-level broadcasts
 - `agent:*` - Broadcast to all agents
 
-### Key modules
-- `switchboard.ts` - Singleton message router with handler registry
-- `agent-router.ts` - Per-agent filter (accept/reject rules, queue depth, system access)
-- Telegram daemon creates envelopes and routes through switchboard
-- Desktop GUI records through switchboard for observability
+### Directory structure
+
+All channel and routing code lives under `src/main/channels/`:
+
+```
+src/main/channels/
+  switchboard.ts        # Core routing engine (channel-agnostic)
+  agent-router.ts       # Per-agent filter/queue between switchboard and inference
+  telegram/             # Telegram channel adapter
+    api.ts              # Bot API helpers (send, edit, download, bot commands)
+    daemon.ts           # Per-agent polling, dispatch, streaming display
+    index.ts            # Barrel re-exports for clean imports
+```
+
+To add a new channel (e.g. Discord, Slack, webhook):
+1. Create `channels/<name>/` with `api.ts`, `daemon.ts`, `index.ts`
+2. In `daemon.ts`: create Envelopes from inbound messages, route via `switchboard.route()`
+3. Register outbound handler: `switchboard.register('<name>:<agent>', handler)`
+4. The agent-router handles filtering and response routing automatically
 
 ### Agent-to-agent communication
 Agents can message each other via the `switchboard` MCP tool:
@@ -538,8 +556,3 @@ Agents can message each other via the `switchboard` MCP tool:
 - `broadcast` - send to all agents (Xan only)
 - `query_status` - check recent switchboard activity
 - `route_response` - redirect response to a different channel
-
-### Adding a new channel
-1. Register handler with `switchboard.register(address, handler)`
-2. Create envelopes from inbound messages
-3. Handle outbound envelopes in the handler

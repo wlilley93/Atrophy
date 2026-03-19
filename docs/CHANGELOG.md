@@ -4,7 +4,18 @@ All notable changes to Atrophy.
 
 ---
 
-## Unreleased
+## 1.3.4
+
+### Channels refactor
+
+- **New `src/main/channels/` directory** - all message routing and channel code now lives under a dedicated directory, making it easy to find and extend
+- `switchboard.ts` and `agent-router.ts` moved to `channels/`
+- `telegram.ts` moved to `channels/telegram/api.ts`
+- `telegram-daemon.ts` moved to `channels/telegram/daemon.ts`
+- Barrel export at `channels/telegram/index.ts` for clean imports
+- Deleted deprecated `router.ts` (legacy two-tier routing from single-bot era)
+- All consumer imports updated - no logic changes, pure structural refactor
+- Adding a new channel: create `channels/<name>/` with api + daemon + index, register with switchboard
 
 ### Telegram
 

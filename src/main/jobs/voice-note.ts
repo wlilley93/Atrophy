@@ -28,7 +28,7 @@ import {
 import { runInferenceOneshot } from '../inference';
 import { loadPrompt } from '../prompts';
 import { synthesise } from '../tts';
-import { sendVoiceNote, sendMessage } from '../telegram';
+import { sendVoiceNote, sendMessage } from '../channels/telegram';
 import { editJobSchedule } from '../cron';
 
 // ---------------------------------------------------------------------------

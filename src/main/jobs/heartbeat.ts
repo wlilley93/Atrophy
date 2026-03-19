@@ -35,7 +35,7 @@ import { loadSystemPrompt } from '../context';
 import { isAway, isMacIdle } from '../status';
 import { sendNotification } from '../notify';
 import { queueMessage } from '../queue';
-import { sendMessage as sendTelegram, sendVoiceNote, sendButtons, sendPhoto, pollCallback } from '../telegram';
+import { sendMessage as sendTelegram, sendVoiceNote, sendButtons, sendPhoto, pollCallback } from '../channels/telegram';
 import { registerJob, activeHoursGate } from './index';
 import { createLogger } from '../logger';
 import { synthesise, isElevenLabsExhausted } from '../tts';

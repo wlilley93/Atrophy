@@ -25,7 +25,7 @@ import { loadPrompt } from '../prompts';
 import { queueMessage } from '../queue';
 import { sendNotification } from '../notify';
 import { synthesiseSync } from '../tts';
-import { sendMessage as sendTelegram } from '../telegram';
+import { sendMessage as sendTelegram } from '../channels/telegram';
 import {
   getActiveThreads,
   getRecentSummaries,

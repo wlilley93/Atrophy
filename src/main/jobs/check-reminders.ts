@@ -29,7 +29,7 @@ import { createLogger } from '../logger';
 const log = createLogger('reminder');
 import { sendNotification } from '../notify';
 import { queueMessage } from '../queue';
-import { sendMessage as telegramSend } from '../telegram';
+import { sendMessage as telegramSend } from '../channels/telegram';
 
 // ---------------------------------------------------------------------------
 // Types

@@ -28,8 +28,8 @@ import { runCoherenceCheck } from './sentinel';
 import { drainQueue, drainAgentQueue, drainAllAgentQueues } from './queue';
 import { getAllAgentsUsage, getAllActivity } from './usage';
 import { startServer, stopServer } from './server';
-import { startDaemon, stopDaemon, isDaemonRunning } from './telegram-daemon';
-import { registerBotCommands, discoverChatId, sendMessage as sendTelegramMessage } from './telegram';
+import { startDaemon, stopDaemon, isDaemonRunning } from './channels/telegram';
+import { registerBotCommands, discoverChatId, sendMessage as sendTelegramMessage } from './channels/telegram';
 import { listJobs, toggleCron, runJobNow, getJobHistory, readJobLog } from './cron';
 import { search as vectorSearch } from './vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from './install';
@@ -44,7 +44,7 @@ import { loadCachedOpening, generateOpening, cacheNextOpening, getStaticFallback
 import { getHotBundlePaths, checkForBundleUpdate, getActiveBundleVersion, getPendingBundleInfo, clearHotBundle } from './bundle-updater';
 import type { HotBundlePaths } from './bundle-updater';
 import { createLogger, setLogForwarder, getLogBuffer } from './logger';
-import { switchboard, type Envelope } from './switchboard';
+import { switchboard, type Envelope } from './channels/switchboard';
 
 const log = createLogger('main');
 
@@ -1515,7 +1515,7 @@ Output EXACTLY this format - a single fenced JSON block:
 
   ipcMain.handle('telegram:setBotPhoto', async (_event, agentName: string, botToken: string) => {
     const { getReferenceImages } = await import('./jobs/generate-avatar');
-    const { setBotProfilePhoto } = await import('./telegram');
+    const { setBotProfilePhoto } = await import('./channels/telegram');
     const refs = getReferenceImages(agentName);
     if (refs.length === 0) return false;
     return setBotProfilePhoto(refs[0], botToken);

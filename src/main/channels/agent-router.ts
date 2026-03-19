@@ -11,7 +11,7 @@
  */
 
 import { switchboard, type Envelope } from './switchboard';
-import { createLogger } from './logger';
+import { createLogger } from '../logger';
 
 const log = createLogger('agent-router');
 

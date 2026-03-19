@@ -34,7 +34,7 @@ import { loadSystemPrompt } from './context';
 import { loadPrompt } from './prompts';
 import * as memory from './memory';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
-import { sendMessage as sendTelegramMessage } from './telegram';
+import { sendMessage as sendTelegramMessage } from './channels/telegram';
 import { createLogger } from './logger';
 
 const log = createLogger('voice-agent');

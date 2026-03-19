@@ -9,8 +9,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { getConfig } from './config';
-import { createLogger } from './logger';
+import { getConfig } from '../../config';
+import { createLogger } from '../../logger';
 
 const log = createLogger('telegram');
 

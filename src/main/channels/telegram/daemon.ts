@@ -17,16 +17,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
-import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
-import { sendMessage, sendMessageGetId, editMessage, post, downloadTelegramFile, setBotProfilePhoto } from './telegram';
-import { discoverAgents, getAgentState } from './agent-manager';
-import { streamInference, resetMcpConfig, InferenceEvent } from './inference';
-import { loadSystemPrompt } from './context';
-import { getReferenceImages } from './jobs/generate-avatar';
-import * as memory from './memory';
-import { createLogger } from './logger';
-import { switchboard, type Envelope } from './switchboard';
-import { AgentRouter, defaultConfigForAgent, type AgentRouterConfig } from './agent-router';
+import { getConfig, USER_DATA, BUNDLE_ROOT } from '../../config';
+import { sendMessage, sendMessageGetId, editMessage, post, downloadTelegramFile, setBotProfilePhoto } from './api';
+import { discoverAgents, getAgentState } from '../../agent-manager';
+import { streamInference, resetMcpConfig, InferenceEvent } from '../../inference';
+import { loadSystemPrompt } from '../../context';
+import { getReferenceImages } from '../../jobs/generate-avatar';
+import * as memory from '../../memory';
+import { createLogger } from '../../logger';
+import { switchboard, type Envelope } from '../switchboard';
+import { AgentRouter, defaultConfigForAgent } from '../agent-router';
 
 const log = createLogger('telegram-daemon');
 

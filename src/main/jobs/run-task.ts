@@ -43,7 +43,7 @@ const log = createLogger('task');
 import { runInferenceOneshot } from '../inference';
 import { queueMessage } from '../queue';
 import { sendNotification } from '../notify';
-import { sendMessage as telegramSend, sendVoiceNote } from '../telegram';
+import { sendMessage as telegramSend, sendVoiceNote } from '../channels/telegram';
 import { synthesiseSync } from '../tts';
 import {
   getActiveThreads,
