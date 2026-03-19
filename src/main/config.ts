@@ -664,15 +664,12 @@ export class Config {
     this.TELEGRAM_EMOJI = (_agentManifest.telegram_emoji as string) || '';
     this.DISABLED_TOOLS = (_agentManifest.disabled_tools as string[]) || [];
 
-    // Per-agent telegram credentials (fall back to global)
+    // Per-agent telegram credentials (agent manifest only - no env fallback
+    // to prevent token bleed between agents)
     this.TELEGRAM_BOT_TOKEN =
-      (_agentManifest.telegram_bot_token as string) ||
-      process.env.TELEGRAM_BOT_TOKEN ||
-      cfg('TELEGRAM_BOT_TOKEN', '');
+      (_agentManifest.telegram_bot_token as string) || '';
     this.TELEGRAM_CHAT_ID =
-      (_agentManifest.telegram_chat_id as string) ||
-      process.env.TELEGRAM_CHAT_ID ||
-      cfg('TELEGRAM_CHAT_ID', '');
+      (_agentManifest.telegram_chat_id as string) || '';
 
     // TTS (per-agent from manifest voice object, matching Python's AGENT.get("voice", {}))
     // Use || for string IDs so empty string "" falls through to cfg() fallback.

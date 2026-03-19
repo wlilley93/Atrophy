@@ -91,6 +91,7 @@ export async function runJob(
       ...process.env as Record<string, string>,
       PATH: `${pythonBinDir}:/usr/local/bin:/usr/bin:/bin`,
       AGENT: agentName,
+      PYTHONPATH: `${BUNDLE_ROOT}:${path.join(USER_DATA, 'src')}`,
     };
 
     const child = spawn(pythonPath, [scriptPath, ...extraArgs], {

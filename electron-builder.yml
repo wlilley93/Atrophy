@@ -30,6 +30,12 @@ mac:
       to: mcp
       filter:
         - "**/*.py"
+    - from: config.py
+      to: config.py
+    - from: core/
+      to: core
+      filter:
+        - "**/*.py"
     - from: scripts/
       to: scripts
       filter:
