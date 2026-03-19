@@ -126,25 +126,34 @@ Xan's agent router has elevated privileges:
 
 ### Implementation in Electron App
 
-The switchboard lives in `src/main/switchboard.ts`:
-- Singleton, created on app startup
-- All existing message paths rewired through it
-- telegram-daemon.ts creates envelopes, sends to switchboard
+All channel and routing code lives in `src/main/channels/`:
+```
+src/main/channels/
+  switchboard.ts        # Core routing engine (channel-agnostic)
+  agent-router.ts       # Per-agent filter/queue between switchboard and inference
+  telegram/             # Telegram channel adapter
+    api.ts              # Bot API helpers (send, edit, download, bot commands)
+    daemon.ts           # Per-agent polling, dispatch, streaming display
+    index.ts            # Barrel re-exports
+```
+
+The switchboard (`channels/switchboard.ts`) is a singleton created on app startup. All existing message paths are rewired through it:
+- `channels/telegram/daemon.ts` creates envelopes, sends to switchboard
 - app.ts (desktop input) creates envelopes, sends to switchboard
 - inference responses create envelopes back through switchboard
 
-Each agent router lives in `src/main/agent-router.ts`:
-- One instance per agent
+Each agent router (`channels/agent-router.ts`) is one instance per agent:
 - Config loaded from agent.json (new `router` section)
 - Registered with switchboard on agent discovery
 
-### What Changes in Existing Code
+### What Changed in Existing Code
 
-1. `telegram-daemon.ts` - wrap messages in Envelope, send to switchboard instead of calling streamInference directly. Receive responses from switchboard instead of inline.
-2. `app.ts` - desktop input goes through switchboard
-3. `inference.ts` - responses go back through switchboard
-4. `router.ts` - deleted (replaced by switchboard + agent routers)
-5. MCP memory server - add switchboard tools for Xan (send_message_to_agent, broadcast, query_status)
+1. `telegram.ts` and `telegram-daemon.ts` moved to `channels/telegram/api.ts` and `channels/telegram/daemon.ts`
+2. `switchboard.ts` and `agent-router.ts` moved to `channels/switchboard.ts` and `channels/agent-router.ts`
+3. `router.ts` deleted (replaced by switchboard + agent routers)
+4. `app.ts` - desktop input goes through switchboard
+5. `inference.ts` - responses go back through switchboard
+6. MCP memory server - switchboard tools added for Xan (send_message_to_agent, broadcast, query_status)
 
 ### What Agents Know
 

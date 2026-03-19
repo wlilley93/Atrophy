@@ -71,7 +71,7 @@ On daemon startup, for each agent with telegram credentials and reference images
 
 Also triggered when credentials are saved in settings.
 
-### telegram.ts Changes
+### channels/telegram/api.ts Changes
 
 All API functions already accept `chatId`. Add an optional `botToken` parameter to:
 - `post()` (internal helper) - use provided token instead of `config.TELEGRAM_BOT_TOKEN`
@@ -122,9 +122,9 @@ After AI-driven agent creation (step 2 of the existing wizard flow):
 ### What Gets Removed
 
 - `TELEGRAM_GROUP_ID` config field (no more group)
-- `createForumTopic()`, `ensureTopics()` in telegram-daemon.ts
+- `createForumTopic()`, `ensureTopics()` in channels/telegram/daemon.ts
 - `topic_map` in daemon state
-- `message_thread_id` parameter from all telegram.ts functions (threadId)
+- `message_thread_id` parameter from all channels/telegram/api.ts functions (threadId)
 - Topics mode documentation references
 
 ### What Stays
@@ -141,8 +141,8 @@ After AI-driven agent creation (step 2 of the existing wizard flow):
 | File | Change |
 |------|--------|
 | `src/main/config.ts` | Add per-agent `telegram_bot_token` / `telegram_chat_id` resolution. Remove `TELEGRAM_GROUP_ID`. |
-| `src/main/telegram.ts` | Add `botToken` param to `post()` and all public functions. Remove `threadId` param. Add `setBotProfilePhoto()`. |
-| `src/main/telegram-daemon.ts` | Rewrite: parallel per-agent pollers, remove Topics mode, per-agent state. |
+| `src/main/channels/telegram/api.ts` | Add `botToken` param to `post()` and all public functions. Remove `threadId` param. Add `setBotProfilePhoto()`. |
+| `src/main/channels/telegram/daemon.ts` | Rewrite: parallel per-agent pollers, remove Topics mode, per-agent state. |
 | `src/main/jobs/heartbeat.ts` | Remove `threadId` usage (already sends to default chat). |
 | `src/main/jobs/voice-note.ts` | No change (uses config which resolves per-agent). |
 | `src/renderer/components/Settings.svelte` | Add per-agent telegram config in agent list. |

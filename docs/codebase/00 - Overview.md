@@ -574,9 +574,10 @@ The following table lists every significant source file in the project, organize
 | `src/main/stt.ts` | whisper.cpp subprocess for speech-to-text |
 | `src/main/call.ts` | Hands-free voice call with VAD |
 | `src/main/wake-word.ts` | Ambient wake word detection |
-| `src/main/telegram.ts` | Telegram Bot API client (send/receive) |
-| `src/main/telegram-daemon.ts` | Single-process Telegram poller with sequential dispatch |
-| `src/main/router.ts` | Message router (explicit match - LLM routing agent) |
+| `src/main/channels/switchboard.ts` | Central message router - all messages flow through Envelope-based routing |
+| `src/main/channels/agent-router.ts` | Per-agent filter/queue between switchboard and inference |
+| `src/main/channels/telegram/api.ts` | Telegram Bot API client (send, edit, download, bot commands) |
+| `src/main/channels/telegram/daemon.ts` | Per-agent Telegram polling, dispatch, streaming display |
 | `src/main/server.ts` | HTTP API server (Node http, bearer auth, SSE streaming) |
 | `src/main/cron.ts` | launchd control plane - plist generation, install/uninstall |
 | `src/main/queue.ts` | File-based message queue with atomic locking |

@@ -4,7 +4,7 @@
 
 **Goal:** Replace Topics-based single-bot architecture with per-agent Telegram bots, where each agent has its own bot, chat, and profile picture - like separate friends in WhatsApp.
 
-**Architecture:** Per-agent `telegram_bot_token` and `telegram_chat_id` in agent.json, with global credentials as fallback for Xan. Daemon rewired to run parallel pollers (one per agent) with random jitter. `telegram.ts` API functions accept optional `botToken` param. `threadId` removed throughout. Settings UI gets per-agent telegram config in agent list. Setup wizard asks for bot token on new agent creation.
+**Architecture:** Per-agent `telegram_bot_token` and `telegram_chat_id` in agent.json, with global credentials as fallback for Xan. Daemon rewired to run parallel pollers (one per agent) with random jitter. `channels/telegram/api.ts` functions accept optional `botToken` param. `threadId` removed throughout. Settings UI gets per-agent telegram config in agent list. Setup wizard asks for bot token on new agent creation.
 
 **Tech Stack:** TypeScript, Electron, Telegram Bot API, Svelte 5 (runes mode)
 
@@ -15,8 +15,8 @@
 | File | Action | Responsibility |
 |------|--------|---------------|
 | `src/main/config.ts` | Modify | Add per-agent telegram resolution, remove `TELEGRAM_GROUP_ID` |
-| `src/main/telegram.ts` | Modify | Add `botToken` param to `post()` and public functions, remove `threadId`, add `setBotProfilePhoto()` |
-| `src/main/telegram-daemon.ts` | Rewrite | Parallel per-agent pollers, remove Topics mode |
+| `src/main/channels/telegram/api.ts` | Modify | Add `botToken` param to `post()` and public functions, remove `threadId`, add `setBotProfilePhoto()` |
+| `src/main/channels/telegram/daemon.ts` | Rewrite | Parallel per-agent pollers, remove Topics mode |
 | `src/main/app.ts` | Modify | New IPC handlers for per-agent telegram config, remove group ID |
 | `src/preload/index.ts` | Modify | Expose new IPC channels |
 | `src/renderer/components/Settings.svelte` | Modify | Per-agent telegram config in agent list |
@@ -91,12 +91,12 @@ git commit -m "feat: per-agent telegram credentials with global fallback"
 
 ---
 
-### Task 2: telegram.ts - add botToken param, remove threadId
+### Task 2: telegram api - add botToken param, remove threadId
 
 **Files:**
-- Modify: `src/main/telegram.ts`
+- Modify: `src/main/channels/telegram/api.ts`
 
-- [ ] **Step 1: Read telegram.ts fully**
+- [ ] **Step 1: Read channels/telegram/api.ts fully**
 
 - [ ] **Step 2: Update post() to accept botToken**
 
@@ -189,25 +189,25 @@ Add `setBotProfilePhoto` to exports. Remove references to `_post` alias if no lo
 - [ ] **Step 11: Run type check**
 
 Run: `npx tsc --noEmit`
-Expected: Errors in telegram-daemon.ts and other files that still pass threadId (expected, fixed in later tasks)
+Expected: Errors in channels/telegram/daemon.ts and other files that still pass threadId (expected, fixed in later tasks)
 
 - [ ] **Step 12: Commit**
 
 ```bash
-git add src/main/telegram.ts
+git add src/main/channels/telegram/api.ts
 git commit -m "feat: per-agent bot token support, remove threadId from telegram API"
 ```
 
 ---
 
-### Task 3: Rewrite telegram-daemon.ts - parallel per-agent pollers
+### Task 3: Rewrite telegram daemon - parallel per-agent pollers
 
 **Files:**
-- Modify: `src/main/telegram-daemon.ts`
+- Modify: `src/main/channels/telegram/daemon.ts`
 
 This is the largest task. The daemon is completely rewritten from single-poller/Topics to parallel per-agent pollers.
 
-- [ ] **Step 1: Read the current telegram-daemon.ts fully**
+- [ ] **Step 1: Read the current channels/telegram/daemon.ts fully**
 
 - [ ] **Step 2: Replace state types and persistence**
 
@@ -452,7 +452,7 @@ export function stopDaemon(): void {
 - [ ] **Step 10: Add setBotProfilePhoto helper**
 
 ```typescript
-import { setBotProfilePhoto } from './telegram';
+import { setBotProfilePhoto } from './channels/telegram';
 import { getReferenceImages } from './jobs/generate-avatar';
 
 async function setAgentBotPhoto(agentName: string, botToken: string): Promise<void> {
@@ -483,11 +483,11 @@ async function handleStatusCommand(chatId: string, botToken: string): Promise<vo
 
 - [ ] **Step 12: Update downloadTelegramFile calls for per-agent botToken**
 
-The `downloadTelegramFile` function in telegram.ts uses `config.TELEGRAM_BOT_TOKEN` internally. Since we call `config.reloadForAgent()` before dispatch, this should resolve correctly. But the `pollAgent` function calls it BEFORE dispatch. Need to either:
+The `downloadTelegramFile` function in `channels/telegram/api.ts` uses `config.TELEGRAM_BOT_TOKEN` internally. Since we call `config.reloadForAgent()` before dispatch, this should resolve correctly. But the `pollAgent` function calls it BEFORE dispatch. Need to either:
 - Pass botToken to downloadTelegramFile (add param)
 - Or temporarily reload config in pollAgent before media download
 
-Simplest: add optional `botToken` param to `downloadTelegramFile` in telegram.ts.
+Simplest: add optional `botToken` param to `downloadTelegramFile` in `channels/telegram/api.ts`.
 
 - [ ] **Step 13: Remove launchd plist generation for Topics mode**
 
@@ -501,7 +501,7 @@ Expected: Clean (or minor issues in other files)
 - [ ] **Step 15: Commit**
 
 ```bash
-git add src/main/telegram-daemon.ts
+git add src/main/channels/telegram/daemon.ts
 git commit -m "feat: parallel per-agent telegram pollers, remove Topics mode"
 ```
 

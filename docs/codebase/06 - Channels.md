@@ -4,6 +4,25 @@ External communication channels beyond the direct conversation interface. The ch
 
 ## Architecture
 
+All channel and routing code lives under `src/main/channels/`:
+
+```
+src/main/channels/
+  switchboard.ts        # Core routing engine (channel-agnostic)
+  agent-router.ts       # Per-agent filter/queue between switchboard and inference
+  telegram/             # Telegram channel adapter
+    api.ts              # Bot API helpers (send, edit, download, bot commands)
+    daemon.ts           # Per-agent polling, dispatch, streaming display
+    index.ts            # Barrel re-exports
+```
+
+There are 3 layers:
+1. **Switchboard** (channel-agnostic routing) - routes Envelopes between addresses
+2. **Channel adapters** (e.g. `telegram/`) - bridge external platforms to/from the switchboard
+3. **Agent router** - per-agent filtering between switchboard and inference
+
+To add a new channel: create `channels/<name>/` with api + daemon + index, register with switchboard.
+
 Each agent has its own dedicated Telegram bot - its own token, its own chat, and its own profile photo set from the agent's reference images. The daemon runs parallel per-agent pollers with randomised jitter so activity feels organic rather than mechanical. A dispatch mutex serialises inference so the Config singleton and Claude CLI are never contested between pollers.
 
 This replaces the previous Topics mode architecture where all agents shared a single bot and a single group with forum threads. The per-agent bot model eliminates group management entirely - no shared group, no topic IDs, no routing logic.
@@ -11,18 +30,18 @@ This replaces the previous Topics mode architecture where all agents shared a si
 ```
 Telegram Bot API (one bot per agent)
   |
-src/main/telegram-daemon.ts  (parallel per-agent pollers)
+src/main/channels/telegram/daemon.ts  (parallel per-agent pollers)
   |
-discoverTelegramAgents()       (agents with bot token + chat ID configured)
+discoverTelegramAgents()               (agents with bot token + chat ID configured)
   |
-withDispatchLock()             (mutex - one agent dispatches at a time)
+withDispatchLock()                     (mutex - one agent dispatches at a time)
   |
-src/main/telegram.ts           (send via agent's own bot token)
+src/main/channels/telegram/api.ts      (send via agent's own bot token)
 ```
 
 ---
 
-## src/main/telegram.ts - Bot API Client
+## src/main/channels/telegram/api.ts - Bot API Client
 
 This module implements the Telegram Bot API integration using pure HTTP via `fetch()` (Node built-in undici). There are no third-party Telegram libraries - all API calls are handwritten HTTP requests. This keeps the dependency footprint minimal and gives full control over timeout, error handling, and multipart form construction.
 
@@ -263,128 +282,13 @@ The implementation makes several deliberate technical choices that affect reliab
 
 ---
 
-## src/main/router.ts - Message Router (Legacy)
+## Legacy Router (Deleted)
 
-> **Note:** The router is no longer used by the Telegram daemon. With per-agent bots, each agent has its own dedicated bot and chat, so routing is unnecessary - incoming messages are already scoped to the correct agent by which bot received them. The router module remains in the codebase for potential use by other subsystems but is not part of the active Telegram message flow.
-
-The router is a two-tier routing system that was originally used to decide which agent(s) should handle an incoming Telegram message. The first tier uses pattern matching (free, instant), and the second tier uses a lightweight LLM call (costs one Haiku inference). This tiered approach means most messages are routed without any LLM cost, while ambiguous messages still get intelligent routing.
-
-### Types
-
-The router defines two key types. `AgentInfo` represents a routable agent with its metadata, and `RoutingDecision` captures the routing outcome including which agents were selected, how they were selected, and the cleaned message text.
-
-```typescript
-interface AgentInfo {
-  name: string;
-  display_name: string;
-  description: string;
-  wake_words: string[];
-  emoji: string;
-}
-
-export interface RoutingDecision {
-  agents: string[];              // agent slugs to handle the message
-  tier: 'explicit' | 'agent' | 'single' | 'none';
-  text: string;                  // cleaned message text
-}
-```
-
-The `tier` field records how the routing decision was made: `explicit` means pattern matching, `agent` means the LLM routing agent decided, `single` means there was only one available agent (no routing needed), and `none` means no agents were available.
-
-### Agent Registry
-
-The `loadAgentRegistry()` function builds the routing registry fresh on every call. This ensures the registry always reflects the current agent state, including recently muted or disabled agents. The building process is:
-
-1. Calling `discoverAgents()` to get all agents from both `USER_DATA` and `BUNDLE_ROOT`
-2. Filtering out disabled and muted agents (via `getAgentState()`). Muted agents are excluded from routing so they do not receive messages.
-3. Loading each agent's manifest from `USER_DATA` then `BUNDLE_ROOT` (same two-tier resolution as the rest of the system)
-4. Extracting `display_name`, `description`, `wake_words`, and `telegram_emoji` for routing metadata
-
-### Tier 1: Explicit Routing (Free)
-
-The `checkExplicit(text, agents)` function performs pattern matching with no LLM call. It checks five patterns in order, returning the first match. This tier handles the majority of messages in practice, since users quickly learn to prefix their messages with an agent name.
-
-| Pattern | Example | Behaviour |
-|---------|---------|-----------|
-| `/agent_name` | `/companion what's up` | Route to named agent, strip prefix |
-| `@agent_name` | `@companion thoughts?` | Route to mentioned agent(s) |
-| `agent_name:` | `companion: hey` | Route to named agent, strip prefix |
-| Wake word | `hey darling` | Route to agent with matching wake word |
-| Multiple names | `companion and monty, debate this` | Route to all named agents |
-
-The matching logic for each pattern works as follows:
-
-- `/command` prefix: extracts the first word after `/`, matches against `agent.name` or `agent.display_name.toLowerCase()`. This follows the Telegram bot command convention.
-- `@mention`: uses regex `/@(\w+)/g` to find all mentions, matches each against agent names. Multiple mentions route to multiple agents.
-- `name:` prefix: checks if message starts with `<name>:` or `<display_name>:` (case-insensitive). This is a natural addressing pattern.
-- Wake words: checks if message starts with any wake word (case-insensitive). Wake words are configured per-agent in the manifest.
-- Multi-agent: if two or more agent names/display names appear anywhere in the message, routes to all of them. This enables "debate" or "discuss" patterns.
-
-Returns the matched agent name(s) as an array, or `null` if no explicit match was found (falling through to Tier 2).
-
-### Tier 2: Routing Agent (Haiku)
-
-When no explicit match is found, a lightweight LLM call classifies the message. This tier handles ambiguous messages where the user did not explicitly name an agent. The routing agent is a separate inference call that costs minimal tokens.
-
-```typescript
-async function routeViaAgent(text: string, agents: AgentInfo[]): Promise<string[]>
-```
-
-The routing call uses `runInferenceOneshot()` with the following parameters:
-
-- Model: `claude-haiku-4-5-20251001` (cheapest and fastest model)
-- Effort: `low` (minimal processing)
-- System prompt: instructs the routing agent to return ONLY a JSON array of agent slugs, with no explanation or commentary
-
-The system prompt includes a list of valid agent slugs with their descriptions, an instruction to route to ONE agent unless multiple perspectives are genuinely needed, and the rule to pick the personality that best fits for casual/general messages.
-
-The response is parsed with `result.match(/\[.*?\]/s)` to extract the JSON array from the response. Valid slugs are filtered against the known agent list, and any invalid slugs are dropped. If parsing fails entirely or no valid slugs are found, the function falls back to routing to the first agent in the registry.
-
-### Main Router
-
-The `routeMessage` function is the main entry point for all routing decisions. It orchestrates the two tiers and handles edge cases where routing is not needed.
-
-```typescript
-export async function routeMessage(text: string): Promise<RoutingDecision>
-```
-
-The decision flow proceeds through these steps:
-
-1. Load agent registry (filters disabled/muted agents)
-2. If no agents available: return `tier: 'none'` (the daemon will log this and skip the message)
-3. If exactly one agent: return `tier: 'single'` (skip routing entirely - no need to decide)
-4. Try explicit routing. If matched, clean the text (strip `/prefix` or `name:` prefix) and return `tier: 'explicit'`
-5. Fall through to routing agent. Return `tier: 'agent'`
-
-Text cleaning for explicit routes strips the addressing prefix so the agent sees the actual question rather than the routing syntax:
-
-- If starts with `/`, take everything after the first space
-- If contains `:` within the first 30 characters, take everything after the colon
-
-The 30-character limit on colon detection prevents false matches on messages that contain colons in their body text (like URLs or time references).
-
-### Routing Queue (File-Based IPC)
-
-The router includes a file-based queue at `~/.atrophy/.telegram_routes.json` for daemon coordination. This queue serves as a persistent record of routing decisions and enables multi-process coordination when the daemon and GUI need to share routing state.
-
-```typescript
-interface RouteEntry {
-  message_id: number;
-  text: string;
-  agents: string[];
-  tier: string;
-  timestamp: number;
-}
-
-export function enqueueRoute(messageId: number, text: string, decision: RoutingDecision): void
-export function dequeueRoute(agentName: string): RouteEntry | null
-```
-
-The `enqueueRoute` function appends a route entry and keeps only the last 50 entries, preventing unbounded growth. The `dequeueRoute` function finds the first entry containing the given agent name, removes the agent from the entry's agent list (since that agent has now handled the message), and deletes the entry entirely if no agents remain. This consumption pattern supports multi-agent routing where each agent independently dequeues its portion of the work.
+> **Note:** `src/main/router.ts` has been deleted. The legacy two-tier routing system (pattern matching + LLM classification) is no longer needed. With per-agent bots, each agent has its own dedicated bot and chat, so routing is unnecessary - incoming messages are already scoped to the correct agent by which bot received them. Routing between channels and agents is now handled by the switchboard and agent-router in `src/main/channels/`.
 
 ---
 
-## src/main/telegram-daemon.ts - Polling Daemon
+## src/main/channels/telegram/daemon.ts - Polling Daemon
 
 The polling daemon is responsible for receiving Telegram messages from each agent's dedicated bot and dispatching responses. It runs parallel per-agent pollers with randomised jitter, and a dispatch mutex ensures inference (which mutates the Config singleton and Claude CLI session) runs for only one agent at a time. The daemon runs as either a managed timer within the Electron main process or as a standalone launchd agent.
 
