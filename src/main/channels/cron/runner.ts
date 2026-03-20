@@ -72,6 +72,7 @@ export async function runJob(
   jobName: string,
   definition: JobDefinition,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  consecutiveFailures: number = 0,
 ): Promise<JobResult> {
   const config = getConfig();
   const scriptPath = path.resolve(BUNDLE_ROOT, definition.script);
@@ -183,10 +184,23 @@ export async function runJob(
   // -----------------------------------------------------------------------
 
   if (definition.notify_via) {
+    // Only notify on: success, first failure, or circuit breaker trip (3rd failure).
+    // consecutiveFailures is the count BEFORE this run (scheduler increments after).
+    const isFailure = result.exitCode !== 0;
+    const isFirstFailure = isFailure && consecutiveFailures === 0;
+    const isCircuitBreakerTrip = isFailure && consecutiveFailures === 2;
+    const shouldNotify = !isFailure || isFirstFailure || isCircuitBreakerTrip;
+
+    if (!shouldNotify) {
+      log.debug(`Skipping notification for '${agentName}.${jobName}' (failure ${consecutiveFailures + 1}/3)`);
+    } else {
+
     const notifyAddress = `${definition.notify_via}:${agentName}`;
-    const statusEmoji = result.exitCode === 0 ? '[OK]' : '[FAIL]';
+    const statusEmoji = result.exitCode === 0
+      ? '[OK]'
+      : isCircuitBreakerTrip ? '[DISABLED]' : '[FAIL]';
     const summary = [
-      `${statusEmoji} Job: ${jobName}`,
+      `${statusEmoji} Job: ${jobName}${isCircuitBreakerTrip ? ' - disabled after 3 consecutive failures' : ''}`,
       `Exit: ${result.exitCode}`,
       `Duration: ${formatDuration(result.durationMs)}`,
     ];
@@ -221,6 +235,8 @@ export async function runJob(
     } catch (err) {
       log.error(`Failed to route notification for '${agentName}.${jobName}': ${err}`);
     }
+
+    } // end shouldNotify
   }
 
   return result;

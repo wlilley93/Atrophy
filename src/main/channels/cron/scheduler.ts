@@ -435,7 +435,7 @@ class CronScheduler {
     log.info(`Executing job: ${key}`);
 
     try {
-      const result = await runJob(job.agent, job.name, job.definition);
+      const result = await runJob(job.agent, job.name, job.definition, undefined, job.consecutiveFailures);
       job.lastRun = new Date();
 
       if (result.exitCode !== 0) {

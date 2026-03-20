@@ -356,6 +356,7 @@ async function setAgentBotPhoto(agentName: string, botToken: string): Promise<vo
 // ---------------------------------------------------------------------------
 
 let _dispatchQueue: Promise<void> = Promise.resolve();
+const _activeDispatches = new Set<string>();
 
 function withDispatchLock<T>(fn: () => Promise<T>): Promise<T> {
   let resolve: () => void;
@@ -637,6 +638,7 @@ async function dispatchToAgent(
   text: string,
   chatId: string,
   botToken: string,
+  sourceLabel?: string,
 ): Promise<string | null> {
   const config = getConfig();
   const originalAgent = config.AGENT_NAME;
@@ -657,7 +659,7 @@ async function dispatchToAgent(
     const system = loadSystemPrompt();
     const cliSessionId = memory.getLastCliSessionId();
 
-    const prompt = `[Telegram message from ${config.USER_NAME}]\n\n${text}`;
+    const prompt = sourceLabel ? `[${sourceLabel}]\n\n${text}` : text;
     let fullText = '';
     const toolsUsed: string[] = [];
 
@@ -1073,14 +1075,33 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
   // The router filters messages and calls our callback for accepted ones
   const routerConfig = defaultConfigForAgent(agent.name);
   const router = new AgentRouter(agent.name, routerConfig, async (envelope: Envelope) => {
+    // Per-agent dispatch guard: drop (don't queue) if already dispatching
+    if (_activeDispatches.has(agent.name)) {
+      log.warn(`[${agent.name}] Dispatch already in progress - dropping envelope from ${envelope.from}`);
+      return undefined;
+    }
+
     // Extract Telegram-specific metadata for streaming display
     const chatId = (envelope.metadata?.chatId as string) || agent.chatId;
     const botToken = (envelope.metadata?.botToken as string) || agent.botToken;
 
+    // Build source label based on envelope origin
+    const sourceLabel = envelope.from.startsWith('telegram:')
+      ? `Telegram message from ${getConfig().USER_NAME}`
+      : envelope.from.startsWith('cron:')
+        ? `Scheduled job result - ${envelope.from}`
+        : `Message from ${envelope.from}`;
+
     // Dispatch with lock to prevent Config singleton race
-    const response = await withDispatchLock(() =>
-      dispatchToAgent(agent.name, envelope.text, chatId, botToken),
-    );
+    _activeDispatches.add(agent.name);
+    let response: string | null = null;
+    try {
+      response = await withDispatchLock(() =>
+        dispatchToAgent(agent.name, envelope.text, chatId, botToken, sourceLabel),
+      );
+    } finally {
+      _activeDispatches.delete(agent.name);
+    }
 
     if (response) {
       log.info(`[${agent.name}] Responded via switchboard (${response.length} chars)`);
