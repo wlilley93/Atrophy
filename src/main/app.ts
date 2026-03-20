@@ -2045,18 +2045,27 @@ app.whenReady().then(() => {
     log.info(`Switchboard: ${agents.length} agent(s) wired`);
   }
 
-  // 3. Start cron scheduler (in-process, replaces launchd for job timing)
-  try {
-    cronScheduler.start();
-    const schedule = cronScheduler.getSchedule();
-    log.info(`Cron scheduler: ${schedule.length} job(s) scheduled`);
-  } catch (e) {
-    log.warn(`Cron scheduler start failed (non-fatal): ${e}`);
+  // 3. Crash rate check - if too many recent crashes, skip cron and daemon
+  // to break crash loops. The subsystems can be re-enabled from the UI.
+  const crashSafe = isCrashRateSafe();
+  if (!crashSafe) {
+    log.error('CRASH LOOP DETECTED - skipping cron scheduler and Telegram daemon. Fix the issue, then restart.');
   }
 
-  // 4. Auto-start Telegram daemon. It discovers all agents with telegram
+  // 4. Start cron scheduler (in-process, replaces launchd for job timing)
+  if (crashSafe) {
+    try {
+      cronScheduler.start();
+      const schedule = cronScheduler.getSchedule();
+      log.info(`Cron scheduler: ${schedule.length} job(s) scheduled`);
+    } catch (e) {
+      log.warn(`Cron scheduler start failed (non-fatal): ${e}`);
+    }
+  }
+
+  // 5. Auto-start Telegram daemon. It discovers all agents with telegram
   // credentials and launches a poller per agent.
-  {
+  if (crashSafe) {
     const started = startDaemon();
     if (started) {
       log.info('Telegram daemon auto-started');
@@ -2400,6 +2409,43 @@ function gracefulShutdown(signal: string): void {
 }
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// ---------------------------------------------------------------------------
+// Crash rate limiter - detects crash loops and disables subsystems
+// ---------------------------------------------------------------------------
+
+const CRASH_LOG_PATH = path.join(USER_DATA, 'crash-log.json');
+const CRASH_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_CRASHES_IN_WINDOW = 5;
+
+function recordCrash(): void {
+  try {
+    let timestamps: number[] = [];
+    if (fs.existsSync(CRASH_LOG_PATH)) {
+      timestamps = JSON.parse(fs.readFileSync(CRASH_LOG_PATH, 'utf-8'));
+    }
+    const cutoff = Date.now() - CRASH_WINDOW_MS;
+    timestamps = timestamps.filter((t: number) => t > cutoff);
+    timestamps.push(Date.now());
+    fs.writeFileSync(CRASH_LOG_PATH, JSON.stringify(timestamps));
+  } catch { /* best effort */ }
+}
+
+function isCrashRateSafe(): boolean {
+  try {
+    if (!fs.existsSync(CRASH_LOG_PATH)) return true;
+    const timestamps: number[] = JSON.parse(fs.readFileSync(CRASH_LOG_PATH, 'utf-8'));
+    const cutoff = Date.now() - CRASH_WINDOW_MS;
+    const recent = timestamps.filter((t: number) => t > cutoff);
+    return recent.length < MAX_CRASHES_IN_WINDOW;
+  } catch {
+    return true; // can't read - assume safe
+  }
+}
+
+// Record a boot timestamp so we can detect crash loops.
+// On a healthy boot this entry ages out of the window naturally.
+recordCrash();
 
 // ---------------------------------------------------------------------------
 // Global error handlers - catch unhandled rejections and exceptions

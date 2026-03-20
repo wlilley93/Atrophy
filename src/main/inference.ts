@@ -12,11 +12,12 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
-import { getConfig } from './config';
+import { getConfig, USER_DATA } from './config';
 import { classifyEffort, EffortLevel } from './thinking';
 import {
   timeOfDayContext,
@@ -33,6 +34,20 @@ import * as memory from './memory';
 import { createLogger } from './logger';
 
 const log = createLogger('inference');
+
+// ---------------------------------------------------------------------------
+// Per-agent working directory for Claude CLI
+// ---------------------------------------------------------------------------
+
+function agentCwd(): string {
+  const name = getConfig().AGENT_NAME;
+  if (name) {
+    const dir = path.join(USER_DATA, 'agents', name);
+    if (fs.existsSync(dir)) return dir;
+  }
+  // Fallback to Atrophy data root, NOT homedir
+  return USER_DATA;
+}
 
 // ---------------------------------------------------------------------------
 // Context prefetch cache
@@ -575,7 +590,7 @@ export function streamInference(
     proc = spawn(cmd[0], cmd.slice(1), {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: spawnEnv,
-      cwd: os.homedir(),
+      cwd: agentCwd(),
       detached: false,
     });
     log.debug(`pid=${proc.pid}`);
@@ -909,7 +924,7 @@ export function runInferenceOneshot(
     const proc = spawn(cmd[0], cmd.slice(1), {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: cleanEnv(),
-      cwd: os.homedir(),
+      cwd: agentCwd(),
       detached: false,
     });
 

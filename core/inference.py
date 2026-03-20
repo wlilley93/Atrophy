@@ -402,6 +402,7 @@ def stream_inference(
             stderr=subprocess.PIPE,
             text=True,
             env=_env(),
+            cwd=str(USER_DATA),
             start_new_session=True,
         )
     except Exception as e:
@@ -628,7 +629,7 @@ def run_inference_oneshot(messages: list[dict], system: str,
     ]
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, env=_env(), start_new_session=True,
+        text=True, env=_env(), cwd=str(USER_DATA), start_new_session=True,
     )
     t0 = time.time()
     try:

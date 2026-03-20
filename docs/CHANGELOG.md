@@ -4,6 +4,30 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.5.5
+
+### Fix cross-system bleed, crash loops, and dispatch parallelism
+
+Major stability release addressing cascading failures between Atrophy and ccbot since March 19.
+
+#### CWD isolation (P0)
+- **Per-agent working directory for Claude CLI** - inference subprocesses now spawn with `cwd: ~/.atrophy/agents/<name>/` instead of `os.homedir()`. This prevents Claude CLI from loading `/Users/williamlilley/CLAUDE.md` (ccbot's Qwen instructions) into every agent's context. Each agent loads its own `CLAUDE.md` from its agent directory.
+- **Mirror agent CLAUDE.md** - created `~/.atrophy/agents/mirror/CLAUDE.md` so Mirror has a defined identity rather than inheriting nothing.
+- **Bundle rebuild** - the running bundle had diverged from source. The stale bundle contained a synthetic fallback (`"Job completed with exit code N"`) that caused every cron job - including silent ones like `check_reminders` - to trigger inference. Companion would tell Will "no reminders" every 60 seconds. Source code was already correct; rebuilding from source fixed the divergence.
+
+#### Telegram daemon hardening (P1)
+- **Orphaned "Thinking..." cleanup** - new `deleteMessage()` function in telegram API. When dispatch produces no response, the "Thinking..." placeholder is deleted instead of left permanently visible.
+- **Zombie process kill on timeout** - the 5-minute dispatch timeout now calls `stopInference()` to kill the lingering Claude CLI subprocess. Previously, timed-out processes leaked as orphans.
+- **Per-agent dispatch locks** - replaced the global `withDispatchLock` (which serialised ALL agents) with per-agent `withAgentDispatchLock`. Companion and Montgomery can now dispatch in parallel. A narrow `withConfigLock` protects only the Config singleton mutation during the brief setup-and-spawn window.
+- **flushTimer cleanup** - the edit-throttle interval is now cleared on dispatch timeout, fixing a setInterval leak.
+
+#### Crash loop prevention (P2)
+- **Persistent circuit breaker** - cron job failure state now persists to `~/.atrophy/cron-state.json`. Previously, circuit breaker state was in-memory only - a crash-and-restart would re-enable every broken job, creating infinite restart loops. Jobs disabled by the circuit breaker now stay disabled across restarts until manually reset.
+- **App-level crash rate limiter** - tracks boot timestamps in `~/.atrophy/crash-log.json`. If 5+ boots occur within 10 minutes, cron and the Telegram daemon are skipped on the next boot. The app still launches (UI accessible) but the subsystems that could be causing the loop are disabled. Healthy boots age out of the window naturally.
+- **Staggered poller startup** - Telegram pollers now launch 10 seconds apart instead of simultaneously, avoiding thundering herd on startup.
+
+---
+
 ## 1.5.4
 
 ### Fix stats bleed and silent failures

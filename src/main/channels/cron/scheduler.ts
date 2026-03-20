@@ -11,12 +11,43 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { BUNDLE_ROOT } from '../../config';
+import { BUNDLE_ROOT, USER_DATA } from '../../config';
 import { switchboard } from '../switchboard';
 import { runJob } from './runner';
 import { createLogger } from '../../logger';
 
 const log = createLogger('cron-scheduler');
+
+// ---------------------------------------------------------------------------
+// Persistent circuit breaker state
+// ---------------------------------------------------------------------------
+
+interface PersistedJobState {
+  disabled: boolean;
+  consecutiveFailures: number;
+  disabledAt?: string;
+}
+
+const CRON_STATE_PATH = path.join(USER_DATA, 'cron-state.json');
+
+function loadCronState(): Record<string, PersistedJobState> {
+  try {
+    if (fs.existsSync(CRON_STATE_PATH)) {
+      return JSON.parse(fs.readFileSync(CRON_STATE_PATH, 'utf-8'));
+    }
+  } catch (err) {
+    log.warn(`Failed to load cron state: ${err}`);
+  }
+  return {};
+}
+
+function saveCronState(state: Record<string, PersistedJobState>): void {
+  try {
+    fs.writeFileSync(CRON_STATE_PATH, JSON.stringify(state, null, 2));
+  } catch (err) {
+    log.warn(`Failed to save cron state: ${err}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -131,6 +162,8 @@ class CronScheduler {
    * definitions and sets up timers (if the scheduler is already started).
    */
   registerAgent(agentName: string, jobs: Record<string, JobDefinition>): void {
+    const persisted = loadCronState();
+
     for (const [jobName, definition] of Object.entries(jobs)) {
       const key = `${agentName}.${jobName}`;
       const existing = this.jobs.get(key);
@@ -143,6 +176,8 @@ class CronScheduler {
         }
       }
 
+      // Restore circuit breaker state from disk
+      const saved = persisted[key];
       const job: ScheduledJob = {
         name: jobName,
         agent: agentName,
@@ -151,14 +186,19 @@ class CronScheduler {
         nextRun: null,
         lastRun: null,
         running: false,
-        consecutiveFailures: 0,
-        disabled: false,
+        consecutiveFailures: saved?.consecutiveFailures || 0,
+        disabled: saved?.disabled || false,
       };
 
       this.jobs.set(key, job);
-      log.info(`Registered job: ${key} - ${definition.description || definition.script}`);
 
-      if (this.started) {
+      if (job.disabled) {
+        log.warn(`Job '${key}' restored as disabled (circuit breaker, since ${saved?.disabledAt || 'unknown'})`);
+      } else {
+        log.info(`Registered job: ${key} - ${definition.description || definition.script}`);
+      }
+
+      if (this.started && !job.disabled) {
         this.scheduleJob(job);
       }
     }
@@ -281,6 +321,7 @@ class CronScheduler {
 
     job.disabled = false;
     job.consecutiveFailures = 0;
+    this.persistState();
 
     if (this.started) {
       this.scheduleJob(job);
@@ -446,8 +487,11 @@ class CronScheduler {
           this.clearTimer(job);
           log.error(`Job '${key}' disabled after ${job.consecutiveFailures} consecutive failures (circuit breaker)`);
         }
-      } else {
+        this.persistState();
+      } else if (job.consecutiveFailures > 0) {
+        // Recovery - clear failure count and persist
         job.consecutiveFailures = 0;
+        this.persistState();
       }
     } catch (err) {
       log.error(`Job '${key}' execution error: ${err}`);
@@ -458,6 +502,7 @@ class CronScheduler {
         this.clearTimer(job);
         log.error(`Job '${key}' disabled after ${job.consecutiveFailures} consecutive failures (circuit breaker)`);
       }
+      this.persistState();
     } finally {
       job.running = false;
     }
@@ -476,6 +521,24 @@ class CronScheduler {
       clearTimeout(job.timer as ReturnType<typeof setTimeout>);
     }
     job.timer = null;
+  }
+
+  /**
+   * Persist circuit breaker state for all jobs to disk.
+   * Only saves jobs that have non-zero failure counts or are disabled.
+   */
+  private persistState(): void {
+    const state: Record<string, PersistedJobState> = {};
+    for (const [key, job] of this.jobs) {
+      if (job.disabled || job.consecutiveFailures > 0) {
+        state[key] = {
+          disabled: job.disabled,
+          consecutiveFailures: job.consecutiveFailures,
+          disabledAt: job.disabled ? new Date().toISOString() : undefined,
+        };
+      }
+    }
+    saveCronState(state);
   }
 }
 

@@ -154,29 +154,32 @@ export async function runJob(
   // Route result through switchboard
   // -----------------------------------------------------------------------
 
-  const outputText = result.stdout.trim() || `Job '${jobName}' completed with exit code ${result.exitCode}`;
+  const outputText = result.stdout.trim();
 
-  // Primary envelope - send job output to the agent
-  const envelope = switchboard.createEnvelope(
-    `cron:${agentName}.${jobName}`,
-    `agent:${agentName}`,
-    outputText,
-    {
-      type: 'system',
-      priority: 'normal',
-      metadata: {
-        job: jobName,
-        exitCode: result.exitCode,
-        durationMs: result.durationMs,
-        stderr: result.stderr || undefined,
+  // Only route through switchboard if the job produced output.
+  // Silent success (exit 0, no stdout) should stay silent.
+  if (outputText) {
+    const envelope = switchboard.createEnvelope(
+      `cron:${agentName}.${jobName}`,
+      `agent:${agentName}`,
+      outputText,
+      {
+        type: 'system',
+        priority: 'normal',
+        metadata: {
+          job: jobName,
+          exitCode: result.exitCode,
+          durationMs: result.durationMs,
+          stderr: result.stderr || undefined,
+        },
       },
-    },
-  );
+    );
 
-  try {
-    await switchboard.route(envelope);
-  } catch (err) {
-    log.error(`Failed to route job result for '${agentName}.${jobName}': ${err}`);
+    try {
+      await switchboard.route(envelope);
+    } catch (err) {
+      log.error(`Failed to route job result for '${agentName}.${jobName}': ${err}`);
+    }
   }
 
   // -----------------------------------------------------------------------

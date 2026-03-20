@@ -23,18 +23,20 @@ There are 3 layers:
 
 To add a new channel: create `channels/<name>/` with api + daemon + index, register with switchboard.
 
-Each agent has its own dedicated Telegram bot - its own token, its own chat, and its own profile photo set from the agent's reference images. The daemon runs parallel per-agent pollers with randomised jitter so activity feels organic rather than mechanical. A dispatch mutex serialises inference so the Config singleton and Claude CLI are never contested between pollers.
+Each agent has its own dedicated Telegram bot - its own token, its own chat, and its own profile photo set from the agent's reference images. The daemon runs parallel per-agent pollers with randomised jitter so activity feels organic rather than mechanical. Per-agent dispatch locks allow agents to dispatch inference in parallel while a narrow config lock protects the shared Config singleton during the brief setup-and-spawn window.
 
 This replaces the previous Topics mode architecture where all agents shared a single bot and a single group with forum threads. The per-agent bot model eliminates group management entirely - no shared group, no topic IDs, no routing logic.
 
 ```
 Telegram Bot API (one bot per agent)
   |
-src/main/channels/telegram/daemon.ts  (parallel per-agent pollers)
+src/main/channels/telegram/daemon.ts  (parallel per-agent pollers, staggered 10s apart)
   |
 discoverTelegramAgents()               (agents with bot token + chat ID configured)
   |
-withDispatchLock()                     (mutex - one agent dispatches at a time)
+withAgentDispatchLock(name)            (per-agent lock - agents dispatch in parallel)
+  |
+withConfigLock()                       (narrow lock - config reload + subprocess spawn only)
   |
 src/main/channels/telegram/api.ts      (send via agent's own bot token)
 ```
@@ -290,7 +292,7 @@ The implementation makes several deliberate technical choices that affect reliab
 
 ## src/main/channels/telegram/daemon.ts - Polling Daemon
 
-The polling daemon is responsible for receiving Telegram messages from each agent's dedicated bot and dispatching responses. It runs parallel per-agent pollers with randomised jitter, and a dispatch mutex ensures inference (which mutates the Config singleton and Claude CLI session) runs for only one agent at a time. The daemon runs as either a managed timer within the Electron main process or as a standalone launchd agent.
+The polling daemon is responsible for receiving Telegram messages from each agent's dedicated bot and dispatching responses. It runs parallel per-agent pollers with randomised jitter. Each agent has its own dispatch lock so agents dispatch in parallel; a narrow config lock serialises only the Config singleton mutation during setup. Pollers launch staggered 10 seconds apart to avoid thundering herd on startup.
 
 ### How It Works
 
@@ -299,7 +301,7 @@ On startup, `discoverTelegramAgents()` finds all agents that have both `telegram
 1. **Wait with jitter** - sleeps 8-15 seconds (randomised) between polls for organic feel
 2. **Poll** - calls `getUpdates` on the agent's own bot token, `allowed_updates: ['message']`
 3. **Intercept utility commands** - `/status` handled directly without dispatch
-4. **Dispatch** - for each incoming message, calls `withDispatchLock()` to acquire the mutex, then invokes `dispatchToAgent()`
+4. **Dispatch** - for each incoming message, calls `withAgentDispatchLock()` to acquire the per-agent lock, then invokes `dispatchToAgent()`
 5. **Respond** - streams the agent's response back into the same chat via `editMessage()`
 6. **Persist** - saves per-agent `lastUpdateId` to state after each poll
 
@@ -330,43 +332,50 @@ async function dispatchToAgent(agentName: string, text: string, chatId: string, 
 The dispatch sequence is:
 
 1. Saves the current agent name for later restoration
-2. Calls `config.reloadForAgent(agentName)` and `memory.initDb()` to switch context to the target agent
-3. Loads the system prompt via `loadSystemPrompt()` using the target agent's prompts
-4. Gets the last CLI session ID from memory for session continuity
-5. Prepends `[Telegram message from the user]` to the message text
-6. Sends an initial "Thinking..." placeholder message via `sendMessageGetId()` using the agent's `botToken`
-7. Streams inference via `streamInference()`. As events arrive, the placeholder is periodically edited (throttled to once every 1.5 seconds) with a progressively richer display:
-   - **Elapsed time counter** - a live status line "12s | 3 tools" is appended below the streamed text while inference is running. Elapsed time counts up from the moment inference starts.
-   - **Thinking blockquotes** - `ThinkingDeltaEvent` content is rendered as `> _thinking preview..._` (truncated to 400 chars). Extended thinking is surfaced inline rather than hidden.
-   - **Tool input display** - `ToolUseEvent` appends a formatted line showing a human-readable summary of tool arguments via `formatToolInput()`. For example, `recall` shows the query string rather than raw JSON.
-   - **Tool result stats** - `ToolResultEvent` content is formatted per tool type via `formatToolResult()`: search tools show "5 matches", file reads show "42 lines", writes show "wrote 3 lines", edits show "applied", general results show "3 results".
-   - Compacting status is surfaced inline when the CLI context window is compacted mid-stream.
-8. Performs a final `editMessage()` with the complete response, prefixed with the agent's emoji and display name, and a stats footer line `_18s | 3 tools | ~42.5 tokens_` showing elapsed time, tool call count, and approximate token usage.
-9. Restores the original agent config via `config.reloadForAgent(originalAgent)` and `memory.initDb()`
-10. Returns the response text or `null`
+2. Sends an initial "Thinking..." placeholder message via `sendMessageGetId()` (only for user-initiated Telegram messages; system-originated dispatches like cron are silent)
+3. Acquires the **config lock** (`withConfigLock`), then:
+   a. Calls `config.reloadForAgent(agentName)` and `memory.initDb()` to switch context
+   b. Loads the system prompt via `loadSystemPrompt()`
+   c. Gets the CLI session ID from memory for session continuity
+   d. Spawns `streamInference()` - the config lock is released once the subprocess is spawned
+4. Streams inference. As events arrive, the placeholder is periodically edited (throttled to once every 1.5 seconds) with a progressively richer display:
+   - **Thinking blockquotes** - `ThinkingDeltaEvent` content rendered as `> _thinking preview..._`
+   - **Tool input display** - `ToolUseEvent` appends formatted tool argument summaries
+   - **Tool result stats** - `ToolResultEvent` formatted per tool type (match counts, line counts, etc.)
+   - **Compacting** - surfaced inline when the CLI context window is compacted mid-stream
+5. On completion: final `editMessage()` with the complete response, prefixed with the agent's emoji and display name
+6. On no response: **deletes the orphaned "Thinking..." message** via `deleteMessage()` instead of leaving it visible
+7. On dispatch timeout (5 min): calls `stopInference()` to kill the zombie CLI process, clears the flush timer
+8. Restores the original agent config via `withConfigLock` -> `config.reloadForAgent(originalAgent)` and `memory.initDb()`
+9. Returns the response text or `null`
 
-### Dispatch Mutex
+### Dispatch Locks
+
+Two-tier locking system allows parallel dispatch while protecting the shared Config singleton:
 
 ```typescript
-async function withDispatchLock<T>(fn: () => Promise<T>): Promise<T>
+// Per-agent - agents dispatch in parallel, but each agent serialises its own dispatches
+function withAgentDispatchLock<T>(agentName: string, fn: () => Promise<T>): Promise<T>
+
+// Config - narrow lock around config.reloadForAgent() + subprocess spawn only
+function withConfigLock<T>(fn: () => Promise<T>): Promise<T>
 ```
 
-A simple promise-chaining mutex. All calls to `dispatchToAgent` are wrapped in `withDispatchLock()`, which serialises inference across all parallel pollers. This prevents:
+**Per-agent dispatch lock**: Each agent has its own promise-chaining queue. Companion and Montgomery can dispatch simultaneously. But if two messages arrive for the same agent, they're serialised.
 
-- Two agents from concurrently mutating the Config singleton
-- Two Claude CLI processes from competing for the same session context
-- Interleaved writes to overlapping database tables
+**Config lock**: The Config singleton is mutated by `config.reloadForAgent()`. This narrow lock is held only while reloading config and spawning the subprocess - released before streaming begins. The `finally` block that restores the original agent config is also wrapped in the config lock.
 
-Pollers themselves continue running in parallel - only the dispatch (inference) step is serialised.
+This replaced the previous global `withDispatchLock` which serialised ALL agents, causing worst-case queuing of N * inference-time when N agents had pending messages.
 
 ### Race Condition Prevention
 
-- **Dispatch mutex** - `withDispatchLock()` ensures only one agent dispatches at a time, while pollers themselves stay parallel.
-- **Instance lock** - `O_EXLOCK` on macOS (with pid-check fallback on other platforms) prevents two daemon instances from running simultaneously. Only one process can hold the lock.
+- **Per-agent dispatch lock** - `withAgentDispatchLock()` serialises per agent while allowing cross-agent parallelism.
+- **Config lock** - `withConfigLock()` serialises the Config singleton mutation during the brief setup window.
+- **Active dispatch guard** - `_activeDispatches` set drops inbound messages for an agent that's already dispatching, preventing queue buildup.
+- **Instance lock** - `O_EXLOCK` on macOS (with pid-check fallback on other platforms) prevents two daemon instances from running simultaneously.
 - **Per-bot polling** - each poller owns its own update offset for its bot, eliminating contention on `getUpdates`.
 - **Isolated memory** - each agent has its own SQLite database, so there are no cross-agent write conflicts at the DB layer.
-
-The only concurrent Telegram activity outside the daemon is cron jobs (heartbeat, morning brief) sending messages independently. This is safe because they're independent fire-and-forget POSTs.
+- **Staggered startup** - pollers launch 10 seconds apart to avoid thundering herd on daemon start.
 
 ### Message Deduplication
 

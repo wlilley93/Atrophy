@@ -174,6 +174,8 @@ The cron scheduler runs in-process. Jobs are defined in each agent's manifest an
   - **Interval**: `setInterval` with configurable seconds
   - **Calendar**: `setTimeout` chains that compute next fire time from cron expression
 - On fire: spawns the job script, captures stdout/stderr, creates an Envelope
+- Only routes output through switchboard if the job produced actual stdout (silent success = no inference)
+- **Circuit breaker**: 3 consecutive failures disables a job. State persists to `~/.atrophy/cron-state.json` so broken jobs stay disabled across restarts.
 - History kept in-memory (ring buffer, last 100 runs per agent)
 - Registered as `cron:<agent>` in the service directory
 
@@ -556,12 +558,16 @@ The unified app startup sequence, from `app.whenReady()`:
    d. Schedule jobs from manifest
    e. Build MCP config from manifest mcp section
 
-6. cronScheduler.start()
-   Activate all registered timers
+6. Crash rate check
+   If 5+ boots in 10 minutes, skip cron and daemon (crash loop protection)
 
-7. startTelegramDaemon()
+7. cronScheduler.start()
+   Activate all registered timers
+   Loads persisted circuit breaker state from ~/.atrophy/cron-state.json
+
+8. startTelegramDaemon()
    Discovers all agents with telegram credentials
-   Launches a poller per agent
+   Launches a poller per agent, staggered 10s apart
    Each poller creates Envelopes and routes through switchboard
 
 8. Periodic tasks:

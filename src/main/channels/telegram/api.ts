@@ -245,6 +245,19 @@ export async function editMessage(
   return result !== null;
 }
 
+/**
+ * Delete a message by ID. Used to clean up orphaned "Thinking..." indicators
+ * when inference produces no response.
+ */
+export async function deleteMessage(
+  messageId: number,
+  chatId: string,
+  botToken?: string,
+): Promise<boolean> {
+  const result = await post('deleteMessage', { chat_id: chatId, message_id: messageId }, 15_000, botToken);
+  return result !== null;
+}
+
 export async function sendButtons(
   text: string,
   buttons: { text: string; callback_data: string }[][],

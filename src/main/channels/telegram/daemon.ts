@@ -18,9 +18,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from '../../config';
-import { sendMessage, sendMessageGetId, editMessage, post, downloadTelegramFile, setBotProfilePhoto } from './api';
+import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto } from './api';
 import { discoverAgents, getAgentState } from '../../agent-manager';
-import { streamInference, resetMcpConfig, InferenceEvent } from '../../inference';
+import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from '../../inference';
 import { loadSystemPrompt } from '../../context';
 import { getReferenceImages } from '../../jobs/generate-avatar';
 import * as memory from '../../memory';
@@ -351,18 +351,39 @@ async function setAgentBotPhoto(agentName: string, botToken: string): Promise<vo
 }
 
 // ---------------------------------------------------------------------------
-// Dispatch mutex - serialises agent dispatches to prevent Config singleton
-// race conditions. Pollers run in parallel, but only one dispatch at a time.
+// Per-agent dispatch locks - agents dispatch in parallel, but each agent
+// serialises its own dispatches to prevent overlapping inference.
 // ---------------------------------------------------------------------------
 
-let _dispatchQueue: Promise<void> = Promise.resolve();
+const _agentDispatchQueues = new Map<string, Promise<void>>();
 const _activeDispatches = new Set<string>();
 
-function withDispatchLock<T>(fn: () => Promise<T>): Promise<T> {
+function withAgentDispatchLock<T>(agentName: string, fn: () => Promise<T>): Promise<T> {
   let resolve: () => void;
   const next = new Promise<void>((r) => { resolve = r; });
-  const prev = _dispatchQueue;
-  _dispatchQueue = next;
+  const prev = _agentDispatchQueues.get(agentName) || Promise.resolve();
+  _agentDispatchQueues.set(agentName, next);
+  return prev.then(async () => {
+    try {
+      return await fn();
+    } finally {
+      resolve!();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Config mutex - narrow lock around config.reloadForAgent() which mutates
+// a shared singleton. Released as soon as the subprocess is spawned.
+// ---------------------------------------------------------------------------
+
+let _configQueue: Promise<void> = Promise.resolve();
+
+function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
+  let resolve: () => void;
+  const next = new Promise<void>((r) => { resolve = r; });
+  const prev = _configQueue;
+  _configQueue = next;
   return prev.then(async () => {
     try {
       return await fn();
@@ -659,14 +680,19 @@ async function dispatchToAgent(
     : null;
 
   try {
-    config.reloadForAgent(agentName);
-    resetMcpConfig();
-    memory.initDb();
+    // Narrow config lock - only held while reloading config and spawning
+    // the inference subprocess. Released before streaming begins.
+    const emitter = await withConfigLock(async () => {
+      config.reloadForAgent(agentName);
+      resetMcpConfig();
+      memory.initDb();
 
-    const system = loadSystemPrompt();
-    const cliSessionId = memory.getLastCliSessionId();
+      const system = loadSystemPrompt();
+      const cliSessionId = memory.getLastCliSessionId();
+      const prompt = sourceLabel ? `[${sourceLabel}]\n\n${text}` : text;
+      return streamInference(prompt, system, cliSessionId);
+    });
 
-    const prompt = sourceLabel ? `[${sourceLabel}]\n\n${text}` : text;
     let fullText = '';
     const toolsUsed: string[] = [];
 
@@ -702,19 +728,19 @@ async function dispatchToAgent(
 
 
     await new Promise<void>((resolve, reject) => {
-      const emitter = streamInference(prompt, system, cliSessionId);
-
-      const timer = setTimeout(() => {
-        log.error(`[${agentName}] dispatch timed out after ${DISPATCH_TIMEOUT_MS / 1000}s`);
-        reject(new Error('dispatch timeout'));
-      }, DISPATCH_TIMEOUT_MS);
-
       // Periodically flush throttled edits
       const flushTimer = setInterval(async () => {
         if (editPending) {
           await doEdit();
         }
       }, EDIT_INTERVAL_MS);
+
+      const timer = setTimeout(() => {
+        log.error(`[${agentName}] dispatch timed out after ${DISPATCH_TIMEOUT_MS / 1000}s`);
+        clearInterval(flushTimer);
+        stopInference(); // Kill the lingering CLI process
+        reject(new Error('dispatch timeout'));
+      }, DISPATCH_TIMEOUT_MS);
 
       emitter.on('event', async (evt: InferenceEvent) => {
         switch (evt.type) {
@@ -817,7 +843,8 @@ async function dispatchToAgent(
     if (finalText && msgId) {
       await editMessage(msgId, `${header}${finalText}`, chatId, botToken);
     } else if (!finalText && msgId) {
-      log.warn(`[${agentName}] no response after ${elapsed}`);
+      log.warn(`[${agentName}] no response after ${elapsed} - deleting orphaned message`);
+      await deleteMessage(msgId, chatId, botToken);
     }
 
     return finalText;
@@ -828,9 +855,11 @@ async function dispatchToAgent(
     }
     return null;
   } finally {
-    config.reloadForAgent(originalAgent);
-    resetMcpConfig();
-    memory.initDb();
+    await withConfigLock(async () => {
+      config.reloadForAgent(originalAgent);
+      resetMcpConfig();
+      memory.initDb();
+    });
   }
 }
 
@@ -918,7 +947,7 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
 
     // Handle /status command
     if (text.toLowerCase() === '/status') {
-      await withDispatchLock(() => handleStatusCommand(msgChatId, agent.botToken));
+      await withAgentDispatchLock(agent.name, () => handleStatusCommand(msgChatId, agent.botToken));
       continue;
     }
 
@@ -1091,11 +1120,11 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
         ? `Scheduled job result - ${envelope.from}`
         : `Message from ${envelope.from}`;
 
-    // Dispatch with lock to prevent Config singleton race
+    // Per-agent dispatch lock - agents dispatch in parallel
     _activeDispatches.add(agent.name);
     let response: string | null = null;
     try {
-      response = await withDispatchLock(() =>
+      response = await withAgentDispatchLock(agent.name, () =>
         dispatchToAgent(agent.name, envelope.text, chatId, botToken, sourceLabel),
       );
     } finally {
@@ -1163,10 +1192,10 @@ export function startDaemon(): boolean {
     registerAgentSwitchboard(agent);
   }
 
-  // Launch all pollers in parallel
-  for (const agent of agents) {
-    runAgentPoller(agent);
-  }
+  // Stagger poller launches to avoid thundering herd on startup
+  agents.forEach((agent, i) => {
+    setTimeout(() => runAgentPoller(agent), i * 10_000);
+  });
 
   return true;
 }
