@@ -326,7 +326,33 @@ function findPython(): string {
     if (/^[a-zA-Z0-9_.\/~-]+$/.test(p)) return p;
     log.warn('PYTHON_PATH contains invalid characters, ignoring');
   }
-  const candidates = ['python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3'];
+
+  // Scan common Python locations. Electron apps don't inherit shell PATH,
+  // so bare 'python3' often fails. Include pyenv, homebrew, and system paths.
+  const home = process.env.HOME || '/Users/williamlilley';
+  const candidates = [
+    'python3',
+    '/opt/homebrew/bin/python3',
+    '/usr/local/bin/python3',
+    // pyenv - check the shims dir which delegates to the active version
+    `${home}/.pyenv/shims/python3`,
+  ];
+
+  // Also scan pyenv versions directory for concrete interpreters
+  try {
+    const pyenvDir = `${home}/.pyenv/versions`;
+    const { readdirSync, statSync } = require('fs');
+    const versions = readdirSync(pyenvDir)
+      .filter((v: string) => statSync(`${pyenvDir}/${v}`).isDirectory())
+      .sort()
+      .reverse(); // newest first
+    for (const v of versions) {
+      candidates.push(`${pyenvDir}/${v}/bin/python3`);
+    }
+  } catch {
+    // pyenv not installed - that's fine
+  }
+
   for (const c of candidates) {
     try {
       execFileSync(c, ['--version'], { stdio: 'pipe' });

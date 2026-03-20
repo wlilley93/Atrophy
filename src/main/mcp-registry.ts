@@ -108,7 +108,29 @@ function findPythonPath(): string {
     if (/^[a-zA-Z0-9_.\/~-]+$/.test(p)) return p;
     log.warn('PYTHON_PATH contains invalid characters, ignoring');
   }
-  const candidates = ['python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3'];
+
+  const home = process.env.HOME || '/Users/williamlilley';
+  const candidates = [
+    'python3',
+    '/opt/homebrew/bin/python3',
+    '/usr/local/bin/python3',
+    `${home}/.pyenv/shims/python3`,
+  ];
+
+  try {
+    const pyenvDir = `${home}/.pyenv/versions`;
+    const { readdirSync, statSync } = require('fs');
+    const versions = readdirSync(pyenvDir)
+      .filter((v: string) => statSync(`${pyenvDir}/${v}`).isDirectory())
+      .sort()
+      .reverse();
+    for (const v of versions) {
+      candidates.push(`${pyenvDir}/${v}/bin/python3`);
+    }
+  } catch {
+    // pyenv not installed
+  }
+
   for (const c of candidates) {
     try {
       execFileSync(c, ['--version'], { stdio: 'pipe' });
