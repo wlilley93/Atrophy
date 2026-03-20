@@ -4,6 +4,15 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.5.4
+
+### Fix stats bleed and silent failures
+
+- **Remove stats footer from Telegram messages** - stats (elapsed time, tool count, token estimate) were appended as italic markdown to every agent response, causing bleed into other bot systems reading the same messages. Stats are now logged server-side only.
+- **Suppress "No response" messages** - when inference returned empty output, a visible `_No response_` message was sent to Telegram. Now silently logged as a warning instead.
+
+---
+
 ## 1.4.0
 
 ### Switchboard v2 - unified message architecture

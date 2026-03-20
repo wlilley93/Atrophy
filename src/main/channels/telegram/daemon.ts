@@ -643,13 +643,20 @@ async function dispatchToAgent(
   const config = getConfig();
   const originalAgent = config.AGENT_NAME;
 
-  // Send initial thinking indicator and capture message_id for edits
+  // System-originated dispatches (cron, agent-to-agent) should be silent on
+  // Telegram - no "Thinking..." indicator, no "No response" or error messages.
+  // Only show output if the agent produces a real response.
+  const isTelegramOrigin = !sourceLabel || sourceLabel.startsWith('Telegram message');
+
   const manifest = getAgentManifest(agentName);
   const emoji = (manifest.telegram_emoji as string) || '';
   const display = (manifest.display_name as string) || agentName.charAt(0).toUpperCase() + agentName.slice(1);
   const header = emoji ? `${emoji} *${display}*\n\n` : '';
 
-  const msgId = await sendMessageGetId(`${header}_Thinking\u2026_`, chatId, botToken);
+  // Only show "Thinking..." for user-initiated Telegram messages
+  const msgId = isTelegramOrigin
+    ? await sendMessageGetId(`${header}_Thinking\u2026_`, chatId, botToken)
+    : null;
 
   try {
     config.reloadForAgent(agentName);
@@ -804,21 +811,13 @@ async function dispatchToAgent(
     const finalText = fullText.trim() || null;
     const elapsed = formatElapsed(Date.now() - startTime);
 
-    // Build stats footer
-    const statsParts = [elapsed];
-    if (toolsUsed.length) statsParts.push(`${toolsUsed.length} tools`);
-    const charCount = finalText ? finalText.length : 0;
-    if (charCount > 0) {
-      const approxTokens = Math.round(charCount / 4);
-      statsParts.push(`~${approxTokens} tokens`);
-    }
-    const statsLine = `\n\n_${statsParts.join(' | ')}_`;
+    log.info(`[${agentName}] completed in ${elapsed}`);
 
-    // Final edit with complete response + stats
+    // Final edit with complete response (no stats footer - causes bleed into other bots)
     if (finalText && msgId) {
-      await editMessage(msgId, `${header}${finalText}${statsLine}`, chatId, botToken);
+      await editMessage(msgId, `${header}${finalText}`, chatId, botToken);
     } else if (!finalText && msgId) {
-      await editMessage(msgId, `${header}_No response_${statsLine}`, chatId, botToken);
+      log.warn(`[${agentName}] no response after ${elapsed}`);
     }
 
     return finalText;
