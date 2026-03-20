@@ -75,7 +75,8 @@ export async function runJob(
 ): Promise<JobResult> {
   const config = getConfig();
   const scriptPath = path.resolve(BUNDLE_ROOT, definition.script);
-  const extraArgs = definition.args || [];
+  const rawArgs = definition.args || [];
+  const extraArgs = typeof rawArgs === 'string' ? (rawArgs as string).split(/\s+/).filter(Boolean) : rawArgs;
   const pythonPath = config.PYTHON_PATH;
   const pythonBinDir = path.dirname(pythonPath);
   const t0 = Date.now();

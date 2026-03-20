@@ -1425,6 +1425,10 @@ Output EXACTLY this format - a single fenced JSON block:
     return cronScheduler.runNow(agentName, jobName);
   });
 
+  ipcMain.handle('cron:reset', (_event, agentName: string, jobName: string) => {
+    cronScheduler.resetJob(agentName, jobName);
+  });
+
   ipcMain.handle('cron:schedulerStatus', () => {
     return {
       schedule: cronScheduler.getSchedule(),

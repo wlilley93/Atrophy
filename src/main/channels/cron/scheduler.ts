@@ -47,6 +47,8 @@ export interface ScheduledJob {
   nextRun: Date | null;
   lastRun: Date | null;
   running: boolean;
+  consecutiveFailures: number;
+  disabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +151,8 @@ class CronScheduler {
         nextRun: null,
         lastRun: null,
         running: false,
+        consecutiveFailures: 0,
+        disabled: false,
       };
 
       this.jobs.set(key, job);
@@ -261,6 +265,28 @@ class CronScheduler {
     } catch (err) {
       log.error(`editJobSchedule: failed to update jobs.json for '${key}': ${err}`);
     }
+  }
+
+  /**
+   * Reset the circuit breaker for a job, re-enabling it and rescheduling.
+   */
+  resetJob(agentName: string, jobName: string): void {
+    const key = `${agentName}.${jobName}`;
+    const job = this.jobs.get(key);
+
+    if (!job) {
+      log.warn(`resetJob: job '${key}' not found`);
+      return;
+    }
+
+    job.disabled = false;
+    job.consecutiveFailures = 0;
+
+    if (this.started) {
+      this.scheduleJob(job);
+    }
+
+    log.info(`Circuit breaker reset for '${key}'`);
   }
 
   /**
@@ -389,9 +415,16 @@ class CronScheduler {
 
   /**
    * Execute a job - calls the runner and updates state.
+   * Tracks consecutive failures and disables the job after 3 in a row
+   * (circuit breaker) to prevent runaway loops.
    */
   private async executeJob(job: ScheduledJob): Promise<void> {
     const key = `${job.agent}.${job.name}`;
+
+    if (job.disabled) {
+      log.warn(`Job '${key}' is disabled (circuit breaker) - skipping`);
+      return;
+    }
 
     if (job.running) {
       log.warn(`Job '${key}' is already running - skipping`);
@@ -402,11 +435,29 @@ class CronScheduler {
     log.info(`Executing job: ${key}`);
 
     try {
-      await runJob(job.agent, job.name, job.definition);
+      const result = await runJob(job.agent, job.name, job.definition);
       job.lastRun = new Date();
+
+      if (result.exitCode !== 0) {
+        job.consecutiveFailures++;
+        log.warn(`Job '${key}' failed (exit=${result.exitCode}), consecutive failures: ${job.consecutiveFailures}`);
+        if (job.consecutiveFailures >= 3) {
+          job.disabled = true;
+          this.clearTimer(job);
+          log.error(`Job '${key}' disabled after ${job.consecutiveFailures} consecutive failures (circuit breaker)`);
+        }
+      } else {
+        job.consecutiveFailures = 0;
+      }
     } catch (err) {
       log.error(`Job '${key}' execution error: ${err}`);
       job.lastRun = new Date();
+      job.consecutiveFailures++;
+      if (job.consecutiveFailures >= 3) {
+        job.disabled = true;
+        this.clearTimer(job);
+        log.error(`Job '${key}' disabled after ${job.consecutiveFailures} consecutive failures (circuit breaker)`);
+      }
     } finally {
       job.running = false;
     }
