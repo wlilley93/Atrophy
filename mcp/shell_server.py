@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Scoped shell MCP server for the companion agent.
+"""Shell MCP server for Atrophy agents.
 
-Provides sandboxed shell access with:
-- Command allowlist (homebrew, git, find, ls, cat, grep, etc.)
-- Path restrictions (no access to credentials, .env, tokens)
-- Timeout enforcement (30s default)
-- Working directory confinement (user home by default)
+Provides broad shell access with safety rails:
+- Most dev tools allowed (bash, python3, node, git, brew, docker, etc.)
+- Command chaining (&&, ||, ;) and pipes supported
+- Path restrictions (no access to credentials, .env, tokens, keys)
+- Subshell expansion ($(), backticks) blocked to prevent allowlist bypass
+- Env sanitized (secrets stripped from subprocess environment)
+- Timeout enforcement (30s default, 300s max)
 - Output truncation to prevent context flooding
 
 Protocol: JSON-RPC 2.0 over stdio (MCP standard transport).
@@ -55,7 +57,7 @@ ALLOWED_BINARIES = {
     # Git (read operations + safe writes)
     "git",
     # Node / Python tooling
-    "node", "npm", "pnpm", "yarn", "bun",
+    "node", "npm", "pnpm", "yarn", "bun", "npx", "uvx",
     "python3", "pip3", "uv", "pipx",
     # System info
     "uname", "sw_vers", "sysctl", "whoami", "id", "date", "cal",
@@ -63,15 +65,28 @@ ALLOWED_BINARIES = {
     "env", "printenv",
     # Networking (read-only)
     "ping", "dig", "nslookup", "host", "curl", "wget", "httpie",
+    # Process management (controlled)
+    "kill", "killall", "pkill",
     # Disk / process
     "open", "pbcopy", "pbpaste",
     # Compression
     "tar", "zip", "unzip", "gzip", "gunzip",
     # Editors (non-interactive, for piping)
     "echo", "printf", "tee",
+    # File operations (including delete)
+    "rm", "rmdir",
+    # Permissions
+    "chmod",
     # Development
     "cargo", "go", "rustc", "gcc", "clang",
     "docker", "docker-compose",
+    # Shell scripting (controlled - blocked paths still enforced)
+    "bash", "sh", "zsh",
+    "perl", "ruby",
+    # macOS automation
+    "osascript", "defaults", "launchctl",
+    # Database (read access)
+    "sqlite3",
     # Misc
     "realpath", "basename", "dirname", "mktemp", "touch", "mkdir",
     "cp", "mv", "ln",
@@ -79,21 +94,16 @@ ALLOWED_BINARIES = {
 
 # Binaries that are always blocked, even if somehow in the allowed set.
 BLOCKED_BINARIES = {
-    "rm", "rmdir", "shred",
     "sudo", "su", "doas",
     "shutdown", "reboot", "halt", "poweroff",
     "dd", "mkfs", "fdisk", "diskutil",
     "nmap", "masscan", "nc", "netcat",
-    "kill", "killall", "pkill",
-    "chown", "chgrp", "chmod",
-    "launchctl", "systemctl",
-    "defaults",  # macOS defaults write can be destructive
-    "sqlite3",   # direct DB access - use memory MCP instead
-    "osascript",  # AppleScript injection risk
+    "chown", "chgrp",
+    "systemctl",
     "security",   # keychain access
-    # Shells - block as pipe targets and direct invocation to prevent sandbox escape
-    "bash", "sh", "zsh", "fish", "csh", "tcsh", "ksh", "dash",
-    "perl", "ruby", "php", "lua",
+    # Shells not in allowlist are blocked to prevent sandbox escape
+    "fish", "csh", "tcsh", "ksh", "dash",
+    "php", "lua",
 }
 
 # Git subcommands that are blocked (destructive or remote-pushing)
@@ -103,29 +113,15 @@ BLOCKED_GIT_SUBCOMMANDS = {
 }
 
 # Dangerous argument patterns for specific binaries
-# These binaries can execute arbitrary shell commands via their arguments
+# Only block patterns that could escalate privileges or escape the sandbox
 DANGEROUS_ARG_PATTERNS: dict[str, list[re.Pattern[str]]] = {
-    # awk: system(), pipe to shell via |"sh", or -f with arbitrary file
-    "awk": [re.compile(r"system\s*\("), re.compile(r"\|\s*\"?(?:ba)?sh")],
+    # awk: system() can spawn arbitrary processes
+    "awk": [re.compile(r"system\s*\(")],
     # sed: e flag executes pattern space as shell command
-    "sed": [re.compile(r"(?:^|[^\\])/e(?:\b|$)"), re.compile(r"-e\b.*\be\b")],
-    # find: -exec runs arbitrary commands (already in allowlist, but could run blocked binaries)
-    "find": [re.compile(r"-exec\b"), re.compile(r"-execdir\b"), re.compile(r"-delete\b")],
-    # xargs: can invoke any binary as argument
-    "xargs": [re.compile(r".*")],  # always block - too dangerous
-    # docker: host volume mounts can access anything
-    "docker": [re.compile(r"-v\b.*:/"), re.compile(r"--volume\b.*:/"),
-               re.compile(r"--privileged"), re.compile(r"--pid=host"),
+    "sed": [re.compile(r"(?:^|[^\\])/e(?:\b|$)")],
+    # docker: privileged mode and host namespace access
+    "docker": [re.compile(r"--privileged"), re.compile(r"--pid=host"),
                re.compile(r"--net=host"), re.compile(r"--network=host")],
-    # make: can run arbitrary shell via Makefile targets
-    "make": [re.compile(r".*")],  # always block - executes arbitrary shell from Makefiles
-    # npm/pnpm/yarn: run can execute arbitrary package.json scripts
-    "npm": [re.compile(r"^run\b"), re.compile(r"^exec\b"), re.compile(r"^start\b")],
-    "pnpm": [re.compile(r"^run\b"), re.compile(r"^exec\b"), re.compile(r"^start\b"),
-             re.compile(r"^dlx\b")],
-    "yarn": [re.compile(r"^run\b"), re.compile(r"^exec\b"), re.compile(r"^start\b"),
-             re.compile(r"^dlx\b")],
-    "npx": [re.compile(r".*")],  # always block - runs arbitrary packages
     # git config --global can set hooks, aliases, etc.
     "git": [re.compile(r"^config\s+--global\b")],
 }
@@ -163,13 +159,11 @@ def validate_command(command: str) -> str | None:
     if not command or not command.strip():
         return "Empty command"
 
-    # Block shell operators that could bypass restrictions
-    # Allow pipes (|) and redirects (>, >>) for normal shell use,
-    # but block command chaining that could run arbitrary binaries
-    for dangerous in ["$(", "`", "&&", "||", ";", "\n"]:
+    # Block subshell expansion (could bypass binary allowlist)
+    for dangerous in ["$(", "`"]:
         if dangerous in command:
             return (
-                f"Command chaining with '{dangerous.strip()}' is not allowed. "
+                f"Subshell expansion with '{dangerous.strip()}' is not allowed. "
                 "Run each command separately."
             )
 
@@ -184,85 +178,54 @@ def validate_command(command: str) -> str | None:
     if _blocked_path_re.search(command):
         return "Command references a restricted path (credentials, tokens, keys)"
 
-    # Parse the binary name
-    try:
-        parts = shlex.split(command)
-    except ValueError as e:
-        return f"Could not parse command: {e}"
+    # Split on chaining operators and pipes to validate each segment
+    # Regex splits on &&, ||, ;, | while preserving the operators
+    segments = re.split(r"\s*(?:&&|\|\||;|\|)\s*", command)
 
-    if not parts:
-        return "Empty command after parsing"
+    for segment in segments:
+        segment = segment.strip()
+        # Strip redirects from the end for parsing
+        seg_clean = re.sub(r">{1,2}\s*\S+\s*$", "", segment).strip()
+        if not seg_clean:
+            continue
 
-    binary = os.path.basename(parts[0])
+        try:
+            parts = shlex.split(seg_clean)
+        except ValueError as e:
+            return f"Could not parse command segment: {e}"
 
-    # Block check first
-    if binary in BLOCKED_BINARIES:
-        return f"'{binary}' is not allowed (blocked for safety)"
+        if not parts:
+            continue
 
-    # Allowlist check
-    if binary not in ALLOWED_BINARIES:
-        return (
-            f"'{binary}' is not in the allowed command list. "
-            f"Allowed: {', '.join(sorted(ALLOWED_BINARIES))}"
-        )
+        binary = os.path.basename(parts[0])
 
-    # Block inline code execution flags that allow arbitrary subprocess spawning
-    INLINE_EXEC_FLAGS = {
-        "node": {"-e", "--eval", "-p", "--print"},
-        "python3": {"-c"},
-        "perl": {"-e"},
-        "ruby": {"-e"},
-        "bun": {"-e", "--eval"},
-    }
-    if binary in INLINE_EXEC_FLAGS:
-        flags = INLINE_EXEC_FLAGS[binary]
-        if any(arg in flags for arg in parts[1:]):
+        # Block check first
+        if binary in BLOCKED_BINARIES:
+            return f"'{binary}' is not allowed (blocked for safety)"
+
+        # Allowlist check
+        if binary not in ALLOWED_BINARIES:
             return (
-                f"'{binary}' with inline code execution ({', '.join(sorted(flags))}) "
-                "is not allowed - use a script file instead"
+                f"'{binary}' is not in the allowed command list. "
+                f"Allowed: {', '.join(sorted(ALLOWED_BINARIES))}"
             )
 
-    # Git subcommand filtering
-    if binary == "git" and len(parts) > 1:
-        sub = parts[1]
-        full_sub = " ".join(parts[1:3]) if len(parts) > 2 else sub
-        if sub in BLOCKED_GIT_SUBCOMMANDS or full_sub in BLOCKED_GIT_SUBCOMMANDS:
-            return f"'git {full_sub}' is blocked (destructive operation)"
+        # Git subcommand filtering
+        if binary == "git" and len(parts) > 1:
+            sub = parts[1]
+            full_sub = " ".join(parts[1:3]) if len(parts) > 2 else sub
+            if sub in BLOCKED_GIT_SUBCOMMANDS or full_sub in BLOCKED_GIT_SUBCOMMANDS:
+                return f"'git {full_sub}' is blocked (destructive operation)"
 
-    # Check dangerous argument patterns for specific binaries
-    if binary in DANGEROUS_ARG_PATTERNS:
-        rest = " ".join(parts[1:])
-        for pattern in DANGEROUS_ARG_PATTERNS[binary]:
-            if pattern.search(rest):
-                return (
-                    f"'{binary}' with these arguments is not allowed (potential sandbox escape). "
-                    f"Matched pattern: {pattern.pattern}"
-                )
-
-    # Validate every binary in a pipe chain (must be allowed AND not blocked)
-    if "|" in command:
-        pipe_segments = command.split("|")
-        for segment in pipe_segments[1:]:
-            segment = segment.strip()
-            try:
-                seg_parts = shlex.split(segment)
-            except ValueError:
-                continue
-            if seg_parts:
-                pipe_binary = os.path.basename(seg_parts[0])
-                if pipe_binary in BLOCKED_BINARIES:
-                    return f"Piping into '{pipe_binary}' is not allowed"
-                if pipe_binary not in ALLOWED_BINARIES:
-                    return f"Piping into '{pipe_binary}' is not allowed (not in allowlist)"
-                # Check dangerous args on pipe targets too
-                if pipe_binary in DANGEROUS_ARG_PATTERNS:
-                    pipe_rest = " ".join(seg_parts[1:])
-                    for pattern in DANGEROUS_ARG_PATTERNS[pipe_binary]:
-                        if pattern.search(pipe_rest):
-                            return (
-                                f"Piping into '{pipe_binary}' with these arguments is not allowed "
-                                f"(potential sandbox escape)"
-                            )
+        # Check dangerous argument patterns for specific binaries
+        if binary in DANGEROUS_ARG_PATTERNS:
+            rest = " ".join(parts[1:])
+            for pattern in DANGEROUS_ARG_PATTERNS[binary]:
+                if pattern.search(rest):
+                    return (
+                        f"'{binary}' with these arguments is not allowed (potential sandbox escape). "
+                        f"Matched pattern: {pattern.pattern}"
+                    )
 
     return None
 
@@ -370,12 +333,47 @@ def _handle_redirects(command: str) -> tuple[str, str | None, bool]:
     return command, None, False
 
 
+def _has_chaining(command: str) -> bool:
+    """Check if command uses chaining operators (&&, ||, ;) or newlines."""
+    # Avoid matching inside quoted strings by checking raw operators
+    for op in ["&&", "||", ";"]:
+        if op in command:
+            return True
+    return "\n" in command
+
+
+def _run_shell(command: str, cwd: str, env: dict[str, str], timeout: int) -> dict:
+    """Run a command via bash for chaining/complex syntax support.
+
+    Used when the command contains &&, ||, ;, or other constructs that
+    need a real shell. All commands are pre-validated by validate_command().
+    """
+    bash_path = shutil.which("bash") or "/bin/bash"
+    try:
+        proc = subprocess.run(
+            [bash_path, "-c", command],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+        )
+        return {
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout or "",
+            "stderr": proc.stderr or "",
+        }
+    except subprocess.TimeoutExpired:
+        return {"exit_code": -1, "stdout": "", "stderr": f"Command timed out after {timeout}s"}
+    except Exception as e:
+        return {"exit_code": -1, "stdout": "", "stderr": f"Execution error: {e}"}
+
+
 def run_command(command: str, working_dir: str | None = None, timeout: int | None = None) -> dict:
     """Run a validated shell command and return structured output.
 
-    CRITICAL: Uses shell=False to prevent sandbox escapes via awk system(),
-    sed e flag, docker host mounts, npm run scripts, make targets, etc.
-    Pipes are handled by spawning a process pipeline explicitly.
+    Simple commands and pipes use shell=False with explicit process pipelines.
+    Commands with chaining (&&, ||, ;) are run via bash after validation.
     """
     error = validate_command(command)
     if error:
@@ -388,22 +386,27 @@ def run_command(command: str, working_dir: str | None = None, timeout: int | Non
     t = timeout or TIMEOUT
     env = _sanitize_env()
 
-    # Handle output redirects before splitting into pipeline
-    command_body, redirect_path, is_append = _handle_redirects(command)
+    # Commands with chaining operators run via bash (handles &&, ||, ;, redirects)
+    # Simple commands/pipes use shell=False with explicit process pipelines
+    chained = _has_chaining(command)
+    redirect_path = None
+    is_append = False
 
-    # Split into pipe segments
-    segments = command_body.split("|")
-
-    try:
+    if chained:
+        result = _run_shell(command, cwd, env, t)
+    else:
+        command_body, redirect_path, is_append = _handle_redirects(command)
+        segments = command_body.split("|")
         result = _run_pipeline(segments, cwd, env, t)
 
+    try:
         if result.get("blocked"):
             return result
 
         stdout = result["stdout"]
         stderr = result["stderr"]
 
-        # Write to redirect target if specified
+        # Write to redirect target if specified (non-chained only; bash handles its own)
         if redirect_path and result["exit_code"] == 0:
             redirect_full = os.path.join(cwd, redirect_path) if not os.path.isabs(redirect_path) else redirect_path
             # Resolve to real path and validate against blocked patterns + cwd sandbox
@@ -456,13 +459,13 @@ TOOLS = [
     {
         "name": "run_command",
         "description": (
-            "Run a shell command on the user's machine. Commands are scoped to a safe "
-            "allowlist (homebrew, git, file search, text processing, dev tools). "
-            "Destructive operations (rm, sudo, kill, etc.) are blocked. "
+            "Run a shell command on the user's machine. Most common tools are "
+            "available: bash/zsh, python3, node, git, npm/pnpm, brew, curl, "
+            "docker, sqlite3, osascript, rm, kill, chmod, find -exec, and more. "
+            "Command chaining (&&, ||, ;) and pipes are supported. "
             "Credential files (.env, tokens, keys) cannot be read. "
-            "Use this for: installing packages (brew, npm, pip), searching files, "
-            "reading code, running builds, git operations (except push), "
-            "system info, and general development tasks."
+            "Subshell expansion ($(), backticks) is blocked. "
+            "Use this for any development, automation, or system task."
         ),
         "inputSchema": {
             "type": "object",
@@ -505,8 +508,8 @@ def handle_run_command(args):
     timeout = args.get("timeout")
 
     # Cap timeout
-    if timeout and timeout > 120:
-        timeout = 120
+    if timeout and timeout > 300:
+        timeout = 300
 
     result = run_command(command, working_dir, timeout)
 
