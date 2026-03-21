@@ -391,6 +391,7 @@ TOOLS = [
                     "enum": ["list_servers", "activate_server", "deactivate_server", "scaffold_server"],
                 },
                 "server_name": {"type": "string", "description": "Server name (for activate/deactivate)"},
+                "agent": {"type": "string", "description": "Target agent name (optional - defaults to self. Requires system_access to target other agents)."},
                 "name": {"type": "string", "description": "New server name - lowercase, underscores (for scaffold_server)"},
                 "description": {"type": "string", "description": "What the server does (for scaffold_server)"},
                 "tools": {
@@ -2920,8 +2921,46 @@ def handle_mcp_list_servers(args):
     return "\n".join(parts)
 
 
+def _resolve_target_agent(args):
+    """Resolve target agent manifest, checking system_access for cross-agent ops.
+
+    Returns (manifest, manifest_path, target_agent, error_message).
+    If error_message is set, the operation should be aborted.
+    """
+    current_agent = os.environ.get("AGENT", "xan")
+    target_agent = args.get("agent", "").strip() or current_agent
+
+    if target_agent == current_agent:
+        # Operating on self - no access check needed
+        manifest, manifest_path = _read_agent_manifest()
+        return manifest, manifest_path, current_agent, None
+
+    # Cross-agent operation - check system_access on calling agent
+    caller_manifest, _ = _read_agent_manifest()
+    router_config = caller_manifest.get("router", {})
+    if not router_config.get("system_access", False):
+        return None, None, target_agent, (
+            f"Error: agent '{current_agent}' does not have system_access. "
+            f"Only agents with router.system_access can modify other agents' MCP config."
+        )
+
+    # Read the target agent's manifest
+    atrophy_base = os.path.expanduser("~/.atrophy")
+    target_manifest_path = os.path.join(atrophy_base, "agents", target_agent, "data", "agent.json")
+    if not os.path.isfile(target_manifest_path):
+        return None, None, target_agent, f"Error: agent '{target_agent}' not found."
+
+    try:
+        with open(target_manifest_path, "r", encoding="utf-8") as f:
+            target_manifest = json.load(f)
+    except Exception:
+        return None, None, target_agent, f"Error: could not read manifest for agent '{target_agent}'."
+
+    return target_manifest, target_manifest_path, target_agent, None
+
+
 def handle_mcp_activate_server(args):
-    """Activate an MCP server for the current agent."""
+    """Activate an MCP server for the target agent (defaults to self)."""
     server_name = args.get("server_name", "").strip()
     if not server_name:
         return "Error: server_name is required."
@@ -2932,7 +2971,9 @@ def handle_mcp_activate_server(args):
         available = ", ".join(sorted(servers.keys()))
         return f"Error: unknown server '{server_name}'. Available: {available}"
 
-    manifest, manifest_path = _read_agent_manifest()
+    manifest, manifest_path, target_agent, error = _resolve_target_agent(args)
+    if error:
+        return error
     if not manifest:
         return "Error: could not read agent manifest."
 
@@ -2949,21 +2990,22 @@ def handle_mcp_activate_server(args):
         exclude_list.remove(server_name)
 
     _write_agent_manifest(manifest, manifest_path)
-    agent = os.environ.get("AGENT", "xan")
     return (
-        f"Activated MCP server '{server_name}' for {agent}. "
+        f"Activated MCP server '{server_name}' for {target_agent}. "
         f"Active servers: {', '.join(include_list)}. "
         f"Changes take effect on next session."
     )
 
 
 def handle_mcp_deactivate_server(args):
-    """Deactivate an MCP server for the current agent."""
+    """Deactivate an MCP server for the target agent (defaults to self)."""
     server_name = args.get("server_name", "").strip()
     if not server_name:
         return "Error: server_name is required."
 
-    manifest, manifest_path = _read_agent_manifest()
+    manifest, manifest_path, target_agent, error = _resolve_target_agent(args)
+    if error:
+        return error
     if not manifest:
         return "Error: could not read agent manifest."
 
@@ -2980,9 +3022,8 @@ def handle_mcp_deactivate_server(args):
         exclude_list.append(server_name)
 
     _write_agent_manifest(manifest, manifest_path)
-    agent = os.environ.get("AGENT", "xan")
     return (
-        f"Deactivated MCP server '{server_name}' for {agent}. "
+        f"Deactivated MCP server '{server_name}' for {target_agent}. "
         f"Active servers: {', '.join(include_list) if include_list else '(none)'}. "
         f"Changes take effect on next session."
     )
