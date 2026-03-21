@@ -328,14 +328,17 @@ function findPython(): string {
   }
 
   // Scan common Python locations. Electron apps don't inherit shell PATH,
-  // so bare 'python3' often fails. Include pyenv, homebrew, and system paths.
+  // so bare 'python3' often fails. Try full-path interpreters first (where
+  // pip-installed deps like dotenv live), then fall back to bare 'python3'
+  // which may resolve to macOS system Python (no pip packages).
   const home = process.env.HOME || '/Users/williamlilley';
   const candidates = [
-    'python3',
+    // pyenv shim first - delegates to the user's active version
+    `${home}/.pyenv/shims/python3`,
     '/opt/homebrew/bin/python3',
     '/usr/local/bin/python3',
-    // pyenv - check the shims dir which delegates to the active version
-    `${home}/.pyenv/shims/python3`,
+    // Bare python3 last - may find system Python which lacks pip deps
+    'python3',
   ];
 
   // Also scan pyenv versions directory for concrete interpreters
