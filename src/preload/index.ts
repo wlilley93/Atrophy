@@ -198,6 +198,34 @@ export interface AtrophyAPI {
   onBundleReady: (cb: (info: { version: string }) => void) => () => void;
   onBundleProgress: (cb: (percent: number) => void) => () => void;
 
+  // System map
+  getTopology: () => Promise<{
+    agents: Array<{
+      name: string;
+      displayName: string;
+      role: string;
+      mcp: { include: string[]; exclude: string[]; active: string[] };
+      channels: Record<string, unknown>;
+      jobs: Record<string, unknown>;
+      router: Record<string, unknown>;
+    }>;
+    servers: Array<{
+      name: string;
+      description: string;
+      capabilities: string[];
+      bundled: boolean;
+      available: boolean;
+      missingKey: boolean;
+      missingCommand: boolean;
+    }>;
+  }>;
+  toggleConnection: (agent: string, server: string, enabled: boolean) => Promise<{
+    success: boolean;
+    error?: string;
+    needsRestart?: boolean;
+    active?: string[];
+  }>;
+
   // Generic listener
   on: (channel: string, cb: (...args: unknown[]) => void) => () => void;
 }
@@ -406,6 +434,11 @@ const api: AtrophyAPI = {
   clearHotBundle: () => ipcRenderer.invoke('bundle:clear'),
   onBundleReady: createListener('bundle:ready') as AtrophyAPI['onBundleReady'],
   onBundleProgress: createListener('bundle:downloadProgress') as AtrophyAPI['onBundleProgress'],
+
+  // System map
+  getTopology: () => ipcRenderer.invoke('system:getTopology'),
+  toggleConnection: (agent, server, enabled) =>
+    ipcRenderer.invoke('system:toggleConnection', agent, server, enabled),
 
   // Channel listener with allowlist
   on: (channel, cb) => {

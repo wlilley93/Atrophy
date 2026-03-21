@@ -37,6 +37,7 @@ import type { HotBundlePaths } from './bundle-updater';
 import { createLogger, setLogForwarder, getLogBuffer } from './logger';
 import { switchboard, type Envelope } from './channels/switchboard';
 import { drainAgentQueue, drainAllAgentQueues } from './queue';
+import { buildTopology, handleToggleConnection } from './system-topology';
 import type { TrayState } from './icon';
 
 const log = createLogger('ipc');
@@ -1499,5 +1500,17 @@ Output EXACTLY this format - a single fenced JSON block:
     } catch {
       return null;
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // System map topology
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle('system:getTopology', () => {
+    return buildTopology();
+  });
+
+  ipcMain.handle('system:toggleConnection', (_, agentName: string, serverName: string, enabled: boolean) => {
+    return handleToggleConnection(agentName, serverName, enabled);
   });
 }
