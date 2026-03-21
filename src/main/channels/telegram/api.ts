@@ -258,6 +258,19 @@ export async function deleteMessage(
   return result !== null;
 }
 
+/**
+ * Send a chat action (e.g. "typing") to show activity indicator.
+ * Action persists for ~5 seconds or until a message is sent.
+ */
+export async function sendChatAction(
+  action: string,
+  chatId: string,
+  botToken?: string,
+): Promise<boolean> {
+  const result = await post('sendChatAction', { chat_id: chatId, action }, 5_000, botToken);
+  return result !== null;
+}
+
 export async function sendButtons(
   text: string,
   buttons: { text: string; callback_data: string }[][],

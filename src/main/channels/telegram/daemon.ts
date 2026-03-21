@@ -18,7 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from '../../config';
-import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto } from './api';
+import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction } from './api';
 import { discoverAgents, getAgentState } from '../../agent-manager';
 import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from '../../inference';
 import { loadSystemPrompt } from '../../context';
@@ -701,10 +701,11 @@ async function dispatchToAgent(
   const display = (manifest.display_name as string) || agentName.charAt(0).toUpperCase() + agentName.slice(1);
   const header = emoji ? `${emoji} *${display}*\n\n` : '';
 
-  // Only show "Thinking..." for user-initiated Telegram messages
-  const msgId = isTelegramOrigin
-    ? await sendMessageGetId(`${header}_Thinking\u2026_`, chatId, botToken)
-    : null;
+  // Show typing indicator instead of "Thinking..." message for realism
+  let msgId: number | null = null;
+  if (isTelegramOrigin) {
+    await sendChatAction('typing', chatId, botToken);
+  }
 
   try {
     // Narrow config lock - only held while reloading config and spawning
@@ -777,8 +778,10 @@ async function dispatchToAgent(
       emitter.on('event', async (evt: InferenceEvent) => {
         switch (evt.type) {
           case 'ThinkingDelta':
-            state.thinkingText += evt.text;
-            await doEdit();
+            // Don't show thinking in Telegram - just keep typing indicator alive
+            if (isTelegramOrigin) {
+              await sendChatAction('typing', chatId, botToken);
+            }
             break;
 
           case 'ToolUse': {
@@ -832,16 +835,13 @@ async function dispatchToAgent(
 
           case 'TextDelta':
             state.responseText += evt.text;
-            // Clear thinking once response starts
-            if (state.thinkingText && state.responseText.length < 20) {
-              state.thinkingText = '';
-            }
-            await doEdit();
             break;
 
           case 'Compacting':
             state.isCompacting = true;
-            await doEdit();
+            if (isTelegramOrigin) {
+              await sendChatAction('typing', chatId, botToken);
+            }
             break;
 
           case 'StreamDone':
@@ -889,20 +889,16 @@ async function dispatchToAgent(
 
     log.info(`[${agentName}] completed in ${elapsed}`);
 
-    // Final edit with complete response (no stats footer - causes bleed into other bots)
-    if (finalText && msgId) {
-      await editMessage(msgId, `${header}${finalText}`, chatId, botToken);
-    } else if (!finalText && msgId) {
-      log.warn(`[${agentName}] no response after ${elapsed} - deleting orphaned message`);
-      await deleteMessage(msgId, chatId, botToken);
+    // Send final response as a fresh message (no editing, no thinking shown)
+    if (finalText && isTelegramOrigin) {
+      await sendMessage(`${header}${finalText}`, chatId, false, botToken);
+    } else if (!finalText && isTelegramOrigin) {
+      log.warn(`[${agentName}] no response after ${elapsed}`);
     }
 
     return finalText;
   } catch (e) {
     log.error(`[${agentName}] dispatch failed: ${e}`);
-    if (msgId) {
-      await editMessage(msgId, `${header}_Error: dispatch failed_`, chatId, botToken);
-    }
     return null;
   } finally {
     await withConfigLock(async () => {
