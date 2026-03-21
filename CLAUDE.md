@@ -590,13 +590,20 @@ Jobs run in-process via `channels/cron/`. The app is expected to always be runni
 
 ### MCP registry (`src/main/mcp-registry.ts`)
 
-Per-agent MCP configuration, managed through a structured discovery and activation system.
+Per-agent MCP configuration. Atrophy owns all MCP - nothing comes from `~/.claude/settings.json`.
 
-- **discover()** - scans `BUNDLE_ROOT/mcp/` and `USER_DATA/mcp/custom/` for servers
+Three server tiers:
+- **Bundled** (`mcp/*.py`) - memory, google, shell, github, worldmonitor, puppeteer
+- **External** (host tools) - elevenlabs (uvx), fal (npx). Ship with app, probed at boot.
+- **Custom** (`~/.atrophy/mcp/custom/`) - user-created servers with `server.py` + `meta.json`
+
+Key methods:
+- **discover()** - scans bundled dir, probes external commands, scans custom dir
 - **buildConfigForAgent(name)** - generates per-agent `config.json` from manifest's `mcp.include`
+- **buildServerEnv(name, agent)** - resolves per-server env vars (API keys from `~/.atrophy/.env`)
 - **activateForAgent / deactivateForAgent** - runtime MCP server management (flags session restart)
 - **scaffoldServer(name, description, tools)** - generates new Python MCP servers from a template
-- **registerWithSwitchboard()** - registers `mcp:<name>` addresses in the service directory
+- **registerWithSwitchboard()** - registers `mcp:<name>` addresses for service discovery (not data path)
 
 Agents can self-serve MCP via switchboard tools: list servers, activate/deactivate, scaffold new ones.
 

@@ -4,6 +4,17 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.5.10
+
+### MCP registry owns all servers - no more Claude Code leaking
+
+- **External server concept** - ElevenLabs and fal.ai MCP servers now ship with Atrophy as "external servers" in `mcp-registry.ts`. The registry probes for host tools (`uvx`, `npx`) at boot and registers them if found. If the tool or API key is missing, gracefully skipped.
+- **Removed global settings merge** - `buildConfigForAgent()` no longer imports servers from `~/.claude/settings.json`. Atrophy owns its entire MCP namespace. Claude Code and Atrophy are fully separated.
+- **ElevenLabs MCP** (24 tools) - text-to-speech, speech-to-speech, voice cloning, audio isolation, transcription, sound effects, music composition. Enabled for all agents.
+- **Per-agent env resolution** - `buildServerEnv()` resolves `ELEVENLABS_API_KEY` and `FAL_KEY` from `~/.atrophy/.env` (loaded at startup by config module).
+
+---
+
 ## 1.5.5
 
 ### Fix cross-system bleed, crash loops, and dispatch parallelism
