@@ -27,6 +27,33 @@ import * as memory from '../../memory';
 import { createLogger } from '../../logger';
 import { switchboard, type Envelope } from '../switchboard';
 import { AgentRouter, defaultConfigForAgent } from '../agent-router';
+import { Session } from '../../session';
+
+// ---------------------------------------------------------------------------
+// Per-agent session persistence - one immortal CLI session per agent
+// ---------------------------------------------------------------------------
+
+const _agentSessions: Map<string, Session> = new Map();
+
+/**
+ * Get or create the persistent Session for an agent.
+ * The Session tracks the CLI session ID so that every inference call
+ * resumes the same conversation thread (compaction handles context limits).
+ */
+function getAgentSession(agentName: string): Session {
+  let session = _agentSessions.get(agentName);
+  if (!session) {
+    session = new Session();
+    session.start();
+    // Inherit any existing CLI session ID from the DB
+    const existingCliId = memory.getLastCliSessionId();
+    if (existingCliId) {
+      session.cliSessionId = existingCliId;
+    }
+    _agentSessions.set(agentName, session);
+  }
+  return session;
+}
 
 const log = createLogger('telegram-daemon');
 
@@ -688,12 +715,17 @@ async function dispatchToAgent(
       memory.initDb();
 
       const system = loadSystemPrompt();
-      const cliSessionId = memory.getLastCliSessionId();
+      const agentSession = getAgentSession(agentName);
       const prompt = sourceLabel ? `[${sourceLabel}]\n\n${text}` : text;
-      return streamInference(prompt, system, cliSessionId);
+
+      // Save user turn before inference
+      try { agentSession.addTurn('will', text); } catch { /* session not started */ }
+
+      return streamInference(prompt, system, agentSession.cliSessionId);
     });
 
     let fullText = '';
+    let _lastStreamSessionId: string | null = null;
     const toolsUsed: string[] = [];
 
     // Rich streaming state
@@ -817,6 +849,8 @@ async function dispatchToAgent(
             clearInterval(flushTimer);
             state.isCompacting = false;
             fullText = evt.fullText;
+            // Stash session ID for persistence after promise resolves
+            _lastStreamSessionId = evt.sessionId || null;
             resolve();
             break;
 
@@ -832,6 +866,22 @@ async function dispatchToAgent(
 
     if (toolsUsed.length) {
       log.debug(`[${agentName}] used tools: ${toolsUsed.join(', ')}`);
+    }
+
+    // Persist session ID and agent turn under the correct agent's DB
+    if (_lastStreamSessionId || fullText) {
+      await withConfigLock(async () => {
+        config.reloadForAgent(agentName);
+        memory.initDb();
+        const agentSession = getAgentSession(agentName);
+        if (_lastStreamSessionId) {
+          agentSession.setCliSessionId(_lastStreamSessionId);
+          log.debug(`[${agentName}] saved CLI session: ${_lastStreamSessionId}`);
+        }
+        if (fullText.trim()) {
+          try { agentSession.addTurn('agent', fullText.trim()); } catch { /* */ }
+        }
+      });
     }
 
     const finalText = fullText.trim() || null;
