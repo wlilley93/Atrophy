@@ -9,6 +9,7 @@
   import Canvas from './Canvas.svelte';
   import Artefact from './Artefact.svelte';
   import Settings from './Settings.svelte';
+  import SystemMap from './SystemMap.svelte';
   import SetupWizard from './SetupWizard.svelte';
   import MirrorSetup from './MirrorSetup.svelte';
   import SplashScreen from './SplashScreen.svelte';
@@ -49,6 +50,7 @@
   let showTimer = $state(false);
   let showCanvas = $state(false);
   let showArtefact = $state(false);
+  let showSystemMap = $state(false);
   let needsSetup = $state(false);
   let mirrorSetupVisible = $state(false);
 
@@ -1158,9 +1160,15 @@
       e.preventDefault();
       api?.toggleAlwaysOnTop?.();
     }
+    // Cmd+Shift+M : system map
+    else if (e.metaKey && e.shiftKey && e.key === 'M') {
+      e.preventDefault();
+      showSystemMap = !showSystemMap;
+    }
     // Escape: close overlays in priority order
     else if (e.key === 'Escape') {
-      if (showSettings) showSettings = false;
+      if (showSystemMap) showSystemMap = false;
+      else if (showSettings) showSettings = false;
       else if (showArtefact) showArtefact = false;
       else if (showCanvas) showCanvas = false;
       else if (showTimer) showTimer = false;
@@ -1534,6 +1542,10 @@
 
   {#if showSettings}
     <Settings onClose={() => showSettings = false} />
+  {/if}
+
+  {#if showSystemMap}
+    <SystemMap onClose={() => showSystemMap = false} />
   {/if}
 
   <!-- Setup wizard overlays (welcome / creating / done) -->
