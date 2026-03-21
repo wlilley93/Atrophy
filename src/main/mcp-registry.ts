@@ -101,7 +101,7 @@ const BUNDLED_SERVER_META: Record<string, {
  *
  * Keys are the registry names (what agents use in mcp.include).
  */
-const EXTERNAL_SERVER_META: Record<string, {
+export const EXTERNAL_SERVER_META: Record<string, {
   description: string;
   capabilities: string[];
   /** Candidates to resolve the command binary, tried in order. */
@@ -183,7 +183,7 @@ function findPythonPath(): string {
  * Read an agent's manifest from user data or bundle.
  * Returns the parsed JSON object, or empty object on failure.
  */
-function readAgentManifest(agentName: string): Record<string, unknown> {
+export function readAgentManifest(agentName: string): Record<string, unknown> {
   for (const base of [
     path.join(USER_DATA, 'agents', agentName),
     path.join(BUNDLE_ROOT, 'agents', agentName),
@@ -202,7 +202,7 @@ function readAgentManifest(agentName: string): Record<string, unknown> {
  * Extract the mcp config section from an agent manifest,
  * providing sensible defaults.
  */
-function getAgentMcpSection(agentName: string): AgentMcpConfig {
+export function getAgentMcpSection(agentName: string): AgentMcpConfig {
   const manifest = readAgentManifest(agentName);
   const mcp = (manifest.mcp as Partial<AgentMcpConfig>) || {};
   return {
