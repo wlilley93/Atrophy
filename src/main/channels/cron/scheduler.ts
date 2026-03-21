@@ -64,7 +64,6 @@ export interface JobDefinition {
   type?: 'calendar' | 'interval';
   interval_seconds?: number;
   route_output_to?: string;     // 'self' | specific address | undefined
-  notify_via?: string;          // channel to notify: 'telegram' | 'desktop' | undefined
 }
 
 /**
@@ -476,7 +475,7 @@ class CronScheduler {
     log.info(`Executing job: ${key}`);
 
     try {
-      const result = await runJob(job.agent, job.name, job.definition, undefined, job.consecutiveFailures);
+      const result = await runJob(job.agent, job.name, job.definition);
       job.lastRun = new Date();
 
       if (result.exitCode !== 0) {

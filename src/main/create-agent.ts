@@ -114,7 +114,7 @@ export interface CreateAgentOptions {
     type?: 'calendar' | 'interval';
     interval_seconds?: number;
     route_output_to?: string;
-    notify_via?: string;
+
   }>;
 
   // Router - message filtering config
@@ -176,7 +176,7 @@ export interface AgentManifest {
     type?: 'calendar' | 'interval';
     interval_seconds?: number;
     route_output_to?: string;
-    notify_via?: string;
+
   }>;
   router?: {
     accept_from: string[];

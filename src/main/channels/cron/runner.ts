@@ -72,7 +72,6 @@ export async function runJob(
   jobName: string,
   definition: JobDefinition,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
-  consecutiveFailures: number = 0,
 ): Promise<JobResult> {
   const config = getConfig();
   const scriptPath = path.resolve(BUNDLE_ROOT, definition.script);
@@ -182,80 +181,9 @@ export async function runJob(
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Notification envelope (if notify_via is set)
-  // -----------------------------------------------------------------------
-
-  if (definition.notify_via) {
-    // Only notify on: success, first failure, or circuit breaker trip (3rd failure).
-    // consecutiveFailures is the count BEFORE this run (scheduler increments after).
-    const isFailure = result.exitCode !== 0;
-    const isFirstFailure = isFailure && consecutiveFailures === 0;
-    const isCircuitBreakerTrip = isFailure && consecutiveFailures === 2;
-    const shouldNotify = !isFailure || isFirstFailure || isCircuitBreakerTrip;
-
-    if (!shouldNotify) {
-      log.debug(`Skipping notification for '${agentName}.${jobName}' (failure ${consecutiveFailures + 1}/3)`);
-    } else {
-
-    const notifyAddress = `${definition.notify_via}:${agentName}`;
-    const statusEmoji = result.exitCode === 0
-      ? '[OK]'
-      : isCircuitBreakerTrip ? '[DISABLED]' : '[FAIL]';
-    const summary = [
-      `${statusEmoji} Job: ${jobName}${isCircuitBreakerTrip ? ' - disabled after 3 consecutive failures' : ''}`,
-      `Exit: ${result.exitCode}`,
-      `Duration: ${formatDuration(result.durationMs)}`,
-    ];
-
-    if (result.stdout.trim()) {
-      const preview = result.stdout.trim().slice(0, 500);
-      summary.push(`Output: ${preview}`);
-    }
-
-    if (result.stderr.trim() && result.exitCode !== 0) {
-      const errPreview = result.stderr.trim().slice(0, 300);
-      summary.push(`Error: ${errPreview}`);
-    }
-
-    const notifyEnvelope = switchboard.createEnvelope(
-      `cron:${agentName}.${jobName}`,
-      notifyAddress,
-      summary.join('\n'),
-      {
-        type: 'system',
-        priority: result.exitCode === 0 ? 'normal' : 'high',
-        metadata: {
-          job: jobName,
-          exitCode: result.exitCode,
-          durationMs: result.durationMs,
-        },
-      },
-    );
-
-    try {
-      await switchboard.route(notifyEnvelope);
-    } catch (err) {
-      log.error(`Failed to route notification for '${agentName}.${jobName}': ${err}`);
-    }
-
-    } // end shouldNotify
-  }
+  // Job status is log-only - no channel notifications.
+  // Human-ready output flows through the switchboard envelope above.
 
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Format a duration in milliseconds to a human-readable string.
- */
-function formatDuration(ms: number): string {
-  const secs = Math.floor(ms / 1000);
-  if (secs < 60) return `${secs}s`;
-  const mins = Math.floor(secs / 60);
-  const remSecs = secs % 60;
-  return `${mins}m ${remSecs}s`;
-}
