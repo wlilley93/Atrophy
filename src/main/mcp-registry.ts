@@ -61,7 +61,7 @@ export interface ToolDefinition {
 // Bundled server metadata
 // ---------------------------------------------------------------------------
 
-/** Static metadata for the bundled MCP servers. */
+/** Static metadata for the bundled MCP servers (Python scripts in mcp/). */
 const BUNDLED_SERVER_META: Record<string, {
   description: string;
   capabilities: string[];
@@ -91,6 +91,39 @@ const BUNDLED_SERVER_META: Record<string, {
   puppeteer_proxy: {
     description: 'Web browsing proxy - puppeteer with injection detection and content sandboxing',
     capabilities: ['web', 'browse', 'screenshot'],
+  },
+};
+
+/**
+ * External MCP servers that ship with Atrophy but depend on tools installed
+ * on the host (uvx, npx). Registered during discover() if the command is
+ * found on PATH. Agents include/exclude these the same way as bundled servers.
+ *
+ * Keys are the registry names (what agents use in mcp.include).
+ */
+const EXTERNAL_SERVER_META: Record<string, {
+  description: string;
+  capabilities: string[];
+  /** Candidates to resolve the command binary, tried in order. */
+  commandCandidates: string[];
+  args: string[];
+  requiresAuth?: string[];
+  /** Env var name in ~/.atrophy/.env whose presence is required. */
+  requiresEnvKey?: string;
+}> = {
+  elevenlabs: {
+    description: 'ElevenLabs - text-to-speech, voice cloning, audio processing, transcription, sound effects',
+    capabilities: ['tts', 'stt', 'voice', 'audio', 'clone', 'sound_effects'],
+    commandCandidates: ['uvx', '/Users/williamlilley/.local/bin/uvx', '/opt/homebrew/bin/uvx'],
+    args: ['elevenlabs-mcp'],
+    requiresEnvKey: 'ELEVENLABS_API_KEY',
+  },
+  fal: {
+    description: 'Fal.ai - image generation, video, audio, and multimodal AI models',
+    capabilities: ['image', 'video', 'audio', 'generation'],
+    commandCandidates: ['npx', '/opt/homebrew/bin/npx', '/usr/local/bin/npx'],
+    args: ['-y', 'fal-ai-mcp-server@latest'],
+    requiresEnvKey: 'FAL_KEY',
   },
 };
 
@@ -214,6 +247,24 @@ export class McpRegistry {
   }
 
   /**
+   * Try a list of command candidates and return the first one that exists.
+   * Checks absolute paths with fs.existsSync, bare names with `which`.
+   */
+  private resolveCommand(candidates: string[]): string | null {
+    for (const cmd of candidates) {
+      if (cmd.startsWith('/')) {
+        if (fs.existsSync(cmd)) return cmd;
+      } else {
+        try {
+          const resolved = execFileSync('which', [cmd], { stdio: 'pipe' }).toString().trim();
+          if (resolved) return resolved;
+        } catch { continue; }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Derive a server name from a Python filename.
    * e.g. "memory_server.py" -> "memory", "puppeteer_proxy.py" -> "puppeteer"
    */
@@ -265,7 +316,35 @@ export class McpRegistry {
       log.warn(`Bundled MCP directory not found: ${bundledDir}`);
     }
 
-    // 2. User-installed servers in USER_DATA/mcp/custom/
+    // 2. External servers (ship with Atrophy, require host tools)
+    for (const [name, meta] of Object.entries(EXTERNAL_SERVER_META)) {
+      const resolvedCmd = this.resolveCommand(meta.commandCandidates);
+      if (!resolvedCmd) {
+        log.info(`External server "${name}" skipped - command not found (tried: ${meta.commandCandidates.join(', ')})`);
+        continue;
+      }
+
+      // Check for required env key (loaded from ~/.atrophy/.env at startup)
+      if (meta.requiresEnvKey && !process.env[meta.requiresEnvKey]) {
+        log.info(`External server "${name}" skipped - ${meta.requiresEnvKey} not set`);
+        continue;
+      }
+
+      const def: McpServerDefinition = {
+        name,
+        description: meta.description,
+        command: resolvedCmd,
+        args: [...meta.args],
+        capabilities: meta.capabilities,
+        bundled: true, // ships with Atrophy - agents can include/exclude
+        requiresAuth: meta.requiresAuth,
+      };
+
+      this.servers.set(name, def);
+      log.info(`Registered external server: ${name} (${resolvedCmd} ${meta.args.join(' ')})`);
+    }
+
+    // 3. User-installed servers in USER_DATA/mcp/custom/
     const customDir = path.join(USER_DATA, 'mcp', 'custom');
     if (fs.existsSync(customDir)) {
       const entries = fs.readdirSync(customDir, { withFileTypes: true });
@@ -446,7 +525,6 @@ export class McpRegistry {
    * Returns the absolute path to the generated config file.
    */
   buildConfigForAgent(agentName: string): string {
-    const config = getConfig();
     const pythonPath = this.getPythonPath();
     const activeServers = this.getForAgent(agentName);
     const mcpConfig = getAgentMcpSection(agentName);
@@ -483,22 +561,6 @@ export class McpRegistry {
         args: custom.args,
         ...(custom.env && Object.keys(custom.env).length > 0 ? { env: custom.env } : {}),
       };
-    }
-
-    // Import global MCP servers from Claude Code settings (same as inference.ts)
-    const globalSettings = path.join(os.homedir(), '.claude', 'settings.json');
-    if (fs.existsSync(globalSettings)) {
-      try {
-        const settings = JSON.parse(fs.readFileSync(globalSettings, 'utf-8'));
-        const globalServers = settings.mcpServers || {};
-        for (const [name, server] of Object.entries(globalServers)) {
-          if (!(name in servers)) {
-            servers[name] = server;
-          }
-        }
-      } catch (e) {
-        log.debug(`Failed to import global MCP settings: ${e}`);
-      }
     }
 
     // Write config file
@@ -565,6 +627,15 @@ export class McpRegistry {
       case 'worldmonitor':
         env.WORLDMONITOR_CACHE_DB = path.join(os.homedir(), '.atrophy', 'worldmonitor_cache.db');
         env.WORLDMONITOR_BASE_URL = 'https://api.worldmonitor.app';
+        break;
+
+      case 'elevenlabs':
+        env.ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || config.ELEVENLABS_API_KEY || '';
+        env.ELEVENLABS_MCP_BASE_PATH = path.join(USER_DATA, 'tts_output');
+        break;
+
+      case 'fal':
+        env.FAL_KEY = process.env.FAL_KEY || '';
         break;
 
       default:
