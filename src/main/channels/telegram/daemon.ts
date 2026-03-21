@@ -1164,11 +1164,30 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
     const botToken = (envelope.metadata?.botToken as string) || agent.botToken;
 
     // Build source label based on envelope origin
+    const isCron = envelope.from.startsWith('cron:');
     const sourceLabel = envelope.from.startsWith('telegram:')
       ? `Telegram message from ${getConfig().USER_NAME}`
-      : envelope.from.startsWith('cron:')
+      : isCron
         ? `Scheduled job result - ${envelope.from}`
         : `Message from ${envelope.from}`;
+
+    // Filter out diagnostic/skip cron output - only dispatch meaningful content.
+    // Job scripts print status like "[heartbeat] Outside active hours. Skipping."
+    // to stdout. These should not trigger inference or reach Telegram.
+    if (isCron) {
+      const text = envelope.text.trim().toLowerCase();
+      const exitCode = (envelope.metadata?.exitCode as number) ?? 0;
+      const isSkip = text.includes('skipping') || text.includes('outside active hours')
+        || text.includes('user is away') || text.includes('no heartbeat')
+        || text.includes('no reminders') || text.includes('nothing to surface');
+      const isFail = exitCode !== 0;
+
+      if (isSkip || isFail) {
+        const reason = isFail ? `exit=${exitCode}` : 'skip';
+        log.debug(`[${agent.name}] Cron output filtered (${reason}): ${envelope.text.slice(0, 80)}`);
+        return undefined;
+      }
+    }
 
     // Per-agent dispatch lock - agents dispatch in parallel
     _activeDispatches.add(agent.name);
@@ -1181,18 +1200,22 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
       _activeDispatches.delete(agent.name);
     }
 
-    if (response) {
+    // For cron dispatches with meaningful responses, send to Telegram.
+    // dispatchToAgent only sends via edit for Telegram-origin messages
+    // (where msgId exists). For cron, we need to explicitly send.
+    if (isCron && response) {
+      const manifest = getAgentManifest(agent.name);
+      const emoji = (manifest.telegram_emoji as string) || '';
+      const display = (manifest.display_name as string) || agent.name;
+      const header = emoji ? `${emoji} *${display}*\n\n` : '';
+      await sendMessage(`${header}${response}`, chatId, false, botToken);
+      log.info(`[${agent.name}] Cron response sent to Telegram (${response.length} chars)`);
+    } else if (response) {
       log.info(`[${agent.name}] Responded via switchboard (${response.length} chars)`);
-    } else {
+    } else if (!isCron) {
       log.warn(`[${agent.name}] No response via switchboard`);
     }
 
-    // Return the response text - the agent router will create a response
-    // envelope and route it back. We mark it as already streamed to Telegram
-    // so the telegram handler doesn't send it again.
-    // Note: we return void here because dispatchToAgent already handles
-    // the Telegram display (streaming edits). The response routing for
-    // cross-agent replies is handled by the agent router automatically.
     return undefined;
   });
 
