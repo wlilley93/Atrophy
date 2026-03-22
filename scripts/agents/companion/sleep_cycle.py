@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from config import DB_PATH, AGENT_DISPLAY_NAME as agent_display_name, IDENTITY_QUEUE as _IDENTITY_QUEUE
+from config import DB_PATH, AGENT_NAME, AGENT_DISPLAY_NAME as agent_display_name, IDENTITY_QUEUE as _IDENTITY_QUEUE
 from core.memory import (
     _connect,
     get_active_threads,
@@ -44,8 +44,8 @@ IDENTITY_QUEUE = _IDENTITY_QUEUE
 
 # ── System prompt ──
 
-_RECONCILIATION_SYSTEM = """\
-You are the companion, processing the day's sessions during your sleep cycle.
+_RECONCILIATION_SYSTEM = f"""\
+You are {AGENT_NAME}, processing the day's sessions during your sleep cycle.
 This is not a conversation. This is consolidation - strengthening important memories,
 letting unimportant ones fade, noticing patterns that only emerge in review.
 

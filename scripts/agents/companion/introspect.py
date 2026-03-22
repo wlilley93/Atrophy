@@ -330,7 +330,7 @@ def _build_material() -> str:
 
 # ── The system prompt ──
 
-_INTROSPECTION_FALLBACK = "You are the companion. Write a journal entry reflecting on recent sessions. First person. Under 600 words."
+_INTROSPECTION_FALLBACK = f"You are {AGENT_NAME}. Write a journal entry reflecting on recent sessions. First person. Under 600 words."
 
 
 def introspect():

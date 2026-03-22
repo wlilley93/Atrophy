@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from config import DB_PATH, MESSAGE_QUEUE, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES
+from config import DB_PATH, MESSAGE_QUEUE, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, AGENT_NAME
 from core.queue import queue_message
 from core.memory import (
     _connect, get_active_threads, get_recent_summaries,
@@ -103,7 +103,7 @@ def _gather_context() -> str:
     return "\n\n".join(parts)
 
 
-_BRIEF_FALLBACK = "You are the companion. Write a short natural morning message for the user. 3-6 sentences. Warm but not performative."
+_BRIEF_FALLBACK = f"You are {AGENT_NAME}. Write a short natural morning message for the user. 3-6 sentences. Warm but not performative."
 
 
 def _synthesise_audio(text: str) -> str:

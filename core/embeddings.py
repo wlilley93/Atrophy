@@ -1,8 +1,13 @@
-"""Local embedding engine — sentence-transformers on MPS/CPU.
+"""Local embedding engine - sentence-transformers on CPU.
 
 Embeds text into 384-dim vectors. Model loads lazily on first call.
 Vectors stored as numpy blobs in SQLite.
+
+NOTE: Forces CPU even when MPS is available. MPS is not thread-safe and
+deadlocks when _embed_async() calls embed() from a background thread.
+For 384-dim models the CPU path is fast enough and avoids the issue.
 """
+import threading
 import numpy as np
 from pathlib import Path
 
@@ -10,8 +15,9 @@ from config import EMBEDDING_MODEL, EMBEDDING_DIM, MODELS_DIR
 
 MODEL_NAME = EMBEDDING_MODEL
 
-# Lazy-loaded singleton
+# Lazy-loaded singleton with thread lock
 _model = None
+_lock = threading.Lock()
 
 
 def _ensure_installed():
@@ -40,7 +46,8 @@ def _load_model():
     cache_dir = MODELS_DIR / MODEL_NAME
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    # Always use CPU - MPS deadlocks in background threads (_embed_async)
+    device = "cpu"
     print(f"  [embeddings] Loading {MODEL_NAME} on {device}...")
 
     _model = SentenceTransformer(
@@ -55,10 +62,11 @@ def _load_model():
 def embed(text: str) -> np.ndarray:
     """Embed a single text into a 384-dim float32 vector.
 
-    Lazy-loads the model on first call.
+    Lazy-loads the model on first call. Thread-safe.
     """
-    model = _load_model()
-    vec = model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
+    with _lock:
+        model = _load_model()
+        vec = model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
     return vec.astype(np.float32)
 
 
@@ -69,9 +77,10 @@ def embed_batch(texts: list[str]) -> list[np.ndarray]:
     """
     if not texts:
         return []
-    model = _load_model()
-    vecs = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True,
-                        batch_size=32, show_progress_bar=False)
+    with _lock:
+        model = _load_model()
+        vecs = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True,
+                            batch_size=32, show_progress_bar=False)
     return [v.astype(np.float32) for v in vecs]
 
 
