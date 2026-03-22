@@ -186,6 +186,11 @@ function cleanEnv(): NodeJS.ProcessEnv {
       delete env[key];
     }
   }
+  // Isolate Atrophy's Claude sessions from ccbot/user Claude sessions.
+  // Without this, Atrophy agent inference writes JSONL to ~/.claude/projects/
+  // which ccbot monitors, causing cross-contamination (agent thinking blocks
+  // leaking into Telegram, wrong session tracking, etc.).
+  env.CLAUDE_CONFIG_DIR = path.join(USER_DATA, '.claude');
   // Ensure PATH includes common binary locations (packaged Electron has limited PATH)
   const extraPaths = [
     path.join(os.homedir(), '.local', 'bin'),
