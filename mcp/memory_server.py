@@ -27,6 +27,8 @@ else:
 DB_PATH = os.environ.get("COMPANION_DB", "companion.db")
 DATA_DIR = os.path.dirname(DB_PATH)  # agents/<name>/data/
 AGENT_NAME = os.environ.get("AGENT", "companion")
+ORG_DB_PATH = os.environ.get("ORG_DB", "")
+ORG_SLUG = os.environ.get("ORG_SLUG", "")
 
 # Resolve display name from agent manifest
 def _resolve_display_name():
@@ -456,6 +458,49 @@ TOOLS = [
             "required": ["action"],
         },
     },
+    # ── Group 11: org_memory - Organization institutional memory ──
+    {
+        "name": "org_memory",
+        "description": (
+            "Read and write institutional memory shared across your organization. "
+            "Only available to agents assigned to an org. Actions: "
+            "observe (record an org-level insight or finding), "
+            "recall (search org observations by keyword or category), "
+            "get_threads (list active org-level threads), "
+            "track_thread (create or update an org thread), "
+            "add_thread_entry (add a contribution to an org thread), "
+            "log_decision (record an org-level decision with rationale), "
+            "get_decisions (list org decisions), "
+            "digest (summarize recent org activity)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "observe", "recall", "get_threads", "track_thread",
+                        "add_thread_entry", "log_decision", "get_decisions", "digest",
+                    ],
+                },
+                "content": {"type": "string", "description": "Observation content, thread entry, or search query"},
+                "category": {
+                    "type": "string",
+                    "description": "Category for observations (e.g. 'strategy', 'intelligence', 'operations', 'personnel')",
+                },
+                "confidence": {"type": "number", "description": "Confidence level 0.0-1.0 (observe)"},
+                "title": {"type": "string", "description": "Thread or decision title"},
+                "summary": {"type": "string", "description": "Thread summary update"},
+                "priority": {"type": "integer", "description": "Thread priority 0-3 (track_thread)"},
+                "status": {"type": "string", "enum": ["active", "paused", "closed"], "description": "Thread status"},
+                "thread_id": {"type": "integer", "description": "Thread ID (add_thread_entry)"},
+                "description": {"type": "string", "description": "Decision description"},
+                "rationale": {"type": "string", "description": "Decision rationale"},
+                "limit": {"type": "integer", "description": "Max results to return (default 20)"},
+            },
+            "required": ["action"],
+        },
+    },
 ]
 
 # ── Custom tool loading ──
@@ -534,6 +579,33 @@ def _connect():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _org_connect():
+    """Connect to the org's institutional memory database.
+
+    Returns None if the agent doesn't belong to an org or the DB doesn't exist.
+    """
+    if not ORG_DB_PATH or not os.path.exists(ORG_DB_PATH):
+        return None
+    conn = sqlite3.connect(ORG_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _require_org():
+    """Check that the agent belongs to an org with a memory DB.
+
+    Returns (conn, None) on success, (None, error_string) on failure.
+    """
+    if not ORG_SLUG:
+        return None, "This agent is not assigned to an organization."
+    if not ORG_DB_PATH or not os.path.exists(ORG_DB_PATH):
+        return None, f"Org '{ORG_SLUG}' has no memory database."
+    conn = _org_connect()
+    if not conn:
+        return None, f"Failed to connect to org '{ORG_SLUG}' database."
+    return conn, None
 
 
 # ── Provision access check ──
@@ -3768,6 +3840,343 @@ def handle_org_set_purpose(args):
     return f"Updated purpose for '{slug}'.\nOld: {old_purpose}\nNew: {purpose}"
 
 
+# ── Org Memory handlers ──
+
+
+def handle_org_observe(args):
+    """Record an institutional observation in the org's memory."""
+    conn, err = _require_org()
+    if err:
+        return f"Error: {err}"
+
+    content = args.get("content", "").strip()
+    if not content:
+        return "Error: 'content' is required."
+
+    category = args.get("category", "general")
+    confidence = max(0.0, min(1.0, args.get("confidence", 0.8)))
+
+    try:
+        conn.execute(
+            "INSERT INTO observations (agent_name, content, category, confidence, source) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (AGENT_NAME, content, category, confidence, "mcp_tool"),
+        )
+        conn.commit()
+        count = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+        return (
+            f"Recorded org observation [{category}] (confidence: {confidence:.1f}).\n"
+            f"Org '{ORG_SLUG}' now has {count} total observation(s)."
+        )
+    except Exception as e:
+        return f"Error recording observation: {e}"
+    finally:
+        conn.close()
+
+
+def handle_org_recall(args):
+    """Search org observations by keyword or category."""
+    conn, err = _require_org()
+    if err:
+        return f"Error: {err}"
+
+    query = args.get("content", "").strip()
+    category = args.get("category")
+    limit = min(args.get("limit", 20), 50)
+
+    try:
+        if category and query:
+            rows = conn.execute(
+                "SELECT id, agent_name, content, category, confidence, created_at "
+                "FROM observations WHERE category = ? AND content LIKE ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (category, f"%{query}%", limit),
+            ).fetchall()
+        elif category:
+            rows = conn.execute(
+                "SELECT id, agent_name, content, category, confidence, created_at "
+                "FROM observations WHERE category = ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (category, limit),
+            ).fetchall()
+        elif query:
+            rows = conn.execute(
+                "SELECT id, agent_name, content, category, confidence, created_at "
+                "FROM observations WHERE content LIKE ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (f"%{query}%", limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, agent_name, content, category, confidence, created_at "
+                "FROM observations ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
+        if not rows:
+            return f"No org observations found" + (f" for '{query}'" if query else "") + "."
+
+        lines = [f"### Org '{ORG_SLUG}' observations ({len(rows)} result(s))\n"]
+        for r in rows:
+            conf = f" [{r['confidence']:.1f}]" if r["confidence"] != 1.0 else ""
+            lines.append(
+                f"- [{r['category']}]{conf} {r['content']} "
+                f"(by {r['agent_name']}, {r['created_at']})"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error searching org observations: {e}"
+    finally:
+        conn.close()
+
+
+def handle_org_get_threads(args):
+    """List active org-level threads."""
+    conn, err = _require_org()
+    if err:
+        return f"Error: {err}"
+
+    status = args.get("status", "active")
+    limit = min(args.get("limit", 20), 50)
+
+    try:
+        rows = conn.execute(
+            "SELECT id, title, status, priority, summary, created_at, updated_at "
+            "FROM threads WHERE status = ? ORDER BY priority DESC, updated_at DESC LIMIT ?",
+            (status, limit),
+        ).fetchall()
+
+        if not rows:
+            return f"No {status} org threads."
+
+        lines = [f"### Org '{ORG_SLUG}' threads ({len(rows)} {status})\n"]
+        for r in rows:
+            pri = f" [P{r['priority']}]" if r["priority"] else ""
+            summary = f" - {r['summary']}" if r["summary"] else ""
+            lines.append(f"- #{r['id']}{pri} {r['title']}{summary}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error listing org threads: {e}"
+    finally:
+        conn.close()
+
+
+def handle_org_track_thread(args):
+    """Create or update an org-level thread."""
+    conn, err = _require_org()
+    if err:
+        return f"Error: {err}"
+
+    title = args.get("title", "").strip()
+    if not title:
+        return "Error: 'title' is required."
+
+    summary = args.get("summary", "")
+    priority = args.get("priority", 0)
+    status = args.get("status", "active")
+
+    try:
+        existing = conn.execute(
+            "SELECT id, status FROM threads WHERE title = ?", (title,)
+        ).fetchone()
+
+        if existing:
+            updates = []
+            params = []
+            if summary:
+                updates.append("summary = ?")
+                params.append(summary)
+            if args.get("priority") is not None:
+                updates.append("priority = ?")
+                params.append(priority)
+            if args.get("status"):
+                updates.append("status = ?")
+                params.append(status)
+                if status == "closed":
+                    updates.append("closed_at = datetime('now')")
+            updates.append("updated_at = datetime('now')")
+            params.append(existing["id"])
+
+            conn.execute(
+                f"UPDATE threads SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            conn.commit()
+            return f"Updated org thread #{existing['id']}: '{title}'"
+        else:
+            conn.execute(
+                "INSERT INTO threads (title, summary, priority, status) VALUES (?, ?, ?, ?)",
+                (title, summary, priority, status),
+            )
+            conn.commit()
+            tid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            return f"Created org thread #{tid}: '{title}'"
+    except Exception as e:
+        return f"Error managing org thread: {e}"
+    finally:
+        conn.close()
+
+
+def handle_org_add_thread_entry(args):
+    """Add an entry/contribution to an org thread."""
+    conn, err = _require_org()
+    if err:
+        return f"Error: {err}"
+
+    thread_id = args.get("thread_id")
+    content = args.get("content", "").strip()
+    if not thread_id or not content:
+        return "Error: 'thread_id' and 'content' are required."
+
+    try:
+        thread = conn.execute(
+            "SELECT id, title FROM threads WHERE id = ?", (thread_id,)
+        ).fetchone()
+        if not thread:
+            return f"Error: thread #{thread_id} not found."
+
+        conn.execute(
+            "INSERT INTO thread_entries (thread_id, agent_name, content) VALUES (?, ?, ?)",
+            (thread_id, AGENT_NAME, content),
+        )
+        conn.execute(
+            "UPDATE threads SET updated_at = datetime('now') WHERE id = ?",
+            (thread_id,),
+        )
+        conn.commit()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM thread_entries WHERE thread_id = ?", (thread_id,)
+        ).fetchone()[0]
+        return f"Added entry to org thread #{thread_id} ('{thread['title']}'). Now {count} entries."
+    except Exception as e:
+        return f"Error adding thread entry: {e}"
+    finally:
+        conn.close()
+
+
+def handle_org_log_decision(args):
+    """Record a decision in the org's institutional memory."""
+    conn, err = _require_org()
+    if err:
+        return f"Error: {err}"
+
+    title = args.get("title", "").strip()
+    if not title:
+        return "Error: 'title' is required."
+
+    description = args.get("description", "")
+    rationale = args.get("rationale", "")
+
+    try:
+        conn.execute(
+            "INSERT INTO decisions (title, description, decided_by, rationale) "
+            "VALUES (?, ?, ?, ?)",
+            (title, description, AGENT_NAME, rationale),
+        )
+        conn.commit()
+        did = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return f"Logged org decision #{did}: '{title}' (decided by {AGENT_NAME})"
+    except Exception as e:
+        return f"Error logging decision: {e}"
+    finally:
+        conn.close()
+
+
+def handle_org_get_decisions(args):
+    """List org decisions."""
+    conn, err = _require_org()
+    if err:
+        return f"Error: {err}"
+
+    status = args.get("status", "active")
+    limit = min(args.get("limit", 20), 50)
+
+    try:
+        rows = conn.execute(
+            "SELECT id, title, description, decided_by, rationale, status, created_at "
+            "FROM decisions WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+            (status, limit),
+        ).fetchall()
+
+        if not rows:
+            return f"No {status} org decisions."
+
+        lines = [f"### Org '{ORG_SLUG}' decisions ({len(rows)} {status})\n"]
+        for r in rows:
+            rationale = f"\n  Rationale: {r['rationale']}" if r["rationale"] else ""
+            lines.append(
+                f"- #{r['id']} {r['title']} (by {r['decided_by']}, {r['created_at']})"
+                f"{rationale}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error listing org decisions: {e}"
+    finally:
+        conn.close()
+
+
+def handle_org_digest(args):
+    """Summarize recent org activity across observations, threads, and decisions."""
+    conn, err = _require_org()
+    if err:
+        return f"Error: {err}"
+
+    limit = min(args.get("limit", 10), 30)
+
+    try:
+        lines = [f"### Org '{ORG_SLUG}' - Recent Activity Digest\n"]
+
+        # Recent observations
+        obs = conn.execute(
+            "SELECT agent_name, content, category, confidence, created_at "
+            "FROM observations ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        if obs:
+            lines.append(f"**Observations** ({len(obs)} recent):")
+            for o in obs:
+                conf = f" [{o['confidence']:.1f}]" if o["confidence"] != 1.0 else ""
+                lines.append(f"  - [{o['category']}]{conf} {o['content']} ({o['agent_name']})")
+            lines.append("")
+
+        # Active threads
+        threads = conn.execute(
+            "SELECT id, title, priority, summary, updated_at FROM threads "
+            "WHERE status = 'active' ORDER BY priority DESC, updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        if threads:
+            lines.append(f"**Active Threads** ({len(threads)}):")
+            for t in threads:
+                summary = f" - {t['summary']}" if t["summary"] else ""
+                lines.append(f"  - #{t['id']} {t['title']}{summary}")
+            lines.append("")
+
+        # Recent decisions
+        decisions = conn.execute(
+            "SELECT title, decided_by, created_at FROM decisions "
+            "WHERE status = 'active' ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        if decisions:
+            lines.append(f"**Recent Decisions** ({len(decisions)}):")
+            for d in decisions:
+                lines.append(f"  - {d['title']} (by {d['decided_by']}, {d['created_at']})")
+            lines.append("")
+
+        # Stats
+        total_obs = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+        total_threads = conn.execute("SELECT COUNT(*) FROM threads WHERE status = 'active'").fetchone()[0]
+        total_decisions = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+        lines.append(f"**Totals**: {total_obs} observations, {total_threads} active threads, {total_decisions} decisions")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error generating org digest: {e}"
+    finally:
+        conn.close()
+
+
 def handle_org(args):
     """Dispatch org actions with provision access gate."""
     if not _has_provision_access():
@@ -3867,6 +4276,16 @@ _ACTION_ROUTES = {
         "deactivate_server": handle_mcp_deactivate_server,
         "scaffold_server": handle_mcp_scaffold_server,
     },
+    "org_memory": {
+        "observe": handle_org_observe,
+        "recall": handle_org_recall,
+        "get_threads": handle_org_get_threads,
+        "track_thread": handle_org_track_thread,
+        "add_thread_entry": handle_org_add_thread_entry,
+        "log_decision": handle_org_log_decision,
+        "get_decisions": handle_org_get_decisions,
+        "digest": handle_org_digest,
+    },
 }
 
 
@@ -3897,6 +4316,7 @@ HANDLERS = {
     "display": lambda args: _route_grouped("display", args),
     "tools": lambda args: _route_grouped("tools", args),
     "mcp": lambda args: _route_grouped("mcp", args),
+    "org_memory": lambda args: _route_grouped("org_memory", args),
     # Org tool (has its own dispatch with provision gate)
     "org": handle_org,
     # Standalone tools
