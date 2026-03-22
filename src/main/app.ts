@@ -541,6 +541,7 @@ app.whenReady().then(() => {
       if (!currentSession) {
         currentSession = new Session();
         currentSession.start();
+        currentSession.inheritCliSessionId();
       }
       if (!systemPrompt) {
         systemPrompt = loadSystemPrompt();

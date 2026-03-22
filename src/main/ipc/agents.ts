@@ -134,6 +134,8 @@ export function registerAgentHandlers(ctx: IpcContext): void {
       if (resumed) {
         ctx.currentSession.setCliSessionId(resumed.cliSessionId);
         ctx.currentSession.turnHistory = resumed.turnHistory as typeof ctx.currentSession.turnHistory;
+      } else {
+        ctx.currentSession.inheritCliSessionId();
       }
       ctx.systemPrompt = null; // Force reload for new agent
 

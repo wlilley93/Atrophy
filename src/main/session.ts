@@ -23,9 +23,22 @@ export class Session {
     this.startedAt = Date.now();
     this.turnHistory = [];
 
-    // Continue the same CLI conversation thread
-    this.cliSessionId = memory.getLastCliSessionId();
+    // CLI session ID is NOT loaded here - callers must explicitly call
+    // inheritCliSessionId() after ensuring the correct agent's DB is loaded.
+    // This prevents cross-agent session contamination when memory.ts is a
+    // singleton shared across agents.
     return this.sessionId;
+  }
+
+  /**
+   * Inherit the most recent CLI session ID from the currently-loaded DB.
+   * Call this after config.reloadForAgent() + memory.initDb() to ensure
+   * the correct agent's DB is active.
+   */
+  inheritCliSessionId(): void {
+    if (!this.cliSessionId) {
+      this.cliSessionId = memory.getLastCliSessionId();
+    }
   }
 
   setCliSessionId(cliId: string): void {

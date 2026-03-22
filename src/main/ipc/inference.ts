@@ -48,6 +48,7 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
       if (!ctx.currentSession) {
         ctx.currentSession = new Session();
         ctx.currentSession.start();
+        ctx.currentSession.inheritCliSessionId();
       }
 
       // Load system prompt once per session

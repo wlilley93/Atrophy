@@ -149,6 +149,7 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse): 
     if (!session) {
       session = new Session();
       session.start();
+      session.inheritCliSessionId();
     }
     if (!systemPrompt) {
       systemPrompt = loadSystemPrompt();
@@ -242,6 +243,7 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
   if (!session) {
     session = new Session();
     session.start();
+    session.inheritCliSessionId();
   }
   if (!systemPrompt) {
     systemPrompt = loadSystemPrompt();
@@ -347,6 +349,7 @@ async function handleChatStreamJson(req: http.IncomingMessage, res: http.ServerR
   if (!session) {
     session = new Session();
     session.start();
+    session.inheritCliSessionId();
   }
   if (!systemPrompt) {
     systemPrompt = loadSystemPrompt();
@@ -514,6 +517,7 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
   memory.initDb();
   session = new Session();
   session.start();
+  session.inheritCliSessionId();
   systemPrompt = loadSystemPrompt();
 
   httpServer = http.createServer(async (req, res) => {

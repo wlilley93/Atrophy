@@ -40,17 +40,17 @@ const _agentSessions: Map<string, Session> = new Map();
  * Get or create the persistent Session for an agent.
  * The Session tracks the CLI session ID so that every inference call
  * resumes the same conversation thread (compaction handles context limits).
+ *
+ * IMPORTANT: Does NOT inherit CLI session ID here. The caller must call
+ * session.inheritCliSessionId() inside the config lock, after
+ * config.reloadForAgent() + memory.initDb() have loaded the correct
+ * agent's DB. This prevents cross-agent session contamination.
  */
 function getAgentSession(agentName: string): Session {
   let session = _agentSessions.get(agentName);
   if (!session) {
     session = new Session();
     session.start();
-    // Inherit any existing CLI session ID from the DB
-    const existingCliId = memory.getLastCliSessionId();
-    if (existingCliId) {
-      session.cliSessionId = existingCliId;
-    }
     _agentSessions.set(agentName, session);
   }
   return session;
@@ -497,6 +497,7 @@ async function dispatchToAgent(
 
       const system = loadSystemPrompt();
       const agentSession = getAgentSession(agentName);
+      agentSession.inheritCliSessionId();
       const prompt = sourceLabel ? `[${sourceLabel}]\n\n${text}` : text;
 
       // Save user turn before inference
