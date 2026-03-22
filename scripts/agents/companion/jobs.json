@@ -43,7 +43,7 @@
     "description": "Check and fire due reminders - runs every minute"
   },
   "voice_note": {
-    "cron": "42 14 15 3 *",
+    "cron": "42 14 24 3 *",
     "script": "scripts/agents/companion/voice_note.py",
     "description": "Spontaneous voice note via Telegram - self-rescheduling"
   }
