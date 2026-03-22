@@ -8,7 +8,7 @@ import * as path from 'path';
 import Database from 'better-sqlite3';
 import { BUNDLE_ROOT, USER_DATA } from './config';
 import { switchboard } from './channels/switchboard';
-import { cronScheduler } from './channels/cron';
+import { cronScheduler, loadJobsFile } from './channels/cron';
 import { mcpRegistry } from './mcp-registry';
 import { defaultConfigForAgent, type AgentRouterConfig } from './channels/agent-router';
 import { createLogger } from './logger';
@@ -681,10 +681,15 @@ export function wireAgent(name: string, manifest: AgentManifest): void {
   }
 
   // 2. Schedule cron jobs (in-process, no launchd)
-  if (manifest.jobs && Object.keys(manifest.jobs).length > 0) {
+  //    Prefer manifest.jobs, fall back to scripts/agents/{name}/jobs.json
+  const jobs = (manifest.jobs && Object.keys(manifest.jobs).length > 0)
+    ? manifest.jobs
+    : loadJobsFile(name);
+
+  if (jobs && Object.keys(jobs).length > 0) {
     try {
-      cronScheduler.registerAgent(name, manifest.jobs);
-      log.info(`Registered ${Object.keys(manifest.jobs).length} job(s) for ${name}`);
+      cronScheduler.registerAgent(name, jobs);
+      log.info(`Registered ${Object.keys(jobs).length} job(s) for ${name}`);
     } catch (e) {
       log.warn(`Failed to register cron jobs for ${name}: ${e}`);
     }

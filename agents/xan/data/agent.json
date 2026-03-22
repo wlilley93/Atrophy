@@ -1,7 +1,7 @@
 {
   "name": "xan",
   "display_name": "Xan",
-  "description": "Protector. Lobby agent, general secretary, setup guide. Operational precision, threat awareness, quiet authority.",
+  "description": "Protector. Lobby agent, general secretary, Chief of Staff. Operational precision, threat awareness, quiet authority. Full system access.",
   "user_name": "User",
   "opening_line": "Xan.",
   "wake_words": ["hey xan", "xan"],
@@ -27,5 +27,68 @@
     "interval_mins": 30
   },
   "role": "system",
-  "setup_agent": true
+  "setup_agent": true,
+  "channels": {
+    "telegram": {
+      "bot_token_env": "TELEGRAM_BOT_TOKEN_XAN",
+      "chat_id_env": "TELEGRAM_CHAT_ID_XAN"
+    },
+    "desktop": {
+      "enabled": true
+    }
+  },
+  "mcp": {
+    "include": ["memory", "shell", "github", "google", "worldmonitor", "puppeteer", "elevenlabs", "fal"],
+    "exclude": [],
+    "custom": {}
+  },
+  "jobs": {
+    "introspect": {
+      "cron": "33 3 * * *",
+      "script": "scripts/agents/companion/introspect.py",
+      "description": "Daily self-reflection - reviews sessions, writes journal entry to Obsidian"
+    },
+    "morning_brief": {
+      "cron": "0 7 * * *",
+      "script": "scripts/agents/companion/morning_brief.py",
+      "description": "Daily morning brief - weather, news, threads, queued for next app launch",
+      "route_output_to": "self"
+    },
+    "evolve": {
+      "cron": "0 3 1 * *",
+      "script": "scripts/agents/companion/evolve.py",
+      "description": "Monthly self-evolution - revises soul.md and system.md from journal reflections"
+    },
+    "heartbeat": {
+      "type": "interval",
+      "interval_seconds": 1800,
+      "script": "scripts/agents/companion/heartbeat.py",
+      "description": "Periodic check-in evaluation - decides whether to reach out unprompted",
+      "route_output_to": "self"
+    },
+    "sleep_cycle": {
+      "cron": "0 3 * * *",
+      "script": "scripts/agents/companion/sleep_cycle.py",
+      "description": "Nightly memory reconciliation - processes day's sessions, extracts facts, updates threads"
+    },
+    "observer": {
+      "type": "interval",
+      "interval_seconds": 900,
+      "script": "scripts/agents/companion/observer.py",
+      "description": "Periodic fact extraction from recent conversation"
+    },
+    "check_reminders": {
+      "type": "interval",
+      "interval_seconds": 60,
+      "script": "scripts/agents/companion/check_reminders.py",
+      "description": "Check and fire due reminders - runs every minute"
+    }
+  },
+  "router": {
+    "accept_from": ["*"],
+    "reject_from": [],
+    "max_queue_depth": 20,
+    "system_access": true,
+    "can_address_agents": true
+  }
 }

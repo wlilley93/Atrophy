@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from config import DB_PATH, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES
+from config import DB_PATH, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, AGENT_NAME
 from core.memory import _connect
 from core.inference import run_inference_oneshot
 from core.prompts import load_prompt
@@ -158,10 +158,10 @@ def leave_gift():
         frontmatter = (
             f"---\n"
             f"type: gift\n"
-            f"agent: companion\n"
+            f"agent: {AGENT_NAME}\n"
             f"created: {today}\n"
             f"updated: {today}\n"
-            f"tags: [companion, gift]\n"
+            f"tags: [{AGENT_NAME}, gift]\n"
             f"---\n\n"
         )
         with open(gifts_path, "w") as f:

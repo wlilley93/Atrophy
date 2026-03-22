@@ -4,15 +4,11 @@
     "script": "scripts/agents/companion/introspect.py",
     "description": "Daily self-reflection - reviews sessions, writes journal entry to Obsidian"
   },
-  "gift": {
-    "cron": "11 0 28 3 *",
-    "script": "scripts/agents/companion/gift.py",
-    "description": "Unprompted gift note in Obsidian - self-rescheduling"
-  },
   "morning_brief": {
     "cron": "0 7 * * *",
     "script": "scripts/agents/companion/morning_brief.py",
-    "description": "Daily morning brief - weather, news, threads, queued for next app launch"
+    "description": "Daily morning brief - weather, news, threads, queued for next app launch",
+    "route_output_to": "self"
   },
   "evolve": {
     "cron": "0 3 1 * *",
@@ -23,7 +19,8 @@
     "type": "interval",
     "interval_seconds": 1800,
     "script": "scripts/agents/companion/heartbeat.py",
-    "description": "Periodic check-in evaluation - decides whether to reach out unprompted"
+    "description": "Periodic check-in evaluation - decides whether to reach out unprompted",
+    "route_output_to": "self"
   },
   "sleep_cycle": {
     "cron": "0 3 * * *",
@@ -41,10 +38,5 @@
     "interval_seconds": 60,
     "script": "scripts/agents/companion/check_reminders.py",
     "description": "Check and fire due reminders - runs every minute"
-  },
-  "voice_note": {
-    "cron": "42 14 15 3 *",
-    "script": "scripts/agents/companion/voice_note.py",
-    "description": "Spontaneous voice note via Telegram - self-rescheduling"
   }
 }
