@@ -49,6 +49,7 @@ export interface AgentInfo {
   display_name: string;
   description: string;
   role: string;
+  tier: number;
 }
 
 export function discoverAgents(): AgentInfo[] {
@@ -70,23 +71,22 @@ export function discoverAgents(): AgentInfo[] {
       seen.add(name);
 
       const data = findManifest(name) || {};
+      const orgSection = data.org as Record<string, unknown> | undefined;
       agents.push({
         name,
         display_name: (data.display_name as string) || name.charAt(0).toUpperCase() + name.slice(1),
         description: (data.description as string) || '',
         role: (data.role as string) || '',
+        tier: (orgSection?.tier as number) ?? 1,
       });
     }
   }
 
-  // Xan always first, then system-role agents, then alphabetical
+  // Sort by tier ascending (lower = higher priority), then alphabetical
   agents.sort((a, b) => {
-    // Pin xan to position 0
-    if (a.name === 'xan') return -1;
-    if (b.name === 'xan') return 1;
-    const aSystem = a.role === 'system' ? 0 : 1;
-    const bSystem = b.role === 'system' ? 0 : 1;
-    if (aSystem !== bSystem) return aSystem - bSystem;
+    const aTier = a.tier ?? 1;
+    const bTier = b.tier ?? 1;
+    if (aTier !== bTier) return aTier - bTier;
     return a.name.localeCompare(b.name);
   });
 
