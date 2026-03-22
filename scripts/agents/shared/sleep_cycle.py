@@ -35,6 +35,7 @@ from core.memory import (
     decay_activations,
 )
 from core.inference import run_inference_oneshot
+from core.inner_life import update_trust, load_state
 
 
 # ── Output paths ──
@@ -65,6 +66,17 @@ THREAD: <thread_name> | <updated_summary>
 [PATTERNS]
 PATTERN: <description>
 ...
+
+[TRUST]
+TRUST: <domain> <+/-delta> <reason>
+Domains: emotional, intellectual, creative, practical
+Delta range: -0.03 to +0.03 per signal (multiple signals per domain allowed)
+Only include domains where today's interactions provide clear evidence of trust movement.
+Examples:
+  TRUST: practical +0.02 asked for help debugging - shows reliance
+  TRUST: emotional +0.03 shared vulnerable feelings about work stress
+  TRUST: creative -0.01 dismissed creative suggestion quickly
+  TRUST: intellectual +0.02 engaged deeply in technical discussion
 
 [IDENTITY]
 IDENTITY_FLAG: <observation that might warrant identity layer update>
@@ -122,7 +134,7 @@ def _gather_material() -> str:
 
 def _parse_section(text: str, header: str) -> str:
     """Extract content between [HEADER] and the next [HEADER] or end."""
-    pattern = rf'\[{re.escape(header)}\]\s*\n(.*?)(?=\n\[(?:FACTS|THREADS|PATTERNS|IDENTITY)\]|\Z)'
+    pattern = rf'\[{re.escape(header)}\]\s*\n(.*?)(?=\n\[(?:FACTS|THREADS|PATTERNS|TRUST|IDENTITY)\]|\Z)'
     match = re.search(pattern, text, re.DOTALL)
     return match.group(1).strip() if match else ""
 
@@ -172,6 +184,30 @@ def _parse_patterns(section: str) -> list[str]:
     return patterns
 
 
+def _parse_trust_signals(section: str) -> list[dict]:
+    """Parse TRUST: <domain> <+/-delta> <reason> lines."""
+    signals = []
+    valid_domains = {"emotional", "intellectual", "creative", "practical"}
+    for line in section.split("\n"):
+        line = line.strip()
+        if not line.startswith("TRUST:"):
+            continue
+        content = line[6:].strip()
+        parts = content.split(None, 2)
+        if len(parts) < 2:
+            continue
+        domain = parts[0].lower()
+        if domain not in valid_domains:
+            continue
+        try:
+            delta = float(parts[1])
+        except ValueError:
+            continue
+        reason = parts[2] if len(parts) > 2 else ""
+        signals.append({"domain": domain, "delta": delta, "reason": reason})
+    return signals
+
+
 def _parse_identity_flags(section: str) -> list[str]:
     """Parse IDENTITY_FLAG: <observation> lines."""
     flags = []
@@ -216,6 +252,35 @@ def _store_patterns(patterns: list[str]):
         write_observation(content)
     if patterns:
         print(f"  [sleep] Stored {len(patterns)} pattern(s)")
+
+
+def _aggregate_trust(signals: list[dict]):
+    """Apply trust signals from sleep cycle analysis.
+
+    Each signal has domain, delta, and reason. update_trust() clamps
+    each call to +/-0.05, so multiple small signals accumulate safely.
+    """
+    if not signals:
+        return
+
+    before = load_state().get("trust", {})
+    for sig in signals:
+        update_trust(sig["domain"], sig["delta"])
+    after = load_state().get("trust", {})
+
+    changes = []
+    for domain in ["emotional", "intellectual", "creative", "practical"]:
+        b = before.get(domain, 0.5)
+        a = after.get(domain, 0.5)
+        if abs(a - b) > 0.001:
+            changes.append(f"  {domain}: {b:.3f} -> {a:.3f}")
+
+    if changes:
+        print(f"  [sleep] Trust aggregation ({len(signals)} signal(s)):")
+        for c in changes:
+            print(c)
+    else:
+        print(f"  [sleep] Trust signals processed but no net change")
 
 
 def _store_identity_flags(flags: list[str]):
@@ -292,6 +357,7 @@ def sleep_cycle():
     facts_section = _parse_section(response, "FACTS")
     threads_section = _parse_section(response, "THREADS")
     patterns_section = _parse_section(response, "PATTERNS")
+    trust_section = _parse_section(response, "TRUST")
     identity_section = _parse_section(response, "IDENTITY")
 
     # Parse and store each section
@@ -303,6 +369,9 @@ def sleep_cycle():
 
     patterns = _parse_patterns(patterns_section)
     _store_patterns(patterns)
+
+    trust_signals = _parse_trust_signals(trust_section)
+    _aggregate_trust(trust_signals)
 
     identity_flags = _parse_identity_flags(identity_section)
     _store_identity_flags(identity_flags)
