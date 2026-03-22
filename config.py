@@ -287,14 +287,17 @@ HEARTBEAT_ACTIVE_END = _hb.get("active_end", int(_cfg("HEARTBEAT_ACTIVE_END", "2
 HEARTBEAT_INTERVAL_MINS = _hb.get("interval_mins", int(_cfg("HEARTBEAT_INTERVAL_MINS", "30")))
 
 # ── Telegram (per-agent from manifest) ──
-_tg = AGENT.get("telegram", {})
-TELEGRAM_BOT_TOKEN = os.environ.get(
-    _tg.get("bot_token_env", "TELEGRAM_BOT_TOKEN"),
-    _cfg("TELEGRAM_BOT_TOKEN", ""),
+# Telegram config lives under channels.telegram in the manifest
+_tg = AGENT.get("channels", {}).get("telegram", {})
+TELEGRAM_BOT_TOKEN = (
+    os.environ.get(_tg.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
+    or AGENT.get("telegram_bot_token")
+    or _cfg("TELEGRAM_BOT_TOKEN", "")
 )
-TELEGRAM_CHAT_ID = os.environ.get(
-    _tg.get("chat_id_env", "TELEGRAM_CHAT_ID"),
-    _cfg("TELEGRAM_CHAT_ID", ""),
+TELEGRAM_CHAT_ID = (
+    os.environ.get(_tg.get("chat_id_env", "TELEGRAM_CHAT_ID"))
+    or AGENT.get("telegram_chat_id")
+    or _cfg("TELEGRAM_CHAT_ID", "")
 )
 
 # ── Notifications ──
