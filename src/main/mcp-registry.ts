@@ -595,7 +595,7 @@ export class McpRegistry {
     const env: Record<string, string> = { ...(baseEnv || {}) };
 
     switch (serverName) {
-      case 'memory':
+      case 'memory': {
         env.COMPANION_DB = config.DB_PATH;
         env.OBSIDIAN_VAULT = config.OBSIDIAN_VAULT;
         env.OBSIDIAN_AGENT_DIR = config.OBSIDIAN_AGENT_DIR;
@@ -603,7 +603,20 @@ export class McpRegistry {
         env.TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN || '';
         env.TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID || '';
         env.AGENT = agentName;
+
+        // Org DB resolution - if agent belongs to a non-personal org,
+        // pass the shared org database path to the memory server
+        const manifest = readAgentManifest(agentName);
+        const orgSlug = (manifest.org as { slug?: string } | undefined)?.slug;
+        if (orgSlug && orgSlug !== 'personal' && orgSlug !== 'system') {
+          const orgDbPath = path.join(USER_DATA, 'orgs', orgSlug, 'memory.db');
+          if (fs.existsSync(orgDbPath)) {
+            env.ORG_DB = orgDbPath;
+            env.ORG_SLUG = orgSlug;
+          }
+        }
         break;
+      }
 
       case 'puppeteer':
         env.PUPPETEER_LAUNCH_OPTIONS = JSON.stringify({ headless: true });
