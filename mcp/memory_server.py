@@ -414,6 +414,48 @@ TOOLS = [
             "required": ["action"],
         },
     },
+    # ── Group 10: org - Organization management ──
+    {
+        "name": "org",
+        "description": (
+            "Manage agent organizations. Actions: create_org (create a new org), "
+            "dissolve_org (remove an org and unassign all agents), list_orgs (list "
+            "all orgs), get_org_detail (full org info with roster), add_agent (add "
+            "or assign an agent to an org), remove_agent (unassign an agent from "
+            "its org), restructure (batch-update roles and reporting lines), "
+            "set_purpose (update an org's purpose statement). "
+            "All actions require can_provision access."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "create_org", "dissolve_org", "list_orgs", "get_org_detail",
+                        "add_agent", "remove_agent", "restructure", "set_purpose",
+                    ],
+                },
+                "name": {"type": "string", "description": "Org display name (create_org)"},
+                "slug": {"type": "string", "description": "Org slug identifier (dissolve_org, get_org_detail, add_agent, set_purpose)"},
+                "org_type": {
+                    "type": "string",
+                    "enum": ["government", "company", "creative", "utility"],
+                    "description": "Organization type (create_org)",
+                },
+                "purpose": {"type": "string", "description": "Org purpose statement (create_org, set_purpose)"},
+                "agent": {"type": "string", "description": "Agent name (add_agent, remove_agent)"},
+                "role": {"type": "string", "description": "Agent's role in the org (add_agent)"},
+                "tier": {"type": "integer", "description": "Agent's tier level (add_agent)"},
+                "reports_to": {"type": "string", "description": "Agent this agent reports to (add_agent)"},
+                "changes": {
+                    "type": "object",
+                    "description": "Map of {agent_name: {role, reports_to}} for batch restructure",
+                },
+            },
+            "required": ["action"],
+        },
+    },
 ]
 
 # ── Custom tool loading ──
@@ -492,6 +534,22 @@ def _connect():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+# ── Provision access check ──
+
+
+def _has_provision_access():
+    """Check if the calling agent has org.can_provision in its manifest."""
+    try:
+        manifest_path = os.path.join(DATA_DIR, "agent.json")
+        if os.path.exists(manifest_path):
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            return manifest.get("org", {}).get("can_provision", False)
+    except Exception:
+        pass
+    return False
 
 
 # ── Tool handlers ──
@@ -3210,6 +3268,537 @@ if __name__ == "__main__":
     )
 
 
+# ── Org handlers ──
+
+
+_ATROPHY_BASE = os.path.expanduser("~/.atrophy")
+_ORGS_DIR = os.path.join(_ATROPHY_BASE, "orgs")
+_AGENTS_DIR = os.path.join(_ATROPHY_BASE, "agents")
+_VALID_ORG_TYPES = {"government", "company", "creative", "utility"}
+
+
+def _slugify(name):
+    """Convert an org name to a filesystem-safe slug."""
+    import re
+    slug = name.lower().strip()
+    slug = re.sub(r"[^a-z0-9]+", "_", slug)
+    slug = slug.strip("_")
+    return slug
+
+
+def _read_agent_manifest(agent_name):
+    """Read an agent's manifest from ~/.atrophy/agents/<name>/data/agent.json."""
+    manifest_path = os.path.join(_AGENTS_DIR, agent_name, "data", "agent.json")
+    if not os.path.exists(manifest_path):
+        return None
+    try:
+        with open(manifest_path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _write_agent_manifest(agent_name, manifest):
+    """Write an agent's manifest back to disk."""
+    manifest_path = os.path.join(_AGENTS_DIR, agent_name, "data", "agent.json")
+    os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+
+
+def _read_org_manifest(slug):
+    """Read an org manifest from ~/.atrophy/orgs/<slug>/org.json."""
+    org_path = os.path.join(_ORGS_DIR, slug, "org.json")
+    if not os.path.exists(org_path):
+        return None
+    try:
+        with open(org_path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _get_org_roster(slug):
+    """Scan all agent manifests and return agents belonging to this org."""
+    roster = []
+    if not os.path.isdir(_AGENTS_DIR):
+        return roster
+    for agent_dir in sorted(Path(_AGENTS_DIR).iterdir()):
+        if not agent_dir.is_dir():
+            continue
+        manifest_path = agent_dir / "data" / "agent.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            org_section = manifest.get("org", {})
+            if org_section.get("slug") == slug:
+                roster.append({
+                    "name": manifest.get("name", agent_dir.name),
+                    "display_name": manifest.get("display_name", agent_dir.name),
+                    "role": org_section.get("role", ""),
+                    "tier": org_section.get("tier", 2),
+                    "reports_to": org_section.get("reports_to"),
+                    "direct_reports": org_section.get("direct_reports", []),
+                })
+        except Exception:
+            continue
+    return roster
+
+
+def _init_org_db(slug):
+    """Initialize org memory DB from org-schema.sql."""
+    db_path = os.path.join(_ORGS_DIR, slug, "memory.db")
+    schema_file = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "db", "org-schema.sql"
+    )
+    if not os.path.exists(schema_file):
+        return
+    conn = sqlite3.connect(db_path)
+    with open(schema_file) as f:
+        conn.executescript(f.read())
+    conn.close()
+
+
+def handle_org_create(args):
+    """Create a new organization."""
+    from datetime import datetime
+
+    name = args.get("name", "").strip()
+    org_type = args.get("org_type", "").strip()
+    purpose = args.get("purpose", "").strip()
+
+    if not name:
+        return "Error: name is required."
+    if not org_type:
+        return "Error: org_type is required."
+    if org_type not in _VALID_ORG_TYPES:
+        valid = ", ".join(sorted(_VALID_ORG_TYPES))
+        return f"Error: org_type must be one of: {valid}"
+
+    slug = args.get("slug", "").strip() or _slugify(name)
+
+    # Check for duplicates
+    org_dir = os.path.join(_ORGS_DIR, slug)
+    if os.path.exists(os.path.join(org_dir, "org.json")):
+        return f"Error: org '{slug}' already exists."
+
+    # Create org directory and manifest
+    os.makedirs(org_dir, exist_ok=True)
+    org_manifest = {
+        "name": name,
+        "slug": slug,
+        "type": org_type,
+        "purpose": purpose,
+        "created": datetime.now().isoformat(),
+        "principal": None,
+        "communication": {
+            "cross_org": [org_type],
+        },
+    }
+    with open(os.path.join(org_dir, "org.json"), "w", encoding="utf-8") as f:
+        json.dump(org_manifest, f, indent=2)
+        f.write("\n")
+
+    # Initialize org memory DB
+    _init_org_db(slug)
+
+    return (
+        f"Created org '{name}' (slug: {slug}, type: {org_type}).\n"
+        f"Directory: {org_dir}\n"
+        f"Memory DB initialized.\n"
+        f"Use add_agent to assign agents to this org."
+    )
+
+
+def handle_org_dissolve(args):
+    """Dissolve an org - unassign all agents and remove the org directory."""
+    import shutil
+
+    slug = args.get("slug", "").strip()
+    if not slug:
+        return "Error: slug is required."
+
+    org_dir = os.path.join(_ORGS_DIR, slug)
+    if not os.path.exists(os.path.join(org_dir, "org.json")):
+        return f"Error: org '{slug}' does not exist."
+
+    # Unassign all agents in this org
+    roster = _get_org_roster(slug)
+    unassigned = []
+    for agent_info in roster:
+        agent_name = agent_info["name"]
+        manifest = _read_agent_manifest(agent_name)
+        if manifest:
+            # Remove org section entirely
+            manifest.pop("org", None)
+            _write_agent_manifest(agent_name, manifest)
+            unassigned.append(agent_name)
+
+    # Remove org directory
+    shutil.rmtree(org_dir, ignore_errors=True)
+
+    parts = [f"Dissolved org '{slug}'."]
+    if unassigned:
+        parts.append(f"Unassigned {len(unassigned)} agent(s): {', '.join(unassigned)}")
+    else:
+        parts.append("No agents were assigned.")
+    return "\n".join(parts)
+
+
+def handle_org_list(args):
+    """List all organizations."""
+    if not os.path.isdir(_ORGS_DIR):
+        return "No organizations exist yet."
+
+    orgs = []
+    for org_dir in sorted(Path(_ORGS_DIR).iterdir()):
+        if not org_dir.is_dir():
+            continue
+        manifest_path = org_dir / "org.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            roster = _get_org_roster(manifest.get("slug", org_dir.name))
+            orgs.append({
+                "slug": manifest.get("slug", org_dir.name),
+                "name": manifest.get("name", org_dir.name),
+                "type": manifest.get("type", "unknown"),
+                "purpose": manifest.get("purpose", ""),
+                "principal": manifest.get("principal"),
+                "agent_count": len(roster),
+            })
+        except Exception:
+            continue
+
+    if not orgs:
+        return "No organizations exist yet."
+
+    parts = [f"{len(orgs)} organization(s):\n"]
+    for o in orgs:
+        principal_str = f", principal: {o['principal']}" if o["principal"] else ""
+        parts.append(
+            f"- **{o['name']}** ({o['slug']}) - {o['type']}"
+            f"{principal_str} - {o['agent_count']} agent(s)"
+        )
+        if o["purpose"]:
+            parts.append(f"  Purpose: {o['purpose']}")
+    return "\n".join(parts)
+
+
+def handle_org_get_detail(args):
+    """Get full org detail including roster and hierarchy."""
+    slug = args.get("slug", "").strip()
+    if not slug:
+        return "Error: slug is required."
+
+    manifest = _read_org_manifest(slug)
+    if not manifest:
+        return f"Error: org '{slug}' does not exist."
+
+    roster = _get_org_roster(slug)
+
+    parts = [
+        f"## {manifest.get('name', slug)}",
+        f"**Slug:** {slug}",
+        f"**Type:** {manifest.get('type', 'unknown')}",
+        f"**Purpose:** {manifest.get('purpose', '(none)')}",
+        f"**Created:** {manifest.get('created', 'unknown')}",
+        f"**Principal:** {manifest.get('principal', '(none)')}",
+        "",
+    ]
+
+    if roster:
+        parts.append(f"### Roster ({len(roster)} agent(s))\n")
+        # Sort by tier, then name
+        roster.sort(key=lambda a: (a.get("tier", 99), a.get("name", "")))
+        for agent in roster:
+            reports = f" (reports to: {agent['reports_to']})" if agent.get("reports_to") else ""
+            directs = ""
+            if agent.get("direct_reports"):
+                directs = f" [manages: {', '.join(agent['direct_reports'])}]"
+            parts.append(
+                f"- **{agent['display_name']}** ({agent['name']}) - "
+                f"tier {agent['tier']}, {agent['role']}{reports}{directs}"
+            )
+    else:
+        parts.append("### Roster\nNo agents assigned.")
+
+    # Check for org memory DB
+    db_path = os.path.join(_ORGS_DIR, slug, "memory.db")
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            obs_count = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+            thread_count = conn.execute("SELECT COUNT(*) FROM threads").fetchone()[0]
+            decision_count = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+            conn.close()
+            parts.append(f"\n### Institutional Memory")
+            parts.append(
+                f"- {obs_count} observation(s), {thread_count} thread(s), "
+                f"{decision_count} decision(s)"
+            )
+        except Exception:
+            pass
+
+    return "\n".join(parts)
+
+
+def handle_org_add_agent(args):
+    """Add or assign an agent to an org."""
+    slug = args.get("slug", "").strip()
+    agent_name = args.get("agent", "").strip()
+    role = args.get("role", "").strip()
+    tier = args.get("tier", 2)
+    reports_to = args.get("reports_to", "").strip() or None
+
+    if not slug:
+        return "Error: slug is required."
+    if not agent_name:
+        return "Error: agent name is required."
+
+    # Validate org exists
+    org_manifest = _read_org_manifest(slug)
+    if not org_manifest:
+        return f"Error: org '{slug}' does not exist."
+
+    # Read or create agent manifest
+    manifest = _read_agent_manifest(agent_name)
+    if manifest is None:
+        # Create minimal agent directory and manifest
+        agent_dir = os.path.join(_AGENTS_DIR, agent_name, "data")
+        os.makedirs(agent_dir, exist_ok=True)
+        manifest = {
+            "name": agent_name,
+            "display_name": agent_name.replace("_", " ").title(),
+            "description": "",
+            "role": role or "Agent",
+        }
+
+    # Check if agent is already in a different org
+    existing_org = manifest.get("org", {}).get("slug")
+    if existing_org and existing_org != slug and existing_org not in ("personal", "system"):
+        return (
+            f"Error: agent '{agent_name}' is already assigned to org '{existing_org}'. "
+            f"Use remove_agent first."
+        )
+
+    # Set org section
+    manifest["org"] = {
+        "slug": slug,
+        "tier": tier,
+        "role": role or manifest.get("role", "Agent"),
+        "reports_to": reports_to,
+        "direct_reports": manifest.get("org", {}).get("direct_reports", []),
+    }
+
+    _write_agent_manifest(agent_name, manifest)
+
+    # Update parent's direct_reports if reports_to is set
+    if reports_to:
+        parent_manifest = _read_agent_manifest(reports_to)
+        if parent_manifest:
+            parent_org = parent_manifest.get("org", {})
+            directs = parent_org.get("direct_reports", [])
+            if agent_name not in directs:
+                directs.append(agent_name)
+                parent_org["direct_reports"] = directs
+                parent_manifest["org"] = parent_org
+                _write_agent_manifest(reports_to, parent_manifest)
+
+    # Update org principal if this is a tier 1 agent and no principal set
+    if tier == 1 and not org_manifest.get("principal"):
+        org_manifest["principal"] = agent_name
+        org_path = os.path.join(_ORGS_DIR, slug, "org.json")
+        with open(org_path, "w", encoding="utf-8") as f:
+            json.dump(org_manifest, f, indent=2)
+            f.write("\n")
+
+    reports_str = f", reports to {reports_to}" if reports_to else ""
+    return (
+        f"Assigned '{agent_name}' to org '{slug}' as {role or 'Agent'} "
+        f"(tier {tier}{reports_str})."
+    )
+
+
+def handle_org_remove_agent(args):
+    """Remove an agent from its org."""
+    agent_name = args.get("agent", "").strip()
+    if not agent_name:
+        return "Error: agent name is required."
+
+    manifest = _read_agent_manifest(agent_name)
+    if manifest is None:
+        return f"Error: agent '{agent_name}' does not exist."
+
+    org_section = manifest.get("org", {})
+    slug = org_section.get("slug")
+    if not slug or slug in ("personal", "system"):
+        return f"Error: agent '{agent_name}' is not assigned to a removable org."
+
+    reports_to = org_section.get("reports_to")
+
+    # Remove from parent's direct_reports
+    if reports_to:
+        parent_manifest = _read_agent_manifest(reports_to)
+        if parent_manifest:
+            parent_org = parent_manifest.get("org", {})
+            directs = parent_org.get("direct_reports", [])
+            if agent_name in directs:
+                directs.remove(agent_name)
+                parent_org["direct_reports"] = directs
+                parent_manifest["org"] = parent_org
+                _write_agent_manifest(reports_to, parent_manifest)
+
+    # Clear org principal if this agent was the principal
+    org_manifest = _read_org_manifest(slug)
+    if org_manifest and org_manifest.get("principal") == agent_name:
+        org_manifest["principal"] = None
+        org_path = os.path.join(_ORGS_DIR, slug, "org.json")
+        with open(org_path, "w", encoding="utf-8") as f:
+            json.dump(org_manifest, f, indent=2)
+            f.write("\n")
+
+    # Remove org section from agent
+    manifest.pop("org", None)
+    _write_agent_manifest(agent_name, manifest)
+
+    return f"Removed '{agent_name}' from org '{slug}'."
+
+
+def handle_org_restructure(args):
+    """Batch-update roles and reporting lines for agents in an org."""
+    changes = args.get("changes", {})
+    if not changes or not isinstance(changes, dict):
+        return "Error: changes is required (map of {agent_name: {role, reports_to}})."
+
+    results = []
+    for agent_name, updates in changes.items():
+        manifest = _read_agent_manifest(agent_name)
+        if manifest is None:
+            results.append(f"- {agent_name}: SKIPPED (agent not found)")
+            continue
+
+        org_section = manifest.get("org", {})
+        if not org_section.get("slug"):
+            results.append(f"- {agent_name}: SKIPPED (not in any org)")
+            continue
+
+        changed = []
+
+        # Update role
+        new_role = updates.get("role")
+        if new_role and new_role != org_section.get("role"):
+            old_role = org_section.get("role", "(none)")
+            org_section["role"] = new_role
+            changed.append(f"role: {old_role} -> {new_role}")
+
+        # Update reports_to
+        new_reports_to = updates.get("reports_to")
+        if "reports_to" in updates:
+            old_reports_to = org_section.get("reports_to")
+            if new_reports_to != old_reports_to:
+                # Remove from old parent's direct_reports
+                if old_reports_to:
+                    parent = _read_agent_manifest(old_reports_to)
+                    if parent:
+                        p_org = parent.get("org", {})
+                        directs = p_org.get("direct_reports", [])
+                        if agent_name in directs:
+                            directs.remove(agent_name)
+                            p_org["direct_reports"] = directs
+                            parent["org"] = p_org
+                            _write_agent_manifest(old_reports_to, parent)
+
+                # Add to new parent's direct_reports
+                if new_reports_to:
+                    parent = _read_agent_manifest(new_reports_to)
+                    if parent:
+                        p_org = parent.get("org", {})
+                        directs = p_org.get("direct_reports", [])
+                        if agent_name not in directs:
+                            directs.append(agent_name)
+                            p_org["direct_reports"] = directs
+                            parent["org"] = p_org
+                            _write_agent_manifest(new_reports_to, parent)
+
+                org_section["reports_to"] = new_reports_to
+                changed.append(
+                    f"reports_to: {old_reports_to or '(none)'} -> "
+                    f"{new_reports_to or '(none)'}"
+                )
+
+        if changed:
+            manifest["org"] = org_section
+            _write_agent_manifest(agent_name, manifest)
+            results.append(f"- {agent_name}: {', '.join(changed)}")
+        else:
+            results.append(f"- {agent_name}: no changes")
+
+    return f"Restructure complete:\n" + "\n".join(results)
+
+
+def handle_org_set_purpose(args):
+    """Update an org's purpose statement."""
+    slug = args.get("slug", "").strip()
+    purpose = args.get("purpose", "").strip()
+
+    if not slug:
+        return "Error: slug is required."
+    if not purpose:
+        return "Error: purpose is required."
+
+    org_manifest = _read_org_manifest(slug)
+    if not org_manifest:
+        return f"Error: org '{slug}' does not exist."
+
+    old_purpose = org_manifest.get("purpose", "(none)")
+    org_manifest["purpose"] = purpose
+
+    org_path = os.path.join(_ORGS_DIR, slug, "org.json")
+    with open(org_path, "w", encoding="utf-8") as f:
+        json.dump(org_manifest, f, indent=2)
+        f.write("\n")
+
+    return f"Updated purpose for '{slug}'.\nOld: {old_purpose}\nNew: {purpose}"
+
+
+def handle_org(args):
+    """Dispatch org actions with provision access gate."""
+    if not _has_provision_access():
+        return (
+            "Error: org management requires can_provision access. "
+            "Only agents with org.can_provision=true in their manifest can manage orgs."
+        )
+
+    action = args.get("action")
+    if not action:
+        return "Error: 'action' is required for org tool."
+
+    routes = {
+        "create_org": handle_org_create,
+        "dissolve_org": handle_org_dissolve,
+        "list_orgs": handle_org_list,
+        "get_org_detail": handle_org_get_detail,
+        "add_agent": handle_org_add_agent,
+        "remove_agent": handle_org_remove_agent,
+        "restructure": handle_org_restructure,
+        "set_purpose": handle_org_set_purpose,
+    }
+
+    handler = routes.get(action)
+    if not handler:
+        valid = ", ".join(routes.keys())
+        return f"Error: unknown org action '{action}'. Valid: {valid}"
+
+    return handler(args)
+
+
 # ── Action routing for consolidated tools ──
 
 _ACTION_ROUTES = {
@@ -3308,6 +3897,8 @@ HANDLERS = {
     "display": lambda args: _route_grouped("display", args),
     "tools": lambda args: _route_grouped("tools", args),
     "mcp": lambda args: _route_grouped("mcp", args),
+    # Org tool (has its own dispatch with provision gate)
+    "org": handle_org,
     # Standalone tools
     "review_audit": handle_review_audit,
     "self_status": handle_self_status,
