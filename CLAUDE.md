@@ -37,7 +37,17 @@ src/
   main/                      # Electron main process
     index.ts                 # Entry point, window creation, tray
     config.ts                # Port of config.py (three-tier resolution)
-    ipc-handlers.ts          # IPC channel registrations
+    ipc-handlers.ts          # IPC orchestrator (delegates to ipc/ domain modules)
+    ipc/                     # Domain-specific IPC handler modules
+      config.ts              # config:reload, config:get, config:apply, config:update
+      agents.ts              # agent:list, agent:switch, agent:create, mirror:*, queue:*
+      inference.ts           # inference:send, inference:stop, status:*
+      audio.ts               # audio:*, tts:*, stt:*, voice-agent:*
+      telegram.ts            # telegram:*
+      system.ts              # system:*, usage:*, activity:*, cron:*, mcp:*, logs:*, github:*
+      window.ts              # window:*, setup:*, avatar:*, artefact:*
+      index.ts               # Barrel re-exports
+    system-topology.ts       # Pure data layer for system map (buildTopology, handleToggleConnection)
     inference.ts             # Claude CLI subprocess wrapper (port of core/inference.py)
     memory.ts                # SQLite memory layer (port of core/memory.py)
     session.ts               # Session management
@@ -64,6 +74,7 @@ src/
       telegram/              # Telegram channel adapter
         api.ts               # Bot API helpers (send, edit, download, bot commands)
         daemon.ts            # Per-agent polling, dispatch, streaming display
+        formatter.ts         # Message formatting, streaming status, tool result display
         index.ts             # Barrel re-exports
       cron/                  # In-process cron scheduler (replaces launchd)
         scheduler.ts         # Timer management, cron expression parsing
@@ -92,7 +103,15 @@ src/
       Timer.svelte            # Countdown timer overlay
       Canvas.svelte           # PIP overlay webview
       Artefact.svelte         # Artefact overlay + gallery
-      Settings.svelte         # Settings modal with tabs
+      SystemMap.svelte         # System topology overlay (Cmd+Shift+M)
+      Settings.svelte         # Settings modal shell (tab switching, apply/save)
+      settings/               # Individual settings tab components
+        SettingsTab.svelte     # Main config form
+        UsageTab.svelte        # Token usage stats
+        ActivityTab.svelte     # Activity log with filtering
+        JobsTab.svelte         # Cron job management
+        UpdatesTab.svelte      # Bundle version checking
+        ConsoleTab.svelte      # Live log streaming
       SetupWizard.svelte      # First-launch wizard
     stores/
       session.ts              # Reactive session state

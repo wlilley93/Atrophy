@@ -13,6 +13,7 @@ src/main/channels/
   telegram/             # Telegram channel adapter
     api.ts              # Bot API helpers (send, edit, download, bot commands)
     daemon.ts           # Per-agent polling, dispatch, streaming display
+    formatter.ts        # Message formatting, streaming status, tool result display
     index.ts            # Barrel re-exports
 ```
 
@@ -287,6 +288,24 @@ The implementation makes several deliberate technical choices that affect reliab
 ## Legacy Router (Deleted)
 
 > **Note:** `src/main/router.ts` has been deleted. The legacy two-tier routing system (pattern matching + LLM classification) is no longer needed. With per-agent bots, each agent has its own dedicated bot and chat, so routing is unnecessary - incoming messages are already scoped to the correct agent by which bot received them. Routing between channels and agents is now handled by the switchboard and agent-router in `src/main/channels/`.
+
+---
+
+## src/main/channels/telegram/formatter.ts - Message Formatting
+
+Extracted from daemon.ts to keep formatting logic separate from polling/dispatch. Handles all Telegram-specific message rendering.
+
+**Exports:**
+- `ToolCallState`, `StreamState` - interfaces tracking streaming display state
+- `formatToolName(name)` - strips MCP prefixes (e.g. `mcp__memory__save_observation` -> `save_observation`)
+- `truncate(text, max)` - text truncation with ellipsis
+- `escapeMarkdown(text)` - Telegram MarkdownV2 escaping
+- `formatElapsed(ms)` - human-readable duration (e.g. "2m 15s")
+- `formatToolResult(result)` - concise tool result summaries for streaming display
+- `formatToolInput(args)` - tool input argument display
+- `buildStatusDisplay(state)` - full streaming status line (tool count, elapsed, thinking indicator)
+
+Used by daemon.ts during streaming dispatch to build the status footer shown below each agent response.
 
 ---
 

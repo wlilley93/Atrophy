@@ -4,6 +4,36 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.5.14
+
+### Codebase refactoring
+
+- **ipc-handlers.ts split** - the 1516-line monolith is now 64 lines orchestrating 7 domain modules in `src/main/ipc/`: config, agents, inference, audio, telegram, system, window. Each module owns a clear set of IPC channels.
+- **Settings.svelte split** - the 2435-line component is now a ~280-line shell rendering 6 tab components in `src/renderer/components/settings/`: SettingsTab, UsageTab, ActivityTab, JobsTab, UpdatesTab, ConsoleTab.
+- **Telegram formatter extracted** - message formatting, streaming display, and tool result summaries moved from `daemon.ts` (1300 lines) to `formatter.ts` (242 lines).
+
+---
+
+## 1.5.13
+
+### System Map overlay
+
+- **System Map** (`Cmd+Shift+M`) - standalone overlay visualizing agent-to-service connections. Three-column layout: agents (left), switchboard rail (center), services (right). MCP pills toggle on click, Cmd+click for detail cards. Search, number-key agent jumping, expand/collapse groups, restart banner.
+- **Cross-agent MCP tools** - agents with `system_access: true` (Xan) can activate/deactivate MCP servers for other agents via the existing `mcp` tool with an optional `agent` parameter.
+- **system-topology.ts** - pure data layer assembling topology from agent manifests and MCP registry. New IPC handlers: `system:getTopology`, `system:toggleConnection`.
+
+---
+
+## 1.5.12
+
+### Shell MCP loosened for agent autonomy
+
+- **Newly allowed** - bash/sh/zsh, rm, kill/killall/pkill, chmod, osascript, defaults, launchctl, sqlite3, python3 -c, node -e, npx, uvx, npm/pnpm run, find -exec, make, command chaining (&&, ||, ;), perl, ruby.
+- **Still blocked** - sudo, subshell expansion ($(), backticks), credential paths, disk operations, network scanning.
+- **Timeout raised** to 300s max (from 120s).
+
+---
+
 ## 1.5.10
 
 ### MCP registry owns all servers - no more Claude Code leaking

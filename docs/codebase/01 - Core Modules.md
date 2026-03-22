@@ -190,6 +190,37 @@ The config module has minimal dependencies to avoid circular imports, since near
 
 ---
 
+## ipc-handlers.ts and src/main/ipc/
+
+IPC handler registration is split into domain-specific modules. The main `ipc-handlers.ts` is a thin orchestrator (~64 lines) that exports the `IpcContext` interface and calls each domain's registration function.
+
+**Domain modules in `src/main/ipc/`:**
+
+| Module | Channels | Line count |
+|--------|----------|-----------|
+| `config.ts` | config:reload, config:get, config:apply, config:update | ~140 |
+| `agents.ts` | agent:list, agent:listFull, agent:switch, agent:create, mirror:*, queue:*, ask:respond | ~184 |
+| `inference.ts` | inference:send, inference:stop, status:get, status:set, opening:get | ~224 |
+| `audio.ts` | audio:*, tts:*, stt:*, voice-agent:* | ~95 |
+| `telegram.ts` | telegram:* | ~70 |
+| `system.ts` | system:*, usage:*, activity:*, cron:*, mcp:*, keepAwake:*, server:*, logs:*, github:*, bundle:*, updater:* | ~235 |
+| `window.ts` | window:*, setup:*, avatar:*, artefact:* | ~395 |
+
+**Critical pattern:** `getConfig()` must be called INSIDE each handler, never captured in a closure. The config object goes stale after agent switches.
+
+---
+
+## system-topology.ts
+
+Pure data layer for the System Map overlay. No Electron imports - just data assembly and mutation.
+
+- `buildTopology()` - assembles full topology from agent manifests, MCP registry, and `EXTERNAL_SERVER_META`
+- `handleToggleConnection(agent, server, enabled)` - validates, pre-populates empty include lists, delegates to `mcpRegistry.activateForAgent`/`deactivateForAgent`, rebuilds config
+
+Used by the `system:getTopology` and `system:toggleConnection` IPC handlers.
+
+---
+
 ## memory.ts
 
 The memory module is the SQLite data layer that persists everything the agent knows. It implements a three-layer memory architecture - Episodic (sessions, turns, bookmarks), Semantic (summaries, observations, threads), and Identity (snapshots, entities) - via `better-sqlite3`. This is a port of `core/memory.py` at 1088 lines, making it the second most complex module after inference. Every conversation turn, summary, observation, and identity snapshot flows through this module, and it is the primary data source for context injection and vector search.

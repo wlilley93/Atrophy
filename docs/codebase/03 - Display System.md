@@ -1297,11 +1297,30 @@ The artefact overlay uses a combined opacity and scale transition for a smooth e
 
 ---
 
+### SystemMap.svelte - System Topology Overlay
+
+**File:** `src/renderer/components/SystemMap.svelte`
+
+Standalone overlay (`Cmd+Shift+M`) visualizing agent-to-service connections. Three-column layout: agent cards (left), switchboard rail (center decorative), service sections (right). Services shown as color-coded pills: blue (MCP), green (channels), amber (cron). Click pills to toggle MCP connections, Cmd+click for detail cards. Search filters pills across all agents. Restart banner appears when connections change mid-session. Communicates via `system:getTopology` and `system:toggleConnection` IPC.
+
+---
+
 ### Settings.svelte - Settings Panel
 
 **File:** `src/renderer/components/Settings.svelte`
 
-Settings.svelte provides a full-screen overlay with three tabs: Settings (configuration), Usage (token consumption), and Activity (event log). It is the primary interface for users to configure the application, review resource usage, and debug agent behavior. The settings panel reads the full configuration from the main process on mount, presents it in organized sections with appropriate input types, and writes changes back via the `updateConfig` IPC channel.
+Settings.svelte is a thin shell (~280 lines) that owns config loading, `gatherUpdates()`/`apply()`/`save()`, and tab switching. The 6 tabs are extracted into individual components in `src/renderer/components/settings/`:
+
+| Component | Responsibility |
+|-----------|---------------|
+| `SettingsTab.svelte` | Main config form (~900 lines). All form fields as `$bindable()` props |
+| `UsageTab.svelte` | Token usage stats with period filtering |
+| `ActivityTab.svelte` | Activity log with category/agent filtering and search |
+| `JobsTab.svelte` | Cron job management, run triggers, log viewing |
+| `UpdatesTab.svelte` | Bundle version checking and hot update UI |
+| `ConsoleTab.svelte` | Live log streaming with filter and auto-scroll |
+
+Each tab exposes a `load()` method called by the parent on tab switch. The parent passes config values as bindable props to SettingsTab so edits flow back for save/apply.
 
 #### Props ($props)
 

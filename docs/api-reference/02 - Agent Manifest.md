@@ -141,6 +141,43 @@ Heartbeats only fire during the active window (`active_start` to `active_end`). 
 
 ---
 
+## mcp
+
+Controls which MCP servers are active for the agent. Managed by `mcp-registry.ts`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `include` | string[] | No | Server names to activate. Empty = all discovered servers. |
+| `exclude` | string[] | No | Server names to block (applied after include). |
+| `custom` | object | No | Inline server definitions (command, args, env). |
+
+**Available servers:**
+
+| Server | Type | Requires |
+|--------|------|----------|
+| `memory` | Bundled (Python) | Always available |
+| `shell` | Bundled (Python) | Always available |
+| `github` | Bundled (Python) | `gh` CLI |
+| `google` | Bundled (Python) | Google OAuth configured |
+| `worldmonitor` | Bundled (Python) | Always available |
+| `puppeteer` | Bundled (Python) | Always available |
+| `elevenlabs` | External | `uvx` command + `ELEVENLABS_API_KEY` in `~/.atrophy/.env` |
+| `fal` | External | `npx` command + `FAL_KEY` in `~/.atrophy/.env` |
+
+External servers are probed at boot. If the command or API key is missing, the server is silently skipped. See `docs/codebase/05 - MCP Server.md` for the full registry architecture.
+
+```json
+{
+  "mcp": {
+    "include": ["memory", "shell", "github", "elevenlabs", "fal"],
+    "exclude": [],
+    "custom": {}
+  }
+}
+```
+
+---
+
 ## Obsidian Path Resolution
 
 Agent workspaces in Obsidian are resolved automatically from the agent name:
