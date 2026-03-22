@@ -36,6 +36,14 @@ function getSearchDirs(): string[] {
   const bundlePrompts = path.join(BUNDLE_ROOT, 'agents', config.AGENT_NAME, 'prompts');
   if (bundlePrompts !== agentDirPrompts && fs.existsSync(bundlePrompts)) dirs.push(bundlePrompts);
 
+  // Tier 5: Personal agents (agents-personal/<name>/prompts/)
+  // Personal agents keep bundled prompts separate from the standard agents/ dir
+  const personalPrompts = path.join(BUNDLE_ROOT, 'agents-personal', config.AGENT_NAME, 'prompts');
+  if (personalPrompts !== agentDirPrompts && personalPrompts !== bundlePrompts
+      && fs.existsSync(personalPrompts)) {
+    dirs.push(personalPrompts);
+  }
+
   return dirs;
 }
 
