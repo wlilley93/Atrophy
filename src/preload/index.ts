@@ -198,6 +198,17 @@ export interface AtrophyAPI {
   onBundleReady: (cb: (info: { version: string }) => void) => () => void;
   onBundleProgress: (cb: (percent: number) => void) => () => void;
 
+  // Organizations
+  listOrgs: () => Promise<Array<{ name: string; slug: string; type: string; purpose: string; created: string; principal: string | null }>>;
+  getOrgDetail: (slug: string) => Promise<{
+    manifest: { name: string; slug: string; type: string; purpose: string; created: string; principal: string | null };
+    roster: Array<{ name: string; tier: number; role: string; reports_to: string | null; direct_reports: string[]; can_address_user: boolean }>;
+  }>;
+  createOrg: (name: string, type: string, purpose: string) => Promise<{ name: string; slug: string; type: string; purpose: string; created: string; principal: string | null }>;
+  dissolveOrg: (slug: string) => Promise<void>;
+  addAgentToOrg: (orgSlug: string, agentName: string, role: string, tier: number, reportsTo: string | null) => Promise<void>;
+  removeAgentFromOrg: (agentName: string) => Promise<void>;
+
   // System map
   getTopology: () => Promise<{
     agents: Array<{
@@ -434,6 +445,15 @@ const api: AtrophyAPI = {
   clearHotBundle: () => ipcRenderer.invoke('bundle:clear'),
   onBundleReady: createListener('bundle:ready') as AtrophyAPI['onBundleReady'],
   onBundleProgress: createListener('bundle:downloadProgress') as AtrophyAPI['onBundleProgress'],
+
+  // Organizations
+  listOrgs: () => ipcRenderer.invoke('org:list'),
+  getOrgDetail: (slug) => ipcRenderer.invoke('org:detail', slug),
+  createOrg: (name, type, purpose) => ipcRenderer.invoke('org:create', name, type, purpose),
+  dissolveOrg: (slug) => ipcRenderer.invoke('org:dissolve', slug),
+  addAgentToOrg: (orgSlug, agentName, role, tier, reportsTo) =>
+    ipcRenderer.invoke('org:addAgent', orgSlug, agentName, role, tier, reportsTo),
+  removeAgentFromOrg: (agentName) => ipcRenderer.invoke('org:removeAgent', agentName),
 
   // System map
   getTopology: () => ipcRenderer.invoke('system:getTopology'),

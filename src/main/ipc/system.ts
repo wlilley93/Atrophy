@@ -19,6 +19,8 @@ import { checkForUpdates, downloadUpdate, quitAndInstall } from '../updater';
 import { getActiveBundleVersion, checkForBundleUpdate, getPendingBundleInfo, clearHotBundle } from '../bundle-updater';
 import { createLogger, setLogForwarder, getLogBuffer } from '../logger';
 import { buildTopology, handleToggleConnection } from '../system-topology';
+import { listOrgs, getOrgDetail, createOrg, dissolveOrg, addAgentToOrg, removeAgentFromOrg } from '../org-manager';
+import type { OrgType } from '../org-manager';
 import type { IpcContext } from '../ipc-handlers';
 
 const log = createLogger('ipc:system');
@@ -262,5 +264,31 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('system:toggleConnection', (_, agentName: string, serverName: string, enabled: boolean) => {
     return handleToggleConnection(agentName, serverName, enabled);
+  });
+
+  // -- Organizations --
+
+  ipcMain.handle('org:list', () => {
+    return listOrgs();
+  });
+
+  ipcMain.handle('org:detail', (_event, slug: string) => {
+    return getOrgDetail(slug);
+  });
+
+  ipcMain.handle('org:create', (_event, name: string, type: OrgType, purpose: string) => {
+    return createOrg(name, type, purpose);
+  });
+
+  ipcMain.handle('org:dissolve', (_event, slug: string) => {
+    dissolveOrg(slug);
+  });
+
+  ipcMain.handle('org:addAgent', (_event, orgSlug: string, agentName: string, role: string, tier: number, reportsTo: string | null) => {
+    addAgentToOrg(orgSlug, agentName, role, tier, reportsTo);
+  });
+
+  ipcMain.handle('org:removeAgent', (_event, agentName: string) => {
+    removeAgentFromOrg(agentName);
   });
 }
