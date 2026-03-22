@@ -3,6 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../config', () => ({
   getConfig: () => ({}),
   BUNDLE_ROOT: '/tmp',
+  USER_DATA: '/tmp/atrophy-test',
+  isValidAgentName: (name: string) => /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name),
 }));
 vi.mock('../memory', () => ({
   getDb: () => ({ prepare: () => ({ get: () => null }) }),
