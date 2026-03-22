@@ -1,42 +1,42 @@
 {
   "introspect": {
     "cron": "33 3 * * *",
-    "script": "scripts/agents/companion/introspect.py",
+    "script": "scripts/agents/shared/introspect.py",
     "description": "Daily self-reflection - reviews sessions, writes journal entry to Obsidian"
   },
   "morning_brief": {
     "cron": "0 7 * * *",
-    "script": "scripts/agents/companion/morning_brief.py",
+    "script": "scripts/agents/shared/morning_brief.py",
     "description": "Daily morning brief - weather, news, threads, queued for next app launch",
     "route_output_to": "self"
   },
   "evolve": {
     "cron": "0 3 1 * *",
-    "script": "scripts/agents/companion/evolve.py",
+    "script": "scripts/agents/shared/evolve.py",
     "description": "Monthly self-evolution - revises soul.md and system.md from journal reflections"
   },
   "heartbeat": {
     "type": "interval",
     "interval_seconds": 1800,
-    "script": "scripts/agents/companion/heartbeat.py",
+    "script": "scripts/agents/shared/heartbeat.py",
     "description": "Periodic check-in evaluation - decides whether to reach out unprompted",
     "route_output_to": "self"
   },
   "sleep_cycle": {
     "cron": "0 3 * * *",
-    "script": "scripts/agents/companion/sleep_cycle.py",
+    "script": "scripts/agents/shared/sleep_cycle.py",
     "description": "Nightly memory reconciliation - processes day's sessions, extracts facts, updates threads"
   },
   "observer": {
     "type": "interval",
     "interval_seconds": 900,
-    "script": "scripts/agents/companion/observer.py",
+    "script": "scripts/agents/shared/observer.py",
     "description": "Periodic fact extraction from recent conversation"
   },
   "check_reminders": {
     "type": "interval",
     "interval_seconds": 60,
-    "script": "scripts/agents/companion/check_reminders.py",
+    "script": "scripts/agents/shared/check_reminders.py",
     "description": "Check and fire due reminders - runs every minute"
   }
 }
