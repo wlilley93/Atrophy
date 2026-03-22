@@ -551,7 +551,7 @@ async function dispatchToAgent(
       const timer = setTimeout(() => {
         log.error(`[${agentName}] dispatch timed out after ${DISPATCH_TIMEOUT_MS / 1000}s`);
         clearInterval(flushTimer);
-        stopInference(); // Kill the lingering CLI process
+        stopInference(agentName); // Kill the lingering CLI process for this agent only
         reject(new Error('dispatch timeout'));
       }, DISPATCH_TIMEOUT_MS);
 
@@ -929,10 +929,15 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
   // The router filters messages and calls our callback for accepted ones
   const routerConfig = defaultConfigForAgent(agent.name);
   const router = new AgentRouter(agent.name, routerConfig, async (envelope: Envelope) => {
-    // Per-agent dispatch guard: drop (don't queue) if already dispatching
+    // Per-agent dispatch guard: drop non-Telegram envelopes if already dispatching.
+    // Telegram messages are allowed through - they queue via withAgentDispatchLock
+    // so the user's message is handled after the current dispatch finishes.
     if (_activeDispatches.has(agent.name)) {
-      log.warn(`[${agent.name}] Dispatch already in progress - dropping envelope from ${envelope.from}`);
-      return undefined;
+      if (!envelope.from.startsWith('telegram:')) {
+        log.debug(`[${agent.name}] Dispatch in progress - dropping non-Telegram envelope from ${envelope.from}`);
+        return undefined;
+      }
+      log.info(`[${agent.name}] Dispatch in progress - queuing Telegram message`);
     }
 
     // Extract Telegram-specific metadata for streaming display

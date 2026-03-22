@@ -484,15 +484,18 @@ function buildAgencyContext(userMessage: string): string {
 // Streaming inference (for GUI)
 // ---------------------------------------------------------------------------
 
-let _activeProcess: ChildProcess | null = null;
+// Per-agent active process tracking - prevents one agent's inference from
+// killing another agent's running process in multi-agent scenarios.
+const _activeProcesses = new Map<string, ChildProcess>();
 const _allProcesses = new Set<ChildProcess>();
 
-export function stopInference(): void {
-  if (_activeProcess) {
-    try {
-      _activeProcess.kill();
-    } catch { /* already dead */ }
-    _activeProcess = null;
+/** Stop inference for a specific agent (or the current config agent). */
+export function stopInference(agentName?: string): void {
+  const name = agentName || getConfig().AGENT_NAME;
+  const proc = _activeProcesses.get(name);
+  if (proc) {
+    try { proc.kill(); } catch { /* already dead */ }
+    _activeProcesses.delete(name);
   }
 }
 
@@ -502,7 +505,7 @@ export function stopAllInference(): void {
     try { proc.kill(); } catch { /* already dead */ }
   }
   _allProcesses.clear();
-  _activeProcess = null;
+  _activeProcesses.clear();
 }
 
 export function streamInference(
@@ -574,14 +577,15 @@ export function streamInference(
   const mode = cliSessionId ? 'resume' : 'new';
   const t0 = Date.now();
 
-  log.info(`spawn mode=${mode} effort=${effort}`);
+  const agentName = config.AGENT_NAME;
+  log.info(`[${agentName}] spawn mode=${mode} effort=${effort}`);
   const spawnEnv = cleanEnv();
 
-  // Kill any previous active process before spawning to prevent orphans
-  // and close the race window where stopInference() could miss the new process
-  if (_activeProcess) {
-    try { _activeProcess.kill(); } catch { /* already dead */ }
-    _activeProcess = null;
+  // Kill any previous active process for THIS agent only (not other agents)
+  const prevProc = _activeProcesses.get(agentName);
+  if (prevProc) {
+    try { prevProc.kill(); } catch { /* already dead */ }
+    _activeProcesses.delete(agentName);
   }
 
   // Spawn process
@@ -593,8 +597,8 @@ export function streamInference(
       cwd: agentCwd(),
       detached: false,
     });
-    log.debug(`pid=${proc.pid}`);
-    _activeProcess = proc;
+    log.debug(`[${agentName}] pid=${proc.pid}`);
+    _activeProcesses.set(agentName, proc);
     _allProcesses.add(proc);
   } catch (e) {
     log.error(`failed to start: ${e}`);
@@ -797,7 +801,7 @@ export function streamInference(
   // Handle process exit
   proc.on('close', (code, signal) => {
     clearInterval(timeoutTimer);
-    if (_activeProcess === proc) _activeProcess = null;
+    if (_activeProcesses.get(agentName) === proc) _activeProcesses.delete(agentName);
     _allProcesses.delete(proc);
     const elapsed = (Date.now() - t0) / 1000;
 
@@ -879,7 +883,7 @@ export function streamInference(
     clearInterval(timeoutTimer);
     try { proc.kill(); } catch { /* already dead */ }
     _allProcesses.delete(proc);
-    _activeProcess = null;
+    if (_activeProcesses.get(agentName) === proc) _activeProcesses.delete(agentName);
     const elapsed = (Date.now() - t0) / 1000;
     log.error(`crashed after ${elapsed.toFixed(1)}s: ${err}`);
     emitter.emit('event', { type: 'StreamError', message: String(err) } as StreamErrorEvent);
