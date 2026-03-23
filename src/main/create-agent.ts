@@ -15,6 +15,15 @@ import { createLogger } from './logger';
 
 const log = createLogger('create-agent');
 
+// Suppress agent:* broadcast during boot to avoid O(n^2) announcement storm
+let _bootPhase = true;
+
+/** Call after all agents are wired at boot to enable runtime announcements. */
+export function markBootComplete(): void {
+  _bootPhase = false;
+  log.info('Boot phase complete - agent announcements enabled');
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -705,13 +714,15 @@ export function wireAgent(name: string, manifest: AgentManifest): void {
     }
   }
 
-  // 4. Announce new agent to the system
-  switchboard.route(switchboard.createEnvelope(
-    'system',
-    'agent:*',
-    `Agent "${manifest.display_name || name}" is online.`,
-    { type: 'system', priority: 'system' },
-  )).catch((e) => log.debug(`Announce failed (expected if no other agents): ${e}`));
+  // 4. Announce new agent to the system (skip during boot to avoid O(n^2) storm)
+  if (!_bootPhase) {
+    switchboard.route(switchboard.createEnvelope(
+      'system',
+      'agent:*',
+      `Agent "${manifest.display_name || name}" is online.`,
+      { type: 'system', priority: 'system' },
+    )).catch((e) => log.debug(`Announce failed (expected if no other agents): ${e}`));
+  }
 }
 
 /**

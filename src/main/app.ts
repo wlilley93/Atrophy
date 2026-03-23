@@ -27,7 +27,7 @@ import { startServer, stopServer } from './server';
 import { startDaemon, stopDaemon } from './channels/telegram';
 import { cronScheduler } from './channels/cron';
 import { mcpRegistry } from './mcp-registry';
-import { wireAgent } from './create-agent';
+import { wireAgent, markBootComplete } from './create-agent';
 import { registerCallHandlers } from './call';
 import { getAppIcon, getTrayIcon, TrayState } from './icon';
 import { initAutoUpdater } from './updater';
@@ -603,6 +603,7 @@ app.whenReady().then(() => {
       }
     }
     log.info(`Switchboard: ${agents.length} agent(s) wired`);
+    markBootComplete();
   }
 
   // 3. Crash rate check - if too many recent crashes, skip cron and daemon
