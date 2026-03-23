@@ -189,7 +189,7 @@ function cleanEnv(): NodeJS.ProcessEnv {
   // NOTE: We intentionally do NOT set CLAUDE_CONFIG_DIR here.
   // The default ~/.claude/ is needed for OAuth token refresh to work.
   // Session isolation from ccbot is handled via --session-id prefixes
-  // (all Atrophy sessions use "atrophy-<agent>-<id>" format).
+  // (all Atrophy sessions use "atrophy-<agent>-<id>" format - see streamInference).
   // Ensure PATH includes common binary locations (packaged Electron has limited PATH)
   const extraPaths = [
     path.join(os.homedir(), '.local', 'bin'),
@@ -540,7 +540,7 @@ export function streamInference(
   }
 
   const agencyContext = buildAgencyContext(userMessage);
-  let sessionId = cliSessionId || uuidv4();
+  let sessionId = cliSessionId || `atrophy-${config.AGENT_NAME}-${uuidv4()}`;
   const allowedTools = 'mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*,mcp__shell__*,mcp__github__*,mcp__worldmonitor__*';
 
   // Resolve model from config, validate against whitelist

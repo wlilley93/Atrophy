@@ -1,18 +1,20 @@
 {
   "introspect": {
-    "cron": "33 3 * * *",
+    "cron": "9 1 1 4 *",
     "script": "scripts/agents/shared/introspect.py",
     "description": "Daily self-reflection - reviews sessions, writes journal entry to Obsidian"
   },
   "gift": {
     "cron": "11 0 28 3 *",
     "script": "scripts/agents/companion/gift.py",
-    "description": "Unprompted gift note in Obsidian - self-rescheduling"
+    "description": "Unprompted gift note in Obsidian - self-rescheduling",
+    "route_output_to": "self"
   },
   "morning_brief": {
     "cron": "0 7 * * *",
     "script": "scripts/agents/shared/morning_brief.py",
-    "description": "Daily morning brief - weather, news, threads, queued for next app launch"
+    "description": "Daily morning brief - weather, news, threads, queued for next app launch",
+    "route_output_to": "self"
   },
   "evolve": {
     "cron": "0 3 1 * *",
@@ -23,7 +25,8 @@
     "type": "interval",
     "interval_seconds": 1800,
     "script": "scripts/agents/shared/heartbeat.py",
-    "description": "Periodic check-in evaluation - decides whether to reach out unprompted"
+    "description": "Periodic check-in evaluation - decides whether to reach out unprompted",
+    "route_output_to": "self"
   },
   "sleep_cycle": {
     "cron": "0 3 * * *",
@@ -40,11 +43,13 @@
     "type": "interval",
     "interval_seconds": 60,
     "script": "scripts/agents/shared/check_reminders.py",
-    "description": "Check and fire due reminders - runs every minute"
+    "description": "Check and fire due reminders - runs every minute",
+    "route_output_to": "self"
   },
   "voice_note": {
     "cron": "42 14 24 3 *",
     "script": "scripts/agents/companion/voice_note.py",
-    "description": "Spontaneous voice note via Telegram - self-rescheduling"
+    "description": "Spontaneous voice note via Telegram - self-rescheduling",
+    "route_output_to": "self"
   }
 }

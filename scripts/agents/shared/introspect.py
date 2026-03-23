@@ -19,11 +19,12 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path (companion/introspect.py -> agents -> scripts -> project root)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT))
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(Path.home() / ".atrophy" / ".env")
 
 from config import DB_PATH, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, AGENT_NAME
 from core.memory import _connect, get_latest_identity
@@ -392,8 +393,7 @@ def introspect():
 def _reschedule():
     """Reschedule this job to a random time 2-14 days from now."""
     import random
-    project_root = Path(__file__).parent.parent
-    cron_script = project_root / "scripts" / "cron.py"
+    cron_script = _PROJECT_ROOT / "scripts" / "cron.py"
 
     days = random.randint(2, 14)
     hour = random.randint(1, 5)  # keep it late night
@@ -405,7 +405,7 @@ def _reschedule():
     import subprocess
     result = subprocess.run(
         [sys.executable, str(cron_script), "edit", "introspect", new_cron],
-        capture_output=True, text=True, cwd=str(project_root),
+        capture_output=True, text=True, cwd=str(_PROJECT_ROOT),
     )
     print(f"[introspect] Rescheduled to {target.strftime('%Y-%m-%d')} at {hour:02d}:{minute:02d}")
 

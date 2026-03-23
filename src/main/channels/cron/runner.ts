@@ -167,6 +167,7 @@ export async function runJob(
         priority: 'normal',
         metadata: {
           job: jobName,
+          dispatch: !!definition.route_output_to,
           exitCode: result.exitCode,
           durationMs: result.durationMs,
           stderr: result.stderr || undefined,

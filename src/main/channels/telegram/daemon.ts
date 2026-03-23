@@ -500,10 +500,16 @@ async function dispatchToAgent(
       agentSession.inheritCliSessionId();
       const prompt = sourceLabel ? `[${sourceLabel}]\n\n${text}` : text;
 
+      // Cron dispatches use a fresh session to avoid writing into
+      // interactive sessions (CCBot, desktop). The inherited session ID
+      // is only safe for Telegram/user-originated messages.
+      const isCronDispatch = sourceLabel?.startsWith('Scheduled job result');
+      const sessionId = isCronDispatch ? null : agentSession.cliSessionId;
+
       // Save user turn before inference
       try { agentSession.addTurn('will', text); } catch { /* session not started */ }
 
-      return streamInference(prompt, system, agentSession.cliSessionId);
+      return streamInference(prompt, system, sessionId);
     });
 
     let fullText = '';
@@ -649,13 +655,16 @@ async function dispatchToAgent(
       log.debug(`[${agentName}] used tools: ${toolsUsed.join(', ')}`);
     }
 
-    // Persist session ID and agent turn under the correct agent's DB
+    // Persist session ID and agent turn under the correct agent's DB.
+    // Skip session ID save for cron dispatches - they use throwaway sessions
+    // and must not overwrite the interactive session ID in memory.db.
+    const isCronDispatch = sourceLabel?.startsWith('Scheduled job result');
     if (_lastStreamSessionId || fullText) {
       await withConfigLock(async () => {
         config.reloadForAgent(agentName);
         memory.initDb();
         const agentSession = getAgentSession(agentName);
-        if (_lastStreamSessionId) {
+        if (_lastStreamSessionId && !isCronDispatch) {
           agentSession.setCliSessionId(_lastStreamSessionId);
           log.debug(`[${agentName}] saved CLI session: ${_lastStreamSessionId}`);
         }
@@ -953,10 +962,17 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
         ? `Scheduled job result - ${envelope.from}`
         : `Message from ${envelope.from}`;
 
-    // Filter out diagnostic/skip cron output - only dispatch meaningful content.
-    // Job scripts print status like "[heartbeat] Outside active hours. Skipping."
-    // to stdout. These should not trigger inference or reach Telegram.
+    // Only dispatch cron jobs that explicitly opt in via route_output_to in
+    // jobs.json. Background jobs (observer, sleep_cycle, evolve, introspect)
+    // produce diagnostic output that should be logged but never trigger
+    // inference or reach Telegram.
     if (isCron) {
+      if (!envelope.metadata?.dispatch) {
+        log.debug(`[${agent.name}] Cron output suppressed (no dispatch flag): ${envelope.from} - ${envelope.text.slice(0, 80)}`);
+        return undefined;
+      }
+
+      // Even dispatched jobs may produce skip-worthy output on certain runs
       const text = envelope.text.trim().toLowerCase();
       const exitCode = (envelope.metadata?.exitCode as number) ?? 0;
       const isSkip = text.includes('skipping') || text.includes('outside active hours')

@@ -107,8 +107,6 @@ def observe():
         # Fast path - nothing new
         return
 
-    print(f"[observer] {len(turns)} new turn(s) since ID {last_id}")
-
     # Build transcript
     transcript_lines = []
     for t in turns:
@@ -137,7 +135,6 @@ def observe():
         return
 
     if not response or not response.strip():
-        print("[observer] Empty response.")
         return
 
     # Update state to highest turn ID we processed
@@ -147,20 +144,17 @@ def observe():
 
     # Check for nothing new
     if "NOTHING_NEW" in response.strip():
-        print("[observer] Nothing worth extracting.")
         return
 
     # Parse and store observations
     observations = _parse_observations(response)
     if not observations:
-        print("[observer] No observations parsed.")
         return
 
     for obs in observations:
         content = f"[observer] {obs['statement']}"
         write_observation(content, confidence=obs['confidence'])
 
-    print(f"[observer] Stored {len(observations)} observation(s)")
 
 
 if __name__ == "__main__":

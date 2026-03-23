@@ -7,10 +7,10 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Users/williamlilley/.pyenv/versions/3.12.7/bin/python</string>
-        <string>/Users/williamlilley/Projects/Personal Projects/The Atrophied Mind/scripts/introspect.py</string>
+        <string>/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron/scripts/agents/companion/introspect.py</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/williamlilley/Projects/Personal Projects/The Atrophied Mind</string>
+    <string>/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron</string>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -19,13 +19,15 @@
         <integer>17</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/williamlilley/Projects/Personal Projects/The Atrophied Mind/logs/introspect.log</string>
+    <string>/Users/williamlilley/.atrophy/logs/introspect.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/williamlilley/Projects/Personal Projects/The Atrophied Mind/logs/introspect.log</string>
+    <string>/Users/williamlilley/.atrophy/logs/introspect.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>/usr/local/bin:/usr/bin:/bin:/Users/williamlilley/.pyenv/versions/3.12.7/bin</string>
+        <key>AGENT</key>
+        <string>companion</string>
     </dict>
 </dict>
 </plist>

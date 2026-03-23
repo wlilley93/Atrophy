@@ -374,7 +374,7 @@ def stream_inference(
             "-p", f"[Current context: {_agency_context(user_message)}]\n\n{user_message}",
         ]
     else:
-        cli_session_id = str(uuid.uuid4())
+        cli_session_id = f"atrophy-{AGENT_NAME}-{uuid.uuid4()}"
         cmd = [
             CLAUDE_BIN,
             "--model", "claude-haiku-4-5-20251001",
