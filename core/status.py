@@ -75,7 +75,29 @@ def set_away(reason: str = ""):
 
 
 def is_away() -> bool:
-    return get_status()["status"] == "away"
+    """Return True only if status file says away AND no recent DB activity.
+
+    Falls back to DB turns as ground truth - Telegram users never trigger
+    the desktop app set_active() call, so the status file can be stale.
+    """
+    if get_status()["status"] != "away":
+        return False
+    try:
+        from config import DB_PATH
+        import sqlite3
+        from datetime import datetime, timedelta
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        cutoff = (datetime.now() - timedelta(seconds=IDLE_TIMEOUT_SECS)).strftime("%Y-%m-%d %H:%M:%S")
+        row = conn.execute(
+            "SELECT COUNT(*) as n FROM turns WHERE timestamp > ?", (cutoff,)
+        ).fetchone()
+        conn.close()
+        if row and row["n"] > 0:
+            return False
+    except Exception:
+        pass
+    return True
 
 
 def is_mac_idle(threshold_secs: int = IDLE_TIMEOUT_SECS) -> bool:

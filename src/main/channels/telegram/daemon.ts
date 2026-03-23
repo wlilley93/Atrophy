@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from '../../config';
+import { setActive } from '../../status';
 import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction } from './api';
 import { buildStatusDisplay, formatElapsed, type StreamState, type ToolCallState } from './formatter';
 import { discoverAgents, getAgentState } from '../../agent-manager';
@@ -508,6 +509,9 @@ async function dispatchToAgent(
 
       // Save user turn before inference
       try { agentSession.addTurn('will', text); } catch { /* session not started */ }
+
+      // Mark user as active when a real Telegram message arrives (not cron)
+      if (isTelegramOrigin) { try { setActive(); } catch { /* non-critical */ } }
 
       return streamInference(prompt, system, sessionId);
     });
