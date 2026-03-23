@@ -358,6 +358,19 @@ def stream_inference(
     # 22+ plugins, etc.) and pollute the agent's context/behavior.
     atrophy_settings = str(USER_DATA / "claude-settings.json")
 
+    # Validate session ID - only resume if the session file actually exists.
+    # Stale IDs (e.g. from deleted sessions) cause claude to exit with code 1.
+    if cli_session_id:
+        projects_dir = Path.home() / '.claude' / 'projects'
+        session_exists = any(
+            (proj / f'{cli_session_id}.jsonl').exists()
+            for proj in projects_dir.iterdir()
+            if proj.is_dir()
+        ) if projects_dir.exists() else False
+        if not session_exists:
+            print(f'  [inference] stale session {cli_session_id[:8]}... — starting cold')
+            cli_session_id = None
+
     if cli_session_id:
         cmd = [
             CLAUDE_BIN,
@@ -400,6 +413,7 @@ def stream_inference(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
             text=True,
             env=_env(),
             cwd=str(USER_DATA),
