@@ -45,6 +45,10 @@ mac:
       filter:
         - "**/*"
         - "!**/avatar/**"
+    - from: voice/
+      to: voice
+      filter:
+        - "**/*.py"
     - from: db/
       to: db
       filter:
