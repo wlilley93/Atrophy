@@ -78,6 +78,27 @@ def _migrate(conn: sqlite3.Connection):
 
     # Migrate role 'companion' → 'agent' and drop CHECK constraint
     # SQLite can't alter CHECK constraints, so we recreate the table
+    # Add trust_log table if missing (for existing databases)
+    tables = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    if "trust_log" not in tables:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS trust_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                domain      TEXT NOT NULL
+                    CHECK(domain IN ('emotional', 'intellectual', 'creative', 'practical')),
+                delta       REAL NOT NULL,
+                new_value   REAL NOT NULL,
+                reason      TEXT,
+                source      TEXT DEFAULT 'unknown'
+            );
+            CREATE INDEX IF NOT EXISTS idx_trust_log_domain ON trust_log(domain);
+            CREATE INDEX IF NOT EXISTS idx_trust_log_timestamp ON trust_log(timestamp);
+        """)
+        conn.commit()
+
     check_sql = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'"
     ).fetchone()
@@ -395,12 +416,48 @@ def get_last_session_time(db_path: Path = DB_PATH) -> str | None:
 
 
 def get_recent_observations(n: int = 10, db_path: Path = DB_PATH) -> list[dict]:
-    """Get the N most recent observations."""
+    """Get the N most recent observations.
+
+    Updates last_accessed on returned rows so activation decay and
+    staleness tracking know these observations are still in use.
+    """
     conn = _connect(db_path)
     rows = conn.execute(
         "SELECT id, content, created_at, incorporated FROM observations "
         "ORDER BY created_at DESC LIMIT ?",
         (n,),
+    ).fetchall()
+    results = [dict(r) for r in rows]
+
+    # Touch last_accessed so decay/staleness tracking sees the access
+    if results:
+        ids = [r["id"] for r in results]
+        placeholders = ",".join("?" for _ in ids)
+        conn.execute(
+            f"UPDATE observations SET last_accessed = CURRENT_TIMESTAMP "
+            f"WHERE id IN ({placeholders})",
+            ids,
+        )
+        conn.commit()
+
+    conn.close()
+    return results
+
+
+def get_unincorporated_observations(limit: int = 50,
+                                     db_path: Path = DB_PATH) -> list[dict]:
+    """Get observations that haven't been incorporated yet.
+
+    Returns unincorporated, non-stale observations ordered oldest-first
+    so the sleep cycle can process them chronologically.
+    """
+    conn = _connect(db_path)
+    rows = conn.execute(
+        "SELECT id, content, created_at, confidence FROM observations "
+        "WHERE incorporated = 0 "
+        "AND content NOT LIKE '[stale]%' "
+        "ORDER BY created_at ASC LIMIT ?",
+        (limit,),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -429,12 +486,91 @@ def mark_observation_incorporated(obs_id: int, db_path: Path = DB_PATH):
     conn.close()
 
 
+def mark_observations_incorporated_batch(obs_ids: list[int],
+                                          db_path: Path = DB_PATH) -> int:
+    """Mark multiple observations as incorporated in one transaction.
+
+    Returns the number of rows updated. More efficient than calling
+    mark_observation_incorporated() in a loop for large batches.
+    """
+    if not obs_ids:
+        return 0
+    conn = _connect(db_path)
+    placeholders = ",".join("?" for _ in obs_ids)
+    cursor = conn.execute(
+        f"UPDATE observations SET incorporated = 1, "
+        f"last_accessed = CURRENT_TIMESTAMP "
+        f"WHERE id IN ({placeholders}) AND incorporated = 0",
+        obs_ids,
+    )
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+
 def retire_observation(obs_id: int, db_path: Path = DB_PATH):
     """Delete an observation that no longer holds."""
     conn = _connect(db_path)
     conn.execute("DELETE FROM observations WHERE id = ?", (obs_id,))
     conn.commit()
     conn.close()
+
+
+def write_trust_log(domain: str, delta: float, new_value: float,
+                    reason: str = None, source: str = "unknown",
+                    db_path: Path = DB_PATH):
+    """Write a trust change to the durable audit trail.
+
+    This survives decay cycles and provides a permanent record of every
+    trust adjustment - who triggered it, why, and what the resulting value was.
+    """
+    conn = _connect(db_path)
+    conn.execute(
+        "INSERT INTO trust_log (domain, delta, new_value, reason, source) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (domain, delta, new_value, reason, source),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_latest_trust_values(db_path: Path = DB_PATH) -> dict[str, float]:
+    """Get the most recent trust value per domain from the trust log.
+
+    Returns a dict like {"emotional": 0.65, "intellectual": 0.7, ...}.
+    Only includes domains that have at least one log entry.
+    Used on startup to reconcile trust after decay.
+    """
+    conn = _connect(db_path)
+    rows = conn.execute(
+        "SELECT domain, new_value, timestamp FROM trust_log "
+        "WHERE id IN ("
+        "  SELECT MAX(id) FROM trust_log GROUP BY domain"
+        ") ORDER BY domain"
+    ).fetchall()
+    conn.close()
+    return {row["domain"]: row["new_value"] for row in rows}
+
+
+def get_trust_history(domain: str = None, limit: int = 50,
+                      db_path: Path = DB_PATH) -> list[dict]:
+    """Get recent trust change history, optionally filtered by domain."""
+    conn = _connect(db_path)
+    if domain:
+        rows = conn.execute(
+            "SELECT id, timestamp, domain, delta, new_value, reason, source "
+            "FROM trust_log WHERE domain = ? ORDER BY timestamp DESC LIMIT ?",
+            (domain, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, timestamp, domain, delta, new_value, reason, source "
+            "FROM trust_log ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def log_heartbeat(decision: str, reason: str, message: str = "",

@@ -6,6 +6,7 @@
 import { getConfig } from './config';
 import * as memory from './memory';
 import { runInferenceOneshot } from './inference';
+import { reconcileTrustFromDb } from './inner-life';
 
 // ---------------------------------------------------------------------------
 // Session class
@@ -22,6 +23,7 @@ export class Session {
     this.sessionId = memory.startSession();
     this.startedAt = Date.now();
     this.turnHistory = [];
+    reconcileTrustFromDb();
 
     // CLI session ID is NOT loaded here - callers must explicitly call
     // inheritCliSessionId() after ensuring the correct agent's DB is loaded.

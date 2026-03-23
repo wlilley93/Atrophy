@@ -4,6 +4,7 @@ import time
 from config import AGENT_DISPLAY_NAME, SESSION_SOFT_LIMIT_MINS
 from core import memory
 from core.inference import run_inference_oneshot
+from core.inner_life import reconcile_trust_from_db
 
 
 class Session:
@@ -23,6 +24,9 @@ class Session:
         self.session_id = memory.start_session()
         self.started_at = time.time()
         self.turn_history = []
+
+        # Restore trust from SQLite before decay erases it
+        reconcile_trust_from_db()
 
         # Continue the same CLI conversation thread
         self.cli_session_id = memory.get_last_cli_session_id()

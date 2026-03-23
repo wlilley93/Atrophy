@@ -202,7 +202,7 @@ TOOLS = [
                     "type": "string",
                     "enum": ["read_note", "write_note", "search_notes", "read_docs", "search_docs", "list_docs"],
                 },
-                "path": {"type": "string", "description": "Note/doc path (relative)"},
+                "path": {"type": "string", "description": "Note/doc path - use ~/path for agent workspace (e.g. ~/notes/reflection.md), or vault-relative path"},
                 "content": {"type": "string", "description": "Content to write (write_note)"},
                 "mode": {"type": "string", "enum": ["overwrite", "append"], "default": "append"},
                 "query": {"type": "string", "description": "Search term"},
@@ -493,7 +493,7 @@ TOOLS = [
         "name": "org_memory",
         "description": (
             "Read and write institutional memory shared across your organization. "
-            "Only available to agents assigned to an org. Actions: "
+            "Available to org members, or provisioners targeting any org via org_slug param. Actions: "
             "observe (record an org-level insight or finding), "
             "recall (search org observations by keyword or category), "
             "get_threads (list active org-level threads), "
@@ -527,6 +527,7 @@ TOOLS = [
                 "description": {"type": "string", "description": "Decision description"},
                 "rationale": {"type": "string", "description": "Decision rationale"},
                 "limit": {"type": "integer", "description": "Max results to return (default 20)"},
+                "org_slug": {"type": "string", "description": "Target org slug (provisioners only - override default org)"},
             },
             "required": ["action"],
         },
@@ -623,19 +624,38 @@ def _org_connect():
     return conn
 
 
-def _require_org():
+def _require_org(target_slug: str = ""):
     """Check that the agent belongs to an org with a memory DB.
 
-    Returns (conn, None) on success, (None, error_string) on failure.
+    If target_slug is provided and the agent has can_provision access,
+    connect to that org's DB instead (allows Xan to query any org).
+
+    Returns (conn, effective_slug, None) on success,
+    or (None, None, error_string) on failure.
     """
-    if not ORG_SLUG:
-        return None, "This agent is not assigned to an organization."
-    if not ORG_DB_PATH or not os.path.exists(ORG_DB_PATH):
-        return None, f"Org '{ORG_SLUG}' has no memory database."
-    conn = _org_connect()
-    if not conn:
-        return None, f"Failed to connect to org '{ORG_SLUG}' database."
-    return conn, None
+    effective_slug = ORG_SLUG
+    effective_db = ORG_DB_PATH
+
+    # Allow provisioners to target a different org
+    if target_slug and target_slug != ORG_SLUG:
+        if not _has_provision_access():
+            return None, None, f"Only provisioners can target other orgs. You belong to '{ORG_SLUG or '(none)'}'"
+        target_db = os.path.join(_ORGS_DIR, target_slug, "memory.db")
+        if not os.path.exists(target_db):
+            return None, None, f"Org '{target_slug}' has no memory database."
+        effective_slug = target_slug
+        effective_db = target_db
+    elif not effective_slug:
+        return None, None, "This agent is not assigned to an organization."
+
+    if not effective_db or not os.path.exists(effective_db):
+        return None, None, f"Org '{effective_slug}' has no memory database."
+    try:
+        conn = sqlite3.connect(effective_db)
+        conn.row_factory = sqlite3.Row
+    except Exception:
+        return None, None, f"Failed to connect to org '{effective_slug}' database."
+    return conn, effective_slug, None
 
 
 # ── Provision access check ──
@@ -1250,10 +1270,20 @@ def _safe_vault_path(path: str) -> str | None:
     Returns the resolved absolute path if it falls inside VAULT_PATH,
     or None if the path escapes the vault boundary.
 
+    Paths starting with "~/" are resolved relative to AGENT_NOTES (the
+    agent's own workspace inside the vault) instead of the vault root.
+    This lets agents write notes without knowing their full vault-relative
+    workspace path - e.g. "~/notes/reflection.md" instead of
+    "Projects/Atrophy App Electron/Agent Workspace/companion/notes/reflection.md".
+
     When VAULT_PATH points to the local agent dir (~/.atrophy/agents/<name>/),
     the ~/.atrophy block is skipped since that IS the vault.
     """
-    full = os.path.realpath(os.path.join(VAULT_PATH, path))
+    # Agent-relative paths: ~/foo resolves to AGENT_NOTES/foo
+    if path.startswith("~/") and AGENT_NOTES:
+        full = os.path.realpath(os.path.join(AGENT_NOTES, path[2:]))
+    else:
+        full = os.path.realpath(os.path.join(VAULT_PATH, path))
     vault_real = os.path.realpath(VAULT_PATH)
     if not full.startswith(vault_real + os.sep) and full != vault_real:
         return None
@@ -2167,6 +2197,7 @@ def handle_update_trust(args):
 
     domain = args.get("domain", "")
     delta = args.get("delta", 0)
+    reason = args.get("reason", None)
 
     valid_domains = {"emotional", "intellectual", "creative", "practical"}
     if domain not in valid_domains:
@@ -2175,7 +2206,7 @@ def handle_update_trust(args):
     if not isinstance(delta, (int, float)):
         return "Delta must be a number."
 
-    state = update_trust(domain, delta)
+    state = update_trust(domain, delta, reason=reason, source="mcp")
     trust = state["trust"]
     actual_delta = max(-0.05, min(0.05, delta))
     lines = [f"Trust updated: {domain} {actual_delta:+.3f}"]
@@ -4215,7 +4246,7 @@ def handle_org_set_purpose(args):
 
 def handle_org_observe(args):
     """Record an institutional observation in the org's memory."""
-    conn, err = _require_org()
+    conn, eff_slug, err = _require_org(args.get("org_slug", ""))
     if err:
         return f"Error: {err}"
 
@@ -4236,7 +4267,7 @@ def handle_org_observe(args):
         count = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
         return (
             f"Recorded org observation [{category}] (confidence: {confidence:.1f}).\n"
-            f"Org '{ORG_SLUG}' now has {count} total observation(s)."
+            f"Org '{eff_slug}' now has {count} total observation(s)."
         )
     except Exception as e:
         return f"Error recording observation: {e}"
@@ -4246,7 +4277,7 @@ def handle_org_observe(args):
 
 def handle_org_recall(args):
     """Search org observations by keyword or category."""
-    conn, err = _require_org()
+    conn, eff_slug, err = _require_org(args.get("org_slug", ""))
     if err:
         return f"Error: {err}"
 
@@ -4286,7 +4317,7 @@ def handle_org_recall(args):
         if not rows:
             return f"No org observations found" + (f" for '{query}'" if query else "") + "."
 
-        lines = [f"### Org '{ORG_SLUG}' observations ({len(rows)} result(s))\n"]
+        lines = [f"### Org '{eff_slug}' observations ({len(rows)} result(s))\n"]
         for r in rows:
             conf = f" [{r['confidence']:.1f}]" if r["confidence"] != 1.0 else ""
             lines.append(
@@ -4302,7 +4333,7 @@ def handle_org_recall(args):
 
 def handle_org_get_threads(args):
     """List active org-level threads."""
-    conn, err = _require_org()
+    conn, eff_slug, err = _require_org(args.get("org_slug", ""))
     if err:
         return f"Error: {err}"
 
@@ -4319,7 +4350,7 @@ def handle_org_get_threads(args):
         if not rows:
             return f"No {status} org threads."
 
-        lines = [f"### Org '{ORG_SLUG}' threads ({len(rows)} {status})\n"]
+        lines = [f"### Org '{eff_slug}' threads ({len(rows)} {status})\n"]
         for r in rows:
             pri = f" [P{r['priority']}]" if r["priority"] else ""
             summary = f" - {r['summary']}" if r["summary"] else ""
@@ -4333,7 +4364,7 @@ def handle_org_get_threads(args):
 
 def handle_org_track_thread(args):
     """Create or update an org-level thread."""
-    conn, err = _require_org()
+    conn, eff_slug, err = _require_org(args.get("org_slug", ""))
     if err:
         return f"Error: {err}"
 
@@ -4389,7 +4420,7 @@ def handle_org_track_thread(args):
 
 def handle_org_add_thread_entry(args):
     """Add an entry/contribution to an org thread."""
-    conn, err = _require_org()
+    conn, eff_slug, err = _require_org(args.get("org_slug", ""))
     if err:
         return f"Error: {err}"
 
@@ -4426,7 +4457,7 @@ def handle_org_add_thread_entry(args):
 
 def handle_org_log_decision(args):
     """Record a decision in the org's institutional memory."""
-    conn, err = _require_org()
+    conn, eff_slug, err = _require_org(args.get("org_slug", ""))
     if err:
         return f"Error: {err}"
 
@@ -4454,7 +4485,7 @@ def handle_org_log_decision(args):
 
 def handle_org_get_decisions(args):
     """List org decisions."""
-    conn, err = _require_org()
+    conn, eff_slug, err = _require_org(args.get("org_slug", ""))
     if err:
         return f"Error: {err}"
 
@@ -4471,7 +4502,7 @@ def handle_org_get_decisions(args):
         if not rows:
             return f"No {status} org decisions."
 
-        lines = [f"### Org '{ORG_SLUG}' decisions ({len(rows)} {status})\n"]
+        lines = [f"### Org '{eff_slug}' decisions ({len(rows)} {status})\n"]
         for r in rows:
             rationale = f"\n  Rationale: {r['rationale']}" if r["rationale"] else ""
             lines.append(
@@ -4487,14 +4518,14 @@ def handle_org_get_decisions(args):
 
 def handle_org_digest(args):
     """Summarize recent org activity across observations, threads, and decisions."""
-    conn, err = _require_org()
+    conn, eff_slug, err = _require_org(args.get("org_slug", ""))
     if err:
         return f"Error: {err}"
 
     limit = min(args.get("limit", 10), 30)
 
     try:
-        lines = [f"### Org '{ORG_SLUG}' - Recent Activity Digest\n"]
+        lines = [f"### Org '{eff_slug}' - Recent Activity Digest\n"]
 
         # Recent observations
         obs = conn.execute(

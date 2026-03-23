@@ -223,8 +223,13 @@ def update_emotions(deltas: dict[str, float]):
     return state
 
 
-def update_trust(domain: str, delta: float):
-    """Adjust trust in a domain. Clamped to [0.0, 1.0], max +/-0.05 per call."""
+def update_trust(domain: str, delta: float, reason: str = None,
+                 source: str = "unknown"):
+    """Adjust trust in a domain. Clamped to [0.0, 1.0], max +/-0.05 per call.
+
+    Also writes a durable record to the trust_log table in SQLite so that
+    trust changes survive decay cycles and can be audited or reconciled.
+    """
     clamped_delta = max(-MAX_TRUST_DELTA, min(MAX_TRUST_DELTA, delta))
     state = load_state()
     trust = state["trust"]
@@ -234,7 +239,68 @@ def update_trust(domain: str, delta: float):
         )
     state["trust"] = trust
     save_state(state)
+
+    # Write durable record to SQLite
+    if domain in trust:
+        try:
+            from core.memory import write_trust_log
+            write_trust_log(
+                domain=domain,
+                delta=clamped_delta,
+                new_value=trust[domain],
+                reason=reason,
+                source=source,
+            )
+        except Exception as e:
+            # Don't let DB errors block trust updates
+            print(f"  [inner_life] Failed to log trust change: {e}")
+
     return state
+
+
+def reconcile_trust_from_db():
+    """Restore trust from the last recorded SQLite values instead of decaying to baseline.
+
+    Called on startup/session start. If the trust_log has entries, the most recent
+    new_value per domain is used as the starting point - then normal decay is applied
+    from the timestamp of that log entry. This prevents trust from resetting to 0.5
+    after long idle periods when it was genuinely earned.
+    """
+    try:
+        from core.memory import get_latest_trust_values
+        db_trust = get_latest_trust_values()
+    except Exception:
+        return  # No DB or no trust_log table yet - nothing to reconcile
+
+    if not db_trust:
+        return  # No trust history at all
+
+    state = load_state()
+    trust = state.get("trust", {})
+    reconciled = False
+
+    for domain, db_value in db_trust.items():
+        current = trust.get(domain)
+        baseline = TRUST_BASELINES.get(domain, 0.5)
+        if current is None:
+            continue
+        # If the current (decayed) value is closer to baseline than the DB value,
+        # that means decay pulled it back too far - restore from DB.
+        # We still apply some decay (the JSON file's decay is valid), but we
+        # use the DB value as a floor/ceiling depending on direction.
+        if db_value > baseline and current < db_value:
+            # Trust was earned above baseline but decayed too much - restore
+            trust[domain] = round(db_value, 3)
+            reconciled = True
+        elif db_value < baseline and current > db_value:
+            # Trust was lowered below baseline but decayed back up - restore
+            trust[domain] = round(db_value, 3)
+            reconciled = True
+
+    if reconciled:
+        state["trust"] = trust
+        save_state(state)
+        print(f"  [inner_life] Reconciled trust from DB: {trust}")
 
 
 # ── Context formatting ───────────────────────────────────────────

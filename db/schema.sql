@@ -169,6 +169,20 @@ CREATE TABLE IF NOT EXISTS intelligence (
   embedding     BLOB
 );
 
+-- ── TRUST LOG ──────────────────────────────────────────────────
+-- Durable audit trail of every trust change. Survives decay cycles.
+
+CREATE TABLE IF NOT EXISTS trust_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  domain      TEXT NOT NULL
+    CHECK(domain IN ('emotional', 'intellectual', 'creative', 'practical')),
+  delta       REAL NOT NULL,
+  new_value   REAL NOT NULL,
+  reason      TEXT,
+  source      TEXT DEFAULT 'unknown'  -- 'mcp', 'inference', 'sleep_cycle', 'manual'
+);
+
 -- ── USAGE LOG ──────────────────────────────────────────────────
 -- Per-inference token/time tracking for usage dashboards.
 
@@ -212,3 +226,7 @@ CREATE INDEX IF NOT EXISTS idx_intelligence_urgency
   ON intelligence(urgency);
 CREATE INDEX IF NOT EXISTS idx_intelligence_source
   ON intelligence(source);
+CREATE INDEX IF NOT EXISTS idx_trust_log_domain
+  ON trust_log(domain);
+CREATE INDEX IF NOT EXISTS idx_trust_log_timestamp
+  ON trust_log(timestamp);

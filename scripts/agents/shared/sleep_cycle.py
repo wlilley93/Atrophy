@@ -30,6 +30,9 @@ from core.memory import (
     get_todays_turns,
     get_todays_observations,
     get_todays_bookmarks,
+    get_unincorporated_observations,
+    mark_observation_incorporated,
+    mark_observations_incorporated_batch,
     mark_observations_stale,
     update_thread_summary,
     write_observation,
@@ -72,7 +75,12 @@ PATTERN: <description>
 TRUST: <domain> <+/-delta> <reason>
 Domains: emotional, intellectual, creative, practical
 Delta range: -0.03 to +0.03 per signal (multiple signals per domain allowed)
-Only include domains where today's interactions provide clear evidence of trust movement.
+Analyze BOTH today's conversation AND the unincorporated observations for trust signals.
+Observations are accumulated facts from recent sessions - mine them for trust evidence.
+A user sharing personal details, asking for help, or relying on you = trust increase.
+Dismissals, corrections, or disengagement = trust decrease (or no change).
+You MUST emit at least one TRUST line if there is any conversation or observation material.
+If genuinely nothing is trust-relevant, emit: TRUST: emotional +0.00 no trust-relevant signals today
 Examples:
   TRUST: practical +0.02 asked for help debugging - shows reliance
   TRUST: emotional +0.03 shared vulnerable feelings about work stress
@@ -106,6 +114,21 @@ def _gather_material() -> str:
     if observations:
         obs_lines = [f"- {o['content']}" for o in observations]
         parts.append(f"## Today's observations\n" + "\n".join(obs_lines))
+
+    # Unincorporated observations from previous days (not yet processed for trust)
+    unincorporated = get_unincorporated_observations(limit=50)
+    # Filter out any that are already in today's set to avoid duplicates
+    today_ids = {o["id"] for o in observations} if observations else set()
+    backlog = [o for o in unincorporated if o["id"] not in today_ids]
+    if backlog:
+        bl_lines = [
+            f"- [{o['created_at']}] (conf {o.get('confidence', 0.5):.1f}) {o['content']}"
+            for o in backlog
+        ]
+        parts.append(
+            f"## Unincorporated observations (backlog - analyze for trust signals)\n"
+            + "\n".join(bl_lines)
+        )
 
     # Today's bookmarks
     bookmarks = get_todays_bookmarks()
@@ -266,7 +289,9 @@ def _aggregate_trust(signals: list[dict]):
 
     before = load_state().get("trust", {})
     for sig in signals:
-        update_trust(sig["domain"], sig["delta"])
+        update_trust(sig["domain"], sig["delta"],
+                     reason=sig.get("reason", "sleep cycle analysis"),
+                     source="sleep_cycle")
     after = load_state().get("trust", {})
 
     changes = []
@@ -323,17 +348,31 @@ def _score_existing_memories():
 # ── Main ──
 
 def sleep_cycle():
+    # Capture ALL unincorporated observation IDs before we start, so we
+    # can mark them incorporated after trust signals are processed.
+    # No cap - process the full backlog to prevent unbounded accumulation.
+    unincorporated_obs = get_unincorporated_observations(limit=500)
+    unincorporated_ids = [o["id"] for o in unincorporated_obs]
+
     material = _gather_material()
+
+    # Also capture today's observation IDs so they get marked too
+    todays_obs = get_todays_observations()
+    today_obs_ids = [o["id"] for o in todays_obs] if todays_obs else []
 
     if not material.strip():
         print("[sleep] No material from today. Nothing to consolidate.")
         return
 
+    total_obs = len(set(unincorporated_ids + today_obs_ids))
     print("[sleep] Starting nightly reconciliation...")
+    if total_obs:
+        print(f"  [sleep] {total_obs} observation(s) queued for incorporation ({len(unincorporated_ids)} backlog, {len(today_obs_ids)} today)")
 
     prompt = (
         "Here is today's material. Process it - extract facts, update threads, "
-        "identify patterns, and flag anything for identity review.\n\n"
+        "identify patterns, analyze observations for trust signals, "
+        "and flag anything for identity review.\n\n"
         + material
     )
 
@@ -374,6 +413,17 @@ def sleep_cycle():
 
     trust_signals = _parse_trust_signals(trust_section)
     _aggregate_trust(trust_signals)
+
+    # Mark all processed observations as incorporated now that they
+    # have been fed through reconciliation and trust analysis.
+    # This includes both the backlog and today's observations.
+    all_obs_ids = list(set(unincorporated_ids + today_obs_ids))
+    if all_obs_ids:
+        try:
+            marked = mark_observations_incorporated_batch(all_obs_ids)
+            print(f"  [sleep] Marked {marked} observation(s) as incorporated (of {len(all_obs_ids)} candidates)")
+        except Exception as e:
+            print(f"  [sleep] Failed to mark observations incorporated: {e}")
 
     identity_flags = _parse_identity_flags(identity_section)
     _store_identity_flags(identity_flags)

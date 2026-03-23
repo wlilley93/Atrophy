@@ -32,15 +32,26 @@ import { AgentRouter, defaultConfigForAgent } from '../agent-router';
 import { Session } from '../../session';
 
 // ---------------------------------------------------------------------------
-// Per-agent session persistence - one immortal CLI session per agent
+// Per-agent session persistence with idle rotation
 // ---------------------------------------------------------------------------
 
 const _agentSessions: Map<string, Session> = new Map();
+const _agentLastActivity: Map<string, number> = new Map();
+
+/** Idle gap (ms) after which a Telegram session is rotated and summarised. */
+const SESSION_IDLE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+const log = createLogger('telegram-daemon');
 
 /**
  * Get or create the persistent Session for an agent.
  * The Session tracks the CLI session ID so that every inference call
  * resumes the same conversation thread (compaction handles context limits).
+ *
+ * If the agent's session has been idle for more than SESSION_IDLE_THRESHOLD_MS,
+ * the old session is ended (triggering summary generation) and a new one is
+ * started. The CLI session ID carries over - it tracks Claude's conversation
+ * context, which is independent of memory sessions.
  *
  * IMPORTANT: Does NOT inherit CLI session ID here. The caller must call
  * session.inheritCliSessionId() inside the config lock, after
@@ -49,15 +60,45 @@ const _agentSessions: Map<string, Session> = new Map();
  */
 function getAgentSession(agentName: string): Session {
   let session = _agentSessions.get(agentName);
+  const now = Date.now();
+
+  if (session) {
+    const lastActivity = _agentLastActivity.get(agentName) || 0;
+    const gap = now - lastActivity;
+
+    if (gap > SESSION_IDLE_THRESHOLD_MS && session.turnHistory.length > 0) {
+      // Session has been idle long enough - rotate it.
+      // End the old session asynchronously (generates summary in background).
+      // NOTE: caller must have already called config.reloadForAgent() and
+      // memory.initDb() before calling getAgentSession() so that
+      // loadSystemPrompt() and session.end() target the correct agent DB.
+      const oldSession = session;
+      const oldCliId = oldSession.cliSessionId;
+      const system = loadSystemPrompt();
+      oldSession.end(system).catch((err) => {
+        log.error(`[${agentName}] failed to end idle session: ${err}`);
+      });
+
+      // Start a fresh memory session, carrying over the CLI session ID
+      session = new Session();
+      session.start();
+      if (oldCliId) {
+        session.cliSessionId = oldCliId;
+      }
+      _agentSessions.set(agentName, session);
+      log.info(`[${agentName}] rotated idle session (gap: ${Math.round(gap / 60000)}m)`);
+    }
+  }
+
   if (!session) {
     session = new Session();
     session.start();
     _agentSessions.set(agentName, session);
   }
+
+  _agentLastActivity.set(agentName, now);
   return session;
 }
-
-const log = createLogger('telegram-daemon');
 
 // ---------------------------------------------------------------------------
 // Agent routers - one per agent, created on daemon start
@@ -1083,6 +1124,16 @@ export function stopDaemon(): void {
   _running = false;
   for (const t of _pollerTimers) clearTimeout(t);
   _pollerTimers = [];
+
+  // End all per-agent telegram sessions so ended_at gets set
+  for (const [name, session] of _agentSessions) {
+    if (session.sessionId != null) {
+      try {
+        memory.endSession(session.sessionId, null, session.mood);
+      } catch { /* DB may already be closing */ }
+    }
+  }
+  _agentSessions.clear();
 
   // Tear down agent routers
   for (const [name, router] of _agentRouters) {

@@ -119,6 +119,16 @@ export interface EntityRelation {
   last_seen: string;
 }
 
+export interface TrustLogEntry {
+  id: number;
+  timestamp: string;
+  domain: string;
+  delta: number;
+  new_value: number;
+  reason: string;
+  source: string;
+}
+
 export interface CrossAgentSearchResult {
   agent: string;
   turns: Pick<Turn, 'id' | 'session_id' | 'role' | 'content' | 'timestamp'>[];
@@ -314,6 +324,24 @@ function migrate(db: Database.Database): void {
   if (tableNames.has('entities')) {
     safeAddColumn('entities', 'embedding', 'BLOB');
   }
+
+  // Trust log table - durable audit trail for trust changes
+  if (!tableNames.has('trust_log')) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS trust_log (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        domain    TEXT NOT NULL CHECK(domain IN ('emotional', 'intellectual', 'creative', 'practical')),
+        delta     REAL NOT NULL,
+        new_value REAL NOT NULL,
+        reason    TEXT DEFAULT '',
+        source    TEXT DEFAULT 'unknown'
+      );
+      CREATE INDEX IF NOT EXISTS idx_trust_log_domain ON trust_log(domain);
+      CREATE INDEX IF NOT EXISTS idx_trust_log_timestamp ON trust_log(timestamp);
+    `);
+    log.info('created trust_log table');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +369,33 @@ export function endSession(
          notable = ?
      WHERE id = ?`,
   ).run(summary, mood, notable ? 1 : 0, sessionId);
+}
+
+/**
+ * Close any sessions that were left open (ended_at IS NULL).
+ *
+ * This handles sessions orphaned by crashes, forced quits, or code paths
+ * that forgot to call session.end(). Call this on startup after initDb()
+ * so the DB starts clean. Sessions with no turns get a null summary;
+ * sessions with turns get a "[closed - no summary generated]" marker.
+ */
+export function closeStaleOpenSessions(): number {
+  const db = getDb();
+  const result = db.prepare(
+    `UPDATE sessions
+     SET ended_at = COALESCE(
+       (SELECT MAX(timestamp) FROM turns WHERE turns.session_id = sessions.id),
+       started_at,
+       CURRENT_TIMESTAMP
+     ),
+     summary = CASE
+       WHEN (SELECT COUNT(*) FROM turns WHERE turns.session_id = sessions.id) > 0
+       THEN COALESCE(summary, '[closed - no summary generated]')
+       ELSE summary
+     END
+     WHERE ended_at IS NULL`,
+  ).run();
+  return result.changes;
 }
 
 export function saveCliSessionId(sessionId: number, cliSessionId: string): void {
@@ -1180,6 +1235,59 @@ export async function searchMemory(
 
   return results;
 }
+
+// ---------------------------------------------------------------------------
+// Trust persistence
+// ---------------------------------------------------------------------------
+
+export function writeTrustLog(
+  domain: string,
+  delta: number,
+  newValue: number,
+  reason = '',
+  source = 'unknown',
+  dbPath?: string,
+): void {
+  const p = dbPath || getConfig().DB_PATH;
+  const db = connect(p);
+  db.prepare(
+    'INSERT INTO trust_log (domain, delta, new_value, reason, source) VALUES (?, ?, ?, ?, ?)',
+  ).run(domain, delta, newValue, reason, source);
+}
+
+export function getLatestTrustValues(dbPath?: string): Record<string, number> {
+  const p = dbPath || getConfig().DB_PATH;
+  const db = connect(p);
+  const rows = db
+    .prepare(
+      `SELECT domain, new_value FROM trust_log
+       WHERE id IN (SELECT MAX(id) FROM trust_log GROUP BY domain)`,
+    )
+    .all() as { domain: string; new_value: number }[];
+  const result: Record<string, number> = {};
+  for (const row of rows) {
+    result[row.domain] = row.new_value;
+  }
+  return result;
+}
+
+export function getTrustHistory(
+  domain?: string,
+  limit = 50,
+  dbPath?: string,
+): TrustLogEntry[] {
+  const p = dbPath || getConfig().DB_PATH;
+  const db = connect(p);
+  if (domain) {
+    return db
+      .prepare('SELECT * FROM trust_log WHERE domain = ? ORDER BY id DESC LIMIT ?')
+      .all(domain, limit) as TrustLogEntry[];
+  }
+  return db
+    .prepare('SELECT * FROM trust_log ORDER BY id DESC LIMIT ?')
+    .all(limit) as TrustLogEntry[];
+}
+
 
 // ---------------------------------------------------------------------------
 // Cleanup

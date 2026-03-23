@@ -12,7 +12,7 @@ import * as fs from 'fs';
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 app.commandLine.appendSwitch('enable-features', 'V8ConcurrentSparkplug');
 import { ensureUserData, getConfig, BUNDLE_ROOT, USER_DATA } from './config';
-import { initDb, closeAll as closeAllDbs } from './memory';
+import { initDb, closeAll as closeAllDbs, closeStaleOpenSessions, endSession } from './memory';
 import { stopAllInference, resetMcpConfig, prefetchContext, invalidateContextCache } from './inference';
 import { loadSystemPrompt } from './context';
 import { Session } from './session';
@@ -527,6 +527,12 @@ app.whenReady().then(() => {
   const config = getConfig();
   initDb();
 
+  // Close any sessions orphaned by previous crashes or forced quits
+  const staleClosed = closeStaleOpenSessions();
+  if (staleClosed > 0) {
+    log.info(`Closed ${staleClosed} stale open session(s) from previous run`);
+  }
+
   currentAgentName = config.AGENT_NAME;
   log.info(`v${config.VERSION} | agent: ${config.AGENT_NAME} | db: ${config.DB_PATH}`);
 
@@ -572,6 +578,11 @@ app.whenReady().then(() => {
   if (lastAgent && lastAgent !== config.AGENT_NAME) {
     config.reloadForAgent(lastAgent);
     initDb();
+    // Clean stale sessions in the resumed agent's DB too
+    const resumedStale = closeStaleOpenSessions();
+    if (resumedStale > 0) {
+      log.info(`Closed ${resumedStale} stale open session(s) for resumed agent ${config.AGENT_NAME}`);
+    }
     log.info(`resumed agent: ${config.AGENT_NAME}`);
   }
 
@@ -954,6 +965,18 @@ app.on('will-quit', () => {
   disableKeepAwake();
   stopDaemon();
   stopServer();
+
+  // End the current desktop session synchronously (summary generation is
+  // async and won't complete during shutdown - just close it in the DB
+  // so ended_at is set). The stale-session cleanup on next startup will
+  // catch anything we miss.
+  if (currentSession?.sessionId != null) {
+    try {
+      endSession(currentSession.sessionId, null, currentSession.mood);
+    } catch { /* DB may already be closing */ }
+    currentSession = null;
+  }
+
   closeAllDbs();
 
   // Force exit after 2s if lingering async work (e.g. Telegram long-poll) prevents clean shutdown

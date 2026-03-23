@@ -202,7 +202,8 @@ def _agency_context(user_message: str) -> str:
         for key, val in signals.items():
             if key.startswith("_trust_"):
                 domain = key.replace("_trust_", "")
-                update_trust(domain, val)
+                update_trust(domain, val, reason="auto-detected from message",
+                             source="inference")
             else:
                 emotion_deltas[key] = val
         if emotion_deltas:
@@ -387,7 +388,8 @@ def stream_inference(
             "-p", f"[Current context: {_agency_context(user_message)}]\n\n{user_message}",
         ]
     else:
-        cli_session_id = f"atrophy-{AGENT_NAME}-{uuid.uuid4()}"
+        bare_uuid = str(uuid.uuid4())
+        cli_session_id = f"atrophy-{AGENT_NAME}-{bare_uuid}"
         cmd = [
             CLAUDE_BIN,
             "--model", "claude-haiku-4-5-20251001",
@@ -397,7 +399,7 @@ def stream_inference(
             "--include-partial-messages",
             "--settings", atrophy_settings,
             "--strict-mcp-config",
-            "--session-id", cli_session_id,
+            "--session-id", bare_uuid,
             "--system-prompt", system + "\n\n---\n\n## Current Context\n\n" + _agency_context(user_message),
             "--mcp-config", mcp_config,
             "--allowedTools", "mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*",

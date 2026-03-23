@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import { getConfig } from './config';
+import { writeTrustLog } from './memory';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -238,6 +239,8 @@ export function updateTrust(
   state: EmotionalState,
   domain: keyof Trust,
   delta: number,
+  reason = '',
+  source = 'unknown',
 ): EmotionalState {
   // Max +/-0.05 per call
   const clamped = clamp(delta, -0.05, 0.05);
@@ -245,7 +248,44 @@ export function updateTrust(
   trust[domain] = Math.round(clamp(trust[domain] + clamped) * 1000) / 1000;
   const updated = { ...state, trust };
   saveState(updated);
+  try {
+    writeTrustLog(domain, clamped, trust[domain], reason, source);
+  } catch {
+    // DB not initialized yet (e.g. during boot) - JSON state is still saved
+  }
   return updated;
+}
+
+/**
+ * Restore trust values from the database audit trail.
+ * Called on session start to recover trust state that may have been
+ * lost to decay or app restart.
+ */
+export function reconcileTrustFromDb(): void {
+  try {
+    const { getLatestTrustValues } = require('./memory');
+    const dbTrust = getLatestTrustValues() as Record<string, number>;
+    if (!Object.keys(dbTrust).length) return;
+
+    const state = loadState();
+    const trust = { ...state.trust };
+    let changed = false;
+    for (const [domain, dbValue] of Object.entries(dbTrust)) {
+      if (domain in trust) {
+        const key = domain as keyof Trust;
+        // Only restore if DB value is higher (trust was earned, shouldn't be lost to decay)
+        if (dbValue > trust[key]) {
+          trust[key] = dbValue;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      saveState({ ...state, trust });
+    }
+  } catch {
+    // DB not available - skip reconciliation
+  }
 }
 
 // ---------------------------------------------------------------------------

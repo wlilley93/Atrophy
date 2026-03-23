@@ -15,6 +15,7 @@ import {
   setLastActiveAgent, suspendAgentSession, resumeAgentSession,
   resetDeferralCounter, writeAskResponse,
 } from '../agent-manager';
+import { endSession as endSessionInDb } from '../memory';
 import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSourcePhoto } from '../jobs/generate-mirror-avatar';
 import type { MirrorAvatarProgress } from '../jobs/generate-mirror-avatar';
 import { ensureAvatarAssets } from '../avatar-downloader';
@@ -110,9 +111,18 @@ export function registerAgentHandlers(ctx: IpcContext): void {
   ipcMain.handle('deferral:complete', async (_event, data: { target: string; context: string; user_question: string }) => {
     if (!/^[a-zA-Z0-9_-]+$/.test(data.target)) throw new Error('Invalid agent name');
     try {
-      // Suspend current agent's session
-      if (ctx.currentSession && ctx.currentSession.cliSessionId) {
-        suspendAgentSession(ctx.currentAgentName!, ctx.currentSession.cliSessionId, ctx.currentSession.turnHistory);
+      // End and suspend current agent's session
+      if (ctx.currentSession) {
+        if (ctx.currentSession.cliSessionId) {
+          suspendAgentSession(ctx.currentAgentName!, ctx.currentSession.cliSessionId, ctx.currentSession.turnHistory);
+        }
+        // Close the session in the DB so ended_at is set
+        if (ctx.currentSession.sessionId != null) {
+          try {
+            endSessionInDb(ctx.currentSession.sessionId, null, ctx.currentSession.mood);
+          } catch { /* non-fatal */ }
+        }
+        ctx.currentSession = null;
       }
 
       // Stop current inference and audio before switching
