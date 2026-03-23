@@ -689,7 +689,7 @@ export function wireAgent(name: string, manifest: AgentManifest): void {
     });
   }
 
-  // 2. Schedule cron jobs (in-process, no launchd)
+  // 2. Schedule cron jobs (in-process + launchd for persistence)
   //    Prefer manifest.jobs, fall back to scripts/agents/{name}/jobs.json
   const jobs = (manifest.jobs && Object.keys(manifest.jobs).length > 0)
     ? manifest.jobs
@@ -701,6 +701,23 @@ export function wireAgent(name: string, manifest: AgentManifest): void {
       log.info(`Registered ${Object.keys(jobs).length} job(s) for ${name}`);
     } catch (e) {
       log.warn(`Failed to register cron jobs for ${name}: ${e}`);
+    }
+
+    // Also reconcile launchd plists so jobs run when the app is closed
+    try {
+      const { execFile } = require('child_process');
+      const reconcileScript = path.join(BUNDLE_ROOT, 'scripts', 'reconcile_jobs.py');
+      if (fs.existsSync(reconcileScript)) {
+        execFile('python3', [reconcileScript, '--agent', name, '--quiet'], {
+          cwd: BUNDLE_ROOT,
+          env: { ...process.env, PYTHONPATH: BUNDLE_ROOT },
+          timeout: 10000,
+        }, (err: Error | null) => {
+          if (err) log.debug(`Job reconciler for ${name}: ${err.message}`);
+        });
+      }
+    } catch (e) {
+      log.debug(`Job reconciler for ${name} failed (non-fatal): ${e}`);
     }
   }
 

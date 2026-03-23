@@ -376,6 +376,36 @@ TOOLS = [
             "properties": {},
         },
     },
+    {
+        "name": "diagnose",
+        "description": (
+            "Run infrastructure health checks on yourself or another agent. "
+            "Checks launchd job installation vs agent.json expectations, log recency, "
+            "symlink validity, DB health, switchboard registration, and voice module. "
+            "Use this when something feels wrong or after reporting self_status to verify "
+            "the runtime layer beneath you."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string",
+                    "description": (
+                        "Agent to diagnose. Defaults to self. "
+                        "Diagnosing other agents requires system_access (tier 0)."
+                    ),
+                },
+                "fix": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, automatically fix detected issues (install missing "
+                        "launchd jobs, update stale plists). Defaults to false."
+                    ),
+                    "default": False,
+                },
+            },
+        },
+    },
     # ── Group 9: mcp - MCP server self-service ──
     {
         "name": "mcp",
@@ -2677,6 +2707,346 @@ def handle_self_status(args):
     return "\n".join(sections)
 
 
+# ── diagnose ──
+
+
+def _load_manifest(agent_name):
+    """Load agent.json manifest for a given agent."""
+    for base in [
+        os.path.expanduser(f"~/.atrophy/agents/{agent_name}"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agents", agent_name),
+    ]:
+        mpath = os.path.join(base, "data", "agent.json")
+        if os.path.exists(mpath):
+            try:
+                with open(mpath, "r", encoding="utf-8") as f:
+                    return json.loads(f.read())
+            except Exception:
+                pass
+    return {}
+
+
+def _check_launchd(agent_name, manifest):
+    """Compare agent.json job definitions against installed launchd jobs."""
+    import subprocess
+
+    # What SHOULD be running
+    expected = list(manifest.get("jobs", {}).keys())
+    if manifest.get("heartbeat") and "heartbeat" not in expected:
+        expected.append("heartbeat")
+
+    # What IS installed
+    try:
+        result = subprocess.run(
+            ["launchctl", "list"],
+            capture_output=True, text=True, timeout=5,
+        )
+        lines = result.stdout.splitlines()
+    except Exception as e:
+        return [], expected, [f"launchctl failed: {e}"]
+
+    prefix = f"com.atrophy.{agent_name}."
+    installed = {}
+    for line in lines:
+        parts = line.split("\t")
+        if len(parts) >= 3 and prefix in parts[2]:
+            label = parts[2]
+            job_name = label.replace(prefix, "")
+            exit_code = parts[1] if parts[1] != "-" else None
+            pid = parts[0] if parts[0] != "-" else None
+            installed[job_name] = {"label": label, "exit_code": exit_code, "pid": pid}
+
+    missing = [j for j in expected if j not in installed]
+    unexpected = [j for j in installed if j not in expected]
+
+    results = []
+    for job in expected:
+        if job in installed:
+            info = installed[job]
+            status = "running" if info["pid"] else "idle"
+            if info["exit_code"] and info["exit_code"] != "0":
+                status = f"FAILED (exit {info['exit_code']})"
+            results.append(f"  OK  {job} [{status}]")
+        else:
+            results.append(f"  MISSING  {job}")
+
+    for job in unexpected:
+        results.append(f"  EXTRA  {job} (not in agent.json)")
+
+    return results, missing, []
+
+
+def _check_log_recency(agent_name, manifest):
+    """Check when each job last produced log output."""
+    from datetime import datetime, timedelta
+
+    # Logs may be at /tmp/atrophy/logs/ (launchd plists) or ~/.atrophy/logs/ (scripts)
+    log_candidates = [
+        "/tmp/atrophy/logs/" + agent_name,
+        os.path.expanduser(f"~/.atrophy/logs/{agent_name}"),
+    ]
+    log_dir = None
+    for candidate in log_candidates:
+        if os.path.isdir(candidate):
+            log_dir = candidate
+            break
+
+    jobs = list(manifest.get("jobs", {}).keys())
+    if manifest.get("heartbeat") and "heartbeat" not in jobs:
+        jobs.append("heartbeat")
+
+    results = []
+    if log_dir is None:
+        return [f"  No log directory found (checked {', '.join(log_candidates)})"]
+
+    for job in jobs:
+        log_path = os.path.join(log_dir, f"{job}.log")
+        if not os.path.exists(log_path):
+            results.append(f"  NO LOG  {job}")
+            continue
+        try:
+            mtime = os.path.getmtime(log_path)
+            age = datetime.now() - datetime.fromtimestamp(mtime)
+            size = os.path.getsize(log_path)
+
+            # Determine expected interval
+            job_def = manifest.get("jobs", {}).get(job, {})
+            interval = job_def.get("interval_seconds", 86400)  # default daily
+            threshold = timedelta(seconds=interval * 3)
+
+            if age > threshold:
+                results.append(f"  STALE  {job} - last output {_format_age(age)} ago ({size} bytes)")
+            else:
+                results.append(f"  OK  {job} - last output {_format_age(age)} ago ({size} bytes)")
+        except Exception as e:
+            results.append(f"  ERROR  {job} - {e}")
+
+    return results
+
+
+def _format_age(td):
+    """Format a timedelta as a human-readable string."""
+    total_secs = int(td.total_seconds())
+    if total_secs < 60:
+        return f"{total_secs}s"
+    if total_secs < 3600:
+        return f"{total_secs // 60}m"
+    if total_secs < 86400:
+        return f"{total_secs // 3600}h {(total_secs % 3600) // 60}m"
+    return f"{total_secs // 86400}d {(total_secs % 86400) // 3600}h"
+
+
+def _check_symlink():
+    """Verify /tmp/atrophy symlink is valid."""
+    link = "/tmp/atrophy"
+    if not os.path.islink(link):
+        if os.path.isdir(link):
+            return f"  OK  {link} exists (directory, not symlink)"
+        return f"  BROKEN  {link} does not exist - all launchd jobs will fail"
+    target = os.readlink(link)
+    if os.path.isdir(target):
+        return f"  OK  {link} -> {target}"
+    return f"  BROKEN  {link} -> {target} (target does not exist)"
+
+
+def _check_db_health(agent_name):
+    """Check memory DB health - existence, recency, row counts."""
+    from datetime import datetime
+
+    db_path = os.path.expanduser(f"~/.atrophy/agents/{agent_name}/data/memory.db")
+    results = []
+
+    if not os.path.exists(db_path):
+        return [f"  MISSING  {db_path}"]
+
+    try:
+        size = os.path.getsize(db_path)
+        results.append(f"  DB size: {size:,} bytes")
+
+        # Check WAL recency
+        wal_path = db_path + "-wal"
+        if os.path.exists(wal_path):
+            wal_age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(wal_path))
+            results.append(f"  WAL last modified: {_format_age(wal_age)} ago")
+        else:
+            results.append(f"  No WAL file (DB may be idle)")
+
+        # Row counts
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        for table in ["sessions", "turns", "observations", "threads", "summaries", "bookmarks"]:
+            try:
+                count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                results.append(f"  {table}: {count} rows")
+            except Exception:
+                results.append(f"  {table}: table missing")
+        conn.close()
+    except Exception as e:
+        results.append(f"  ERROR: {e}")
+
+    return results
+
+
+def _check_switchboard(agent_name):
+    """Check switchboard registration and queue status."""
+    sb_dir = os.path.expanduser("~/.atrophy/.switchboard_directory.json")
+    sb_queue = os.path.expanduser("~/.atrophy/.switchboard_queue.json")
+    results = []
+
+    if not os.path.exists(sb_dir):
+        return ["  MISSING  switchboard directory file"]
+
+    try:
+        with open(sb_dir) as f:
+            directory = json.loads(f.read())
+        agent_entries = [e for e in directory if agent_name in e.get("address", "")]
+        if agent_entries:
+            for e in agent_entries:
+                results.append(f"  OK  registered as {e['address']}")
+        else:
+            results.append(f"  NOT REGISTERED  {agent_name} not in switchboard directory")
+    except Exception as e:
+        results.append(f"  ERROR reading directory: {e}")
+
+    if os.path.exists(sb_queue):
+        try:
+            with open(sb_queue) as f:
+                queue = json.loads(f.read())
+            pending = [m for m in queue if agent_name in m.get("to", "")]
+            if pending:
+                results.append(f"  {len(pending)} pending message(s) in queue")
+            else:
+                results.append(f"  Queue clear")
+        except Exception:
+            pass
+
+    return results
+
+
+def _check_voice(agent_name):
+    """Check voice/TTS module availability."""
+    results = []
+    tts_output = os.path.expanduser("~/.atrophy/tts_output")
+    voice_module = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "voice", "tts.py"
+    )
+
+    if os.path.exists(voice_module):
+        results.append(f"  OK  voice/tts.py exists")
+    else:
+        results.append(f"  MISSING  voice/tts.py")
+
+    if os.path.isdir(tts_output):
+        files = os.listdir(tts_output)
+        audio_files = [f for f in files if f.endswith((".mp3", ".wav", ".ogg"))]
+        results.append(f"  TTS output dir: {len(audio_files)} audio file(s)")
+    else:
+        results.append(f"  MISSING  TTS output directory {tts_output}")
+
+    return results
+
+
+def handle_diagnose(args):
+    """Run infrastructure health checks."""
+    from datetime import datetime
+
+    target_agent = args.get("agent", AGENT_NAME)
+
+    # Permission check - only tier-0 agents can diagnose others
+    if target_agent != AGENT_NAME:
+        manifest_self = _load_manifest(AGENT_NAME)
+        org = manifest_self.get("org", {})
+        if org.get("tier", 99) > 0 and not org.get("system_access"):
+            return f"Permission denied: diagnosing other agents requires system_access (tier 0). You are {AGENT_NAME} (tier {org.get('tier', '?')})."
+
+    manifest = _load_manifest(target_agent)
+    if not manifest:
+        return f"No agent.json found for '{target_agent}'."
+
+    sections = []
+    sections.append(f"# Infrastructure Diagnosis: {manifest.get('display_name', target_agent)}")
+    sections.append(f"*Run at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n")
+
+    # 1. Symlink
+    sections.append("## /tmp/atrophy symlink")
+    sections.append(_check_symlink())
+
+    # 2. Launchd jobs
+    sections.append("\n## Launchd Jobs (expected vs installed)")
+    job_results, missing, errors = _check_launchd(target_agent, manifest)
+    for line in errors:
+        sections.append(line)
+    for line in job_results:
+        sections.append(line)
+    if not missing and not errors:
+        sections.append(f"  All {len(job_results)} job(s) installed.")
+    elif missing:
+        sections.append(f"\n  WARNING: {len(missing)} job(s) missing from launchd: {', '.join(missing)}")
+
+    # 3. Log recency
+    sections.append("\n## Log Recency")
+    for line in _check_log_recency(target_agent, manifest):
+        sections.append(line)
+
+    # 4. Memory DB
+    sections.append("\n## Memory Database")
+    for line in _check_db_health(target_agent):
+        sections.append(line)
+
+    # 5. Switchboard
+    sections.append("\n## Switchboard")
+    for line in _check_switchboard(target_agent):
+        sections.append(line)
+
+    # 6. Voice
+    sections.append("\n## Voice Module")
+    for line in _check_voice(target_agent):
+        sections.append(line)
+
+    # 7. Emotional state file
+    sections.append("\n## Emotional State")
+    state_file = os.path.expanduser(f"~/.atrophy/agents/{target_agent}/data/.emotional_state.json")
+    if os.path.exists(state_file):
+        age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(state_file))
+        sections.append(f"  OK  last updated {_format_age(age)} ago")
+    else:
+        sections.append(f"  MISSING  {state_file}")
+
+    # Summary
+    all_text = "\n".join(sections)
+    issues = all_text.count("MISSING") + all_text.count("BROKEN") + all_text.count("STALE") + all_text.count("FAILED")
+    if issues == 0:
+        sections.append(f"\n## Verdict: HEALTHY - no issues detected")
+    else:
+        sections.append(f"\n## Verdict: {issues} issue(s) found - review above")
+
+    # Auto-fix if requested
+    if args.get("fix") and issues > 0:
+        import subprocess as _sp
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        reconcile_script = os.path.join(project_root, "scripts", "reconcile_jobs.py")
+        if os.path.exists(reconcile_script):
+            try:
+                result = _sp.run(
+                    [sys.executable, reconcile_script, "--agent", target_agent],
+                    capture_output=True, text=True,
+                    cwd=project_root,
+                    env={**os.environ, "PYTHONPATH": project_root},
+                    timeout=15,
+                )
+                sections.append("\n## Auto-Fix Results")
+                sections.append(result.stdout.strip() if result.stdout.strip() else "No output from reconciler.")
+                if result.stderr.strip():
+                    sections.append(f"Errors: {result.stderr.strip()}")
+            except Exception as e:
+                sections.append(f"\n## Auto-Fix Failed: {e}")
+        else:
+            sections.append("\n## Auto-Fix: reconcile_jobs.py not found")
+
+    return "\n".join(sections)
+
+
 def handle_read_docs(args):
     path = args["path"]
     if DOCS_DIR is None:
@@ -4322,6 +4692,7 @@ HANDLERS = {
     # Standalone tools
     "review_audit": handle_review_audit,
     "self_status": handle_self_status,
+    "diagnose": handle_diagnose,
 }
 
 # Load custom tools now that HANDLERS is defined

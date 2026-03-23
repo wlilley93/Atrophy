@@ -16,11 +16,12 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path (4 levels up from scripts/agents/shared/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT))
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(_PROJECT_ROOT / ".env")
 
 from config import DB_PATH, AGENT_DIR, AGENT_DISPLAY_NAME
 from core.memory import _connect, write_observation

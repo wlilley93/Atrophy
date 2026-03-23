@@ -624,6 +624,33 @@ app.whenReady().then(() => {
     }
   }
 
+  // 4b. Reconcile launchd jobs - ensures scheduled jobs run even when the
+  // app isn't open (e.g. 3am sleep_cycle, 7am morning_brief). Non-blocking.
+  try {
+    const { execFile } = require('child_process');
+    const reconcileScript = path.join(BUNDLE_ROOT, 'scripts', 'reconcile_jobs.py');
+    if (fs.existsSync(reconcileScript)) {
+      execFile(
+        'python3',
+        [reconcileScript, '--quiet'],
+        {
+          cwd: BUNDLE_ROOT,
+          env: { ...process.env, PYTHONPATH: BUNDLE_ROOT },
+          timeout: 15000,
+        },
+        (err: Error | null, stdout: string, stderr: string) => {
+          if (err) {
+            log.debug(`Job reconciler: ${err.message}`);
+          } else if (stdout.trim()) {
+            log.info(`Job reconciler:\n${stdout.trim()}`);
+          }
+        },
+      );
+    }
+  } catch (e) {
+    log.debug(`Job reconciler failed (non-fatal): ${e}`);
+  }
+
   // 5. Auto-start Telegram daemon. It discovers all agents with telegram
   // credentials and launches a poller per agent.
   if (crashSafe) {

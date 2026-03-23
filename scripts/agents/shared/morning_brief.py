@@ -13,10 +13,12 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path (4 levels up from scripts/agents/shared/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT))
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(_PROJECT_ROOT / ".env")
 
 from config import DB_PATH, MESSAGE_QUEUE, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, AGENT_NAME
 from core.queue import queue_message
@@ -129,6 +131,7 @@ def morning_brief():
         brief = run_inference_oneshot(
             [{"role": "user", "content": f"Here's what you have this morning:\n\n{context}"}],
             system=load_prompt("morning-brief", _BRIEF_FALLBACK),
+            timeout=120,
         )
     except Exception as e:
         print(f"[brief] Inference failed: {e}")

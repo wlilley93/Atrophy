@@ -138,7 +138,7 @@ def apply_decay(state: dict) -> dict:
     except (ValueError, TypeError):
         return state
 
-    hours_elapsed = (datetime.now() - last_dt).total_seconds() / 3600.0
+    hours_elapsed = (datetime.now(last_dt.tzinfo) - last_dt).total_seconds() / 3600.0
     if hours_elapsed < 0.01:  # less than ~36 seconds, skip
         return state
 

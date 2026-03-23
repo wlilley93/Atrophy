@@ -601,7 +601,8 @@ def run_inference_turn(
 
 def run_inference_oneshot(messages: list[dict], system: str,
                          model: str = "claude-sonnet-4-6",
-                         effort: str = "low") -> str:
+                         effort: str = "low",
+                         timeout: int = 30) -> str:
     # Validate effort and model — only allow known values
     if effort not in ("low", "medium", "high"):
         effort = "low"
@@ -629,15 +630,16 @@ def run_inference_oneshot(messages: list[dict], system: str,
     ]
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
         text=True, env=_env(), cwd=str(USER_DATA), start_new_session=True,
     )
     t0 = time.time()
     try:
-        stdout, stderr = proc.communicate(timeout=30)
+        stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
-        raise RuntimeError("Oneshot inference timed out (30s)")
+        raise RuntimeError(f"Oneshot inference timed out ({timeout}s)")
     if proc.returncode != 0:
         raise RuntimeError(f"CLI error: {stderr[:500]}")
 
