@@ -29,6 +29,7 @@ import {
   shouldPromptJournal, detectEmotionalSignals,
 } from './agency';
 import { formatForContext, updateEmotions, updateTrust, loadState, type EmotionalState } from './inner-life';
+import { compressForContext } from './inner-life-compress';
 import { getStatus } from './status';
 import * as memory from './memory';
 import { createLogger } from './logger';
@@ -334,8 +335,10 @@ function buildAgencyContext(userMessage: string): string {
   const parts: string[] = [timeOfDayContext().context];
 
   // Inner life - emotional state (use cached if available)
+  // compressForContext produces ~50-80 tokens vs ~150-200 for formatForContext.
+  // Pass sessionStart=true on the first turn to include personality + relationship context.
   const emotionalState = getCached('emotionalState', () => loadState());
-  parts.push(formatForContext(emotionalState));
+  parts.push(compressForContext(emotionalState, { sessionStart: !_sessionStartInjected }));
 
   // Detected patterns - only the ones that trigger
   if (detectMoodShift(userMessage)) {
