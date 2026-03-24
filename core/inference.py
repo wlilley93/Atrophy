@@ -336,6 +336,7 @@ def stream_inference(
     user_message: str,
     system: str,
     cli_session_id: str | None = None,
+    bare: bool = False,
 ):
     """Generator that yields streaming events from Claude.
 
@@ -406,6 +407,8 @@ def stream_inference(
             "--disallowedTools", ",".join(_TOOL_BLACKLIST + DISABLED_TOOLS),
             "-p", user_message,
         ]
+        if bare:
+            cmd.insert(1, "--bare")
 
     mode = "resume" if "--resume" in cmd else "new"
     t0 = time.time()

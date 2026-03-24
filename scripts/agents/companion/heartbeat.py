@@ -114,7 +114,7 @@ def _run_heartbeat_inference(prompt: str, cli_session_id: str | None) -> str:
     full_text = ""
     tools_used = []
 
-    for event in stream_inference(prompt, system, cli_session_id):
+    for event in stream_inference(prompt, system, cli_session_id, bare=True):
         if isinstance(event, TextDelta):
             pass  # collect via StreamDone
         elif isinstance(event, ToolUse):
