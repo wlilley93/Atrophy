@@ -175,23 +175,21 @@ def heartbeat():
         message = response_stripped[len("[REACH_OUT]"):].strip()
         log_heartbeat("REACH_OUT", "", message)
 
-        # Route: Telegram only if Mac is idle (user is away from computer)
-        # Local notification + queue always
-        if is_mac_idle():
-            try:
-                from channels.telegram import send_message as send_telegram
-                send_telegram(message)
-                print(f"[heartbeat] Sent via Telegram (Mac idle)")
-            except Exception as e:
-                print(f"[heartbeat] Telegram send failed: {e}")
-        else:
-            print(f"[heartbeat] Mac active - local only, skipping Telegram")
+        # Always send via Telegram - heartbeat messages are time-sensitive
+        try:
+            from channels.telegram import send_message as send_telegram
+            send_telegram(message)
+            print(f"[heartbeat] Sent via Telegram")
+        except Exception as e:
+            print(f"[heartbeat] Telegram send failed: {e}")
 
-        from config import AGENT_DISPLAY_NAME
-        send_notification(
-            title=AGENT_DISPLAY_NAME,
-            body=message[:200],
-        )
+        # Local notification + queue only if user is at the Mac
+        if not is_mac_idle():
+            from config import AGENT_DISPLAY_NAME
+            send_notification(
+                title=AGENT_DISPLAY_NAME,
+                body=message[:200],
+            )
         queue_message(MESSAGE_QUEUE, message, source="heartbeat")
         print(f"[heartbeat] Reaching out: {message[:80]}...")
 
