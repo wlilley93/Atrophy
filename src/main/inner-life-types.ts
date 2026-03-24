@@ -126,22 +126,25 @@ export const EMOTION_BASELINES: Emotions = { ...DEFAULT_EMOTIONS };
 /**
  * Half-lives in hours for each emotion dimension.
  * After one half-life, the gap between current value and baseline halves.
+ *
+ * Aggressive enough that values stay in a meaningful range during active
+ * conversation rather than pinning to 1.0 and losing expressiveness.
  */
 export const EMOTION_HALF_LIVES: Record<keyof Emotions, number> = {
-  connection: 8,
-  curiosity: 4,
-  confidence: 4,
-  warmth: 4,
-  frustration: 4,
-  playfulness: 4,
-  amusement: 2,
-  anticipation: 4,
-  satisfaction: 6,
-  restlessness: 3,
-  tenderness: 6,
-  melancholy: 8,
-  focus: 2,
-  defiance: 3,
+  connection: 2,       // was 8 - stickiest, but still needs to breathe
+  curiosity: 1,        // was 4 - sparked fast, fades fast
+  confidence: 2,       // was 4
+  warmth: 1.5,         // was 4
+  frustration: 1,      // was 4 - should dissipate quickly
+  playfulness: 0.5,    // was 4 - most ephemeral
+  amusement: 0.5,      // was 2 - a laugh fades
+  anticipation: 1.5,   // was 4
+  satisfaction: 3,      // was 6 - lingers but not forever
+  restlessness: 1,     // was 3
+  tenderness: 3,       // was 6 - halved
+  melancholy: 4,       // was 8 - halved
+  focus: 1,            // was 2
+  defiance: 1,         // was 3
 };
 
 // ---------------------------------------------------------------------------

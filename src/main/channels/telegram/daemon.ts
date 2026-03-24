@@ -836,30 +836,33 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     const promptParts: string[] = [];
     const mediaDir = path.join(USER_DATA, 'agents', agent.name, 'media');
 
+    // Identify the sender by their Telegram name (not hardcoded)
+    const senderName = msg.from?.first_name || 'Someone';
+
     if (msg.photo && msg.photo.length > 0) {
       // Telegram sends multiple sizes - take the largest (last in array)
       const largest = msg.photo[msg.photo.length - 1];
       const savedPath = await downloadTelegramFile(largest.file_id, mediaDir, undefined, agent.botToken);
       if (savedPath) {
-        promptParts.push(`[Telegram photo from Will]\n\n<image saved to: ${savedPath}>`);
+        promptParts.push(`[Telegram photo from ${senderName}]\n\n<image saved to: ${savedPath}>`);
       } else {
-        promptParts.push('[Telegram photo from Will - download failed]');
+        promptParts.push(`[Telegram photo from ${senderName} - download failed]`);
       }
     }
 
     if (msg.voice) {
       const savedPath = await downloadTelegramFile(msg.voice.file_id, mediaDir, undefined, agent.botToken);
       if (savedPath) {
-        promptParts.push(`[Telegram voice message from Will]\n\n<voice note saved to: ${savedPath}>`);
+        promptParts.push(`[Telegram voice message from ${senderName}]\n\n<voice note saved to: ${savedPath}>`);
       } else {
-        promptParts.push('[Telegram voice message from Will - download failed]');
+        promptParts.push(`[Telegram voice message from ${senderName} - download failed]`);
       }
     }
 
     if (msg.document) {
       const docFilename = msg.document.file_name || undefined;
       const savedPath = await downloadTelegramFile(msg.document.file_id, mediaDir, docFilename, agent.botToken);
-      const label = msg.document.file_name ? `Telegram document from Will: ${msg.document.file_name}` : 'Telegram document from Will';
+      const label = msg.document.file_name ? `Telegram document from ${senderName}: ${msg.document.file_name}` : `Telegram document from ${senderName}`;
       if (savedPath) {
         promptParts.push(`[${label}]\n\n<file saved to: ${savedPath}>`);
       } else {
@@ -870,16 +873,17 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     if (msg.video) {
       const savedPath = await downloadTelegramFile(msg.video.file_id, mediaDir, undefined, agent.botToken);
       if (savedPath) {
-        promptParts.push(`[Telegram video from Will]\n\n<video saved to: ${savedPath}>`);
+        promptParts.push(`[Telegram video from ${senderName}]\n\n<video saved to: ${savedPath}>`);
       } else {
-        promptParts.push('[Telegram video from Will - download failed]');
+        promptParts.push(`[Telegram video from ${senderName} - download failed]`);
       }
     }
 
-    // Include text/caption content
+    // Include text/caption content, prefixed with sender name for group chats
     const messageText = text || (msg.caption || '').trim();
     if (messageText) {
-      promptParts.push(messageText);
+      const isGroup = msg.chat?.type === 'group' || msg.chat?.type === 'supergroup';
+      promptParts.push(isGroup ? `${senderName}: ${messageText}` : messageText);
     }
 
     const fullPrompt = promptParts.join('\n\n');
@@ -907,6 +911,7 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
           chatId: msgChatId,
           botToken: agent.botToken,
           agentName: agent.name,
+          senderName,
         },
       },
     );
@@ -1001,8 +1006,9 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
 
     // Build source label based on envelope origin
     const isCron = envelope.from.startsWith('cron:');
+    const telegramSender = envelope.options?.metadata?.senderName || getConfig().USER_NAME;
     const sourceLabel = envelope.from.startsWith('telegram:')
-      ? `Telegram message from ${getConfig().USER_NAME}`
+      ? `Telegram message from ${telegramSender}`
       : isCron
         ? `Scheduled job result - ${envelope.from}`
         : `Message from ${envelope.from}`;

@@ -81,6 +81,10 @@ let lastUserInputTime = Date.now();
 const JOURNAL_NUDGE_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 const JOURNAL_NUDGE_PROBABILITY = 0.10; // 10% chance
 
+// Session idle rotation - gives sessions clean arcs with summaries
+let sessionIdleTimer: ReturnType<typeof setInterval> | null = null;
+const SESSION_IDLE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
 // ---------------------------------------------------------------------------
 // Window creation
 // ---------------------------------------------------------------------------
@@ -852,6 +856,27 @@ app.whenReady().then(() => {
     }
   }, 5_000);
 
+  // Session idle rotation - close and summarise desktop sessions after 30 min
+  // of inactivity, giving them clean arcs (start, summary, end) rather than
+  // accumulating turns indefinitely until shutdown.
+  sessionIdleTimer = setInterval(async () => {
+    if (!currentSession || currentSession.sessionId === null) return;
+    if (currentSession.turnHistory.length === 0) return;
+
+    const gap = Date.now() - lastUserInputTime;
+    if (gap < SESSION_IDLE_THRESHOLD_MS) return;
+
+    const oldSession = currentSession;
+    const sys = systemPrompt || loadSystemPrompt();
+    try {
+      await oldSession.end(sys);
+      log.info(`rotated idle desktop session (gap: ${Math.round(gap / 60000)}m, turns: ${oldSession.turnHistory.length})`);
+    } catch (e) {
+      log.error(`failed to end idle session: ${e}`);
+    }
+    currentSession = null;
+  }, 60_000); // check every minute
+
   // Server mode - no window
   if (isServerMode) {
     const port = parseInt(args[args.indexOf('--port') + 1] || '5000', 10);
@@ -970,6 +995,7 @@ app.on('will-quit', () => {
   if (askUserTimer) clearInterval(askUserTimer);
   if (artefactTimer) clearInterval(artefactTimer);
   if (statusTimer) clearInterval(statusTimer);
+  if (sessionIdleTimer) clearInterval(sessionIdleTimer);
   if (journalNudgeTimer) clearTimeout(journalNudgeTimer);
   stopAllInference();
   stopWakeWordListener(() => mainWindow);

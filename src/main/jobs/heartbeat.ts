@@ -80,6 +80,11 @@ const HEARTBEAT_PROMPT =
   '[ASK] Want me to check in about the project later? | Yes | No | Tomorrow\n' +
   'The user will see this as tappable buttons in Telegram.\n\n' +
   '[HEARTBEAT_OK] followed by a brief reason why now isn\'t the right time.\n\n' +
+  '[NOTE] followed by a thought you want to leave quietly. This will be ' +
+  'written to Obsidian as a note he can find when he next opens his vault. ' +
+  'No push notification, no chat bubble - a thought on the kitchen table, ' +
+  'not a phone call. Use this for reflections, observations, or things that ' +
+  'don\'t need an immediate response but are worth preserving.\n\n' +
   '[SUPPRESS] followed by a brief reason if you actively shouldn\'t reach out ' +
   '(e.g. he\'s away, it\'s too soon, he needs space).\n\n' +
   'Keep it short. 1-3 sentences for the message, one line for OK/SUPPRESS.';
@@ -215,7 +220,7 @@ function runHeartbeatInference(
 // ---------------------------------------------------------------------------
 
 export interface HeartbeatParsed {
-  type: 'REACH_OUT' | 'VOICE_NOTE' | 'SELFIE' | 'HEARTBEAT_OK' | 'SUPPRESS' | 'ASK' | 'UNKNOWN';
+  type: 'REACH_OUT' | 'VOICE_NOTE' | 'SELFIE' | 'HEARTBEAT_OK' | 'SUPPRESS' | 'ASK' | 'NOTE' | 'UNKNOWN';
   message: string;
   options?: string[];
 }
@@ -237,6 +242,10 @@ export function parseHeartbeatResponse(response: string): HeartbeatParsed {
 
   if (stripped.startsWith('[HEARTBEAT_OK]')) {
     return { type: 'HEARTBEAT_OK', message: stripped.slice('[HEARTBEAT_OK]'.length).trim() };
+  }
+
+  if (stripped.startsWith('[NOTE]')) {
+    return { type: 'NOTE', message: stripped.slice('[NOTE]'.length).trim() };
   }
 
   if (stripped.startsWith('[SUPPRESS]')) {
@@ -286,6 +295,12 @@ async function handleResponse(response: string): Promise<string> {
     case 'HEARTBEAT_OK': {
       logHeartbeat('HEARTBEAT_OK', parsed.message);
       return `OK: ${parsed.message.slice(0, 80)}`;
+    }
+
+    case 'NOTE': {
+      logHeartbeat('NOTE', '', parsed.message);
+      await deliverNote(parsed.message, config);
+      return `NOTE: ${parsed.message.slice(0, 80)}`;
     }
 
     case 'SUPPRESS': {
@@ -406,6 +421,45 @@ async function deliverAskMessage(
     }
   } catch (e) {
     log.error(`Telegram ASK failed: ${e}`);
+  }
+}
+
+
+async function deliverNote(message: string, config: ReturnType<typeof getConfig>): Promise<void> {
+  // Write a quiet note to Obsidian - no push notification, no Telegram.
+  // A thought left on the kitchen table for when he opens his vault.
+  const obsidianBase = config.OBSIDIAN_VAULT || path.join(
+    os.homedir(),
+    'Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind',
+  );
+  const notesDir = path.join(obsidianBase, 'Notes from Companion');
+
+  try {
+    if (!fs.existsSync(notesDir)) {
+      fs.mkdirSync(notesDir, { recursive: true });
+    }
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const filename = `${dateStr} ${timeStr.replace(':', '')}.md`;
+
+    const content = [
+      '---',
+      `date: ${now.toISOString()}`,
+      `from: ${config.AGENT_DISPLAY_NAME || 'Companion'}`,
+      'type: heartbeat-note',
+      '---',
+      '',
+      message,
+      '',
+    ].join('\n');
+
+    fs.writeFileSync(path.join(notesDir, filename), content);
+    log.info(`Left note in Obsidian: ${filename}`);
+  } catch (e) {
+    log.error(`Failed to write Obsidian note: ${e}`);
+    // Don't fall back to Telegram - the whole point is quiet delivery
   }
 }
 
