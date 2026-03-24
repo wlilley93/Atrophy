@@ -113,6 +113,7 @@ const _agentRouters: Map<string, AgentRouter> = new Map();
 
 interface AgentPollerState {
   last_update_id: number;
+  last_dispatched_id: number;
 }
 
 interface DaemonState {
@@ -831,7 +832,8 @@ let _pollerTimers: ReturnType<typeof setTimeout>[] = [];
 async function pollAgent(agent: TelegramAgent): Promise<void> {
   if (!_running) return;
 
-  const agentState = _state.agents[agent.name] || { last_update_id: 0 };
+  const agentState = _state.agents[agent.name] || { last_update_id: 0, last_dispatched_id: 0 };
+  if (agentState.last_dispatched_id === undefined) agentState.last_dispatched_id = agentState.last_update_id;
 
   let raw: unknown;
   try {
@@ -969,6 +971,7 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
           botToken: agent.botToken,
           agentName: agent.name,
           senderName,
+          updateId: update.update_id,
         },
       },
     );
@@ -976,6 +979,9 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     await switchboard.route(envelope);
   }
 
+  // Save state after routing. The offset is advanced above so Telegram
+  // won't re-send these updates, but _lastDispatchedId (updated by the
+  // handler on success) lets us detect gaps on restart.
   _state.agents[agent.name] = agentState;
   saveState(_state);
 }
@@ -985,6 +991,20 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
  */
 async function runAgentPoller(agent: TelegramAgent): Promise<void> {
   log.info(`[${agent.name}] Poller started`);
+
+  // Check for messages that were received but never successfully dispatched
+  // (e.g. daemon crashed mid-dispatch). Rewind offset to replay them.
+  const agentState = _state.agents[agent.name];
+  if (agentState) {
+    const dispatched = agentState.last_dispatched_id || 0;
+    const received = agentState.last_update_id || 0;
+    if (dispatched > 0 && received > dispatched) {
+      const gap = received - dispatched;
+      log.warn(`[${agent.name}] Detected ${gap} unprocessed message(s) - rewinding offset to replay`);
+      agentState.last_update_id = dispatched;
+      saveState(_state);
+    }
+  }
 
   while (_running) {
     try {
@@ -1098,13 +1118,23 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
       }
     }
 
-    // Per-agent dispatch lock - agents dispatch in parallel
+    // Per-agent dispatch lock - agents dispatch in parallel.
+    // Retry once on failure for Telegram messages so a transient
+    // timeout or OOM does not silently drop user messages.
     _activeDispatches.add(agent.name);
     let response: string | null = null;
     try {
       response = await withAgentDispatchLock(agent.name, () =>
         dispatchToAgent(agent.name, envelope.text, chatId, botToken, sourceLabel, telegramSender),
       );
+
+      if (!response && !isCron) {
+        log.warn(`[${agent.name}] Dispatch failed - retrying once after 5s`);
+        await new Promise((r) => setTimeout(r, 5000));
+        response = await withAgentDispatchLock(agent.name, () =>
+          dispatchToAgent(agent.name, envelope.text, chatId, botToken, sourceLabel, telegramSender),
+        );
+      }
     } finally {
       _activeDispatches.delete(agent.name);
     }
@@ -1122,7 +1152,19 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
     } else if (response) {
       log.info(`[${agent.name}] Responded via switchboard (${response.length} chars)`);
     } else if (!isCron) {
-      log.warn(`[${agent.name}] No response via switchboard`);
+      log.error(`[${agent.name}] No response after retry - message dropped`);
+    }
+
+    // Track last successfully dispatched update_id so we can detect gaps on restart
+    if (response && !isCron) {
+      const updateId = envelope.metadata?.updateId as number | undefined;
+      if (updateId) {
+        const agentState = _state.agents[agent.name];
+        if (agentState) {
+          agentState.last_dispatched_id = Math.max(agentState.last_dispatched_id || 0, updateId);
+          saveState(_state);
+        }
+      }
     }
 
     return undefined;
