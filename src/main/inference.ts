@@ -552,7 +552,9 @@ export function streamInference(
 
   const agencyContext = buildAgencyContext(userMessage);
   let sessionId = cliSessionId || `atrophy-${config.AGENT_NAME}-${uuidv4()}`;
-  const allowedTools = 'mcp__memory__*,mcp__puppeteer__*,mcp__fal__*,mcp__google__*,mcp__shell__*,mcp__github__*,mcp__worldmonitor__*';
+  // All tools permitted - agents run with --dangerously-skip-permissions
+  // and need full access (WebSearch, Read, Write, Bash, etc.) plus MCP tools.
+  const allowedTools = '*';
 
   // Resolve model from config, validate against whitelist
   const model = ALLOWED_MODELS.has(config.CLAUDE_MODEL) ? config.CLAUDE_MODEL : DEFAULT_MODEL;
