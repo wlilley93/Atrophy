@@ -886,23 +886,29 @@ if __name__ == "__main__":
    * This is a lazy import to avoid circular dependencies - the switchboard
    * module may import other modules that depend on config.
    */
-  registerWithSwitchboard(): void {
-    let switchboard: {
-      register: (
-        address: string,
-        handler: (envelope: unknown) => Promise<void>,
-        meta?: { type?: string; description?: string; capabilities?: string[] },
-      ) => void;
-    };
+  registerWithSwitchboard(sb?: {
+    register: (
+      address: string,
+      handler: (envelope: unknown) => Promise<void>,
+      meta?: { type?: string; description?: string; capabilities?: string[] },
+    ) => void;
+  }): void {
+    // Accept switchboard as a parameter to avoid dynamic require() that breaks
+    // when the bundler (Vite) compiles everything into a single app.js.
+    // The dynamic require("./channels/switchboard") produced a "Cannot find
+    // module" error in packaged builds because no separate file exists.
+    let switchboard = sb;
 
-    try {
-      // Dynamic require to break circular dependency
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const sbModule = require('./channels/switchboard');
-      switchboard = sbModule.switchboard;
-    } catch (e) {
-      log.warn(`Failed to import switchboard for MCP registration: ${e}`);
-      return;
+    if (!switchboard) {
+      try {
+        // Fallback for dev/source runs where modules are separate files
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const sbModule = require('./channels/switchboard');
+        switchboard = sbModule.switchboard;
+      } catch {
+        log.warn('Switchboard not available - skipping MCP service registration');
+        return;
+      }
     }
 
     if (!switchboard) {

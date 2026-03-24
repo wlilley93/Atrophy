@@ -608,7 +608,7 @@ app.whenReady().then(() => {
   // 1. Initialize MCP registry - discover available servers
   try {
     mcpRegistry.discover();
-    mcpRegistry.registerWithSwitchboard();
+    mcpRegistry.registerWithSwitchboard(switchboard);
     log.info(`MCP registry: ${mcpRegistry.getRegistry().length} server(s) discovered`);
   } catch (e) {
     log.warn(`MCP registry init failed (non-fatal): ${e}`);
