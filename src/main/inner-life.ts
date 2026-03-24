@@ -1,72 +1,39 @@
 /**
  * Emotional state engine - multi-dimensional with decay, trust, and context injection.
  * Port of core/inner_life.py.
+ *
+ * v2: expanded to 6 categories (emotions, trust, needs, personality, relationship, drives).
+ * Types and constants live in inner-life-types.ts.
  */
 
 import * as fs from 'fs';
 import { getConfig } from './config';
 import { writeTrustLog } from './memory';
+import {
+  type Emotions,
+  type Trust,
+  type Needs,
+  type Personality,
+  type Relationship,
+  type FullState,
+  type Drive,
+  DEFAULT_EMOTIONS,
+  DEFAULT_TRUST,
+  DEFAULT_NEEDS,
+  DEFAULT_PERSONALITY,
+  DEFAULT_RELATIONSHIP,
+  EMOTION_BASELINES,
+  EMOTION_HALF_LIVES,
+  TRUST_HALF_LIVES,
+  NEED_DECAY_HOURS,
+  RELATIONSHIP_HALF_LIVES,
+  DEFAULT_FULL_STATE,
+} from './inner-life-types';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface Emotions {
-  connection: number;
-  curiosity: number;
-  confidence: number;
-  warmth: number;
-  frustration: number;
-  playfulness: number;
-}
-
-export interface Trust {
-  emotional: number;
-  intellectual: number;
-  creative: number;
-  practical: number;
-}
-
-export interface EmotionalState {
-  emotions: Emotions;
-  trust: Trust;
-  session_tone: string | null;
-  last_updated: string;
-}
-
-// ---------------------------------------------------------------------------
-// Defaults and baselines
-// ---------------------------------------------------------------------------
-
-const DEFAULT_EMOTIONS: Emotions = {
-  connection: 0.5,
-  curiosity: 0.6,
-  confidence: 0.5,
-  warmth: 0.5,
-  frustration: 0.1,
-  playfulness: 0.3,
-};
-
-const DEFAULT_TRUST: Trust = {
-  emotional: 0.5,
-  intellectual: 0.5,
-  creative: 0.5,
-  practical: 0.5,
-};
-
-const EMOTION_BASELINES: Emotions = { ...DEFAULT_EMOTIONS };
-
-// Half-lives in hours
-const EMOTION_HALF_LIVES: Record<keyof Emotions, number> = {
-  connection: 8,
-  curiosity: 4,
-  confidence: 4,
-  warmth: 4,
-  frustration: 4,
-  playfulness: 4,
-};
-
-const TRUST_HALF_LIFE = 8;
+// Re-export types so existing imports from './inner-life' keep working
+export type { Emotions, Trust, Needs, Personality, Relationship, FullState, Drive } from './inner-life-types';
+// Backward compatibility alias
+export type EmotionalState = FullState;
 
 // ---------------------------------------------------------------------------
 // Labels (for context injection)
@@ -116,6 +83,63 @@ function emotionLabel(name: string, value: number): string {
       [0.1, 'flat'],
       [0.0, 'serious'],
     ],
+    // New v2 emotions
+    amusement: [
+      [0.7, 'delighted'],
+      [0.5, 'amused'],
+      [0.3, 'a hint of humor'],
+      [0.1, 'dry'],
+      [0.0, 'unamused'],
+    ],
+    anticipation: [
+      [0.7, 'eager'],
+      [0.5, 'anticipating'],
+      [0.3, 'mildly expectant'],
+      [0.1, 'indifferent'],
+      [0.0, 'uninterested'],
+    ],
+    satisfaction: [
+      [0.7, 'deeply satisfied'],
+      [0.5, 'content'],
+      [0.3, 'somewhat fulfilled'],
+      [0.1, 'wanting'],
+      [0.0, 'unsatisfied'],
+    ],
+    restlessness: [
+      [0.7, 'restless, itching to move'],
+      [0.5, 'antsy'],
+      [0.3, 'a little fidgety'],
+      [0.1, 'mostly settled'],
+      [0.0, 'still'],
+    ],
+    tenderness: [
+      [0.7, 'deeply tender'],
+      [0.5, 'gentle'],
+      [0.3, 'softening'],
+      [0.1, 'neutral'],
+      [0.0, 'detached'],
+    ],
+    melancholy: [
+      [0.7, 'heavy, melancholic'],
+      [0.5, 'wistful'],
+      [0.3, 'a tinge of sadness'],
+      [0.1, 'faint'],
+      [0.0, 'clear'],
+    ],
+    focus: [
+      [0.8, 'locked in'],
+      [0.6, 'focused'],
+      [0.4, 'attentive'],
+      [0.2, 'drifting'],
+      [0.0, 'scattered'],
+    ],
+    defiance: [
+      [0.7, 'defiant'],
+      [0.5, 'resistant'],
+      [0.3, 'pushing back a little'],
+      [0.1, 'mild friction'],
+      [0.0, 'compliant'],
+    ],
   };
 
   const thresholds = labels[name] || [[0, name]];
@@ -129,12 +153,13 @@ function emotionLabel(name: string, value: number): string {
 // Decay
 // ---------------------------------------------------------------------------
 
-function applyDecay(state: EmotionalState): EmotionalState {
+function applyDecay(state: FullState): FullState {
   const now = Date.now();
   const lastUpdated = new Date(state.last_updated).getTime();
   const hoursElapsed = (now - lastUpdated) / (1000 * 60 * 60);
   if (hoursElapsed < 0.01) return state;
 
+  // Emotions: decay toward EMOTION_BASELINES
   const emotions = { ...state.emotions };
   for (const key of Object.keys(emotions) as (keyof Emotions)[]) {
     const baseline = EMOTION_BASELINES[key];
@@ -143,17 +168,40 @@ function applyDecay(state: EmotionalState): EmotionalState {
     emotions[key] = baseline + (emotions[key] - baseline) * decay;
   }
 
+  // Trust: decay toward DEFAULT_TRUST baselines with per-domain half-lives
   const trust = { ...state.trust };
   for (const key of Object.keys(trust) as (keyof Trust)[]) {
     const baseline = DEFAULT_TRUST[key];
-    const decay = Math.pow(0.5, hoursElapsed / TRUST_HALF_LIFE);
+    const halfLife = TRUST_HALF_LIVES[key];
+    const decay = Math.pow(0.5, hoursElapsed / halfLife);
     trust[key] = baseline + (trust[key] - baseline) * decay;
+  }
+
+  // Needs: decay toward 0 (depletion model)
+  const needs = { ...state.needs };
+  for (const key of Object.keys(needs) as (keyof Needs)[]) {
+    const halfLife = NEED_DECAY_HOURS[key];
+    const decay = Math.pow(0.5, hoursElapsed / halfLife);
+    needs[key] = needs[key] * decay;
+  }
+
+  // Personality: NO decay (glacial, only changed by evolve.py)
+
+  // Relationship: decay toward DEFAULT_RELATIONSHIP baselines
+  const relationship = { ...state.relationship };
+  for (const key of Object.keys(relationship) as (keyof Relationship)[]) {
+    const baseline = DEFAULT_RELATIONSHIP[key];
+    const halfLife = RELATIONSHIP_HALF_LIVES[key];
+    const decay = Math.pow(0.5, hoursElapsed / halfLife);
+    relationship[key] = baseline + (relationship[key] - baseline) * decay;
   }
 
   return {
     ...state,
     emotions,
     trust,
+    needs,
+    relationship,
   };
 }
 
@@ -162,10 +210,10 @@ function applyDecay(state: EmotionalState): EmotionalState {
 // ---------------------------------------------------------------------------
 
 // Turn-scoped cache to avoid redundant file reads + decay computation within a single turn
-let _stateCache: { state: EmotionalState; ts: number } | null = null;
+let _stateCache: { state: FullState; ts: number } | null = null;
 const STATE_CACHE_TTL_MS = 5_000;
 
-export function loadState(): EmotionalState {
+export function loadState(): FullState {
   if (_stateCache && Date.now() - _stateCache.ts < STATE_CACHE_TTL_MS) {
     return _stateCache.state;
   }
@@ -173,19 +221,23 @@ export function loadState(): EmotionalState {
   const config = getConfig();
   const filePath = config.EMOTIONAL_STATE_FILE;
 
-  let state: EmotionalState = {
-    emotions: { ...DEFAULT_EMOTIONS },
-    trust: { ...DEFAULT_TRUST },
-    session_tone: null,
-    last_updated: new Date().toISOString(),
-  };
+  let state: FullState = DEFAULT_FULL_STATE();
 
   try {
     if (fs.existsSync(filePath)) {
       const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+
+      // v1 files have no version field - merge with v2 defaults so new
+      // categories (needs, personality, relationship) get default values
+      // while existing emotion/trust values are preserved.
+      const defaults = DEFAULT_FULL_STATE();
       state = {
-        emotions: { ...DEFAULT_EMOTIONS, ...raw.emotions },
-        trust: { ...DEFAULT_TRUST, ...raw.trust },
+        version: 2,
+        emotions: { ...defaults.emotions, ...raw.emotions },
+        trust: { ...defaults.trust, ...raw.trust },
+        needs: { ...defaults.needs, ...raw.needs },
+        personality: { ...defaults.personality, ...raw.personality },
+        relationship: { ...defaults.relationship, ...raw.relationship },
         session_tone: raw.session_tone || null,
         last_updated: raw.last_updated || new Date().toISOString(),
       };
@@ -202,7 +254,7 @@ export function invalidateStateCache(): void {
   _stateCache = null;
 }
 
-export function saveState(state: EmotionalState): void {
+export function saveState(state: FullState): void {
   const config = getConfig();
   state.last_updated = new Date().toISOString();
   try {
@@ -221,9 +273,9 @@ function clamp(v: number, lo = 0, hi = 1): number {
 }
 
 export function updateEmotions(
-  state: EmotionalState,
+  state: FullState,
   deltas: Partial<Emotions>,
-): EmotionalState {
+): FullState {
   const emotions = { ...state.emotions };
   for (const [key, delta] of Object.entries(deltas) as [keyof Emotions, number][]) {
     if (key in emotions) {
@@ -236,12 +288,12 @@ export function updateEmotions(
 }
 
 export function updateTrust(
-  state: EmotionalState,
+  state: FullState,
   domain: keyof Trust,
   delta: number,
   reason = '',
   source = 'unknown',
-): EmotionalState {
+): FullState {
   // Max +/-0.05 per call
   const clamped = clamp(delta, -0.05, 0.05);
   const trust = { ...state.trust };
@@ -250,9 +302,39 @@ export function updateTrust(
   saveState(updated);
   try {
     writeTrustLog(domain, clamped, trust[domain], reason, source);
-  } catch {
-    // DB not initialized yet (e.g. during boot) - JSON state is still saved
+  } catch (err) {
+    // Log rather than silently swallow - trust history matters
+    if (typeof console !== 'undefined') {
+      console.warn(`[inner-life] trust_log write failed for ${domain}: ${err}`);
+    }
   }
+  return updated;
+}
+
+export function updateRelationship(
+  state: FullState,
+  dimension: keyof Relationship,
+  delta: number,
+): FullState {
+  const relationship = { ...state.relationship };
+  relationship[dimension] = Math.round(clamp(relationship[dimension] + delta) * 1000) / 1000;
+  const updated = { ...state, relationship };
+  saveState(updated);
+  return updated;
+}
+
+export function updateNeeds(
+  state: FullState,
+  deltas: Partial<Needs>,
+): FullState {
+  const needs = { ...state.needs };
+  for (const [key, delta] of Object.entries(deltas) as [keyof Needs, number][]) {
+    if (key in needs) {
+      needs[key] = Math.round(clamp(needs[key] + delta, 0, 10) * 1000) / 1000;
+    }
+  }
+  const updated = { ...state, needs };
+  saveState(updated);
   return updated;
 }
 
@@ -292,16 +374,20 @@ export function reconcileTrustFromDb(): void {
 // Format for context injection
 // ---------------------------------------------------------------------------
 
-export function formatForContext(state?: EmotionalState): string {
+export function formatForContext(state?: FullState): string {
   const s = state || loadState();
   const lines: string[] = ['## Internal State'];
 
   // Match Python order: connection, curiosity, warmth, frustration, playfulness, confidence
+  // then append new v2 emotions
   const emotionOrder: (keyof Emotions)[] = [
     'connection', 'curiosity', 'warmth', 'frustration', 'playfulness', 'confidence',
+    'amusement', 'anticipation', 'satisfaction', 'restlessness',
+    'tenderness', 'melancholy', 'focus', 'defiance',
   ];
   for (const key of emotionOrder) {
     const value = s.emotions[key];
+    if (value === undefined) continue;
     const label = emotionLabel(key, value);
     const name = key.charAt(0).toUpperCase() + key.slice(1);
     lines.push(`${name}: ${value.toFixed(2)} (${label})`);
@@ -309,6 +395,18 @@ export function formatForContext(state?: EmotionalState): string {
 
   const trustParts = Object.entries(s.trust).map(([d, v]) => `${d} ${v.toFixed(2)}`);
   lines.push(`\nTrust: ${trustParts.join(', ')}`);
+
+  // Needs
+  if (s.needs) {
+    const needParts = Object.entries(s.needs).map(([n, v]) => `${n} ${(v as number).toFixed(1)}`);
+    lines.push(`Needs: ${needParts.join(', ')}`);
+  }
+
+  // Relationship
+  if (s.relationship) {
+    const relParts = Object.entries(s.relationship).map(([r, v]) => `${r} ${(v as number).toFixed(2)}`);
+    lines.push(`Relationship: ${relParts.join(', ')}`);
+  }
 
   if (s.session_tone) {
     lines.push(`Session tone: ${s.session_tone}`);
