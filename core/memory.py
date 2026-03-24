@@ -99,6 +99,71 @@ def _migrate(conn: sqlite3.Connection):
         """)
         conn.commit()
 
+    # v2: Add emotional_vector BLOB columns to turns and observations
+    turns_cols_v2 = {row[1] for row in conn.execute("PRAGMA table_info(turns)").fetchall()}
+    if "emotional_vector" not in turns_cols_v2:
+        conn.execute("ALTER TABLE turns ADD COLUMN emotional_vector BLOB")
+        conn.commit()
+
+    obs_cols_v2 = {row[1] for row in conn.execute("PRAGMA table_info(observations)").fetchall()}
+    if "emotional_vector" not in obs_cols_v2:
+        conn.execute("ALTER TABLE observations ADD COLUMN emotional_vector BLOB")
+        conn.commit()
+
+    # v2: state_log table - expanded dimension change audit trail
+    tables = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    if "state_log" not in tables:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS state_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                category    TEXT NOT NULL CHECK(category IN (
+                    'emotion', 'trust', 'need', 'personality', 'relationship'
+                )),
+                dimension   TEXT NOT NULL,
+                delta       REAL NOT NULL,
+                new_value   REAL NOT NULL,
+                reason      TEXT,
+                source      TEXT DEFAULT 'unknown'
+            );
+            CREATE INDEX IF NOT EXISTS idx_state_log_cat ON state_log(category);
+            CREATE INDEX IF NOT EXISTS idx_state_log_dim ON state_log(dimension);
+            CREATE INDEX IF NOT EXISTS idx_state_log_ts ON state_log(timestamp);
+        """)
+        conn.commit()
+
+    # v2: need_events table - need satisfaction events
+    if "need_events" not in tables:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS need_events (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                need        TEXT NOT NULL,
+                delta       REAL NOT NULL,
+                trigger_desc TEXT,
+                session_id  INTEGER REFERENCES sessions(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_need_events_need ON need_events(need);
+        """)
+        conn.commit()
+
+    # v2: personality_log table - personality evolution audit trail
+    if "personality_log" not in tables:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS personality_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+                trait       TEXT NOT NULL,
+                old_value   REAL NOT NULL,
+                new_value   REAL NOT NULL,
+                reason      TEXT,
+                source      TEXT DEFAULT 'evolve'
+            );
+        """)
+        conn.commit()
+
     check_sql = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='turns'"
     ).fetchone()
@@ -571,6 +636,65 @@ def get_trust_history(domain: str = None, limit: int = 50,
         ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ── v2 state persistence ──
+
+def write_state_log(category: str, dimension: str, delta: float,
+                    new_value: float, reason: str = None,
+                    source: str = "unknown", db_path: Path = DB_PATH):
+    """Write a state change to the expanded audit trail.
+
+    category: one of 'emotion', 'trust', 'need', 'personality', 'relationship'
+    dimension: the specific key within that category (e.g. 'curiosity', 'stimulation')
+    """
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO state_log (category, dimension, delta, new_value, reason, source) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (category, dimension, delta, new_value, reason, source),
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"  [memory] Failed to write state_log: {e}")
+    finally:
+        conn.close()
+
+
+def write_need_event(need: str, delta: float, trigger: str = None,
+                     session_id: int = None, db_path: Path = DB_PATH):
+    """Write a need satisfaction event."""
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO need_events (need, delta, trigger_desc, session_id) "
+            "VALUES (?, ?, ?, ?)",
+            (need, delta, trigger, session_id),
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"  [memory] Failed to write need_event: {e}")
+    finally:
+        conn.close()
+
+
+def write_personality_log(trait: str, old_value: float, new_value: float,
+                          reason: str = None, source: str = "evolve",
+                          db_path: Path = DB_PATH):
+    """Write a personality evolution event to the audit trail."""
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO personality_log (trait, old_value, new_value, reason, source) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (trait, old_value, new_value, reason, source),
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"  [memory] Failed to write personality_log: {e}")
+    finally:
+        conn.close()
 
 
 def log_heartbeat(decision: str, reason: str, message: str = "",

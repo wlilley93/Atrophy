@@ -321,54 +321,275 @@ _deflection_phrases: list[str] = [
     "forget i said", "it's nothing",
 ]
 
+_playful_markers: list[str] = [
+    "haha", "lol", "lmao", "\U0001F602", "\U0001F604",
+]
+
+# ── v2 need satisfaction phrase lists ────────────────────────────
+
+_stimulation_phrases: list[str] = [
+    "interesting", "curious about", "what if", "how does", "tell me about",
+    "never thought about", "that reminds me", "new idea",
+]
+
+_expression_phrases: list[str] = [
+    "create", "build", "write", "make", "design", "compose",
+    "draw", "draft", "generate", "produce",
+]
+
+_purpose_phrases: list[str] = [
+    "help me", "can you", "i need you to", "could you", "please do",
+    "work on", "finish", "complete", "handle", "take care of",
+]
+
+_autonomy_phrases: list[str] = [
+    "do what you think", "your call", "i trust your judgment",
+    "up to you", "whatever you think", "you decide",
+    "i trust you", "your choice", "go with your gut",
+]
+
+_recognition_phrases: list[str] = [
+    "great work", "exactly right", "well done", "perfect",
+    "good job", "nailed it", "brilliant", "impressive",
+    "nice work", "love it", "excellent", "spot on", "amazing",
+]
+
+_novelty_phrases: list[str] = [
+    "completely different", "new topic", "change of subject",
+    "something else", "random question", "off topic",
+    "unrelated", "by the way", "switching gears",
+]
+
+# ── v2 relationship phrase lists ─────────────────────────────────
+
+_familiarity_phrases: list[str] = [
+    "remember when", "like last time", "as we discussed",
+    "you mentioned", "we talked about", "from before",
+    "like you said", "our conversation",
+]
+
+_rapport_phrases: list[str] = [
+    "haha", "lol", "lmao", "that's funny", "hilarious",
+    "cracking up", "dying", "\U0001F602", "\U0001F604", "\U0001F923",
+    "\U0001F606", "\U0001F60D",
+]
+
+_boundary_phrases: list[str] = [
+    "don't", "stop", "not now", "leave it", "drop it",
+    "enough", "back off", "not interested", "no thanks",
+    "i said no", "quit it",
+]
+
+_challenge_comfort_phrases: list[str] = [
+    "good point", "you're right to push back", "fair enough",
+    "i hadn't thought of that", "you make a good case",
+    "okay you convinced me", "that's a valid criticism",
+]
+
+_vulnerability_personal_phrases: list[str] = [
+    "i feel", "i've been", "my family", "my relationship",
+    "growing up", "when i was", "personally", "between us",
+    "i've never told", "this is personal",
+]
+
+# ── v2 new trust domain phrase lists ─────────────────────────────
+
+_operational_trust_phrases: list[str] = [
+    "go ahead", "do it", "execute", "deploy", "run it",
+    "ship it", "make it happen", "pull the trigger",
+    "proceed", "launch", "push it",
+]
+
+_personal_trust_phrases: list[str] = [
+    "my life", "my partner", "my family", "my health",
+    "my feelings", "at home", "my friend", "my kids",
+    "my parents", "my relationship", "dating", "my ex",
+]
+
+# ── v2 new emotion phrase lists ──────────────────────────────────
+
+_anticipation_phrases: list[str] = [
+    "can't wait", "looking forward", "tomorrow", "planning",
+    "excited about", "next week", "soon", "going to be",
+    "upcoming", "about to",
+]
+
+_satisfaction_phrases: list[str] = [
+    "done", "finished", "works perfectly", "nailed it",
+    "complete", "sorted", "finally", "all good",
+    "that works", "solved",
+]
+
+_melancholy_phrases: list[str] = [
+    "miss", "wish", "used to", "gone", "lost",
+    "remember when", "those days", "if only",
+    "not anymore", "once upon",
+]
+
+_defiance_phrases: list[str] = [
+    "no", "wrong", "i disagree", "that's not right",
+    "absolutely not", "you're wrong", "i don't think so",
+    "that's incorrect", "i reject", "not true",
+]
+
 
 def detect_emotional_signals(user_message: str) -> dict[str, float]:
     """Lightweight keyword detection that suggests emotion deltas.
 
     Returns a dict of deltas (may be empty if no signals detected).
-    Runs every turn — kept fast and simple.
+    Runs every turn - kept fast and simple.
+
+    v2: expanded to 14 emotions, 6 trust domains, 7 need signals,
+    and 5 relationship signals. Uses the same keyword patterns as
+    the TypeScript version.
+
+    Prefixed keys:
+      _trust_<domain>  - trust delta
+      _need_<name>     - need satisfaction delta (scale 0-10)
+      _rel_<dimension> - relationship delta
     """
     lower = user_message.lower().strip()
     length = len(user_message.strip())
     deltas: dict[str, float] = {}
 
+    def add(key: str, value: float):
+        deltas[key] = deltas.get(key, 0) + value
+
+    # ── Existing emotion signals ─────────────────────────────────
+
     # Long, thoughtful message
     if length > 400:
-        deltas["curiosity"] = deltas.get("curiosity", 0) + 0.1
-        deltas["connection"] = deltas.get("connection", 0) + 0.05
+        add("curiosity", 0.1)
+        add("connection", 0.05)
 
     # Short dismissive reply
     if length < 30 and any(p in lower for p in _dismissive_phrases):
-        deltas["connection"] = deltas.get("connection", 0) - 0.1
-        deltas["frustration"] = deltas.get("frustration", 0) + 0.1
+        add("connection", -0.1)
+        add("frustration", 0.1)
 
-    # Vulnerability / openness
+    # Vulnerability / openness - emotional trust signal
     if any(p in lower for p in _vulnerable_phrases):
-        deltas["connection"] = deltas.get("connection", 0) + 0.15
-        deltas["warmth"] = deltas.get("warmth", 0) + 0.1
+        add("connection", 0.15)
+        add("warmth", 0.1)
+        deltas["_trust_emotional"] = 0.03
 
-    # Asking for help (trust signal)
+    # Asking for help (practical trust signal)
     if any(p in lower for p in _help_phrases):
-        deltas["confidence"] = deltas.get("confidence", 0) + 0.05
-        # trust(practical) handled separately via return value convention
+        add("confidence", 0.05)
         deltas["_trust_practical"] = 0.02
 
-    # Sharing creative work
+    # Sharing creative work (creative trust signal)
     if any(p in lower for p in _creative_phrases):
-        deltas["curiosity"] = deltas.get("curiosity", 0) + 0.1
+        add("curiosity", 0.1)
         deltas["_trust_creative"] = 0.02
+
+    # Long thoughtful messages signal intellectual trust
+    if length > 400:
+        deltas["_trust_intellectual"] = 0.02
 
     # Deflecting / changing subject
     if any(p in lower for p in _deflection_phrases):
-        deltas["frustration"] = deltas.get("frustration", 0) + 0.05
+        add("frustration", 0.05)
 
-    # Playfulness signals — exclamation marks, haha, lol, emojis
-    if any(x in lower for x in ["haha", "lol", "lmao", "😂", "😄"]):
-        deltas["playfulness"] = deltas.get("playfulness", 0) + 0.1
+    # Playfulness signals
+    if any(x in lower for x in _playful_markers):
+        add("playfulness", 0.1)
 
     # Mood shift (leveraging existing detection)
     if detect_mood_shift(user_message):
-        deltas["warmth"] = deltas.get("warmth", 0) + 0.1
-        deltas["playfulness"] = deltas.get("playfulness", 0) - 0.1
+        add("warmth", 0.1)
+        add("playfulness", -0.1)
+
+    # ── New v2 emotion signals ───────────────────────────────────
+
+    # Amusement - humor markers (overlaps with playfulness but distinct)
+    if any(p in lower for p in _rapport_phrases):
+        add("amusement", 0.15)
+
+    # Anticipation - future-oriented language
+    if any(p in lower for p in _anticipation_phrases):
+        add("anticipation", 0.1)
+
+    # Satisfaction - completion markers
+    if any(p in lower for p in _satisfaction_phrases):
+        add("satisfaction", 0.15)
+
+    # Tenderness - vulnerability + warmth context (only on longer messages)
+    if any(p in lower for p in _vulnerable_phrases) and length > 100:
+        add("tenderness", 0.1)
+
+    # Melancholy - sadness/nostalgia markers
+    if any(p in lower for p in _melancholy_phrases):
+        add("melancholy", 0.1)
+
+    # Focus - long detailed message on a single topic
+    if length > 500:
+        add("focus", 0.1)
+
+    # Defiance - disagreement markers
+    if any(p in lower for p in _defiance_phrases):
+        add("defiance", 0.1)
+
+    # ── New v2 trust domains ─────────────────────────────────────
+
+    # Operational trust - granting real-world access
+    if any(p in lower for p in _operational_trust_phrases):
+        deltas["_trust_operational"] = 0.02
+
+    # Personal trust - sharing personal details, non-work topics
+    if any(p in lower for p in _personal_trust_phrases):
+        deltas["_trust_personal"] = 0.02
+
+    # ── Need satisfaction signals ────────────────────────────────
+
+    # Stimulation - new topic, interesting question, novel problem
+    if any(p in lower for p in _stimulation_phrases):
+        add("_need_stimulation", 3)
+
+    # Expression - asking agent to create/build/write something
+    if any(p in lower for p in _expression_phrases):
+        add("_need_expression", 3)
+
+    # Purpose - asking for help, giving a task, requesting work
+    if any(p in lower for p in _purpose_phrases):
+        add("_need_purpose", 4)
+
+    # Autonomy - delegating decision-making
+    if any(p in lower for p in _autonomy_phrases):
+        add("_need_autonomy", 3)
+
+    # Recognition - positive feedback, praise
+    if any(p in lower for p in _recognition_phrases):
+        add("_need_recognition", 4)
+
+    # Novelty - introducing a new subject, unexpected turn
+    if any(p in lower for p in _novelty_phrases):
+        add("_need_novelty", 3)
+
+    # Social - back-and-forth engagement (>100 chars suggests real conversation)
+    if length > 100:
+        add("_need_social", 2)
+
+    # ── Relationship signals ─────────────────────────────────────
+
+    # Familiarity - referencing shared history
+    if any(p in lower for p in _familiarity_phrases):
+        add("_rel_familiarity", 0.015)
+
+    # Rapport - humor landing
+    if any(p in lower for p in _rapport_phrases):
+        add("_rel_rapport", 0.02)
+
+    # Boundaries - setting a limit
+    if any(p in lower for p in _boundary_phrases):
+        add("_rel_boundaries", 0.01)
+
+    # Challenge comfort - accepting pushback
+    if any(p in lower for p in _challenge_comfort_phrases):
+        add("_rel_challenge_comfort", 0.015)
+
+    # Vulnerability - sharing personal info beyond work
+    if any(p in lower for p in _vulnerability_personal_phrases):
+        add("_rel_vulnerability", 0.02)
 
     return deltas
