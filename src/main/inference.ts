@@ -28,7 +28,7 @@ import {
   timeGapNote, detectDrift, energyNote,
   shouldPromptJournal, detectEmotionalSignals,
 } from './agency';
-import { formatForContext, updateEmotions, updateTrust, updateRelationship, loadState, type EmotionalState } from './inner-life';
+import { formatForContext, updateEmotions, updateTrust, updateRelationship, loadState, saveState, type EmotionalState, sanitizeUserId, loadUserState, saveUserState, applySignalsToUserState, formatUserStateForContext } from './inner-life';
 import { satisfyNeed } from './inner-life-needs';
 import type { Needs, Relationship } from './inner-life-types';
 import { compressForContext } from './inner-life-compress';
@@ -313,28 +313,52 @@ export function resetAgencyState(): void {
   _sessionStartInjected = false;
 }
 
-function buildAgencyContext(userMessage: string): string {
+function buildAgencyContext(userMessage: string, senderName?: string): string {
   // Auto-detect emotional signals and apply them
   const signals = detectEmotionalSignals(userMessage);
   if (Object.keys(signals).length > 0) {
-    const emotionDeltas: Record<string, number> = {};
-    let state = loadState();
-    for (const [key, val] of Object.entries(signals)) {
-      if (key.startsWith('_trust_')) {
-        const domain = key.replace('_trust_', '') as keyof typeof state.trust;
-        state = updateTrust(state, domain, val);
-      } else if (key.startsWith('_need_')) {
-        const need = key.replace('_need_', '') as keyof Needs;
-        state = satisfyNeed(state, need, val);
-      } else if (key.startsWith('_rel_')) {
-        const dim = key.replace('_rel_', '') as keyof Relationship;
-        state = updateRelationship(state, dim, val);
-      } else {
-        emotionDeltas[key] = val;
+    const config = getConfig();
+    const userId = senderName ? sanitizeUserId(senderName) : null;
+
+    if (userId && senderName !== config.USER_NAME) {
+      // Group mode: apply signals to per-user state
+      const userState = loadUserState(userId);
+      let agentState = loadState();
+      const result = applySignalsToUserState(userState, agentState, signals);
+      saveUserState(userId, result.userState);
+      if (result.needsChanged) {
+        saveState(result.agentState);
       }
-    }
-    if (Object.keys(emotionDeltas).length > 0) {
-      updateEmotions(state, emotionDeltas);
+      // Write trust log entries attributed to this user
+      for (const [key, val] of Object.entries(signals)) {
+        if (key.startsWith('_trust_')) {
+          const domain = key.replace('_trust_', '');
+          try {
+            memory.writeTrustLog(domain, val, result.userState.trust[domain as keyof typeof result.userState.trust] || 0, '', userId);
+          } catch { /* */ }
+        }
+      }
+    } else {
+      // Single-chat mode: existing behavior unchanged
+      const emotionDeltas: Record<string, number> = {};
+      let state = loadState();
+      for (const [key, val] of Object.entries(signals)) {
+        if (key.startsWith('_trust_')) {
+          const domain = key.replace('_trust_', '') as keyof typeof state.trust;
+          state = updateTrust(state, domain, val);
+        } else if (key.startsWith('_need_')) {
+          const need = key.replace('_need_', '') as keyof Needs;
+          state = satisfyNeed(state, need, val);
+        } else if (key.startsWith('_rel_')) {
+          const dim = key.replace('_rel_', '') as keyof Relationship;
+          state = updateRelationship(state, dim, val);
+        } else {
+          emotionDeltas[key] = val;
+        }
+      }
+      if (Object.keys(emotionDeltas).length > 0) {
+        updateEmotions(state, emotionDeltas);
+      }
     }
   }
 
@@ -345,8 +369,14 @@ function buildAgencyContext(userMessage: string): string {
   // Inner life - emotional state (use cached if available)
   // compressForContext produces ~50-80 tokens vs ~150-200 for formatForContext.
   // Pass sessionStart=true on the first turn to include personality + relationship context.
-  const emotionalState = getCached('emotionalState', () => loadState());
-  parts.push(compressForContext(emotionalState, { sessionStart: !_sessionStartInjected }));
+  // In group mode, inject per-user state instead of agent-global state.
+  if (senderName && senderName !== getConfig().USER_NAME) {
+    const userId = sanitizeUserId(senderName);
+    parts.push(formatUserStateForContext(userId, loadState()));
+  } else {
+    const emotionalState = getCached('emotionalState', () => loadState());
+    parts.push(compressForContext(emotionalState, { sessionStart: !_sessionStartInjected }));
+  }
 
   // Detected patterns - only the ones that trigger
   if (detectMoodShift(userMessage)) {
@@ -527,6 +557,7 @@ export function streamInference(
   userMessage: string,
   system: string,
   cliSessionId?: string | null,
+  options?: { senderName?: string },
 ): EventEmitter {
   const emitter = new EventEmitter();
   const config = getConfig();
@@ -550,7 +581,7 @@ export function streamInference(
     resetAgencyState();
   }
 
-  const agencyContext = buildAgencyContext(userMessage);
+  const agencyContext = buildAgencyContext(userMessage, options?.senderName);
   let sessionId = cliSessionId || `atrophy-${config.AGENT_NAME}-${uuidv4()}`;
   // All tools permitted - agents run with --dangerously-skip-permissions
   // and need full access (WebSearch, Read, Write, Bash, etc.) plus MCP tools.

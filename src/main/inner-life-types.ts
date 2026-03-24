@@ -99,6 +99,27 @@ export interface FullState {
   last_updated: string;
 }
 
+/** Per-user emotional state slice - emotions, trust, relationship only.
+ * Personality and needs are agent-global, not per-user. */
+export interface UserState {
+  emotions: Emotions;
+  trust: Trust;
+  relationship: Relationship;
+  session_tone: string | null;
+  last_updated: string;
+}
+
+/** Create a fresh UserState with defaults. */
+export function DEFAULT_USER_STATE(): UserState {
+  return {
+    emotions: { ...DEFAULT_EMOTIONS },
+    trust: { ...DEFAULT_TRUST },
+    relationship: { ...DEFAULT_RELATIONSHIP },
+    session_tone: null,
+    last_updated: new Date().toISOString(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Emotions defaults, baselines, half-lives
 // ---------------------------------------------------------------------------

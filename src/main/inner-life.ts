@@ -17,6 +17,7 @@ import {
   type Relationship,
   type FullState,
   type Drive,
+  type UserState,
   DEFAULT_EMOTIONS,
   DEFAULT_TRUST,
   DEFAULT_NEEDS,
@@ -28,10 +29,11 @@ import {
   NEED_DECAY_HOURS,
   RELATIONSHIP_HALF_LIVES,
   DEFAULT_FULL_STATE,
+  DEFAULT_USER_STATE,
 } from './inner-life-types';
 
 // Re-export types so existing imports from './inner-life' keep working
-export type { Emotions, Trust, Needs, Personality, Relationship, FullState, Drive } from './inner-life-types';
+export type { Emotions, Trust, Needs, Personality, Relationship, FullState, Drive, UserState } from './inner-life-types';
 // Backward compatibility alias
 export type EmotionalState = FullState;
 
@@ -212,6 +214,8 @@ function applyDecay(state: FullState): FullState {
 // Turn-scoped cache to avoid redundant file reads + decay computation within a single turn
 let _stateCache: { state: FullState; ts: number } | null = null;
 const STATE_CACHE_TTL_MS = 5_000;
+
+const _userStateCache = new Map<string, { state: UserState; ts: number }>();
 
 export function loadState(): FullState {
   if (_stateCache && Date.now() - _stateCache.ts < STATE_CACHE_TTL_MS) {
@@ -398,6 +402,195 @@ export function reconcileTrustFromDb(): void {
   } catch {
     // DB not available - skip reconciliation
   }
+}
+
+// ---------------------------------------------------------------------------
+// Per-user emotional state
+// ---------------------------------------------------------------------------
+
+/** Sanitize a display name into a filesystem-safe userId. */
+export function sanitizeUserId(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+}
+
+/** Load per-user emotional state. Falls back to agent global state for migration. */
+export function loadUserState(userId: string): UserState {
+  const cached = _userStateCache.get(userId);
+  if (cached && Date.now() - cached.ts < STATE_CACHE_TTL_MS) {
+    return cached.state;
+  }
+
+  const config = getConfig();
+  const basePath = config.EMOTIONAL_STATE_FILE;
+  const userPath = basePath.replace('.json', `.${userId}.json`);
+
+  let state: UserState = DEFAULT_USER_STATE();
+
+  try {
+    if (fs.existsSync(userPath)) {
+      const raw = JSON.parse(fs.readFileSync(userPath, 'utf-8'));
+      const defaults = DEFAULT_USER_STATE();
+      state = {
+        emotions: { ...defaults.emotions, ...raw.emotions },
+        trust: { ...defaults.trust, ...raw.trust },
+        relationship: { ...defaults.relationship, ...raw.relationship },
+        session_tone: raw.session_tone || null,
+        last_updated: raw.last_updated || new Date().toISOString(),
+      };
+    } else {
+      // Migration: seed from agent global state for the owner
+      const ownerUserId = sanitizeUserId(config.USER_NAME || 'will');
+      if (userId === ownerUserId && fs.existsSync(basePath)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(basePath, 'utf-8'));
+          if (raw.emotions) state.emotions = { ...state.emotions, ...raw.emotions };
+          if (raw.trust) state.trust = { ...state.trust, ...raw.trust };
+          if (raw.relationship) state.relationship = { ...state.relationship, ...raw.relationship };
+          state.last_updated = raw.last_updated || new Date().toISOString();
+          // Save the migrated per-user file
+          saveUserState(userId, state);
+        } catch { /* use defaults */ }
+      }
+    }
+  } catch { /* use defaults */ }
+
+  // Apply decay (reuse the existing applyDecay function by wrapping in a FullState)
+  const decayed = applyDecay({
+    version: 2,
+    emotions: state.emotions,
+    trust: state.trust,
+    needs: { stimulation: 0, expression: 0, purpose: 0, autonomy: 0, recognition: 0, novelty: 0, social: 0, rest: 0 },
+    personality: { assertiveness: 0.5, initiative: 0.5, warmth_default: 0.5, humor_style: 0.5, depth_preference: 0.5, directness: 0.5, patience: 0.5, risk_tolerance: 0.5 },
+    relationship: state.relationship,
+    session_tone: state.session_tone,
+    last_updated: state.last_updated,
+  } as FullState);
+  state.emotions = decayed.emotions;
+  state.trust = decayed.trust;
+  state.relationship = decayed.relationship;
+
+  _userStateCache.set(userId, { state, ts: Date.now() });
+  return state;
+}
+
+/** Save per-user emotional state to its own file. */
+export function saveUserState(userId: string, state: UserState): void {
+  const config = getConfig();
+  const userPath = config.EMOTIONAL_STATE_FILE.replace('.json', `.${userId}.json`);
+  state.last_updated = new Date().toISOString();
+  try {
+    fs.writeFileSync(userPath, JSON.stringify(state, null, 2));
+  } catch { /* silent */ }
+  _userStateCache.set(userId, { state, ts: Date.now() });
+}
+
+/** Invalidate per-user cache. No args clears all. */
+export function invalidateUserStateCache(userId?: string): void {
+  if (userId) {
+    _userStateCache.delete(userId);
+  } else {
+    _userStateCache.clear();
+  }
+}
+
+/**
+ * Apply signal deltas to a per-user state.
+ * _need_* signals go to the agent global state (needs are agent-level).
+ * Everything else (emotions, _trust_*, _rel_*) goes to the user state.
+ * Returns both updated states and whether agent needs were changed.
+ */
+export function applySignalsToUserState(
+  userState: UserState,
+  agentState: FullState,
+  signals: Record<string, number>,
+): { userState: UserState; agentState: FullState; needsChanged: boolean } {
+  const emotionDeltas: Record<string, number> = {};
+  const needDeltas: Record<string, number> = {};
+  let us = { ...userState, emotions: { ...userState.emotions }, trust: { ...userState.trust }, relationship: { ...userState.relationship } };
+  let as = agentState;
+  let needsChanged = false;
+
+  for (const [key, val] of Object.entries(signals)) {
+    if (key.startsWith('_trust_')) {
+      const domain = key.replace('_trust_', '') as keyof Trust;
+      if (domain in us.trust) {
+        const clamped = Math.max(-0.05, Math.min(0.05, val));
+        us.trust[domain] = Math.round(Math.max(0, Math.min(1, us.trust[domain] + clamped)) * 1000) / 1000;
+      }
+    } else if (key.startsWith('_rel_')) {
+      const dim = key.replace('_rel_', '') as keyof Relationship;
+      if (dim in us.relationship) {
+        us.relationship[dim] = Math.round(Math.max(0, Math.min(1, us.relationship[dim] + val)) * 1000) / 1000;
+      }
+    } else if (key.startsWith('_need_')) {
+      const need = key.replace('_need_', '');
+      needDeltas[need] = val;
+      needsChanged = true;
+    } else {
+      emotionDeltas[key] = val;
+    }
+  }
+
+  // Apply emotion deltas to user state
+  for (const [key, delta] of Object.entries(emotionDeltas)) {
+    if (key in us.emotions) {
+      const k = key as keyof Emotions;
+      us.emotions[k] = Math.round(Math.max(0, Math.min(1, us.emotions[k] + delta)) * 1000) / 1000;
+    }
+  }
+
+  // Apply need deltas to agent global state
+  if (needsChanged) {
+    const needs = { ...as.needs };
+    for (const [need, delta] of Object.entries(needDeltas)) {
+      if (need in needs) {
+        const k = need as keyof Needs;
+        needs[k] = Math.round(Math.max(0, Math.min(10, needs[k] + delta)) * 1000) / 1000;
+      }
+    }
+    as = { ...as, needs };
+  }
+
+  return { userState: us, agentState: as, needsChanged };
+}
+
+/** Format per-user state for context injection, merged with agent-global personality/needs. */
+export function formatUserStateForContext(userId: string, agentState: FullState): string {
+  const us = loadUserState(userId);
+  const lines: string[] = [`## Internal State (re: ${userId})`];
+
+  const emotionOrder: (keyof Emotions)[] = [
+    'connection', 'curiosity', 'warmth', 'frustration', 'playfulness', 'confidence',
+    'amusement', 'anticipation', 'satisfaction', 'restlessness',
+    'tenderness', 'melancholy', 'focus', 'defiance',
+  ];
+  for (const key of emotionOrder) {
+    const value = us.emotions[key];
+    if (value === undefined) continue;
+    const label = emotionLabel(key, value);
+    const name = key.charAt(0).toUpperCase() + key.slice(1);
+    lines.push(`${name}: ${value.toFixed(2)} (${label})`);
+  }
+
+  const trustParts = Object.entries(us.trust).map(([d, v]) => `${d} ${v.toFixed(2)}`);
+  lines.push(`\nTrust: ${trustParts.join(', ')}`);
+
+  if (us.relationship) {
+    const relParts = Object.entries(us.relationship).map(([r, v]) => `${r} ${(v as number).toFixed(2)}`);
+    lines.push(`Relationship: ${relParts.join(', ')}`);
+  }
+
+  // Agent-global fields
+  if (agentState.needs) {
+    const needParts = Object.entries(agentState.needs).map(([n, v]) => `${n} ${(v as number).toFixed(1)}`);
+    lines.push(`Needs: ${needParts.join(', ')}`);
+  }
+
+  if (us.session_tone) {
+    lines.push(`Session tone: ${us.session_tone}`);
+  }
+
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------

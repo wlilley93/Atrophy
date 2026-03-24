@@ -510,6 +510,7 @@ async function dispatchToAgent(
   chatId: string,
   botToken: string,
   sourceLabel?: string,
+  senderName?: string,
 ): Promise<string | null> {
   const config = getConfig();
   const originalAgent = config.AGENT_NAME;
@@ -555,7 +556,7 @@ async function dispatchToAgent(
       // Mark user as active when a real Telegram message arrives (not cron)
       if (isTelegramOrigin) { try { setActive(); } catch { /* non-critical */ } }
 
-      return streamInference(prompt, system, sessionId);
+      return streamInference(prompt, system, sessionId, { senderName });
     });
 
     let fullText = '';
@@ -1063,7 +1064,7 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
 
     // Build source label based on envelope origin
     const isCron = envelope.from.startsWith('cron:');
-    const telegramSender = envelope.options?.metadata?.senderName || getConfig().USER_NAME;
+    const telegramSender = (envelope.metadata?.senderName as string) || getConfig().USER_NAME;
     const sourceLabel = envelope.from.startsWith('telegram:')
       ? `Telegram message from ${telegramSender}`
       : isCron
@@ -1100,7 +1101,7 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
     let response: string | null = null;
     try {
       response = await withAgentDispatchLock(agent.name, () =>
-        dispatchToAgent(agent.name, envelope.text, chatId, botToken, sourceLabel),
+        dispatchToAgent(agent.name, envelope.text, chatId, botToken, sourceLabel, telegramSender),
       );
     } finally {
       _activeDispatches.delete(agent.name);
