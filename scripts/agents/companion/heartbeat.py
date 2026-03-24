@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(Path.home() / ".atrophy" / ".env")
 
 from config import (
     DB_PATH, MESSAGE_QUEUE, HEARTBEAT_PATH,

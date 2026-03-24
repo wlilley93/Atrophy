@@ -1125,10 +1125,14 @@ export function stopDaemon(): void {
   for (const t of _pollerTimers) clearTimeout(t);
   _pollerTimers = [];
 
-  // End all per-agent telegram sessions so ended_at gets set
+  // End all per-agent telegram sessions so ended_at gets set.
+  // Each agent has its own DB, so we must switch config before ending.
+  const config = getConfig();
   for (const [name, session] of _agentSessions) {
     if (session.sessionId != null) {
       try {
+        config.reloadForAgent(name);
+        memory.initDb();
         memory.endSession(session.sessionId, null, session.mood);
       } catch { /* DB may already be closing */ }
     }

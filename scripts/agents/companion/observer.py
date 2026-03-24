@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(Path.home() / ".atrophy" / ".env")
 
 from config import DB_PATH, AGENT_DIR, AGENT_DISPLAY_NAME
 from core.memory import _connect, write_observation

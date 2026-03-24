@@ -20,7 +20,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from dotenv import load_dotenv
-load_dotenv(_PROJECT_ROOT / ".env")
+load_dotenv(Path.home() / ".atrophy" / ".env")
 
 from config import (
     DB_PATH, MESSAGE_QUEUE, HEARTBEAT_PATH,
@@ -30,7 +30,7 @@ from core.queue import queue_message
 from core.memory import (
     _connect, get_active_threads, get_recent_summaries,
     get_recent_observations, get_last_interaction_time,
-    get_last_cli_session_id, log_heartbeat,
+    log_heartbeat,
 )
 from core.inference import (
     stream_inference, TextDelta, ToolUse, StreamDone, StreamError,
@@ -150,14 +150,14 @@ def heartbeat():
         return
 
     context = _gather_context()
-    cli_session_id = get_last_cli_session_id()
+
 
     prompt = f"{_HEARTBEAT_PROMPT}\n\n---\n\n{checklist}\n\n---\n\n## Current Context\n\n{context}"
 
-    mode = "resume" if cli_session_id else "cold"
-    print(f"[heartbeat] Running evaluation ({mode})...")
+    # Always cold - heartbeat must not resume the active companion session
+    print("[heartbeat] Running evaluation (cold)...")
     try:
-        response = _run_heartbeat_inference(prompt, cli_session_id)
+        response = _run_heartbeat_inference(prompt, None)
     except Exception as e:
         print(f"[heartbeat] Inference failed: {e}")
         log_heartbeat("ERROR", str(e))

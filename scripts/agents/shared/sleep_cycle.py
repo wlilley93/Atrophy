@@ -20,7 +20,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from dotenv import load_dotenv
-load_dotenv(_PROJECT_ROOT / ".env")
+load_dotenv(Path.home() / ".atrophy" / ".env")
 
 from config import DB_PATH, AGENT_NAME, AGENT_DISPLAY_NAME as agent_display_name, IDENTITY_QUEUE as _IDENTITY_QUEUE
 from core.memory import (

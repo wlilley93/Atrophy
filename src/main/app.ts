@@ -527,10 +527,25 @@ app.whenReady().then(() => {
   const config = getConfig();
   initDb();
 
-  // Close any sessions orphaned by previous crashes or forced quits
-  const staleClosed = closeStaleOpenSessions();
-  if (staleClosed > 0) {
-    log.info(`Closed ${staleClosed} stale open session(s) from previous run`);
+  // Close any sessions orphaned by previous crashes or forced quits - for ALL agents
+  {
+    const defaultAgent = config.AGENT_NAME;
+    const allAgents = discoverAgents();
+    for (const agent of allAgents) {
+      try {
+        config.reloadForAgent(agent.name);
+        initDb();
+        const staleClosed = closeStaleOpenSessions();
+        if (staleClosed > 0) {
+          log.info(`Closed ${staleClosed} stale open session(s) for agent ${agent.name}`);
+        }
+      } catch (e) {
+        log.warn(`Failed to clean stale sessions for ${agent.name}: ${e}`);
+      }
+    }
+    // Restore default agent config after the cleanup loop
+    config.reloadForAgent(defaultAgent);
+    initDb();
   }
 
   currentAgentName = config.AGENT_NAME;
@@ -578,11 +593,6 @@ app.whenReady().then(() => {
   if (lastAgent && lastAgent !== config.AGENT_NAME) {
     config.reloadForAgent(lastAgent);
     initDb();
-    // Clean stale sessions in the resumed agent's DB too
-    const resumedStale = closeStaleOpenSessions();
-    if (resumedStale > 0) {
-      log.info(`Closed ${resumedStale} stale open session(s) for resumed agent ${config.AGENT_NAME}`);
-    }
     log.info(`resumed agent: ${config.AGENT_NAME}`);
   }
 
@@ -992,6 +1002,7 @@ app.on('will-quit', () => {
 
 function gracefulShutdown(signal: string): void {
   log.info(`received ${signal} - shutting down gracefully`);
+  _forceQuit = true;
   app.quit();
 }
 
