@@ -414,6 +414,35 @@ def sleep_cycle():
     trust_signals = _parse_trust_signals(trust_section)
     _aggregate_trust(trust_signals)
 
+    # Inner life v2: emit emotional snapshot and flag unmet needs/personality drift
+    try:
+        state = load_state()
+
+        # Emotional snapshot
+        trust = state.get("trust", {})
+        emotions = state.get("emotions", {})
+        trust_str = ", ".join(f"{k}={v:.3f}" for k, v in trust.items())
+        print(f"  [sleep] Emotional snapshot: {trust_str}")
+        if emotions:
+            emotions_str = ", ".join(f"{k}={v:.3f}" for k, v in emotions.items())
+            print(f"  [sleep] Emotions: {emotions_str}")
+
+        # Unmet needs (v2 state only)
+        if "needs" in state:
+            needs = state["needs"]
+            unmet = {k: v for k, v in needs.items() if v < 3}
+            if unmet:
+                unmet_str = ", ".join(f"{k}={v}" for k, v in unmet.items())
+                print(f"  [sleep] Unmet needs: {unmet_str}")
+
+        # Personality snapshot (v2 state only)
+        if "personality" in state:
+            personality = state["personality"]
+            pers_str = ", ".join(f"{k}={v}" for k, v in personality.items())
+            print(f"  [sleep] Personality: {pers_str}")
+    except Exception as e:
+        print(f"  [sleep] Could not read inner life state: {e}")
+
     # Mark all processed observations as incorporated now that they
     # have been fed through reconciliation and trust analysis.
     # This includes both the backlog and today's observations.

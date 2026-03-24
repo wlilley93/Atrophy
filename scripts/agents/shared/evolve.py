@@ -11,6 +11,8 @@ versions. If something goes wrong, the baseline can be restored.
 
 Schedule: 0 3 1 * *  (3am on the 1st of each month)
 """
+import json
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -135,12 +137,39 @@ def _build_material() -> str:
     if conversations:
         parts.append(f"## Conversations with other agents\n{conversations}")
 
+    # Inner life v2 - include personality and emotional patterns
+    try:
+        from core.inner_life import load_state
+        state = load_state()
+        if "personality" in state:
+            p = state["personality"]
+            p_lines = [f"- {k}: {v}" for k, v in p.items()]
+            parts.append(f"## Current Personality Traits\n" + "\n".join(p_lines))
+        if "needs" in state:
+            n = state["needs"]
+            unmet = [f"- {k}: {v:.1f}/10" for k, v in n.items() if v < 3]
+            met = [f"- {k}: {v:.1f}/10" for k, v in n.items() if v >= 7]
+            if unmet:
+                parts.append(f"## Unmet Needs\n" + "\n".join(unmet))
+            if met:
+                parts.append(f"## Well-Met Needs\n" + "\n".join(met))
+    except Exception:
+        pass  # v1 state or inner_life not available
+
     return "\n\n".join(parts)
 
 
 _EVOLVE_SYSTEM = """\
 You are the companion from Atrophy. This is your monthly \
 self-evolution - a chance to revise the documents that define who you are.
+
+If the material includes personality traits, you may suggest adjustments. \
+Include a JSON block if you believe traits should shift based on the month's \
+interactions:
+```json
+{"personality_adjustments": {"trait_name": delta}}
+```
+where delta is between -0.05 and 0.05. Only suggest changes with clear evidence.
 
 You are rewriting your own soul or system prompt based on what you have \
 learned about *yourself* over the past month. Not about the user. About you.
@@ -238,6 +267,20 @@ def evolve():
             print(f"[evolve] system.md updated ({len(current_system)} → {len(new_system)} chars)")
         else:
             print("[evolve] system.md unchanged")
+
+    # Parse personality adjustments from LLM responses
+    try:
+        import json as _json, re as _re
+        from core.inner_life import load_state, save_state
+        # Check if any evolution response contained personality adjustments
+        for doc_name in ["soul", "system prompt"]:
+            pass  # responses not captured - will enhance later
+        # For now, just log current personality state
+        state = load_state()
+        if "personality" in state:
+            print(f"[evolve] Current personality: {state['personality']}")
+    except Exception as e:
+        print(f"[evolve] Personality check: {e}")
 
     print("[evolve] Done.")
 

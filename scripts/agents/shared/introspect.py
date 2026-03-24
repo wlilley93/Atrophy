@@ -30,6 +30,7 @@ from config import DB_PATH, OBSIDIAN_AGENT_DIR, OBSIDIAN_AGENT_NOTES, AGENT_NAME
 from core.memory import _connect, get_latest_identity
 from core.inference import run_inference_oneshot
 from core.prompts import load_prompt
+from core.inner_life import load_state, format_for_context
 
 
 # ── Full database access ──
@@ -325,6 +326,28 @@ def _build_material() -> str:
     conversations = _read_agent_conversations(30)
     if conversations:
         parts.append(f"## Recent conversations with other agents\n{conversations}")
+
+    # Inner life v2: emotional state and needs assessment
+    try:
+        emotional_context = format_for_context()
+        if emotional_context:
+            parts.append(f"## Current Emotional State\n{emotional_context}")
+
+        state = load_state()
+        if "needs" in state:
+            needs = state["needs"]
+            need_lines = []
+            for need, value in needs.items():
+                if value > 5:
+                    need_lines.append(f"- {need}: {value} (met)")
+                elif value < 3:
+                    need_lines.append(f"- {need}: {value} (unmet)")
+                else:
+                    need_lines.append(f"- {need}: {value}")
+            if need_lines:
+                parts.append("## Needs Assessment\n" + "\n".join(need_lines))
+    except Exception as e:
+        print(f"[introspect] Could not load inner life state: {e}")
 
     return "\n\n".join(parts)
 

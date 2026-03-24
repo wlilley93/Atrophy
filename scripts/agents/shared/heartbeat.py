@@ -90,6 +90,35 @@ def _gather_context() -> str:
         lines = [f"- {o['content']}" for o in observations]
         parts.append(f"## Recent observations\n" + "\n".join(lines))
 
+    # Inner life v2 - needs and drives
+    try:
+        from core.inner_life import load_state
+        state = load_state()
+        if "needs" in state:
+            needs = state["needs"]
+            low = [f"{k}={v:.0f}" for k, v in needs.items() if v < 3]
+            if low:
+                parts.append(f"## Unmet Needs (LOW)\n" + ", ".join(low))
+
+            # Simple drive computation from low needs + personality
+            if "personality" in state:
+                p = state["personality"]
+                drives = []
+                if needs.get("stimulation", 5) < 3:
+                    drives.append("seeking-new-topics")
+                if needs.get("purpose", 5) < 4 and p.get("initiative", 0.5) > 0.6:
+                    drives.append("offering-to-help")
+                if needs.get("social", 5) < 4 and p.get("warmth_default", 0.5) > 0.5:
+                    drives.append("reaching-out-unprompted")
+                if needs.get("novelty", 5) < 3:
+                    drives.append("seeking-variety")
+                if needs.get("rest", 5) < 3:
+                    drives.append("conserving-energy")
+                if drives:
+                    parts.append(f"## Active Drives\n" + ", ".join(drives))
+    except Exception:
+        pass  # v1 state or inner_life not available
+
     return "\n\n".join(parts)
 
 
