@@ -470,6 +470,114 @@ async function handleAgents(_req: http.IncomingMessage, res: http.ServerResponse
   sendJson(res, { agents });
 }
 
+async function handleAgentsCreate(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  if (!checkAuth(req)) { sendJson(res, { error: 'unauthorized' }, 401); return; }
+
+  const raw = await parseBody(req);
+  let body: {
+    leaderName?: string;
+    displayName?: string;
+    description?: string;
+    orgContext?: {
+      slug: string;
+      tier: number;
+      role: string;
+      reportsTo: string | null;
+    };
+    personality?: Record<string, number>;
+    mcpServers?: string[];
+    jobTypes?: string[];
+    hasTelegram?: boolean;
+    hasVoice?: boolean;
+    hasAvatar?: boolean;
+    soul?: string;
+    openingLine?: string;
+  };
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    sendJson(res, { error: 'invalid json' }, 400);
+    return;
+  }
+
+  if (!body.leaderName || !body.displayName || !body.orgContext) {
+    sendJson(res, { error: 'leaderName, displayName, and orgContext are required' }, 400);
+    return;
+  }
+
+  try {
+    const { validateProvisioningRequest } = await import('./hierarchy-guard');
+    const { createAgent, wireAgent } = await import('./create-agent');
+    type CreateAgentOptions = Parameters<typeof createAgent>[0];
+
+    // Load leader's manifest to validate provisioning rights
+    const { discoverAgents } = await import('./agent-manager');
+    const agents = discoverAgents();
+    const leader = agents.find((a: { name: string }) => a.name === body.leaderName);
+    if (!leader) {
+      sendJson(res, { error: `Leader agent "${body.leaderName}" not found` }, 404);
+      return;
+    }
+
+    // Read leader's manifest
+    const manifestPath = path.join(
+      process.env.HOME || '/tmp', '.atrophy', 'agents', body.leaderName!, 'data', 'agent.json',
+    );
+    let leaderManifest: Record<string, unknown> = {};
+    try {
+      leaderManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    } catch {
+      sendJson(res, { error: `Could not read leader manifest at ${manifestPath}` }, 500);
+      return;
+    }
+
+    // Validate hierarchy
+    const violations = validateProvisioningRequest(body.leaderName, leaderManifest, {
+      targetName: body.displayName,
+      targetTier: body.orgContext!.tier,
+      targetOrg: body.orgContext!.slug,
+      mcpServers: body.mcpServers || [],
+      jobTypes: body.jobTypes || [],
+      hasTelegram: body.hasTelegram || false,
+      hasVoice: body.hasVoice || false,
+      hasAvatar: body.hasAvatar || false,
+      personality: body.personality,
+    });
+
+    if (violations.length > 0) {
+      sendJson(res, {
+        error: 'Provisioning request denied',
+        violations: violations.map((v: { field: string; reason: string }) => `${v.field}: ${v.reason}`),
+      }, 403);
+      return;
+    }
+
+    // Build create options
+    const opts: CreateAgentOptions = {
+      displayName: body.displayName,
+      description: body.description,
+      openingLine: body.openingLine || `${body.displayName} reporting for duty.`,
+      orgContext: {
+        slug: body.orgContext!.slug,
+        tier: body.orgContext!.tier,
+        role: body.orgContext!.role,
+        reportsTo: body.orgContext!.reportsTo,
+        allowedMcpServers: body.mcpServers,
+        allowedJobTypes: body.jobTypes,
+      },
+      mcp: body.mcpServers ? { include: body.mcpServers } : undefined,
+    };
+
+    // Create and wire
+    const manifest = createAgent(opts);
+    wireAgent(manifest.name, manifest);
+
+    sendJson(res, { ok: true, name: manifest.name, manifest });
+  } catch (e) {
+    sendJson(res, { error: String(e) }, 500);
+  }
+}
+
 async function handleMemorySearch(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   if (!checkAuth(req)) { sendJson(res, { error: 'unauthorized' }, 401); return; }
 
@@ -551,6 +659,8 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
         await handleStatus(req, res);
       } else if (pathname === '/agents' && method === 'GET') {
         await handleAgents(req, res);
+      } else if (pathname === '/agents/create' && method === 'POST') {
+        await handleAgentsCreate(req, res);
       } else if (pathname === '/memory/search' && method === 'GET') {
         await handleMemorySearch(req, res);
       } else if (pathname === '/memory/threads' && method === 'GET') {
@@ -575,7 +685,7 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
     log.info(`http://${host}:${port}`);
     log.info(`Token: ${serverToken.slice(0, 8)}...${serverToken.slice(-4)}`);
     log.info(`Token file: ${TOKEN_PATH}`);
-    log.info(`Endpoints: /health, /chat, /chat/stream, /chat/stream-json, /status, /agents, /memory/search, /memory/threads, /session`);
+    log.info(`Endpoints: /health, /chat, /chat/stream, /chat/stream-json, /status, /agents, /agents/create, /memory/search, /memory/threads, /session`);
     log.info(`Auth: Bearer token required on all endpoints except /health`);
   });
 }

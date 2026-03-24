@@ -11,6 +11,7 @@ import { switchboard } from './channels/switchboard';
 import { cronScheduler, loadJobsFile } from './channels/cron';
 import { mcpRegistry } from './mcp-registry';
 import { defaultConfigForAgent, type AgentRouterConfig } from './channels/agent-router';
+import { getScopeForTier, intersectScope, type ProvisioningScope } from './provisioning-scope';
 import { createLogger } from './logger';
 
 const log = createLogger('create-agent');
@@ -131,6 +132,21 @@ export interface CreateAgentOptions {
 
   // Whether to register with the switchboard on creation (default: true)
   wireOnCreate?: boolean;
+
+  // Org hierarchy context (for tier-based provisioning)
+  orgContext?: OrgContext;
+}
+
+export interface OrgContext {
+  slug: string;
+  tier: number;
+  role: string;
+  reportsTo: string | null;
+  canProvision?: boolean;
+  /** MCP servers the provisioning leader allows (for intersection) */
+  allowedMcpServers?: string[];
+  /** Job types the provisioning leader allows */
+  allowedJobTypes?: string[];
 }
 
 export interface AgentManifest {
@@ -193,6 +209,15 @@ export interface AgentManifest {
     max_queue_depth: number;
     system_access: boolean;
     can_address_agents: boolean;
+  };
+  org?: {
+    slug: string;
+    tier: number;
+    role: string;
+    reports_to: string | null;
+    direct_reports: string[];
+    can_address_user: boolean;
+    can_provision: boolean;
   };
 }
 
@@ -292,27 +317,60 @@ function buildManifest(opts: CreateAgentOptions, name: string): AgentManifest {
     };
   }
 
-  // MCP - default to core servers, allow customization
-  manifest.mcp = {
-    include: opts.mcp?.include || ['memory', 'shell', 'github'],
-    exclude: opts.mcp?.exclude || [],
-    custom: opts.mcp?.custom || {},
-  };
+  // MCP - configured below after scope is derived
 
   // Jobs - from opts or default empty
   if (opts.jobs && Object.keys(opts.jobs).length > 0) {
     manifest.jobs = opts.jobs;
   }
 
-  // Router - per-agent message filtering
-  const isElevated = name === 'xan';
-  manifest.router = {
-    accept_from: opts.router?.acceptFrom || ['*'],
-    reject_from: opts.router?.rejectFrom || [],
-    max_queue_depth: opts.router?.maxQueueDepth || (isElevated ? 20 : 10),
-    system_access: opts.router?.systemAccess || isElevated,
-    can_address_agents: opts.router?.canAddressAgents !== false,
+  // Derive capabilities from org tier instead of hardcoded name checks
+  const orgTier = opts.orgContext?.tier ?? (name === 'xan' ? 0 : 1);
+  const baseScope = getScopeForTier(orgTier);
+
+  // If a leader is provisioning, intersect with their allowed scope
+  const scope: ProvisioningScope = opts.orgContext?.allowedMcpServers
+    ? intersectScope(
+        {
+          allowedMcpServers: opts.orgContext.allowedMcpServers,
+          allowedJobTypes: opts.orgContext.allowedJobTypes,
+        },
+        getScopeForTier(opts.orgContext.tier),
+        orgTier,
+      )
+    : baseScope;
+
+  // MCP - filter through scope
+  manifest.mcp = {
+    include: (opts.mcp?.include || ['memory', 'shell', 'github']).filter(s => scope.allowedMcpServers.includes(s)),
+    exclude: opts.mcp?.exclude || [],
+    custom: opts.mcp?.custom || {},
   };
+
+  // Router - per-agent message filtering (tier-aware)
+  const acceptFrom = opts.orgContext
+    ? deriveAcceptFrom(orgTier, opts.orgContext)
+    : (opts.router?.acceptFrom || ['*']);
+  manifest.router = {
+    accept_from: acceptFrom,
+    reject_from: opts.router?.rejectFrom || [],
+    max_queue_depth: opts.router?.maxQueueDepth || scope.maxQueueDepth,
+    system_access: opts.router?.systemAccess || scope.systemAccess,
+    can_address_agents: opts.router?.canAddressAgents ?? scope.canAddressAgents,
+  };
+
+  // Write org section if org context provided
+  if (opts.orgContext) {
+    manifest.org = {
+      slug: opts.orgContext.slug,
+      tier: orgTier,
+      role: opts.orgContext.role,
+      reports_to: opts.orgContext.reportsTo,
+      direct_reports: [],
+      can_address_user: scope.canAddressUser,
+      can_provision: scope.canProvision,
+    };
+  }
 
   return manifest;
 }
@@ -740,6 +798,18 @@ export function wireAgent(name: string, manifest: AgentManifest): void {
       { type: 'system', priority: 'system' },
     )).catch((e) => log.debug(`Announce failed (expected if no other agents): ${e}`));
   }
+}
+
+function deriveAcceptFrom(tier: number, orgContext?: OrgContext): string[] {
+  if (tier <= 1) return ['*'];
+  if (tier === 2) {
+    const sources: string[] = [];
+    if (orgContext?.reportsTo) sources.push(`agent:${orgContext.reportsTo}`);
+    return sources.length > 0 ? sources : ['*'];
+  }
+  // tier 3+: creator only
+  if (orgContext?.reportsTo) return [`agent:${orgContext.reportsTo}`];
+  return [];
 }
 
 /**

@@ -105,6 +105,11 @@
     "system_access": true,
     "can_address_agents": true
   },
+  "org": {
+    "slug": "system",
+    "tier": 0,
+    "can_provision": true
+  },
   "personality": {
     "assertiveness": 0.8,
     "initiative": 0.9,

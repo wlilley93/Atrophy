@@ -73,7 +73,8 @@
     "slug": "defence",
     "tier": 1,
     "role": "Secretary of Defence",
-    "can_address_user": true
+    "can_address_user": true,
+    "can_provision": true
   },
   "personality": {
     "assertiveness": 0.7,
