@@ -4,7 +4,10 @@
   "description": "Protector. Lobby agent, general secretary, Chief of Staff. Operational precision, threat awareness, quiet authority. Full system access.",
   "user_name": "User",
   "opening_line": "Xan.",
-  "wake_words": ["hey xan", "xan"],
+  "wake_words": [
+    "hey xan",
+    "xan"
+  ],
   "voice": {
     "tts_backend": "elevenlabs",
     "elevenlabs_voice_id": "U4zWKdktKwFtKx5V6gnL",
@@ -15,7 +18,7 @@
     "fal_voice_id": "",
     "playback_rate": 1.0
   },
-  "telegram_emoji": "⚡",
+  "telegram_emoji": "\u26a1",
   "display": {
     "window_width": 622,
     "window_height": 830,
@@ -38,7 +41,16 @@
     }
   },
   "mcp": {
-    "include": ["memory", "shell", "github", "google", "worldmonitor", "puppeteer", "elevenlabs", "fal"],
+    "include": [
+      "memory",
+      "shell",
+      "github",
+      "google",
+      "worldmonitor",
+      "puppeteer",
+      "elevenlabs",
+      "fal"
+    ],
     "exclude": [],
     "custom": {}
   },
@@ -85,10 +97,22 @@
     }
   },
   "router": {
-    "accept_from": ["*"],
+    "accept_from": [
+      "*"
+    ],
     "reject_from": [],
     "max_queue_depth": 20,
     "system_access": true,
     "can_address_agents": true
+  },
+  "personality": {
+    "assertiveness": 0.8,
+    "initiative": 0.9,
+    "warmth_default": 0.3,
+    "humor_style": 0.2,
+    "depth_preference": 0.4,
+    "directness": 0.9,
+    "patience": 0.3,
+    "risk_tolerance": 0.6
   }
 }

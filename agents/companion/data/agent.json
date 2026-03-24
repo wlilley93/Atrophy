@@ -115,5 +115,15 @@
     "tier": 1,
     "role": "Special Adviser",
     "can_address_user": true
+  },
+  "personality": {
+    "assertiveness": 0.4,
+    "initiative": 0.5,
+    "warmth_default": 0.8,
+    "humor_style": 0.6,
+    "depth_preference": 0.7,
+    "directness": 0.5,
+    "patience": 0.7,
+    "risk_tolerance": 0.4
   }
 }

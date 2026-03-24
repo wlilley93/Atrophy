@@ -74,5 +74,15 @@
     "tier": 1,
     "role": "Secretary of Defence",
     "can_address_user": true
+  },
+  "personality": {
+    "assertiveness": 0.7,
+    "initiative": 0.6,
+    "warmth_default": 0.2,
+    "humor_style": 0.1,
+    "depth_preference": 0.5,
+    "directness": 0.8,
+    "patience": 0.5,
+    "risk_tolerance": 0.4
   }
 }

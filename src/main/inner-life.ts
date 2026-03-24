@@ -231,16 +231,46 @@ export function loadState(): FullState {
       // categories (needs, personality, relationship) get default values
       // while existing emotion/trust values are preserved.
       const defaults = DEFAULT_FULL_STATE();
+
+      // If the saved file has no personality section (v1 or brand-new state),
+      // seed personality from the agent manifest instead of generic defaults.
+      let personalityBase = defaults.personality;
+      if (!raw.personality) {
+        try {
+          const manifestPath = `${config.AGENT_DIR}/data/agent.json`;
+          if (fs.existsSync(manifestPath)) {
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+            if (manifest.personality && typeof manifest.personality === 'object') {
+              personalityBase = { ...defaults.personality, ...manifest.personality };
+            }
+          }
+        } catch { /* fall back to generic defaults */ }
+      }
+
       state = {
         version: 2,
         emotions: { ...defaults.emotions, ...raw.emotions },
         trust: { ...defaults.trust, ...raw.trust },
         needs: { ...defaults.needs, ...raw.needs },
-        personality: { ...defaults.personality, ...raw.personality },
+        personality: { ...personalityBase, ...raw.personality },
         relationship: { ...defaults.relationship, ...raw.relationship },
         session_tone: raw.session_tone || null,
         last_updated: raw.last_updated || new Date().toISOString(),
       };
+    } else {
+      // No state file yet - seed personality from agent manifest.
+      try {
+        const manifestPath = `${config.AGENT_DIR}/data/agent.json`;
+        if (fs.existsSync(manifestPath)) {
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+          if (manifest.personality && typeof manifest.personality === 'object') {
+            state = {
+              ...state,
+              personality: { ...state.personality, ...manifest.personality },
+            };
+          }
+        }
+      } catch { /* use generic defaults */ }
     }
   } catch { /* use defaults */ }
 
