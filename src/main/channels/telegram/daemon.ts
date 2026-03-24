@@ -468,7 +468,7 @@ function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
 // Agent dispatch
 // ---------------------------------------------------------------------------
 
-const DISPATCH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minute max per agent dispatch
+const DISPATCH_TIMEOUT_MS = 15 * 60 * 1000; // 15 minute max per agent dispatch (deep research needs time)
 
 // ---------------------------------------------------------------------------
 // Message deduplication
