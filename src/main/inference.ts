@@ -563,6 +563,7 @@ export function streamInference(
       config.CLAUDE_BIN,
       '--model', model,
       '--effort', effort,
+      '--dangerously-skip-permissions',
       '--verbose',
       '--output-format', 'stream-json',
       '--include-partial-messages',
@@ -575,6 +576,7 @@ export function streamInference(
   } else {
     cmd = [
       config.CLAUDE_BIN,
+      '--dangerously-skip-permissions',
       '--model', model,
       '--effort', effort,
       '--verbose',

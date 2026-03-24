@@ -15,11 +15,12 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from '../../config';
 import { setActive } from '../../status';
-import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction } from './api';
+import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument } from './api';
 import { buildStatusDisplay, formatElapsed, type StreamState, type ToolCallState } from './formatter';
 import { discoverAgents, getAgentState } from '../../agent-manager';
 import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from '../../inference';
@@ -727,6 +728,24 @@ async function dispatchToAgent(
     // Send final response as a fresh message (no editing, no thinking shown)
     if (finalText && isTelegramOrigin) {
       await sendMessage(`${header}${finalText}`, chatId, false, botToken);
+
+      // Auto-upload files mentioned in the response (e.g. generated docs)
+      // Matches paths like /Users/.../file.docx or ~/.atrophy/.../file.pdf
+      const fileRe = /(?:\/Users\/\S+|~\/\S+)\.(?:docx|pdf|xlsx|csv|txt|md|html|json|png|jpg)/g;
+      const filePaths = finalText.match(fileRe);
+      if (filePaths) {
+        for (const raw of filePaths) {
+          const fp = raw.startsWith('~') ? raw.replace('~', os.homedir()) : raw;
+          if (fs.existsSync(fp)) {
+            try {
+              await sendDocument(fp, path.basename(fp), chatId, '', botToken);
+              log.info(`[${agentName}] uploaded file: ${path.basename(fp)}`);
+            } catch (e) {
+              log.warn(`[${agentName}] file upload failed: ${e}`);
+            }
+          }
+        }
+      }
     } else if (!finalText && isTelegramOrigin) {
       log.warn(`[${agentName}] no response after ${elapsed}`);
     }

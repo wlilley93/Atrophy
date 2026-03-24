@@ -8,6 +8,16 @@ import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, p
 import * as path from 'path';
 import * as fs from 'fs';
 
+// File-based boot log for diagnosing packaged app issues (Electron suppresses
+// console output when launched from Finder/open on macOS).
+const BOOT_LOG = path.join(process.env.HOME || '/tmp', '.atrophy', 'logs', 'boot.log');
+function bootLog(msg: string): void {
+  try {
+    const line = `${new Date().toISOString()} ${msg}\n`;
+    fs.appendFileSync(BOOT_LOG, line);
+  } catch { /* best effort */ }
+}
+
 // Performance: increase V8 heap limit and enable concurrent GC
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 app.commandLine.appendSwitch('enable-features', 'V8ConcurrentSparkplug');
@@ -635,6 +645,7 @@ app.whenReady().then(() => {
   // 3. Crash rate check - if too many recent crashes, skip cron and daemon
   // to break crash loops. The subsystems can be re-enabled from the UI.
   const crashSafe = isCrashRateSafe();
+  bootLog(`crashSafe=${crashSafe}`);
   if (!crashSafe) {
     log.error('CRASH LOOP DETECTED - skipping cron scheduler and Telegram daemon. Fix the issue, then restart.');
   }
@@ -680,7 +691,9 @@ app.whenReady().then(() => {
   // 5. Auto-start Telegram daemon. It discovers all agents with telegram
   // credentials and launches a poller per agent.
   if (crashSafe) {
+    bootLog('calling startDaemon()');
     const started = startDaemon();
+    bootLog(`startDaemon returned ${started}`);
     if (started) {
       log.info('Telegram daemon auto-started');
     } else {
