@@ -94,6 +94,63 @@ export function discoverAgents(): AgentInfo[] {
 }
 
 // ---------------------------------------------------------------------------
+// Sync bundled prompts to user directory
+// ---------------------------------------------------------------------------
+
+/**
+ * For each agent that exists in the bundle, copy any prompt files that are
+ * missing from the user's ~/.atrophy/agents/<name>/prompts/ directory.
+ * Existing user prompts are never overwritten - bundle files are defaults only.
+ */
+export function syncBundledPrompts(): void {
+  const bundleAgents = path.join(BUNDLE_ROOT, 'agents');
+  const userAgents = path.join(USER_DATA, 'agents');
+  if (!fs.existsSync(bundleAgents)) return;
+
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(bundleAgents);
+  } catch {
+    return;
+  }
+
+  for (const name of entries) {
+    const bundlePrompts = path.join(bundleAgents, name, 'prompts');
+    const userPrompts = path.join(userAgents, name, 'prompts');
+    if (!fs.existsSync(bundlePrompts)) continue;
+
+    // Ensure user prompts dir exists
+    if (!fs.existsSync(userPrompts)) {
+      try {
+        fs.mkdirSync(userPrompts, { recursive: true });
+      } catch {
+        continue;
+      }
+    }
+
+    // Copy missing prompt files (never overwrite existing)
+    let files: string[];
+    try {
+      files = fs.readdirSync(bundlePrompts).filter((f) => f.endsWith('.md'));
+    } catch {
+      continue;
+    }
+
+    for (const file of files) {
+      const dest = path.join(userPrompts, file);
+      if (!fs.existsSync(dest)) {
+        try {
+          fs.copyFileSync(path.join(bundlePrompts, file), dest);
+          log.info(`Synced bundled prompt ${name}/prompts/${file}`);
+        } catch (e) {
+          log.warn(`Failed to sync prompt ${name}/prompts/${file}: ${e}`);
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Agent state (muted/enabled)
 // ---------------------------------------------------------------------------
 

@@ -20,7 +20,7 @@ import { setActive, setAway, isAway, isMacIdle, getStatus, IDLE_TIMEOUT_SECS } f
 import { setPlaybackCallbacks, clearAudioQueue } from './tts';
 import { registerAudioHandlers } from './audio';
 import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
-import { discoverAgents, cycleAgent, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, checkAskRequest, cleanupAskFiles } from './agent-manager';
+import { discoverAgents, syncBundledPrompts, cycleAgent, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, checkAskRequest, cleanupAskFiles } from './agent-manager';
 import { runCoherenceCheck } from './sentinel';
 import { drainQueue } from './queue';
 import { startServer, stopServer } from './server';
@@ -524,6 +524,7 @@ app.whenReady().then(() => {
 
   // Initialize
   ensureUserData();
+  syncBundledPrompts();
   const config = getConfig();
   initDb();
 
