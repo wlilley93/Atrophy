@@ -98,11 +98,17 @@ _HEARTBEAT_PROMPT = (
     "You are deciding whether to reach out to the user unprompted. "
     "You have access to your full conversation history and memory tools.\n\n"
     "First, review your state - use recall, daily_digest, or your memory tools "
-    "if you need to refresh context. You may also update your HEARTBEAT.md "
-    "checklist via write_note if your monitoring criteria should evolve.\n\n"
-    "Then evaluate using the checklist below. Respond with exactly ONE prefix:\n\n"
+    "if you need to refresh context.\n\n"
+    "Then evaluate using the checklist below and assign a severity score "
+    "from 0 to 100:\n"
+    "  0-24  = nothing worth reporting, stay silent\n"
+    "  25-74 = worth sending, normal priority\n"
+    "  75-100 = critical, needs immediate attention\n\n"
+    "Respond with exactly this format on the FIRST LINE:\n"
+    "[SEVERITY:XX] where XX is your 0-100 score\n\n"
+    "Then on the next line, one of:\n"
     "[REACH_OUT] followed by the message you'd send him. Be specific. "
-    "Reference the actual thing. Don't say 'just checking in.'\n\n"
+    "Reference the actual thing. Don't say \'just checking in.\'\n\n"
     "[HEARTBEAT_OK] followed by a brief reason why now isn't the right time.\n\n"
     "[SUPPRESS] followed by a brief reason if you actively shouldn't reach out "
     "(e.g. he's away, it's too soon, he needs space).\n\n"
@@ -116,7 +122,7 @@ def _run_heartbeat_inference(prompt: str, cli_session_id: str | None) -> str:
     full_text = ""
     tools_used = []
 
-    for event in stream_inference(prompt, system, cli_session_id, bare=True):
+    for event in stream_inference(prompt, system, cli_session_id):
         if isinstance(event, TextDelta):
             pass  # collect via StreamDone
         elif isinstance(event, ToolUse):
@@ -170,18 +176,40 @@ def heartbeat():
 
     print(f"[heartbeat] Response: {response[:120]}...")
 
-    # Parse decision
+    # Parse severity score and decision
+    import re as _re
     response_stripped = response.strip()
+
+    # Extract severity score from first line
+    severity = 50  # default if not found
+    severity_match = _re.match(r"\[SEVERITY:(\d+)\]", response_stripped)
+    if severity_match:
+        severity = min(100, max(0, int(severity_match.group(1))))
+        # Remove severity line for further parsing
+        response_stripped = response_stripped[severity_match.end():].strip()
+
+    print(f"[heartbeat] Severity: {severity}/100")
+
+    # Gate: below 25 = suppress regardless of decision
+    if severity < 25:
+        reason = response_stripped[:200] if response_stripped else "Below threshold"
+        log_heartbeat("SUPPRESS", f"severity={severity}: {reason}")
+        print(f"[heartbeat] Below threshold ({severity}). Suppressed.")
+        return
+
+    is_critical = severity >= 75
 
     if response_stripped.startswith("[REACH_OUT]"):
         message = response_stripped[len("[REACH_OUT]"):].strip()
-        log_heartbeat("REACH_OUT", "", message)
+        if is_critical:
+            message = f"[CRITICAL] {message}"
+        log_heartbeat("REACH_OUT", f"severity={severity}", message)
 
         # Always send via Telegram - heartbeat messages are time-sensitive
         try:
             from channels.telegram import send_message as send_telegram
             send_telegram(message)
-            print(f"[heartbeat] Sent via Telegram")
+            print(f"[heartbeat] Sent via Telegram (severity={severity})")
         except Exception as e:
             print(f"[heartbeat] Telegram send failed: {e}")
 
@@ -197,13 +225,13 @@ def heartbeat():
 
     elif response_stripped.startswith("[HEARTBEAT_OK]"):
         reason = response_stripped[len("[HEARTBEAT_OK]"):].strip()
-        log_heartbeat("HEARTBEAT_OK", reason)
-        print(f"[heartbeat] OK: {reason[:80]}")
+        log_heartbeat("HEARTBEAT_OK", f"severity={severity}: {reason}")
+        print(f"[heartbeat] OK ({severity}): {reason[:80]}")
 
     elif response_stripped.startswith("[SUPPRESS]"):
         reason = response_stripped[len("[SUPPRESS]"):].strip()
-        log_heartbeat("SUPPRESS", reason)
-        print(f"[heartbeat] Suppressed: {reason[:80]}")
+        log_heartbeat("SUPPRESS", f"severity={severity}: {reason}")
+        print(f"[heartbeat] Suppressed ({severity}): {reason[:80]}")
 
     else:
         # Unexpected format - log it but don't act
