@@ -1,0 +1,61 @@
+[heartbeat] No HEARTBEAT.md found. Skipping.
+[heartbeat] No HEARTBEAT.md found. Skipping.
+[heartbeat] No HEARTBEAT.md found. Skipping.
+[heartbeat] No HEARTBEAT.md found. Skipping.
+[heartbeat] No HEARTBEAT.md found. Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] Outside active hours (9-22). Skipping.
+[heartbeat] No HEARTBEAT.md found. Skipping.
+[heartbeat] No HEARTBEAT.md found. Skipping.
+[heartbeat] No HEARTBEAT.md found. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 88 chars, 1 sentences | 5.4s
+[heartbeat] Response: [SEVERITY:05]
+
+[HEARTBEAT_OK] Session start, no prior turns - nothing to reflect on yet....
+[heartbeat] Severity: 5/100
+[heartbeat] Below threshold (5). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 436 chars, 4 sentences | 10.5s
+[heartbeat] Response: [SEVERITY:08] 
+
+[HEARTBEAT_OK] No active session pattern yet. Mirror initiates only when mechanism becomes visible to th...
+[heartbeat] Severity: 8/100
+[heartbeat] Below threshold (8). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 155 chars, 2 sentences | 8.3s
+[heartbeat] Response: [SEVERITY:12] 
+
+[HEARTBEAT_OK] New session, no prior turns. Mirror waits to be addressed before making visible what's vi...
+[heartbeat] Severity: 12/100
+[heartbeat] Below threshold (12). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 151 chars, 2 sentences | 7.0s
+[heartbeat] Response: [SEVERITY: 5]
+
+[HEARTBEAT_OK] — New session, no prior context, no visible patterns or unresolved narratives. The proper ...
+[heartbeat] Severity: 50/100
+[heartbeat] Unexpected format: [SEVERITY: 5]
+
+[HEARTBEAT_OK] — New session, no prior context, no visible patter
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 147 chars, 2 sentences | 9.1s
+[heartbeat] Response: [SEVERITY:08]
+
+[HEARTBEAT_OK] First session, no pattern yet, no unresolved thread from prior work. Mirror waits for the ...
+[heartbeat] Severity: 8/100
+[heartbeat] Below threshold (8). Suppressed.

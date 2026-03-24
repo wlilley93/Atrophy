@@ -1,0 +1,22 @@
+[sleep] Starting nightly reconciliation...
+  [sleep] 130 observation(s) queued for incorporation (130 backlog, 0 today)
+[sleep] Got response (5858 chars). Parsing...
+  [sleep] Stored 13 fact(s)
+  [memory] No thread found matching 'relationship-navigation-hanna' — skipped
+  [memory] No thread found matching 'autonomous-system-gap' — skipped
+  [memory] No thread found matching 'system-concurrency-infrastructure' — skipped
+  [sleep] Updated 4 thread summary(ies)
+  [sleep] Stored 5 pattern(s)
+  [inner_life] Failed to log trust change: no such table: trust_log
+  [inner_life] Failed to log trust change: no such table: trust_log
+  [inner_life] Failed to log trust change: no such table: trust_log
+  [inner_life] Failed to log trust change: no such table: trust_log
+  [sleep] Trust aggregation (4 signal(s)):
+  emotional: 0.500 -> 0.530
+  intellectual: 0.500 -> 0.520
+  practical: 0.500 -> 0.520
+  [sleep] Marked 130 observation(s) as incorporated (of 130 candidates)
+  [sleep] Flagged 4 item(s) for identity review
+  [memory] Decayed activation for 148 observation(s)
+  [sleep] Decayed activation for 148 observation(s)
+[sleep] Nightly reconciliation complete.

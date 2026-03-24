@@ -1,0 +1,24 @@
+[sleep] Starting nightly reconciliation...
+  [sleep] 64 observation(s) queued for incorporation (64 backlog, 0 today)
+[sleep] Got response (7749 chars). Parsing...
+  [sleep] Stored 20 fact(s)
+  [memory] No thread found matching 'Atrophy System Architecture' — skipped
+  [memory] No thread found matching 'Multi-Agent Integration Issues' — skipped
+  [memory] No thread found matching 'Companion Service Stability' — skipped
+  [memory] No thread found matching 'Sleep Cycle Operations' — skipped
+  [memory] No thread found matching 'Xan's Operational Scope' — skipped
+  [memory] No thread found matching 'System Job Registration' — skipped
+  [sleep] Updated 6 thread summary(ies)
+  [sleep] Stored 7 pattern(s)
+  [inner_life] Failed to log trust change: no such table: trust_log
+  [inner_life] Failed to log trust change: no such table: trust_log
+  [inner_life] Failed to log trust change: no such table: trust_log
+  [sleep] Trust aggregation (3 signal(s)):
+  emotional: 0.490 -> 0.510
+  intellectual: 0.520 -> 0.540
+  practical: 0.552 -> 0.572
+  [sleep] Marked 0 observation(s) as incorporated (of 64 candidates)
+  [sleep] Flagged 3 item(s) for identity review
+  [memory] Decayed activation for 114 observation(s)
+  [sleep] Decayed activation for 114 observation(s)
+[sleep] Nightly reconciliation complete.

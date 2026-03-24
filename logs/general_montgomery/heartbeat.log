@@ -1,0 +1,123 @@
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (resume)...
+  [effort: medium]
+  [inference] error (exit 1): claude exited with code 1
+[heartbeat] Inference failed: claude exited with code 1
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Running evaluation (resume)...
+  [effort: medium]
+  [inference] error (exit 1): claude exited with code 1
+[heartbeat] Inference failed: claude exited with code 1
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 189 chars, 3 sentences | 9.7s
+[heartbeat] Response: [HEARTBEAT_OK] GPS jamming expansion noted (544 total hexes, +53 cycle), but no theatre-specific escalation identified. ...
+[heartbeat] OK: GPS jamming expansion noted (544 total hexes, +53 cycle), but no theatre-specifi
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 237 chars, 4 sentences | 7.6s
+[heartbeat] Response: [HEARTBEAT_OK] Will is actively engaged (8 turns this morning), sensor grid shows routine monitoring cycles with no stru...
+[heartbeat] OK: Will is actively engaged (8 turns this morning), sensor grid shows routine monit
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 193 chars, 2 sentences | 8.0s
+[heartbeat] Response: [HEARTBEAT_OK] Will is actively engaged this morning (last turn 07:18), and WorldMonitor shows routine data cycling rath...
+[heartbeat] OK: Will is actively engaged this morning (last turn 07:18), and WorldMonitor shows 
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 158 chars, 2 sentences | 6.5s
+[heartbeat] Response: [HEARTBEAT_OK] - Mid-session, no significant developments. OSINT feeds show normal rotation, no pattern shifts or strate...
+[heartbeat] OK: - Mid-session, no significant developments. OSINT feeds show normal rotation, no
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] error (exit 1): claude exited with code 1
+[heartbeat] Inference failed: claude exited with code 1
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 166 chars, 3 sentences | 8.7s
+[heartbeat] Response: [SEVERITY:12] [HEARTBEAT_OK] Routine monitoring activity, balanced deltas across OSINT, alerts cleared, no material chan...
+[heartbeat] Severity: 12/100
+[heartbeat] Below threshold (12). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 302 chars, 5 sentences | 11.3s
+[heartbeat] Response: [SEVERITY:18]
+
+[HEARTBEAT_OK] You were online seconds ago. OSINT churn is routine cycling - equal add/drop across the la...
+[heartbeat] Severity: 18/100
+[heartbeat] Below threshold (18). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 189 chars, 3 sentences | 8.4s
+[heartbeat] Response: [SEVERITY:15]
+
+[HEARTBEAT_OK] OSINT baseline stable. No kinetic activity, no escalation patterns, no new thresholds cros...
+[heartbeat] Severity: 15/100
+[heartbeat] Below threshold (15). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 270 chars, 3 sentences | 26.3s
+[heartbeat] Response: [SEVERITY:48]
+
+[HEARTBEAT_OK] - You engaged moments ago; GPS jamming shows 31 new high-jamming hexes added (5.6% increas...
+[heartbeat] Severity: 48/100
+[heartbeat] OK (48): - You engaged moments ago; GPS jamming shows 31 new high-jamming hexes added (5.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 363 chars, 4 sentences | 13.6s
+[heartbeat] Response: [SEVERITY:68] 
+
+[REACH_OUT] GPS jamming has expanded by 31 high-jamming hexes overnight (total now 575). This exceeds yo...
+[heartbeat] Severity: 68/100
+[heartbeat] Sent via Telegram (severity=68)
+[heartbeat] Reaching out: GPS jamming has expanded by 31 high-jamming hexes overnight (total now 575). Thi...
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 215 chars, 4 sentences | 7.5s
+[heartbeat] Response: [SEVERITY:08]
+[HEARTBEAT_OK] Will is actively engaged in this session (2 turns). OSINT monitor shows equilibrium. No kin...
+[heartbeat] Severity: 8/100
+[heartbeat] Below threshold (8). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 137 chars, 3 sentences | 9.3s
+[heartbeat] Response: [SEVERITY:12] [HEARTBEAT_OK] WorldMonitor showing routine churn with no net pattern shift. You're active now. Nothing ma...
+[heartbeat] Severity: 12/100
+[heartbeat] Below threshold (12). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 293 chars, 7 sentences | 9.3s
+[heartbeat] Response: [SEVERITY:8] Routine WorldMonitor cycle with no material changes. ALERTS and MARITIME cleared - de-escalation signal, no...
+[heartbeat] Severity: 8/100
+[heartbeat] Below threshold (8). Suppressed.

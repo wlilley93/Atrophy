@@ -891,8 +891,10 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     const promptParts: string[] = [];
     const mediaDir = path.join(USER_DATA, 'agents', agent.name, 'media');
 
-    // Identify the sender by their Telegram name (not hardcoded)
-    const senderName = msg.from?.first_name || 'Someone';
+    // Use full name (first + last) to disambiguate in groups (e.g. two Henrys)
+    const senderFirst = msg.from?.first_name || '';
+    const senderLast = msg.from?.last_name || '';
+    const senderName = (senderFirst + (senderLast ? ` ${senderLast}` : '')).trim() || 'Someone';
 
     if (msg.photo && msg.photo.length > 0) {
       // Telegram sends multiple sizes - take the largest (last in array)

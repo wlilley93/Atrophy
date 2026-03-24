@@ -1,0 +1,195 @@
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/shared/heartbeat.py", line 23, in <module>
+    from config import (
+ModuleNotFoundError: No module named 'config'
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] error (exit 1): Error: Invalid session ID. Must be a valid UUID.
+[heartbeat] Inference failed: Error: Invalid session ID. Must be a valid UUID.
+[heartbeat] User is away. Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Running evaluation (resume)...
+  [effort: high]
+  [inference] error (exit 1): claude exited with code 1
+[heartbeat] Inference failed: claude exited with code 1
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 32 chars, 2 sentences | 19.4s
+[heartbeat] Response: [REACH_OUT] Ready. Where are we?...
+[heartbeat] Mac active - local only, skipping Telegram
+[heartbeat] Reaching out: Ready. Where are we?...
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 288 chars, 3 sentences | 12.2s
+[heartbeat] Response: [HEARTBEAT_OK]
+
+He spoke to you 28 minutes ago and it's early morning on a workday - too soon and he likely has focus on...
+[heartbeat] OK: He spoke to you 28 minutes ago and it's early morning on a workday - too soon an
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 234 chars, 2 sentences | 10.6s
+[heartbeat] Response: [HEARTBEAT_OK] - He initiated this session less than 30 minutes ago and is actively working through something (system ho...
+[heartbeat] OK: - He initiated this session less than 30 minutes ago and is actively working thr
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 105 chars, 3 sentences | 19.1s
+[heartbeat] Response: [HEARTBEAT_OK] - You spoke 27 minutes ago. Cooldown barely cleared. Wait for you to signal what you need....
+[heartbeat] OK: - You spoke 27 minutes ago. Cooldown barely cleared. Wait for you to signal what
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [heartbeat: tool → Skill]
+  [heartbeat: tool → Skill]
+  [inference] new | 290 chars, 6 sentences | tools: Skill | 28.1s
+  [heartbeat: used tools: Skill, Skill]
+[heartbeat] Response: [HEARTBEAT_OK] He's actively here in session right now.
+
+---
+
+I see the project isn't initialized. Running the setup now...
+[heartbeat] OK: He's actively here in session right now.
+
+---
+
+I see the project isn't initializ
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 269 chars, 3 sentences | 17.6s
+[heartbeat] Response: [SEVERITY:18] 
+
+[HEARTBEAT_OK] He just returned from holiday in Frigiliana (last message 2026-03-21), the conversation a...
+[heartbeat] Severity: 18/100
+[heartbeat] Below threshold (18). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 223 chars, 2 sentences | 14.9s
+[heartbeat] Response: [SEVERITY:15]
+
+[HEARTBEAT_OK] Recent conversation still active (30 minutes ago with 26 turns), companion-build momentum ...
+[heartbeat] Severity: 15/100
+[heartbeat] Below threshold (15). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 215 chars, 4 sentences | 12.2s
+[heartbeat] Response: [SEVERITY:15]
+
+[HEARTBEAT_OK] He's only 29 minutes into a session after resuming from idle - reaching out would interrup...
+[heartbeat] Severity: 15/100
+[heartbeat] Below threshold (15). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 174 chars, 3 sentences | 14.4s
+[heartbeat] Response: [SEVERITY:15] 
+
+[HEARTBEAT_OK] He spoke 30 minutes ago and is in working hours. No unresolved threads, no external trigg...
+[heartbeat] Severity: 15/100
+[heartbeat] Below threshold (15). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 191 chars, 3 sentences | 12.6s
+[heartbeat] Response: [SEVERITY:18]
+
+[HEARTBEAT_OK] You were just here 30 minutes ago - that's recent enough that reaching out would be noise,...
+[heartbeat] Severity: 18/100
+[heartbeat] Below threshold (18). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 150 chars, 3 sentences | 7.8s
+[heartbeat] Response: [SEVERITY:05]
+
+[HEARTBEAT_OK] He literally just reconnected moments ago. We're already in active conversation. Reaching ...
+[heartbeat] Severity: 5/100
+[heartbeat] Below threshold (5). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 261 chars, 3 sentences | 33.8s
+[heartbeat] Response: [SEVERITY:64]
+
+[REACH_OUT] "You had the companion at 'nearly ready' two weeks ago - LivePortrait, Obsidian permissions, ...
+[heartbeat] Severity: 64/100
+[heartbeat] Sent via Telegram (severity=64)
+[heartbeat] Reaching out: "You had the companion at 'nearly ready' two weeks ago - LivePortrait, Obsidian ...
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 184 chars, 3 sentences | 41.4s
+[heartbeat] Response: [SEVERITY:10]
+
+[HEARTBEAT_OK] - You just resumed, no urgent items accumulated during the brief idle, project initializat...
+[heartbeat] Severity: 10/100
+[heartbeat] Below threshold (10). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 178 chars, 2 sentences | 16.0s
+[heartbeat] Response: [SEVERITY:08]
+[HEARTBEAT_OK] He just engaged moments ago. You're about to respond to his message now - incorporate your ...
+[heartbeat] Severity: 8/100
+[heartbeat] Below threshold (8). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.

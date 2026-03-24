@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/companion/voice_note.py", line 216, in <module>
+    run()
+  File "/tmp/atrophy/scripts/agents/companion/voice_note.py", line 148, in run
+    context = _gather_context()
+              ^^^^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/companion/voice_note.py", line 56, in _gather_context
+    turns = conn.execute(
+            ^^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: conversation_history
