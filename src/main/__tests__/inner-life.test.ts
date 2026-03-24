@@ -11,7 +11,17 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { formatForContext, type EmotionalState, type Emotions, type Trust } from '../inner-life';
+import {
+  formatForContext,
+  encodeEmotionalVector,
+  decodeEmotionalVector,
+  vectorToBlob,
+  blobToVector,
+  computeDistributedState,
+  type EmotionalState,
+  type Emotions,
+  type Trust,
+} from '../inner-life';
 import {
   DEFAULT_FULL_STATE,
   DEFAULT_EMOTIONS,
@@ -771,5 +781,189 @@ describe('updateRelationship (formula verification)', () => {
     const delta = 0.15;
     const result = Math.round(Math.max(0, Math.min(1, current + delta)) * 1000) / 1000;
     expect(result).toBe(0.45);
+  });
+});
+
+
+// -------------------------------------------------------------------------
+// encodeEmotionalVector / decodeEmotionalVector
+// -------------------------------------------------------------------------
+
+describe('encodeEmotionalVector', () => {
+  it('produces a 32-dimensional Float32Array', () => {
+    const state = makeState();
+    const vec = encodeEmotionalVector(state);
+    expect(vec).toBeInstanceOf(Float32Array);
+    expect(vec.length).toBe(32);
+  });
+
+  it('encodes emotions into positions 0-13', () => {
+    const state = makeState({ emotions: { connection: 0.9, defiance: 0.4 } as Emotions });
+    const vec = encodeEmotionalVector(state);
+    expect(vec[0]).toBeCloseTo(0.9);   // connection is index 0
+    expect(vec[13]).toBeCloseTo(0.4);  // defiance is index 13
+  });
+
+  it('encodes trust into positions 14-19', () => {
+    const state = makeState();
+    const vec = encodeEmotionalVector(state);
+    expect(vec[14]).toBeCloseTo(state.trust.emotional);
+    expect(vec[19]).toBeCloseTo(state.trust.personal);
+  });
+
+  it('encodes needs scaled to 0-1 into positions 20-27', () => {
+    const defaults = makeState();
+    const vec = encodeEmotionalVector(defaults);
+    // needs are 0-10, vector stores /10
+    expect(vec[20]).toBeCloseTo(defaults.needs.stimulation / 10);
+    expect(vec[27]).toBeCloseTo(defaults.needs.rest / 10);
+  });
+
+  it('spare positions 28-31 are zero', () => {
+    const vec = encodeEmotionalVector(makeState());
+    expect(vec[28]).toBe(0);
+    expect(vec[29]).toBe(0);
+    expect(vec[30]).toBe(0);
+    expect(vec[31]).toBe(0);
+  });
+});
+
+describe('decodeEmotionalVector', () => {
+  it('reconstructs emotions from vector positions 0-13', () => {
+    const state = makeState({ emotions: { curiosity: 0.75, warmth: 0.6 } as Emotions });
+    const vec = encodeEmotionalVector(state);
+    const decoded = decodeEmotionalVector(vec);
+    expect(decoded.emotions?.curiosity).toBeCloseTo(0.75);
+    expect(decoded.emotions?.warmth).toBeCloseTo(0.6);
+  });
+
+  it('reconstructs trust from vector positions 14-19', () => {
+    const state = makeState();
+    const vec = encodeEmotionalVector(state);
+    const decoded = decodeEmotionalVector(vec);
+    expect(decoded.trust?.emotional).toBeCloseTo(state.trust.emotional);
+    expect(decoded.trust?.personal).toBeCloseTo(state.trust.personal);
+  });
+
+  it('reconstructs needs (unscaled back to 0-10) from positions 20-27', () => {
+    const state = makeState();
+    const vec = encodeEmotionalVector(state);
+    const decoded = decodeEmotionalVector(vec);
+    expect(decoded.needs?.stimulation).toBeCloseTo(state.needs.stimulation);
+    expect(decoded.needs?.rest).toBeCloseTo(state.needs.rest);
+  });
+
+  it('round-trip encode->decode preserves all values within float precision', () => {
+    const state = makeState({
+      emotions: { connection: 0.82, frustration: 0.15, focus: 0.7 } as Emotions,
+      trust: { emotional: 0.6, intellectual: 0.8 } as Trust,
+    });
+    const vec = encodeEmotionalVector(state);
+    const decoded = decodeEmotionalVector(vec);
+
+    // All 14 emotions
+    for (const [k, v] of Object.entries(state.emotions)) {
+      expect(decoded.emotions?.[k as keyof typeof state.emotions]).toBeCloseTo(v as number, 5);
+    }
+    // All 6 trust domains
+    for (const [k, v] of Object.entries(state.trust)) {
+      expect(decoded.trust?.[k as keyof typeof state.trust]).toBeCloseTo(v as number, 5);
+    }
+    // All 8 needs (scaled /10 then *10, expect same value)
+    for (const [k, v] of Object.entries(state.needs)) {
+      expect(decoded.needs?.[k as keyof typeof state.needs]).toBeCloseTo(v as number, 4);
+    }
+  });
+});
+
+describe('vectorToBlob / blobToVector round-trip', () => {
+  it('converts Float32Array to Buffer and back without data loss', () => {
+    const state = makeState({ emotions: { connection: 0.55 } as Emotions });
+    const vec = encodeEmotionalVector(state);
+    const blob = vectorToBlob(vec);
+    expect(blob).toBeInstanceOf(Buffer);
+    expect(blob.length).toBe(32 * 4); // 32 floats * 4 bytes each
+
+    const recovered = blobToVector(blob);
+    expect(recovered).toBeInstanceOf(Float32Array);
+    expect(recovered.length).toBe(32);
+    for (let i = 0; i < 32; i++) {
+      expect(recovered[i]).toBeCloseTo(vec[i], 6);
+    }
+  });
+});
+
+// -------------------------------------------------------------------------
+// computeDistributedState
+// -------------------------------------------------------------------------
+
+describe('computeDistributedState', () => {
+  it('returns an empty object for empty input', () => {
+    const result = computeDistributedState([]);
+    expect(result).toEqual({});
+  });
+
+  it('returns the single vector decoded when only one entry is provided', () => {
+    const state = makeState({ emotions: { curiosity: 0.8 } as Emotions });
+    const vec = encodeEmotionalVector(state);
+    const now = Date.now();
+    const result = computeDistributedState([{ vec, timestamp: now }]);
+    expect(result.emotions?.curiosity).toBeCloseTo(0.8, 4);
+  });
+
+  it('weights recent vectors more heavily than older ones', () => {
+    const now = Date.now();
+    const oneHourAgo = now - 3_600_000;
+
+    // Old state: curiosity = 0.2
+    const oldState = makeState({ emotions: { curiosity: 0.2 } as Emotions });
+    const oldVec = encodeEmotionalVector(oldState);
+
+    // Recent state: curiosity = 0.8
+    const recentState = makeState({ emotions: { curiosity: 0.8 } as Emotions });
+    const recentVec = encodeEmotionalVector(recentState);
+
+    const result = computeDistributedState([
+      { vec: oldVec, timestamp: oneHourAgo },
+      { vec: recentVec, timestamp: now },
+    ]);
+
+    // With half-life=1h: old weight = 0.5, recent weight = 1.0
+    // weighted avg = (0.2*0.5 + 0.8*1.0) / 1.5 = 0.9/1.5 = 0.6
+    expect(result.emotions?.curiosity).toBeCloseTo(0.6, 3);
+  });
+
+  it('with equal timestamps, result is simple average', () => {
+    const now = Date.now();
+    const stateA = makeState({ emotions: { warmth: 0.4 } as Emotions });
+    const stateB = makeState({ emotions: { warmth: 0.8 } as Emotions });
+
+    const result = computeDistributedState([
+      { vec: encodeEmotionalVector(stateA), timestamp: now },
+      { vec: encodeEmotionalVector(stateB), timestamp: now },
+    ]);
+
+    // Both have weight=1, so result = average
+    expect(result.emotions?.warmth).toBeCloseTo(0.6, 3);
+  });
+
+  it('respects custom halfLifeMs parameter', () => {
+    const now = Date.now();
+    const halfHourAgo = now - 1_800_000; // 30 mins ago
+
+    const oldState = makeState({ emotions: { connection: 0.0 } as Emotions });
+    const recentState = makeState({ emotions: { connection: 1.0 } as Emotions });
+
+    // With halfLife = 30 min, the 30-min-old vector has weight 0.5
+    const result = computeDistributedState(
+      [
+        { vec: encodeEmotionalVector(oldState), timestamp: halfHourAgo },
+        { vec: encodeEmotionalVector(recentState), timestamp: now },
+      ],
+      1_800_000, // 30 min half-life
+    );
+
+    // weight_old = 0.5, weight_recent = 1.0 -> avg = (0*0.5 + 1*1.0)/1.5 = 0.667
+    expect(result.emotions?.connection).toBeCloseTo(2 / 3, 3);
   });
 });

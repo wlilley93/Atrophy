@@ -519,20 +519,45 @@ export function writeTurn(
   topicTags?: string,
   weight = 1,
   channel = 'direct',
+  emotionalVector?: Buffer,
 ): number {
   const db = getDb();
   const result = db
     .prepare(
-      `INSERT INTO turns (session_id, role, content, topic_tags, weight, channel)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO turns (session_id, role, content, topic_tags, weight, channel, emotional_vector)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(sessionId, role, content, topicTags || null, weight, channel);
+    .run(sessionId, role, content, topicTags || null, weight, channel, emotionalVector ?? null);
   const turnId = Number(result.lastInsertRowid);
 
   // Background embedding - does not block the conversation pipeline
   embedAsync('turns', turnId, content, getConfig().DB_PATH);
 
   return turnId;
+}
+
+/**
+ * Retrieve turns from the last N hours that have an emotional_vector stored.
+ * Returns each as a { vec, timestamp } pair for use in computeDistributedState.
+ */
+export function getRecentEmotionalVectors(
+  hours = 24,
+): Array<{ vec: Float32Array; timestamp: number }> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT emotional_vector, timestamp
+       FROM turns
+       WHERE emotional_vector IS NOT NULL
+         AND timestamp >= datetime('now', ? || ' hours')
+       ORDER BY timestamp ASC`,
+    )
+    .all(`-${hours}`) as Array<{ emotional_vector: Buffer; timestamp: string }>;
+
+  return rows.map((row) => ({
+    vec: blobToVector(row.emotional_vector),
+    timestamp: new Date(row.timestamp).getTime(),
+  }));
 }
 
 export function getSessionTurns(sessionId: number): Turn[] {

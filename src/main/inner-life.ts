@@ -401,6 +401,103 @@ export function reconcileTrustFromDb(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Emotional vector encoding / decoding
+// ---------------------------------------------------------------------------
+
+// Packing layout (32 dims):
+//   0-13:  14 emotions   (0.0-1.0, already normalised)
+//   14-19:  6 trust      (0.0-1.0, already normalised)
+//   20-27:  8 needs      (scaled /10 -> 0.0-1.0)
+//   28-31:  spare (zeros)
+
+const EMOTION_KEYS: (keyof Emotions)[] = [
+  'connection', 'curiosity', 'confidence', 'warmth', 'frustration', 'playfulness',
+  'amusement', 'anticipation', 'satisfaction', 'restlessness',
+  'tenderness', 'melancholy', 'focus', 'defiance',
+];
+
+const TRUST_KEYS: (keyof Trust)[] = [
+  'emotional', 'intellectual', 'creative', 'practical', 'operational', 'personal',
+];
+
+const NEED_KEYS: (keyof Needs)[] = [
+  'stimulation', 'expression', 'purpose', 'autonomy',
+  'recognition', 'novelty', 'social', 'rest',
+];
+
+export function encodeEmotionalVector(state: FullState): Float32Array {
+  const vec = new Float32Array(32);
+  EMOTION_KEYS.forEach((k, i) => { vec[i] = state.emotions[k]; });
+  TRUST_KEYS.forEach((k, i) => { vec[14 + i] = state.trust[k]; });
+  NEED_KEYS.forEach((k, i) => { vec[20 + i] = state.needs[k] / 10; });
+  // positions 28-31 are spare, remain 0
+  return vec;
+}
+
+export function decodeEmotionalVector(vec: Float32Array): Partial<FullState> {
+  const emotions = {} as Emotions;
+  EMOTION_KEYS.forEach((k, i) => { emotions[k] = vec[i]; });
+
+  const trust = {} as Trust;
+  TRUST_KEYS.forEach((k, i) => { trust[k] = vec[14 + i]; });
+
+  const needs = {} as Needs;
+  NEED_KEYS.forEach((k, i) => { needs[k] = vec[20 + i] * 10; });
+
+  return { emotions, trust, needs };
+}
+
+export function vectorToBlob(vec: Float32Array): Buffer {
+  return Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
+}
+
+export function blobToVector(blob: Buffer): Float32Array {
+  // Copy so we don't hold a reference into a potentially reused buffer
+  const copy = Buffer.alloc(blob.length);
+  blob.copy(copy);
+  return new Float32Array(copy.buffer, copy.byteOffset, copy.length / 4);
+}
+
+// ---------------------------------------------------------------------------
+// Distributed state aggregation
+// ---------------------------------------------------------------------------
+
+/**
+ * Time-weighted average of multiple emotional vectors.
+ * Recent vectors receive exponentially more weight using:
+ *   weight = 0.5 ^ (age_ms / halfLifeMs)
+ *
+ * Returns a Partial<FullState> decoded from the averaged vector,
+ * or an empty object if no vectors are provided.
+ */
+export function computeDistributedState(
+  vectors: Array<{ vec: Float32Array; timestamp: number }>,
+  halfLifeMs = 3_600_000, // 1 hour default
+): Partial<FullState> {
+  if (vectors.length === 0) return {};
+
+  const now = Date.now();
+  const weightedSum = new Float32Array(32);
+  let totalWeight = 0;
+
+  for (const { vec, timestamp } of vectors) {
+    const ageMs = Math.max(0, now - timestamp);
+    const weight = Math.pow(0.5, ageMs / halfLifeMs);
+    for (let i = 0; i < 32; i++) {
+      weightedSum[i] += vec[i] * weight;
+    }
+    totalWeight += weight;
+  }
+
+  const averaged = new Float32Array(32);
+  for (let i = 0; i < 32; i++) {
+    averaged[i] = weightedSum[i] / totalWeight;
+  }
+
+  return decodeEmotionalVector(averaged);
+}
+
+// ---------------------------------------------------------------------------
 // Format for context injection
 // ---------------------------------------------------------------------------
 
