@@ -183,6 +183,51 @@ CREATE TABLE IF NOT EXISTS trust_log (
   source      TEXT DEFAULT 'unknown'  -- 'mcp', 'inference', 'sleep_cycle', 'manual'
 );
 
+-- ── STATE LOG ──────────────────────────────────────────────────
+-- Expanded state log (all dimension changes across all categories)
+
+CREATE TABLE IF NOT EXISTS state_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    category    TEXT NOT NULL CHECK(category IN (
+        'emotion', 'trust', 'need', 'personality', 'relationship'
+    )),
+    dimension   TEXT NOT NULL,
+    delta       REAL NOT NULL,
+    new_value   REAL NOT NULL,
+    reason      TEXT,
+    source      TEXT DEFAULT 'unknown'
+);
+CREATE INDEX IF NOT EXISTS idx_state_log_cat ON state_log(category);
+CREATE INDEX IF NOT EXISTS idx_state_log_dim ON state_log(dimension);
+CREATE INDEX IF NOT EXISTS idx_state_log_ts ON state_log(timestamp);
+
+-- ── NEED EVENTS ────────────────────────────────────────────────
+-- Need satisfaction events
+
+CREATE TABLE IF NOT EXISTS need_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    need        TEXT NOT NULL,
+    delta       REAL NOT NULL,
+    trigger_desc TEXT,
+    session_id  INTEGER REFERENCES sessions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_need_events_need ON need_events(need);
+
+-- ── PERSONALITY LOG ────────────────────────────────────────────
+-- Personality evolution log
+
+CREATE TABLE IF NOT EXISTS personality_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    trait       TEXT NOT NULL,
+    old_value   REAL NOT NULL,
+    new_value   REAL NOT NULL,
+    reason      TEXT,
+    source      TEXT DEFAULT 'evolve'
+);
+
 -- ── USAGE LOG ──────────────────────────────────────────────────
 -- Per-inference token/time tracking for usage dashboards.
 

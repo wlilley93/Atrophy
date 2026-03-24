@@ -325,13 +325,75 @@ function migrate(db: Database.Database): void {
     safeAddColumn('entities', 'embedding', 'BLOB');
   }
 
+  // emotional_vector columns for turns and observations
+  if (tableNames.has('turns')) {
+    try { db.exec('ALTER TABLE turns ADD COLUMN emotional_vector BLOB'); } catch { /* already exists */ }
+  }
+  if (tableNames.has('observations')) {
+    try { db.exec('ALTER TABLE observations ADD COLUMN emotional_vector BLOB'); } catch { /* already exists */ }
+  }
+
+  // state_log table - expanded dimension change audit trail
+  if (!tableNames.has('state_log')) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS state_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        category    TEXT NOT NULL CHECK(category IN (
+          'emotion', 'trust', 'need', 'personality', 'relationship'
+        )),
+        dimension   TEXT NOT NULL,
+        delta       REAL NOT NULL,
+        new_value   REAL NOT NULL,
+        reason      TEXT,
+        source      TEXT DEFAULT 'unknown'
+      );
+      CREATE INDEX IF NOT EXISTS idx_state_log_cat ON state_log(category);
+      CREATE INDEX IF NOT EXISTS idx_state_log_dim ON state_log(dimension);
+      CREATE INDEX IF NOT EXISTS idx_state_log_ts ON state_log(timestamp);
+    `);
+    log.info('created state_log table');
+  }
+
+  // need_events table - need satisfaction events
+  if (!tableNames.has('need_events')) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS need_events (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        need        TEXT NOT NULL,
+        delta       REAL NOT NULL,
+        trigger_desc TEXT,
+        session_id  INTEGER REFERENCES sessions(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_need_events_need ON need_events(need);
+    `);
+    log.info('created need_events table');
+  }
+
+  // personality_log table - personality evolution audit trail
+  if (!tableNames.has('personality_log')) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS personality_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        trait       TEXT NOT NULL,
+        old_value   REAL NOT NULL,
+        new_value   REAL NOT NULL,
+        reason      TEXT,
+        source      TEXT DEFAULT 'evolve'
+      );
+    `);
+    log.info('created personality_log table');
+  }
+
   // Trust log table - durable audit trail for trust changes
   if (!tableNames.has('trust_log')) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS trust_log (
         id        INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        domain    TEXT NOT NULL CHECK(domain IN ('emotional', 'intellectual', 'creative', 'practical')),
+        domain    TEXT NOT NULL CHECK(domain IN ('emotional', 'intellectual', 'creative', 'practical', 'operational', 'personal')),
         delta     REAL NOT NULL,
         new_value REAL NOT NULL,
         reason    TEXT DEFAULT '',
@@ -341,6 +403,36 @@ function migrate(db: Database.Database): void {
       CREATE INDEX IF NOT EXISTS idx_trust_log_timestamp ON trust_log(timestamp);
     `);
     log.info('created trust_log table');
+  } else {
+    // Migrate existing trust_log: widen the CHECK constraint so v2 domains
+    // (operational, personal) can be logged. SQLite has no ALTER CHECK,
+    // so recreate the table if the old constraint is still in place.
+    try {
+      const sqlRow = db.prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='trust_log'",
+      ).get() as { sql: string } | undefined;
+      if (sqlRow?.sql && !sqlRow.sql.includes('operational')) {
+        db.exec(`
+          CREATE TABLE trust_log_new (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            domain    TEXT NOT NULL CHECK(domain IN ('emotional', 'intellectual', 'creative', 'practical', 'operational', 'personal')),
+            delta     REAL NOT NULL,
+            new_value REAL NOT NULL,
+            reason    TEXT DEFAULT '',
+            source    TEXT DEFAULT 'unknown'
+          );
+          INSERT INTO trust_log_new SELECT * FROM trust_log;
+          DROP TABLE trust_log;
+          ALTER TABLE trust_log_new RENAME TO trust_log;
+          CREATE INDEX IF NOT EXISTS idx_trust_log_domain ON trust_log(domain);
+          CREATE INDEX IF NOT EXISTS idx_trust_log_timestamp ON trust_log(timestamp);
+        `);
+        log.info('migrated trust_log CHECK constraint to v2 domains');
+      }
+    } catch (migErr) {
+      log.warn(`trust_log migration skipped: ${migErr}`);
+    }
   }
 }
 
@@ -1288,6 +1380,96 @@ export function getTrustHistory(
     .all(limit) as TrustLogEntry[];
 }
 
+
+// ---------------------------------------------------------------------------
+// v2 state persistence
+// ---------------------------------------------------------------------------
+
+export function writeStateLog(
+  category: string,
+  dimension: string,
+  delta: number,
+  newValue: number,
+  reason?: string,
+  source?: string,
+  dbPath?: string,
+): void {
+  const p = dbPath || getConfig().DB_PATH;
+  const db = connect(p);
+  db.prepare(
+    'INSERT INTO state_log (category, dimension, delta, new_value, reason, source) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(category, dimension, delta, newValue, reason ?? null, source ?? 'unknown');
+}
+
+export function writeNeedEvent(
+  need: string,
+  delta: number,
+  trigger?: string,
+  sessionId?: number,
+  dbPath?: string,
+): void {
+  const p = dbPath || getConfig().DB_PATH;
+  const db = connect(p);
+  db.prepare(
+    'INSERT INTO need_events (need, delta, trigger_desc, session_id) VALUES (?, ?, ?, ?)',
+  ).run(need, delta, trigger ?? null, sessionId ?? null);
+}
+
+export function writePersonalityLog(
+  trait: string,
+  oldValue: number,
+  newValue: number,
+  reason?: string,
+  source?: string,
+  dbPath?: string,
+): void {
+  const p = dbPath || getConfig().DB_PATH;
+  const db = connect(p);
+  db.prepare(
+    'INSERT INTO personality_log (trait, old_value, new_value, reason, source) VALUES (?, ?, ?, ?, ?)',
+  ).run(trait, oldValue, newValue, reason ?? null, source ?? 'evolve');
+}
+
+export interface StateLogEntry {
+  id: number;
+  timestamp: string;
+  category: string;
+  dimension: string;
+  delta: number;
+  new_value: number;
+  reason: string | null;
+  source: string;
+}
+
+export function getStateHistory(
+  category?: string,
+  dimension?: string,
+  limit = 50,
+  dbPath?: string,
+): StateLogEntry[] {
+  const p = dbPath || getConfig().DB_PATH;
+  const db = connect(p);
+  if (category && dimension) {
+    return db
+      .prepare(
+        'SELECT * FROM state_log WHERE category = ? AND dimension = ? ORDER BY id DESC LIMIT ?',
+      )
+      .all(category, dimension, limit) as StateLogEntry[];
+  }
+  if (category) {
+    return db
+      .prepare('SELECT * FROM state_log WHERE category = ? ORDER BY id DESC LIMIT ?')
+      .all(category, limit) as StateLogEntry[];
+  }
+  if (dimension) {
+    return db
+      .prepare('SELECT * FROM state_log WHERE dimension = ? ORDER BY id DESC LIMIT ?')
+      .all(dimension, limit) as StateLogEntry[];
+  }
+  return db
+    .prepare('SELECT * FROM state_log ORDER BY id DESC LIMIT ?')
+    .all(limit) as StateLogEntry[];
+}
 
 // ---------------------------------------------------------------------------
 // Cleanup
