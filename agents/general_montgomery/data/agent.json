@@ -1,0 +1,78 @@
+{
+  "name": "general_montgomery",
+  "display_name": "General Montgomery",
+  "description": "Strategic intelligence and world monitoring agent",
+  "voice": {
+    "elevenlabs_voice_id": "0z5GDPjj5mWasIEHkugR"
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "bot_token_env": "TELEGRAM_BOT_TOKEN_MONTGOMERY",
+      "chat_id_env": "TELEGRAM_CHAT_ID_MONTGOMERY"
+    },
+    "desktop": {
+      "enabled": true
+    }
+  },
+  "mcp": {
+    "include": [
+      "memory",
+      "shell",
+      "worldmonitor",
+      "elevenlabs",
+      "fal"
+    ],
+    "exclude": [],
+    "custom": {}
+  },
+  "jobs": {
+    "worldmonitor_fast": {
+      "type": "interval",
+      "interval_seconds": 900,
+      "script": "scripts/agents/general_montgomery/worldmonitor_poll.py",
+      "args": "--tier fast",
+      "description": "Fast-cycle world monitoring - high-priority source polling",
+      "route_output_to": "self",
+      "notify_via": "telegram"
+    },
+    "worldmonitor_medium": {
+      "type": "interval",
+      "interval_seconds": 2700,
+      "script": "scripts/agents/general_montgomery/worldmonitor_poll.py",
+      "args": "--tier medium",
+      "description": "Medium-cycle world monitoring - secondary source analysis",
+      "route_output_to": "self",
+      "notify_via": "telegram"
+    },
+    "worldmonitor_slow": {
+      "type": "interval",
+      "interval_seconds": 14400,
+      "script": "scripts/agents/general_montgomery/worldmonitor_poll.py",
+      "args": "--tier slow",
+      "description": "Slow-cycle world monitoring - deep analysis and pattern review",
+      "route_output_to": "self",
+      "notify_via": "telegram"
+    }
+  },
+  "router": {
+    "accept_from": [
+      "*"
+    ],
+    "reject_from": [],
+    "max_queue_depth": 10,
+    "system_access": false,
+    "can_address_agents": true
+  },
+  "heartbeat": {
+    "active_start": 7,
+    "active_end": 23,
+    "interval_mins": 30
+  },
+  "org": {
+    "slug": "defence",
+    "tier": 1,
+    "role": "Secretary of Defence",
+    "can_address_user": true
+  }
+}
