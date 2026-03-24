@@ -20,7 +20,7 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from '../../config';
 import { setActive } from '../../status';
-import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument } from './api';
+import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument, sendPhoto } from './api';
 import { buildStatusDisplay, formatElapsed, type StreamState, type ToolCallState } from './formatter';
 import { discoverAgents, getAgentState } from '../../agent-manager';
 import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from '../../inference';
@@ -746,6 +746,41 @@ async function dispatchToAgent(
           }
         }
       }
+
+      // Auto-send artefacts created during this dispatch
+      try {
+        const displayFile = path.join(USER_DATA, 'agents', agentName, 'data', '.artefact_display.json');
+        if (fs.existsSync(displayFile)) {
+          const artefact = JSON.parse(fs.readFileSync(displayFile, 'utf-8')) as {
+            status?: string;
+            type?: string;
+            name?: string;
+            path?: string;
+            file?: string;
+          };
+          const artefactPath = artefact.path || artefact.file;
+          if (artefact.status === 'ready' && artefactPath && fs.existsSync(artefactPath)) {
+            const ext = path.extname(artefactPath).toLowerCase();
+            if (['.html', '.htm'].includes(ext)) {
+              // Send HTML artefacts as documents
+              await sendDocument(artefactPath, artefact.name || 'artefact', chatId, '', botToken);
+              log.info(`[${agentName}] sent artefact: ${artefact.name}`);
+            } else if (['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) {
+              // Send images inline
+              await sendPhoto(artefactPath, artefact.name || '', chatId, '', botToken);
+              log.info(`[${agentName}] sent artefact image: ${artefact.name}`);
+            } else {
+              // Send everything else as a document
+              await sendDocument(artefactPath, artefact.name || 'artefact', chatId, '', botToken);
+              log.info(`[${agentName}] sent artefact: ${artefact.name}`);
+            }
+            // Clean up display signal so it doesn't re-send next dispatch
+            try { fs.unlinkSync(displayFile); } catch { /* already gone */ }
+          }
+        }
+      } catch (artefactErr) {
+        log.debug(`[${agentName}] artefact check: ${artefactErr}`);
+      }
     } else if (!finalText && isTelegramOrigin) {
       log.warn(`[${agentName}] no response after ${elapsed}`);
     }
@@ -1017,6 +1052,9 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
         return undefined;
       }
       log.info(`[${agent.name}] Dispatch in progress - queuing Telegram message`);
+      // Let the user know the agent is busy but received their message
+      const busyChatId = (envelope.metadata?.chatId as string) || agent.chatId;
+      await sendChatAction('typing', busyChatId, agent.botToken);
     }
 
     // Extract Telegram-specific metadata for streaming display
