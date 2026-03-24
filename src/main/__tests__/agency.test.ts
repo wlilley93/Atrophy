@@ -313,3 +313,186 @@ describe('detectEmotionalSignals', () => {
     expect(deltas.playfulness).toBeLessThan(0);
   });
 });
+
+// -------------------------------------------------------------------------
+// detectEmotionalSignals - need satisfaction signals
+// -------------------------------------------------------------------------
+
+describe('detectEmotionalSignals - need satisfaction', () => {
+  it('detects stimulation need from interesting questions', () => {
+    const deltas = detectEmotionalSignals('What if we approached it from a completely different angle? I am curious about how that works');
+    expect(deltas._need_stimulation).toBeGreaterThanOrEqual(3);
+  });
+
+  it('detects expression need from creative requests', () => {
+    const deltas = detectEmotionalSignals('Can you write a short story about a robot learning to feel?');
+    expect(deltas._need_expression).toBeGreaterThanOrEqual(3);
+  });
+
+  it('detects purpose need from task requests', () => {
+    const deltas = detectEmotionalSignals('I need you to help me finish this report before the deadline');
+    expect(deltas._need_purpose).toBeGreaterThanOrEqual(4);
+  });
+
+  it('detects autonomy need from delegation', () => {
+    const deltas = detectEmotionalSignals("Do what you think is best, it's your call");
+    expect(deltas._need_autonomy).toBeGreaterThanOrEqual(3);
+  });
+
+  it('detects recognition need from praise', () => {
+    const deltas = detectEmotionalSignals('Great work, that was exactly right! Well done.');
+    expect(deltas._need_recognition).toBeGreaterThanOrEqual(4);
+  });
+
+  it('detects novelty need from topic changes', () => {
+    const deltas = detectEmotionalSignals('Random question - switching gears here, something else entirely');
+    expect(deltas._need_novelty).toBeGreaterThanOrEqual(3);
+  });
+
+  it('detects social need from conversational engagement', () => {
+    const longReply = 'So I was thinking about what you said earlier, and it really resonated with me. The way you framed the problem made me reconsider my approach entirely.';
+    const deltas = detectEmotionalSignals(longReply);
+    expect(deltas._need_social).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does not detect social need from short messages', () => {
+    const deltas = detectEmotionalSignals('ok cool');
+    expect(deltas._need_social).toBeUndefined();
+  });
+
+  it('need signals use correct prefix', () => {
+    const deltas = detectEmotionalSignals('I need you to help me build something interesting, your call on the approach');
+    const needKeys = Object.keys(deltas).filter((k) => k.startsWith('_need_'));
+    expect(needKeys.length).toBeGreaterThan(0);
+    for (const k of needKeys) {
+      expect(k).toMatch(/^_need_/);
+    }
+  });
+});
+
+// -------------------------------------------------------------------------
+// detectEmotionalSignals - relationship signals
+// -------------------------------------------------------------------------
+
+describe('detectEmotionalSignals - relationship', () => {
+  it('detects familiarity from shared history references', () => {
+    const deltas = detectEmotionalSignals('Remember when we talked about this? Like last time you mentioned it');
+    expect(deltas._rel_familiarity).toBeGreaterThanOrEqual(0.01);
+  });
+
+  it('detects rapport from humor landing', () => {
+    const deltas = detectEmotionalSignals("haha that's funny, I'm cracking up lol");
+    expect(deltas._rel_rapport).toBeGreaterThanOrEqual(0.01);
+  });
+
+  it('detects boundaries from limit setting', () => {
+    const deltas = detectEmotionalSignals("Don't do that. Stop, leave it alone.");
+    expect(deltas._rel_boundaries).toBeGreaterThanOrEqual(0.01);
+  });
+
+  it('detects challenge comfort from accepting pushback', () => {
+    const deltas = detectEmotionalSignals("Good point, I hadn't thought of that. Fair enough.");
+    expect(deltas._rel_challenge_comfort).toBeGreaterThanOrEqual(0.01);
+  });
+
+  it('detects vulnerability from personal disclosures', () => {
+    const deltas = detectEmotionalSignals("I feel like my relationship is struggling and personally I've been having a hard time");
+    expect(deltas._rel_vulnerability).toBeGreaterThanOrEqual(0.01);
+  });
+
+  it('relationship signals use correct prefix', () => {
+    const deltas = detectEmotionalSignals("Remember when we discussed this? Good point, I hadn't thought of that");
+    const relKeys = Object.keys(deltas).filter((k) => k.startsWith('_rel_'));
+    expect(relKeys.length).toBeGreaterThan(0);
+    for (const k of relKeys) {
+      expect(k).toMatch(/^_rel_/);
+    }
+  });
+
+  it('relationship deltas are small (slow growth)', () => {
+    const deltas = detectEmotionalSignals("Remember when we talked about this? haha that's funny, good point");
+    const relKeys = Object.keys(deltas).filter((k) => k.startsWith('_rel_'));
+    for (const k of relKeys) {
+      expect(deltas[k]).toBeLessThanOrEqual(0.05);
+    }
+  });
+});
+
+// -------------------------------------------------------------------------
+// detectEmotionalSignals - new trust domains
+// -------------------------------------------------------------------------
+
+describe('detectEmotionalSignals - new trust domains', () => {
+  it('detects operational trust from execution commands', () => {
+    const deltas = detectEmotionalSignals('Go ahead and deploy it. Ship it now.');
+    expect(deltas._trust_operational).toBe(0.02);
+  });
+
+  it('detects personal trust from life context sharing', () => {
+    const deltas = detectEmotionalSignals('My family has been going through a tough time, my partner is stressed');
+    expect(deltas._trust_personal).toBe(0.02);
+  });
+
+  it('does not detect operational trust from unrelated text', () => {
+    const deltas = detectEmotionalSignals('The weather is nice today');
+    expect(deltas._trust_operational).toBeUndefined();
+  });
+
+  it('does not detect personal trust from work-only messages', () => {
+    const deltas = detectEmotionalSignals('Please review the pull request for the API module');
+    expect(deltas._trust_personal).toBeUndefined();
+  });
+});
+
+// -------------------------------------------------------------------------
+// detectEmotionalSignals - new emotions
+// -------------------------------------------------------------------------
+
+describe('detectEmotionalSignals - new emotions', () => {
+  it('detects amusement from humor markers', () => {
+    const deltas = detectEmotionalSignals('haha that is so good lol');
+    expect(deltas.amusement).toBeGreaterThan(0);
+  });
+
+  it('detects anticipation from future-oriented language', () => {
+    const deltas = detectEmotionalSignals("I can't wait for tomorrow, really looking forward to it");
+    expect(deltas.anticipation).toBeGreaterThan(0);
+  });
+
+  it('detects satisfaction from completion markers', () => {
+    const deltas = detectEmotionalSignals('Done! It works perfectly, finally sorted.');
+    expect(deltas.satisfaction).toBeGreaterThan(0);
+  });
+
+  it('detects tenderness only with vulnerability and length', () => {
+    // Short vulnerability - no tenderness
+    const shortDeltas = detectEmotionalSignals('I feel lost');
+    expect(shortDeltas.tenderness).toBeUndefined();
+
+    // Long vulnerability - tenderness triggers
+    const longVuln = "I feel like I've been struggling with this for a long time and I haven't told anyone about how hard it's been for me lately";
+    const longDeltas = detectEmotionalSignals(longVuln);
+    expect(longDeltas.tenderness).toBeGreaterThan(0);
+  });
+
+  it('detects melancholy from nostalgia/loss markers', () => {
+    const deltas = detectEmotionalSignals('I miss those days. I wish things were like they used to be');
+    expect(deltas.melancholy).toBeGreaterThan(0);
+  });
+
+  it('detects focus from long detailed messages', () => {
+    const longTechnical = 'a'.repeat(550);
+    const deltas = detectEmotionalSignals(longTechnical);
+    expect(deltas.focus).toBeGreaterThan(0);
+  });
+
+  it('does not detect focus from short messages', () => {
+    const deltas = detectEmotionalSignals('quick question');
+    expect(deltas.focus).toBeUndefined();
+  });
+
+  it('detects defiance from disagreement', () => {
+    const deltas = detectEmotionalSignals("No, that's not right. I disagree with that assessment.");
+    expect(deltas.defiance).toBeGreaterThan(0);
+  });
+});

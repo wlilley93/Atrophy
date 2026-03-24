@@ -369,6 +369,121 @@ const PLAYFUL_MARKERS: readonly string[] = [
   'haha', 'lol', 'lmao', '\u{1F602}', '\u{1F604}',
 ];
 
+// ---------------------------------------------------------------------------
+// Need satisfaction phrase lists
+// ---------------------------------------------------------------------------
+
+const STIMULATION_PHRASES: readonly string[] = [
+  'interesting', 'curious about', 'what if', 'how does', 'tell me about',
+  'never thought about', 'that reminds me', 'new idea',
+];
+
+const EXPRESSION_PHRASES: readonly string[] = [
+  'create', 'build', 'write', 'make', 'design', 'compose',
+  'draw', 'draft', 'generate', 'produce',
+];
+
+const PURPOSE_PHRASES: readonly string[] = [
+  'help me', 'can you', 'i need you to', 'could you', 'please do',
+  'work on', 'finish', 'complete', 'handle', 'take care of',
+];
+
+const AUTONOMY_PHRASES: readonly string[] = [
+  'do what you think', 'your call', 'i trust your judgment',
+  'up to you', 'whatever you think', 'you decide',
+  'i trust you', 'your choice', 'go with your gut',
+];
+
+const RECOGNITION_PHRASES: readonly string[] = [
+  'great work', 'exactly right', 'well done', 'perfect',
+  'good job', 'nailed it', 'brilliant', 'impressive',
+  'nice work', 'love it', 'excellent', 'spot on', 'amazing',
+];
+
+const NOVELTY_PHRASES: readonly string[] = [
+  'completely different', 'new topic', 'change of subject',
+  'something else', 'random question', 'off topic',
+  'unrelated', 'by the way', 'switching gears',
+];
+
+// ---------------------------------------------------------------------------
+// Relationship phrase lists
+// ---------------------------------------------------------------------------
+
+const FAMILIARITY_PHRASES: readonly string[] = [
+  'remember when', 'like last time', 'as we discussed',
+  'you mentioned', 'we talked about', 'from before',
+  'like you said', 'our conversation',
+];
+
+const RAPPORT_PHRASES: readonly string[] = [
+  'haha', 'lol', 'lmao', 'that\'s funny', 'hilarious',
+  'cracking up', 'dying', '\u{1F602}', '\u{1F604}', '\u{1F923}',
+  '\u{1F606}', '\u{1F60D}',
+];
+
+const BOUNDARY_PHRASES: readonly string[] = [
+  'don\'t', 'stop', 'not now', 'leave it', 'drop it',
+  'enough', 'back off', 'not interested', 'no thanks',
+  'i said no', 'quit it',
+];
+
+const CHALLENGE_COMFORT_PHRASES: readonly string[] = [
+  'good point', 'you\'re right to push back', 'fair enough',
+  'i hadn\'t thought of that', 'you make a good case',
+  'okay you convinced me', 'that\'s a valid criticism',
+];
+
+const VULNERABILITY_PERSONAL_PHRASES: readonly string[] = [
+  'i feel', 'i\'ve been', 'my family', 'my relationship',
+  'growing up', 'when i was', 'personally', 'between us',
+  'i\'ve never told', 'this is personal',
+];
+
+// ---------------------------------------------------------------------------
+// New trust domain phrase lists
+// ---------------------------------------------------------------------------
+
+const OPERATIONAL_TRUST_PHRASES: readonly string[] = [
+  'go ahead', 'do it', 'execute', 'deploy', 'run it',
+  'ship it', 'make it happen', 'pull the trigger',
+  'proceed', 'launch', 'push it',
+];
+
+const PERSONAL_TRUST_PHRASES: readonly string[] = [
+  'my life', 'my partner', 'my family', 'my health',
+  'my feelings', 'at home', 'my friend', 'my kids',
+  'my parents', 'my relationship', 'dating', 'my ex',
+];
+
+// ---------------------------------------------------------------------------
+// New emotion phrase lists
+// ---------------------------------------------------------------------------
+
+const ANTICIPATION_PHRASES: readonly string[] = [
+  'can\'t wait', 'looking forward', 'tomorrow', 'planning',
+  'excited about', 'next week', 'soon', 'going to be',
+  'upcoming', 'about to',
+];
+
+const SATISFACTION_PHRASES: readonly string[] = [
+  'done', 'finished', 'works perfectly', 'nailed it',
+  'complete', 'sorted', 'finally', 'all good',
+  'that works', 'solved',
+];
+
+const MELANCHOLY_PHRASES: readonly string[] = [
+  'miss', 'wish', 'used to', 'gone', 'lost',
+  'remember when', 'those days', 'if only',
+  'not anymore', 'once upon',
+];
+
+const DEFIANCE_PHRASES: readonly string[] = [
+  'no', 'wrong', 'i disagree', 'that\'s not right',
+  'absolutely not', 'you\'re wrong', 'i don\'t think so',
+  'that\'s incorrect', 'i reject', 'not true',
+];
+
 export function detectEmotionalSignals(text: string): SignalDelta {
   const lower = text.toLowerCase().trim();
   const length = text.trim().length;
@@ -377,6 +492,10 @@ export function detectEmotionalSignals(text: string): SignalDelta {
   function add(key: string, value: number): void {
     deltas[key] = (deltas[key] || 0) + value;
   }
+
+  // -----------------------------------------------------------------------
+  // Existing emotion signals
+  // -----------------------------------------------------------------------
 
   // Long, thoughtful message
   if (length > 400) {
@@ -390,22 +509,28 @@ export function detectEmotionalSignals(text: string): SignalDelta {
     add('frustration', 0.1);
   }
 
-  // Vulnerability / openness
+  // Vulnerability / openness - emotional trust signal
   if (VULNERABILITY_PHRASES.some((p) => lower.includes(p))) {
     add('connection', 0.15);
     add('warmth', 0.1);
+    deltas._trust_emotional = 0.03;
   }
 
-  // Asking for help (trust signal)
+  // Asking for help (practical trust signal)
   if (HELP_SEEKING.some((p) => lower.includes(p))) {
     add('confidence', 0.05);
     deltas._trust_practical = 0.02;
   }
 
-  // Sharing creative work
+  // Sharing creative work (creative trust signal)
   if (CREATIVE_PHRASES.some((p) => lower.includes(p))) {
     add('curiosity', 0.1);
     deltas._trust_creative = 0.02;
+  }
+
+  // Long thoughtful messages signal intellectual trust
+  if (length > 400) {
+    deltas._trust_intellectual = 0.02;
   }
 
   // Deflecting / changing subject
@@ -422,6 +547,127 @@ export function detectEmotionalSignals(text: string): SignalDelta {
   if (detectMoodShift(text)) {
     add('warmth', 0.1);
     add('playfulness', -0.1);
+  }
+
+  // -----------------------------------------------------------------------
+  // New emotion signals
+  // -----------------------------------------------------------------------
+
+  // Amusement - humor markers (overlaps with playfulness but distinct emotion)
+  if (RAPPORT_PHRASES.some((p) => lower.includes(p))) {
+    add('amusement', 0.15);
+  }
+
+  // Anticipation - future-oriented language
+  if (ANTICIPATION_PHRASES.some((p) => lower.includes(p))) {
+    add('anticipation', 0.1);
+  }
+
+  // Satisfaction - completion markers
+  if (SATISFACTION_PHRASES.some((p) => lower.includes(p))) {
+    add('satisfaction', 0.15);
+  }
+
+  // Tenderness - vulnerability + warmth context (only when vulnerability detected)
+  if (VULNERABILITY_PHRASES.some((p) => lower.includes(p)) && length > 100) {
+    add('tenderness', 0.1);
+  }
+
+  // Melancholy - sadness/nostalgia markers
+  if (MELANCHOLY_PHRASES.some((p) => lower.includes(p))) {
+    add('melancholy', 0.1);
+  }
+
+  // Focus - long detailed message on a single topic (>500 chars, heuristic for technical)
+  if (length > 500) {
+    add('focus', 0.1);
+  }
+
+  // Defiance - disagreement markers
+  if (DEFIANCE_PHRASES.some((p) => lower.includes(p))) {
+    add('defiance', 0.1);
+  }
+
+  // -----------------------------------------------------------------------
+  // New trust domains
+  // -----------------------------------------------------------------------
+
+  // Operational trust - granting real-world access
+  if (OPERATIONAL_TRUST_PHRASES.some((p) => lower.includes(p))) {
+    deltas._trust_operational = 0.02;
+  }
+
+  // Personal trust - sharing personal details, non-work topics
+  if (PERSONAL_TRUST_PHRASES.some((p) => lower.includes(p))) {
+    deltas._trust_personal = 0.02;
+  }
+
+  // -----------------------------------------------------------------------
+  // Need satisfaction signals
+  // -----------------------------------------------------------------------
+
+  // Stimulation - new topic, interesting question, novel problem
+  if (STIMULATION_PHRASES.some((p) => lower.includes(p))) {
+    add('_need_stimulation', 3);
+  }
+
+  // Expression - asking agent to create/build/write something
+  if (EXPRESSION_PHRASES.some((p) => lower.includes(p))) {
+    add('_need_expression', 3);
+  }
+
+  // Purpose - asking for help, giving a task, requesting work
+  if (PURPOSE_PHRASES.some((p) => lower.includes(p))) {
+    add('_need_purpose', 4);
+  }
+
+  // Autonomy - delegating decision-making
+  if (AUTONOMY_PHRASES.some((p) => lower.includes(p))) {
+    add('_need_autonomy', 3);
+  }
+
+  // Recognition - positive feedback, praise
+  if (RECOGNITION_PHRASES.some((p) => lower.includes(p))) {
+    add('_need_recognition', 4);
+  }
+
+  // Novelty - introducing a new subject, unexpected turn
+  if (NOVELTY_PHRASES.some((p) => lower.includes(p))) {
+    add('_need_novelty', 3);
+  }
+
+  // Social - back-and-forth engagement (>100 chars suggests real conversation)
+  if (length > 100) {
+    add('_need_social', 2);
+  }
+
+  // -----------------------------------------------------------------------
+  // Relationship signals
+  // -----------------------------------------------------------------------
+
+  // Familiarity - referencing shared history
+  if (FAMILIARITY_PHRASES.some((p) => lower.includes(p))) {
+    add('_rel_familiarity', 0.015);
+  }
+
+  // Rapport - humor landing
+  if (RAPPORT_PHRASES.some((p) => lower.includes(p))) {
+    add('_rel_rapport', 0.02);
+  }
+
+  // Boundaries - setting a limit
+  if (BOUNDARY_PHRASES.some((p) => lower.includes(p))) {
+    add('_rel_boundaries', 0.01);
+  }
+
+  // Challenge comfort - accepting pushback
+  if (CHALLENGE_COMFORT_PHRASES.some((p) => lower.includes(p))) {
+    add('_rel_challenge_comfort', 0.015);
+  }
+
+  // Vulnerability - sharing personal info beyond work
+  if (VULNERABILITY_PERSONAL_PHRASES.some((p) => lower.includes(p))) {
+    add('_rel_vulnerability', 0.02);
   }
 
   return deltas;

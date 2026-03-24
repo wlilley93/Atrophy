@@ -28,7 +28,9 @@ import {
   timeGapNote, detectDrift, energyNote,
   shouldPromptJournal, detectEmotionalSignals,
 } from './agency';
-import { formatForContext, updateEmotions, updateTrust, loadState, type EmotionalState } from './inner-life';
+import { formatForContext, updateEmotions, updateTrust, updateRelationship, loadState, type EmotionalState } from './inner-life';
+import { satisfyNeed } from './inner-life-needs';
+import type { Needs, Relationship } from './inner-life-types';
 import { compressForContext } from './inner-life-compress';
 import { getStatus } from './status';
 import * as memory from './memory';
@@ -319,8 +321,14 @@ function buildAgencyContext(userMessage: string): string {
     let state = loadState();
     for (const [key, val] of Object.entries(signals)) {
       if (key.startsWith('_trust_')) {
-        const domain = key.replace('_trust_', '') as 'emotional' | 'intellectual' | 'creative' | 'practical';
+        const domain = key.replace('_trust_', '') as keyof typeof state.trust;
         state = updateTrust(state, domain, val);
+      } else if (key.startsWith('_need_')) {
+        const need = key.replace('_need_', '') as keyof Needs;
+        state = satisfyNeed(state, need, val);
+      } else if (key.startsWith('_rel_')) {
+        const dim = key.replace('_rel_', '') as keyof Relationship;
+        state = updateRelationship(state, dim, val);
       } else {
         emotionDeltas[key] = val;
       }
