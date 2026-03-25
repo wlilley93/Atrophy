@@ -59,31 +59,58 @@ def load_manifest(agent_name: str) -> dict:
         return json.load(f)
 
 
-def parse_cron_expr(cron: str) -> dict:
-    """Convert a cron expression to a launchd StartCalendarInterval dict.
+def _expand_cron_token(token: str, field_max: int = 59) -> list[int]:
+    """Expand a single cron token (e.g. '3', '1-5', '*/6') into a list of ints."""
+    if token.startswith("*/"):
+        step = int(token[2:])
+        return list(range(0, field_max + 1, step))
+    if "-" in token:
+        lo, hi = token.split("-", 1)
+        return list(range(int(lo), int(hi) + 1))
+    return [int(token)]
+
+
+def _parse_field(value: str, field_max: int = 59):
+    """Parse a single cron field. Returns int or list[int] for comma/range values."""
+    parts: list[int] = []
+    for token in value.split(","):
+        parts.extend(_expand_cron_token(token.strip(), field_max))
+    return parts[0] if len(parts) == 1 else parts
+
+
+def parse_cron_expr(cron: str):
+    """Convert a cron expression to a launchd StartCalendarInterval dict or list.
 
     Supports: "min hour * * *" (daily), "min hour dom * *" (monthly),
-    and simple 5-field cron expressions.
+    and simple 5-field cron expressions. Comma-separated values in any
+    field produce an array of StartCalendarInterval dicts (one per combo).
     """
     parts = cron.strip().split()
     if len(parts) != 5:
         return {}
 
     minute, hour, dom, month, dow = parts
-    interval = {}
+    keys = ["Minute", "Hour", "Day", "Month", "Weekday"]
+    parsed = {}
 
-    if minute != "*":
-        interval["Minute"] = int(minute)
-    if hour != "*":
-        interval["Hour"] = int(hour)
-    if dom != "*":
-        interval["Day"] = int(dom)
-    if month != "*":
-        interval["Month"] = int(month)
-    if dow != "*":
-        interval["Weekday"] = int(dow)
+    for key, val in zip(keys, [minute, hour, dom, month, dow]):
+        if val != "*":
+            parsed[key] = _parse_field(val)
 
-    return interval
+    # If any field has a list, expand into multiple dicts for launchd
+    list_keys = [k for k, v in parsed.items() if isinstance(v, list)]
+    if not list_keys:
+        return parsed
+
+    # Expand combinations - launchd wants an array of dicts
+    from itertools import product as _product
+
+    combos = []
+    list_vals = [parsed[k] if isinstance(parsed[k], list) else [parsed[k]] for k in keys if k in parsed]
+    combo_keys = [k for k in keys if k in parsed]
+    for combo in _product(*list_vals):
+        combos.append(dict(zip(combo_keys, combo)))
+    return combos
 
 
 def resolve_script_path(agent_name: str, script_rel: str) -> str:
