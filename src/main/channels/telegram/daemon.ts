@@ -18,7 +18,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
-import { getConfig, USER_DATA, BUNDLE_ROOT } from '../../config';
+import { getConfig, USER_DATA, BUNDLE_ROOT, saveAgentConfig } from '../../config';
 import { setActive } from '../../status';
 import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument, sendPhoto } from './api';
 import { buildStatusDisplay, formatElapsed, type StreamState, type ToolCallState } from './formatter';
@@ -895,6 +895,84 @@ async function handleStatusCommand(chatId: string, botToken: string): Promise<vo
 
   const text = lines.join('\n');
   await sendMessage(text, chatId, false, botToken);
+}
+
+// ---------------------------------------------------------------------------
+// Group membership tracking
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle my_chat_member updates - bot added/removed from groups.
+ *
+ * When added to a group: save DM as fallback, switch active chat to group.
+ * When removed: revert to DM fallback.
+ */
+async function handleMembershipChange(
+  agent: TelegramAgent,
+  member: {
+    chat: { id: number; type: string; title?: string };
+    new_chat_member: { status: string };
+    old_chat_member: { status: string };
+  },
+): Promise<void> {
+  const chatType = member.chat.type;
+  const newStatus = member.new_chat_member.status;
+  const groupChatId = String(member.chat.id);
+  const groupTitle = member.chat.title || 'group';
+
+  const isGroup = chatType === 'group' || chatType === 'supergroup';
+  const isAdded = newStatus === 'member' || newStatus === 'administrator';
+  const isRemoved = newStatus === 'left' || newStatus === 'kicked';
+
+  if (isGroup && isAdded) {
+    // Save the current chat ID as DM fallback (only if not already saved)
+    const config = getConfig();
+    config.reloadForAgent(agent.name);
+    const existingDm = config.TELEGRAM_DM_CHAT_ID;
+
+    if (!existingDm) {
+      saveAgentConfig(agent.name, { TELEGRAM_DM_CHAT_ID: agent.chatId });
+    }
+
+    // Switch active chat to the group
+    saveAgentConfig(agent.name, { TELEGRAM_CHAT_ID: groupChatId });
+    agent.chatId = groupChatId;
+
+    log.info(`[${agent.name}] Joined ${groupTitle} (${groupChatId}) - switched active chat`);
+
+    // Send greeting to the group
+    const prefix = agent.emoji ? `${agent.emoji} ` : '';
+    await sendMessage(
+      `${prefix}*${agent.display_name}* is now active in this group.`,
+      groupChatId,
+      false,
+      agent.botToken,
+    );
+
+  } else if (isRemoved) {
+    // Revert to DM fallback
+    const config = getConfig();
+    config.reloadForAgent(agent.name);
+    const dmChatId = config.TELEGRAM_DM_CHAT_ID;
+
+    if (dmChatId) {
+      saveAgentConfig(agent.name, { TELEGRAM_CHAT_ID: dmChatId });
+      agent.chatId = dmChatId;
+
+      log.info(`[${agent.name}] Removed from ${groupTitle} - reverted to DM (${dmChatId})`);
+
+      // Notify in the DM
+      const prefix = agent.emoji ? `${agent.emoji} ` : '';
+      await sendMessage(
+        `${prefix}*${agent.display_name}* removed from _${groupTitle}_. Back to this chat.`,
+        dmChatId,
+        false,
+        agent.botToken,
+      );
+    } else {
+      log.warn(`[${agent.name}] Removed from ${groupTitle} but no DM fallback configured`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
