@@ -15,6 +15,7 @@ import { reconcileTrustFromDb } from './inner-life';
 export class Session {
   sessionId: number | null = null;
   startedAt: number | null = null;
+  lastActivityAt: number | null = null;
   turnHistory: { role: string; content: string; turnId: number }[] = [];
   cliSessionId: string | null = null;
   mood: string | null = null;
@@ -22,6 +23,7 @@ export class Session {
   start(): number {
     this.sessionId = memory.startSession();
     this.startedAt = Date.now();
+    this.lastActivityAt = Date.now();
     this.turnHistory = [];
     reconcileTrustFromDb();
 
@@ -56,6 +58,7 @@ export class Session {
     }
     const turnId = memory.writeTurn(this.sessionId, role, content, topicTags, weight);
     this.turnHistory.push({ role, content, turnId });
+    this.lastActivityAt = Date.now();
     return turnId;
   }
 

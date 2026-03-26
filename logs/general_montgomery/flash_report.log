@@ -1,0 +1,120 @@
+2026-03-25 08:19:48,926 [INFO] Flash report check starting
+2026-03-25 08:19:48,951 [ERROR] Alert check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 08:19:48,952 [INFO] No flash triggers this cycle
+2026-03-25 08:34:49,043 [INFO] Flash report check starting
+2026-03-25 08:34:49,066 [ERROR] Alert check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 08:34:49,066 [INFO] No flash triggers this cycle
+2026-03-25 08:49:49,144 [INFO] Flash report check starting
+2026-03-25 08:49:49,169 [ERROR] Alert check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 08:49:49,169 [INFO] No flash triggers this cycle
+2026-03-25 09:04:49,241 [INFO] Flash report check starting
+2026-03-25 09:04:49,262 [ERROR] Alert check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 09:04:49,262 [INFO] No flash triggers this cycle
+2026-03-25 09:19:49,341 [INFO] Flash report check starting
+2026-03-25 09:19:49,365 [ERROR] Alert check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 09:19:49,365 [INFO] No flash triggers this cycle
+2026-03-25 09:34:49,451 [INFO] Flash report check starting
+2026-03-25 09:34:49,473 [ERROR] Alert check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 09:34:49,473 [INFO] No flash triggers this cycle
+2026-03-25 09:49:49,533 [INFO] Flash report check starting
+2026-03-25 09:49:49,634 [INFO] No flash triggers this cycle
+2026-03-25 10:04:49,721 [INFO] Flash report check starting
+2026-03-25 10:04:49,814 [INFO] No flash triggers this cycle
+2026-03-25 10:19:49,919 [INFO] Flash report check starting
+2026-03-25 10:19:50,023 [INFO] No flash triggers this cycle
+2026-03-25 10:34:50,127 [INFO] Flash report check starting
+2026-03-25 10:34:50,223 [INFO] No flash triggers this cycle
+2026-03-25 10:49:50,337 [INFO] Flash report check starting
+2026-03-25 10:49:50,431 [INFO] No flash triggers this cycle
+2026-03-25 11:04:50,509 [INFO] Flash report check starting
+2026-03-25 11:04:50,608 [INFO] No flash triggers this cycle
+2026-03-25 11:19:50,691 [INFO] Flash report check starting
+2026-03-25 11:19:50,809 [INFO] No flash triggers this cycle
+2026-03-25 11:34:50,880 [INFO] Flash report check starting
+2026-03-25 11:34:50,984 [INFO] No flash triggers this cycle
+2026-03-25 11:49:51,066 [INFO] Flash report check starting
+2026-03-25 11:49:51,164 [INFO] No flash triggers this cycle
+2026-03-25 12:04:51,235 [INFO] Flash report check starting
+2026-03-25 12:04:51,336 [INFO] No flash triggers this cycle
+2026-03-25 12:19:51,434 [INFO] Flash report check starting
+2026-03-25 12:19:51,540 [INFO] No flash triggers this cycle
+2026-03-25 12:34:51,611 [INFO] Flash report check starting
+2026-03-25 12:34:51,716 [INFO] No flash triggers this cycle
+2026-03-25 12:49:51,861 [INFO] Flash report check starting
+2026-03-25 12:49:52,017 [INFO] No flash triggers this cycle
+2026-03-25 13:04:52,092 [INFO] Flash report check starting
+2026-03-25 13:04:52,189 [INFO] No flash triggers this cycle
+2026-03-25 13:19:52,292 [INFO] Flash report check starting
+2026-03-25 13:19:52,399 [INFO] No flash triggers this cycle
+2026-03-25 13:34:52,486 [INFO] Flash report check starting
+2026-03-25 13:34:52,584 [INFO] No flash triggers this cycle
+2026-03-25 13:49:52,653 [INFO] Flash report check starting
+2026-03-25 13:49:52,746 [INFO] No flash triggers this cycle
+2026-03-25 14:04:52,843 [INFO] Flash report check starting
+2026-03-25 14:04:52,968 [INFO] No flash triggers this cycle
+2026-03-25 14:19:53,057 [INFO] Flash report check starting
+2026-03-25 14:19:53,172 [INFO] No flash triggers this cycle
+2026-03-25 14:34:53,262 [INFO] Flash report check starting
+2026-03-25 14:34:53,369 [INFO] No flash triggers this cycle
+2026-03-25 14:49:53,445 [INFO] Flash report check starting
+2026-03-25 14:49:53,555 [INFO] No flash triggers this cycle
+2026-03-25 15:04:53,657 [INFO] Flash report check starting
+2026-03-25 15:04:53,768 [INFO] No flash triggers this cycle
+2026-03-25 15:19:53,861 [INFO] Flash report check starting
+2026-03-25 15:19:54,289 [INFO] No flash triggers this cycle
+2026-03-25 15:34:54,373 [INFO] Flash report check starting
+2026-03-25 15:34:54,477 [INFO] No flash triggers this cycle
+2026-03-25 15:49:54,572 [INFO] Flash report check starting
+2026-03-25 15:49:54,680 [INFO] No flash triggers this cycle
+2026-03-25 16:04:54,762 [INFO] Flash report check starting
+2026-03-25 16:04:54,948 [INFO] No flash triggers this cycle
+2026-03-25 16:19:55,044 [INFO] Flash report check starting
+2026-03-25 16:19:55,156 [INFO] No flash triggers this cycle
+2026-03-25 16:34:55,243 [INFO] Flash report check starting
+2026-03-25 16:34:55,351 [INFO] No flash triggers this cycle
+2026-03-25 16:49:55,446 [INFO] Flash report check starting
+2026-03-25 16:49:56,548 [INFO] No flash triggers this cycle
+2026-03-25 17:04:56,628 [INFO] Flash report check starting
+2026-03-25 17:04:56,793 [INFO] No flash triggers this cycle
+2026-03-25 17:19:56,945 [INFO] Flash report check starting
+2026-03-25 17:19:57,071 [INFO] No flash triggers this cycle
+2026-03-25 17:34:57,231 [INFO] Flash report check starting
+2026-03-25 17:34:57,437 [INFO] No flash triggers this cycle
+2026-03-25 17:49:57,558 [INFO] Flash report check starting
+2026-03-25 17:49:57,678 [INFO] No flash triggers this cycle
+2026-03-25 18:04:57,822 [INFO] Flash report check starting
+2026-03-25 18:04:58,932 [INFO] No flash triggers this cycle
+2026-03-25 18:19:59,032 [INFO] Flash report check starting
+2026-03-25 18:19:59,857 [INFO] No flash triggers this cycle
+2026-03-25 18:35:00,020 [INFO] Flash report check starting
+2026-03-25 18:35:00,303 [INFO] No flash triggers this cycle
+2026-03-25 18:50:00,412 [INFO] Flash report check starting
+2026-03-25 18:50:00,942 [INFO] No flash triggers this cycle
+2026-03-25 19:05:01,078 [INFO] Flash report check starting
+2026-03-25 19:05:01,480 [INFO] No flash triggers this cycle
+2026-03-25 19:20:01,586 [INFO] Flash report check starting
+2026-03-25 19:20:02,154 [INFO] No flash triggers this cycle
+2026-03-25 19:35:02,308 [INFO] Flash report check starting
+2026-03-25 19:35:03,009 [INFO] No flash triggers this cycle
+2026-03-25 19:50:03,095 [INFO] Flash report check starting
+2026-03-25 19:50:03,405 [INFO] No flash triggers this cycle
+2026-03-25 20:05:03,525 [INFO] Flash report check starting
+2026-03-25 20:05:03,900 [INFO] No flash triggers this cycle
+2026-03-25 20:20:03,996 [INFO] Flash report check starting
+2026-03-25 20:20:04,322 [INFO] No flash triggers this cycle
+2026-03-25 20:35:04,418 [INFO] Flash report check starting
+2026-03-25 20:35:04,774 [INFO] No flash triggers this cycle
+2026-03-25 20:50:04,866 [INFO] Flash report check starting
+2026-03-25 20:50:05,279 [INFO] No flash triggers this cycle
+2026-03-25 21:05:05,384 [INFO] Flash report check starting
+2026-03-25 21:05:05,697 [INFO] No flash triggers this cycle
+2026-03-25 21:20:05,787 [INFO] Flash report check starting
+2026-03-25 21:20:06,432 [INFO] No flash triggers this cycle
+2026-03-25 21:35:06,535 [INFO] Flash report check starting
+2026-03-25 21:35:06,844 [INFO] No flash triggers this cycle
+2026-03-25 21:50:06,940 [INFO] Flash report check starting
+2026-03-25 21:50:07,384 [INFO] No flash triggers this cycle
+2026-03-25 22:05:07,520 [INFO] Flash report check starting
+2026-03-25 22:05:08,071 [INFO] No flash triggers this cycle
+2026-03-25 22:20:08,175 [INFO] Flash report check starting
+2026-03-25 22:20:08,557 [INFO] No flash triggers this cycle

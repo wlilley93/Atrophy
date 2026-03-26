@@ -54,9 +54,9 @@ def _gather_context() -> str:
 
     # Recent conversation turns (last few meaningful exchanges)
     turns = conn.execute(
-        "SELECT role, content FROM conversation_history "
-        "WHERE role IN ('user', 'agent') "
-        "ORDER BY created_at DESC LIMIT 6"
+        "SELECT role, content FROM turns "
+        "WHERE role IN ('will', 'agent') "
+        "ORDER BY timestamp DESC LIMIT 6"
     ).fetchall()
     if turns:
         parts.append("Recent conversation:\n" + "\n".join(

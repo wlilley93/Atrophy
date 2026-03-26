@@ -4,6 +4,71 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.5.37
+
+### Crash loop prevention and stability
+
+- **Single-instance lock** - `app.requestSingleInstanceLock()` prevents multiple Atrophy windows from opening. Second launch focuses existing window.
+- **Cron scheduler extended syntax** - `fieldMatches()` now handles comma lists (`0,3,6,9`), ranges (`1-5`), and step values (`*/3`). Previously crashed on Montgomery's `eu_nordic_monitor` and `three_hour_update` schedules.
+- **Cron reconciler extended syntax** - `parse_cron_expr()` in the launchd plist reconciler handles the same extended cron syntax.
+- **Telegram replay guard** - message replay on restart now fires once per boot, preventing duplicate dispatches during crash loops.
+- **Removed KeepAlive launchd plist** - `com.atrophy.electron` with `KeepAlive: true` was respawning the app endlessly on crash, amplifying failures into 40+ restarts.
+
+### Montgomery agent improvements
+
+- **Shared CLI** - `scripts/agents/shared/claude_cli.py` centralizes `call_claude()` (removes duplication across agents).
+- **Commission dispatcher** - routes open commissions to Research Fellow agents by domain.
+- **Expanded red team** - `red_team_review.py` covers flash reports and conflict assessments, not just weekly digests.
+- **Economic weekly fix** - commodity unit tracking was storing NULL, now infers from commodity name.
+
+### Telegram reliability
+
+- **Retry failed dispatches** - retries once after 5s for Telegram-origin messages that fail (timeout, OOM, crash).
+- **Replay missed messages** - tracks `last_dispatched_id` separately from poll offset, rewinds on startup to replay any gap.
+- **Full sender names** - uses first + last name for sender identification in groups.
+
+### Group chat emotional state
+
+- **Per-user emotional state** - tracks emotional vectors per sender in group chats, not just a single aggregate.
+
+### Telegram artefacts and UX
+
+- **Artefact delivery** - sends artefacts (HTML, charts, files) via Telegram.
+- **Busy typing indicator** - shows typing status during inference.
+
+---
+
+## 1.5.36
+
+### Inner Life v2
+
+Complete rewrite of the emotional architecture from 5 basic emotions to a multi-dimensional state system.
+
+- **14 emotions** across valence, arousal, social, and cognitive categories.
+- **6 trust domains** - competence, reliability, openness, safety, alignment, emotional.
+- **8 needs** with satisfaction, depletion, and drive computation.
+- **8 personality dimensions** with per-agent defaults (companion warm, xan assertive, montgomery stoic, mirror reflective).
+- **6 relationship dimensions** - closeness, formality, playfulness, intellectual depth, emotional depth, shared history.
+- **v2 schema** - `state_log`, `need_events`, `personality_log` tables, `emotional_vector` columns.
+- **Compressed context injection** - delta-based emotional state injected into inference (~50-80 tokens avg).
+- **Expanded signal detection** - needs, relationship, new emotions, new trust domains parsed from conversation.
+- **Emotional vector encoding** - 384-dim vectors stored and aggregated across distributed state.
+- **Cron integration** - heartbeat, introspect, and other jobs feed inner life v2.
+- **Python port** - `scripts/agents/` inner life processing ported to v2 format for all 6 categories.
+
+### Infrastructure
+
+- **Org hierarchy provisioning** - `org-manager.ts` provisions agent hierarchies from manifests.
+- **Skip-permissions for headless inference** - `--dangerously-skip-permissions` for cron/background jobs.
+- **Auto-upload files** - inference can push files to agents.
+- **Boot logging** - file-based boot log at `~/.atrophy/logs/boot.log` for diagnosing packaged app issues.
+- **Dynamic require fix** - resolved dynamic `require()` that broke packaged app's switchboard.
+- **Session lifecycle fixes** - trust persistence, decay rates, heartbeat notes, sender names.
+- **Full tool access** - agents granted WebSearch, Read, Write, Bash, etc.
+- **Dispatch timeout** - extended to 6 hours for deep research tasks.
+
+---
+
 ## 1.5.14
 
 ### Codebase refactoring

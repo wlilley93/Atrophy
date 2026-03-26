@@ -1,0 +1,128 @@
+2026-03-25 08:19:48,853 [SIGINT] SIGINT cycle starting
+2026-03-25 08:19:48,878 [SIGINT] GPS jamming check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 08:19:48,878 [SIGINT] Military flights check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 08:19:48,878 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 08:34:48,988 [SIGINT] SIGINT cycle starting
+2026-03-25 08:34:49,036 [SIGINT] GPS jamming check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 08:34:49,036 [SIGINT] Military flights check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 08:34:49,036 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 08:49:49,145 [SIGINT] SIGINT cycle starting
+2026-03-25 08:49:49,168 [SIGINT] GPS jamming check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 08:49:49,168 [SIGINT] Military flights check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 08:49:49,168 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 09:04:49,243 [SIGINT] SIGINT cycle starting
+2026-03-25 09:04:49,262 [SIGINT] GPS jamming check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 09:04:49,262 [SIGINT] Military flights check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 09:04:49,262 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 09:19:49,342 [SIGINT] SIGINT cycle starting
+2026-03-25 09:19:49,365 [SIGINT] GPS jamming check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 09:19:49,365 [SIGINT] Military flights check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 09:19:49,365 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 09:34:49,447 [SIGINT] SIGINT cycle starting
+2026-03-25 09:34:49,467 [SIGINT] GPS jamming check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 09:34:49,467 [SIGINT] Military flights check failed: WorldMonitorClient.__init__() missing 1 required positional argument: 'cache_db'
+2026-03-25 09:34:49,467 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 09:49:49,539 [SIGINT] SIGINT cycle starting
+2026-03-25 09:49:50,182 [SIGINT] Military flights check failed: table signals has no column named type
+2026-03-25 09:49:50,182 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 10:04:50,324 [SIGINT] SIGINT cycle starting
+2026-03-25 10:04:51,213 [SIGINT] Military flights check failed: table signals has no column named type
+2026-03-25 10:04:51,214 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 10:19:51,335 [SIGINT] SIGINT cycle starting
+2026-03-25 10:19:52,480 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 10:34:52,558 [SIGINT] SIGINT cycle starting
+2026-03-25 10:34:53,414 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 10:49:53,492 [SIGINT] SIGINT cycle starting
+2026-03-25 10:49:54,377 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 11:04:54,474 [SIGINT] SIGINT cycle starting
+2026-03-25 11:04:55,164 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 11:19:55,258 [SIGINT] SIGINT cycle starting
+2026-03-25 11:19:56,098 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 11:34:56,176 [SIGINT] SIGINT cycle starting
+2026-03-25 11:34:57,047 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 11:49:57,167 [SIGINT] SIGINT cycle starting
+2026-03-25 11:49:57,869 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 12:04:58,031 [SIGINT] SIGINT cycle starting
+2026-03-25 12:04:58,831 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 12:19:58,988 [SIGINT] SIGINT cycle starting
+2026-03-25 12:20:00,051 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 12:35:00,161 [SIGINT] SIGINT cycle starting
+2026-03-25 12:35:01,012 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 12:50:01,160 [SIGINT] SIGINT cycle starting
+2026-03-25 12:50:02,068 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 13:05:02,204 [SIGINT] SIGINT cycle starting
+2026-03-25 13:05:03,306 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 13:20:03,398 [SIGINT] SIGINT cycle starting
+2026-03-25 13:20:04,682 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 13:35:04,777 [SIGINT] SIGINT cycle starting
+2026-03-25 13:35:05,792 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 13:50:05,917 [SIGINT] SIGINT cycle starting
+2026-03-25 13:50:06,726 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 14:05:06,846 [SIGINT] SIGINT cycle starting
+2026-03-25 14:05:07,804 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 14:20:07,890 [SIGINT] SIGINT cycle starting
+2026-03-25 14:20:08,724 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 14:35:08,823 [SIGINT] SIGINT cycle starting
+2026-03-25 14:35:09,718 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 14:50:09,811 [SIGINT] SIGINT cycle starting
+2026-03-25 14:50:10,667 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 15:05:10,892 [SIGINT] SIGINT cycle starting
+2026-03-25 15:05:11,909 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 15:20:12,010 [SIGINT] SIGINT cycle starting
+2026-03-25 15:20:13,682 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 15:35:13,772 [SIGINT] SIGINT cycle starting
+2026-03-25 15:35:15,248 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 15:50:15,347 [SIGINT] SIGINT cycle starting
+2026-03-25 15:50:16,134 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 16:05:16,259 [SIGINT] SIGINT cycle starting
+2026-03-25 16:05:17,428 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 16:20:17,515 [SIGINT] SIGINT cycle starting
+2026-03-25 16:20:18,259 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 16:35:18,334 [SIGINT] SIGINT cycle starting
+2026-03-25 16:35:19,260 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 16:50:19,358 [SIGINT] SIGINT cycle starting
+2026-03-25 16:50:20,485 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 17:05:20,882 [SIGINT] SIGINT cycle starting
+2026-03-25 17:05:21,907 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 17:20:22,108 [SIGINT] SIGINT cycle starting
+2026-03-25 17:20:23,148 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 17:35:23,227 [SIGINT] SIGINT cycle starting
+2026-03-25 17:35:24,219 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 17:50:24,335 [SIGINT] SIGINT cycle starting
+2026-03-25 17:50:26,303 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 18:05:26,395 [SIGINT] SIGINT cycle starting
+2026-03-25 18:05:27,473 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 18:20:27,572 [SIGINT] SIGINT cycle starting
+2026-03-25 18:20:28,668 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 18:35:28,820 [SIGINT] SIGINT cycle starting
+2026-03-25 18:35:29,742 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 18:50:29,834 [SIGINT] SIGINT cycle starting
+2026-03-25 18:50:30,604 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 19:05:30,711 [SIGINT] SIGINT cycle starting
+2026-03-25 19:05:31,649 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 19:20:31,774 [SIGINT] SIGINT cycle starting
+2026-03-25 19:20:32,604 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 19:35:32,699 [SIGINT] SIGINT cycle starting
+2026-03-25 19:35:33,617 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 19:50:33,707 [SIGINT] SIGINT cycle starting
+2026-03-25 19:50:34,565 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 20:05:34,737 [SIGINT] SIGINT cycle starting
+2026-03-25 20:05:35,772 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 20:20:35,870 [SIGINT] SIGINT cycle starting
+2026-03-25 20:20:36,909 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 20:35:37,065 [SIGINT] SIGINT cycle starting
+2026-03-25 20:35:38,331 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 20:50:38,502 [SIGINT] SIGINT cycle starting
+2026-03-25 20:50:39,577 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 21:05:39,693 [SIGINT] SIGINT cycle starting
+2026-03-25 21:05:40,837 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 21:20:40,961 [SIGINT] SIGINT cycle starting
+2026-03-25 21:20:41,929 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 21:35:42,053 [SIGINT] SIGINT cycle starting
+2026-03-25 21:35:43,455 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 21:50:43,542 [SIGINT] SIGINT cycle starting
+2026-03-25 21:50:44,374 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 22:05:44,561 [SIGINT] SIGINT cycle starting
+2026-03-25 22:05:45,650 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)
+2026-03-25 22:20:45,821 [SIGINT] SIGINT cycle starting
+2026-03-25 22:20:47,134 [SIGINT] Cycle complete. Anomalies logged: 0 (GPS: 0, flights: 0)

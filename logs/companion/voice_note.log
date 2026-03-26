@@ -8,3 +8,6 @@ Traceback (most recent call last):
     turns = conn.execute(
             ^^^^^^^^^^^^^
 sqlite3.OperationalError: no such table: conversation_history
+[voice_note] Generated: I keep thinking about what you said - fix the loose ends and the bigger question resolves itself. Th...
+[voice_note] Sent voice note via Telegram
+[voice_note] Rescheduled to 2026-03-25 07:03

@@ -220,6 +220,44 @@ Output EXACTLY this format - a single fenced JSON block:
     return saveEnvVar(key, value);
   });
 
+  // API key verification - runs in main process to avoid CORS issues in production builds
+  ipcMain.handle('setup:verifyElevenLabs', async (_event, key: string) => {
+    try {
+      const res = await fetch('https://api.elevenlabs.io/v1/user', {
+        headers: { 'xi-api-key': key },
+      });
+      return { ok: res.ok };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  ipcMain.handle('setup:verifyFal', async (_event, key: string) => {
+    try {
+      const res = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: 'test', image_size: 'square_hd' }),
+      });
+      return { ok: res.status < 400 };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  ipcMain.handle('setup:verifyTelegram', async (_event, token: string) => {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+      const data = await res.json() as { ok?: boolean };
+      return { ok: data.ok === true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
   ipcMain.handle('setup:speak', async (_event, text: string) => {
     if (isMuted()) return;
     const audioPath = await synthesise(text);

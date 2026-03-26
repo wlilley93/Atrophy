@@ -22,3 +22,26 @@
   [memory] Decayed activation for 114 observation(s)
   [sleep] Decayed activation for 114 observation(s)
 [sleep] Nightly reconciliation complete.
+[sleep] Starting nightly reconciliation...
+  [sleep] 69 observation(s) queued for incorporation (69 backlog, 0 today)
+[sleep] Got response (6192 chars). Parsing...
+  [sleep] Stored 19 fact(s)
+  [memory] No thread found matching 'Companion Stability' — skipped
+  [memory] No thread found matching 'Atrophy Multi-Agent Architecture' — skipped
+  [memory] No thread found matching 'Memory & Embedding Systems' — skipped
+  [memory] No thread found matching 'Automated Task Execution' — skipped
+  [memory] No thread found matching 'System Organizational Debt' — skipped
+  [memory] No thread found matching 'Xan's Diagnostic Role' — skipped
+  [sleep] Updated 6 thread summary(ies)
+  [sleep] Stored 7 pattern(s)
+  [sleep] Trust aggregation (3 signal(s)):
+  intellectual: 0.565 -> 0.585
+  practical: 0.516 -> 0.566
+  [sleep] Emotional snapshot: emotional=0.538, intellectual=0.585, creative=0.500, practical=0.566, operational=0.500, personal=0.500
+  [sleep] Emotions: connection=0.521, curiosity=0.601, confidence=0.500, warmth=0.506, frustration=0.100, playfulness=0.300, amusement=0.200, anticipation=0.403, satisfaction=0.437, restlessness=0.200, tenderness=0.325, melancholy=0.100, focus=0.500, defiance=0.101
+  [sleep] Unmet needs: stimulation=0.496, expression=0.884, purpose=1.575, autonomy=0.884, recognition=1.575, novelty=0.156, social=2.029, rest=2.806
+  [sleep] Personality: assertiveness=0.6, initiative=0.6, warmth_default=0.6, humor_style=0.5, depth_preference=0.7, directness=0.65, patience=0.6, risk_tolerance=0.5
+  [sleep] Marked 0 observation(s) as incorporated (of 69 candidates)
+  [memory] Decayed activation for 182 observation(s)
+  [sleep] Decayed activation for 182 observation(s)
+[sleep] Nightly reconciliation complete.

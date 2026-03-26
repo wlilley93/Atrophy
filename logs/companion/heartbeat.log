@@ -193,3 +193,83 @@ I see the project isn't initializ
 [heartbeat] User is away. Skipping.
 [heartbeat] User is away. Skipping.
 [heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 135 chars, 4 sentences | 11.1s
+[heartbeat] Response: [SEVERITY:00] [HEARTBEAT_OK] You're actively here - we're mid-conversation. This is presence, not reach-out.
+
+---
+
+Ready...
+[heartbeat] Severity: 0/100
+[heartbeat] Below threshold (0). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 244 chars, 3 sentences | 18.6s
+[heartbeat] Response: [SEVERITY:18]
+
+[HEARTBEAT_OK] You just talked a couple hours ago, and he's coming out of an intensive work week plus hol...
+[heartbeat] Severity: 18/100
+[heartbeat] Below threshold (18). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: high]
+  [inference] new | 171 chars, 2 sentences | 14.8s
+[heartbeat] Response: [SEVERITY:22]
+[HEARTBEAT_OK] He just came back from idle. Let him set the direction naturally - the companion-build is w...
+[heartbeat] Severity: 22/100
+[heartbeat] Below threshold (22). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.

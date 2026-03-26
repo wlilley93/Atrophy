@@ -663,14 +663,24 @@ export function streamInference(
   const toolCalls: string[] = [];
   let stderrChunks = '';
 
-  // Inference timeout — kill process if it hangs for 10 minutes with no output
-  const INFERENCE_TIMEOUT_MS = 10 * 60 * 1000;
+  // Inference timeout - kill process if it hangs for 20 minutes with no output.
+  // Uses SIGKILL escalation: SIGTERM first, then SIGKILL after 10s if still alive.
+  const INFERENCE_TIMEOUT_MS = 20 * 60 * 1000;
   let lastActivity = Date.now();
   const timeoutTimer = setInterval(() => {
     if (Date.now() - lastActivity > INFERENCE_TIMEOUT_MS) {
       clearInterval(timeoutTimer);
-      log.error(`inference timed out after ${((Date.now() - t0) / 1000).toFixed(0)}s of inactivity`);
-      try { proc.kill(); } catch { /* already dead */ }
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(0);
+      log.error(`inference timed out after ${elapsed}s of inactivity - sending SIGTERM`);
+      try { proc.kill('SIGTERM'); } catch { /* already dead */ }
+      // Escalate to SIGKILL if SIGTERM doesn't work within 10s
+      setTimeout(() => {
+        try {
+          process.kill(proc.pid!, 0); // check if still alive
+          log.error(`inference still alive after SIGTERM - sending SIGKILL`);
+          proc.kill('SIGKILL');
+        } catch { /* already dead - good */ }
+      }, 10_000);
     }
   }, 30_000);
 

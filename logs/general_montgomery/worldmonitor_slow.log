@@ -3,3 +3,10 @@
 [WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized
 [WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized
 [WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized
+[WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized
+[WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized
+[WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized
+[WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized
+[WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized
+[WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized
+[WorldMonitorClient] poll_tier(slow): failed to fetch api/economic/v1/get-energy-prices: WorldMonitor API unreachable and no cached data for 'api/economic/v1/get-energy-prices': HTTP Error 401: Unauthorized

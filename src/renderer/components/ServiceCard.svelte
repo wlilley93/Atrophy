@@ -119,10 +119,8 @@
     elevenLabsVerifying = true;
     elevenLabsVerified = null;
     try {
-      const res = await fetch('https://api.elevenlabs.io/v1/user', {
-        headers: { 'xi-api-key': elevenLabsKey.trim() },
-      });
-      elevenLabsVerified = res.ok;
+      const result = await api?.verifyElevenLabs(elevenLabsKey.trim());
+      elevenLabsVerified = result?.ok ?? false;
     } catch {
       elevenLabsVerified = false;
     }
@@ -134,15 +132,8 @@
     falVerifying = true;
     falVerified = null;
     try {
-      const res = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${falKey.trim()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ prompt: 'test', image_size: 'square_hd' }),
-      });
-      falVerified = res.status < 400;
+      const result = await api?.verifyFal(falKey.trim());
+      falVerified = result?.ok ?? false;
     } catch {
       falVerified = false;
     }
@@ -154,9 +145,8 @@
     telegramVerifying = true;
     telegramVerified = null;
     try {
-      const res = await fetch(`https://api.telegram.org/bot${telegramToken.trim()}/getMe`);
-      const data = await res.json();
-      telegramVerified = data.ok === true;
+      const result = await api?.verifyTelegram(telegramToken.trim());
+      telegramVerified = result?.ok ?? false;
     } catch {
       telegramVerified = false;
     }

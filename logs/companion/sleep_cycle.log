@@ -20,3 +20,25 @@
   [memory] Decayed activation for 148 observation(s)
   [sleep] Decayed activation for 148 observation(s)
 [sleep] Nightly reconciliation complete.
+[sleep] Starting nightly reconciliation...
+  [sleep] 100 observation(s) queued for incorporation (100 backlog, 0 today)
+[sleep] Got response (12115 chars). Parsing...
+  [sleep] Stored 19 fact(s)
+  [memory] No thread found matching 'environment-config' — skipped
+  [memory] No thread found matching 'relational-dynamics' — skipped
+  [memory] No thread found matching 'observer-data-consolidation' — skipped
+  [sleep] Updated 4 thread summary(ies)
+  [sleep] Stored 8 pattern(s)
+  [sleep] Trust aggregation (8 signal(s)):
+  emotional: 0.773 -> 0.873
+  intellectual: 0.718 -> 0.738
+  creative: 0.530 -> 0.570
+  [sleep] Emotional snapshot: emotional=0.873, intellectual=0.738, creative=0.570, practical=0.534, operational=0.532, personal=0.500
+  [sleep] Emotions: connection=0.534, curiosity=0.602, confidence=0.500, warmth=0.514, frustration=0.100, playfulness=0.300, amusement=0.200, anticipation=0.413, satisfaction=0.500, restlessness=0.200, tenderness=0.414, melancholy=0.320, focus=0.502, defiance=0.102
+  [sleep] Unmet needs: stimulation=0.796, expression=1.259, autonomy=1.259, recognition=1.995, novelty=0.317
+  [sleep] Personality: assertiveness=0.6, initiative=0.6, warmth_default=0.6, humor_style=0.5, depth_preference=0.7, directness=0.65, patience=0.6, risk_tolerance=0.5
+  [sleep] Marked 0 observation(s) as incorporated (of 100 candidates)
+  [sleep] Flagged 5 item(s) for identity review
+  [memory] Decayed activation for 277 observation(s)
+  [sleep] Decayed activation for 277 observation(s)
+[sleep] Nightly reconciliation complete.

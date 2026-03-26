@@ -1,0 +1,1023 @@
+2026-03-24 23:14:14,117 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-24 23:29:14,318 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-24 23:44:14,448 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-24 23:59:14,594 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 00:14:14,747 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 00:29:14,899 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 00:44:15,033 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 00:59:15,257 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 01:14:15,516 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 01:29:15,635 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 01:44:15,752 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 01:59:15,889 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 02:14:16,058 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 02:29:16,251 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 02:44:16,449 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 02:59:16,559 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 03:14:16,674 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 03:29:16,783 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 03:44:16,916 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 03:59:17,066 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 04:14:17,282 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 04:29:17,529 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 04:44:17,688 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 04:59:17,851 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 05:14:17,982 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 05:29:18,168 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 05:44:18,415 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 05:59:18,815 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 06:14:19,092 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 06:29:19,452 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 06:44:19,659 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 06:59:19,781 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 07:14:19,949 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 07:29:20,100 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 07:44:20,249 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 07:59:20,400 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 08:14:20,779 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 08:29:21,037 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 08:44:21,493 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 08:59:21,689 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 09:14:21,814 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 09:29:21,923 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 09:44:22,099 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 09:59:22,250 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 330, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 301, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 10:14:22,377 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 10:29:22,568 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 10:44:22,884 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 10:59:23,240 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 11:14:23,365 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 11:29:23,524 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 11:44:23,644 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 11:59:23,827 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 12:14:23,958 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 12:29:24,087 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 12:44:24,464 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 12:59:24,616 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 13:14:24,750 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 13:29:24,870 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 13:44:25,008 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 13:59:25,142 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 14:14:25,270 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 14:29:25,604 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 14:44:25,819 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 14:59:25,955 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 15:14:26,098 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 15:29:26,208 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 15:44:26,455 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 15:59:26,630 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 16:14:26,797 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 332, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 303, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 92, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 16:29:26,908 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 16:44:27,040 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 16:59:27,228 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 17:14:27,648 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 17:29:27,878 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 17:44:27,996 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 17:59:28,152 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 18:14:28,549 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 18:29:28,867 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 18:44:29,099 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 18:59:29,242 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 19:14:29,385 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 19:29:29,500 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 19:44:29,650 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 19:59:29,852 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 20:14:30,039 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 20:29:30,192 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 20:44:30,325 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 20:59:30,770 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 21:14:31,036 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 21:29:31,171 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 21:44:31,287 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 21:59:31,409 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'
+2026-03-25 22:14:31,563 [INFO] Dashboard brief cycle: mode=refresh
+Traceback (most recent call last):
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 448, in <module>
+    main()
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 419, in main
+    data = collect_data()
+           ^^^^^^^^^^^^^^
+  File "/tmp/atrophy/scripts/agents/general_montgomery/dashboard_brief.py", line 94, in collect_data
+    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+                            ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'WorldMonitorClient' object has no attribute 'get_fleet_report'

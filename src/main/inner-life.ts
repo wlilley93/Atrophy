@@ -8,7 +8,7 @@
 
 import * as fs from 'fs';
 import { getConfig } from './config';
-import { writeTrustLog } from './memory';
+import { writeTrustLog, writeStateLog } from './memory';
 import {
   type Emotions,
   type Trust,
@@ -167,7 +167,15 @@ function applyDecay(state: FullState): FullState {
     const baseline = EMOTION_BASELINES[key];
     const halfLife = EMOTION_HALF_LIVES[key];
     const decay = Math.pow(0.5, hoursElapsed / halfLife);
-    emotions[key] = baseline + (emotions[key] - baseline) * decay;
+    const oldValue = emotions[key];
+    emotions[key] = baseline + (oldValue - baseline) * decay;
+    // Log significant emotion decay to state_log for trajectory tracking
+    const delta = emotions[key] - oldValue;
+    if (Math.abs(delta) > 0.005) {
+      try {
+        writeStateLog('emotion', key, delta, emotions[key], `decay over ${hoursElapsed.toFixed(1)}h`, 'decay');
+      } catch { /* non-fatal */ }
+    }
   }
 
   // Trust: decay toward DEFAULT_TRUST baselines with per-domain half-lives
@@ -176,7 +184,15 @@ function applyDecay(state: FullState): FullState {
     const baseline = DEFAULT_TRUST[key];
     const halfLife = TRUST_HALF_LIVES[key];
     const decay = Math.pow(0.5, hoursElapsed / halfLife);
-    trust[key] = baseline + (trust[key] - baseline) * decay;
+    const oldValue = trust[key];
+    trust[key] = baseline + (oldValue - baseline) * decay;
+    // Log significant decay events to preserve trust trajectory history
+    const delta = trust[key] - oldValue;
+    if (Math.abs(delta) > 0.001) {
+      try {
+        writeTrustLog(key, delta, trust[key], `decay over ${hoursElapsed.toFixed(1)}h`, 'decay');
+      } catch { /* non-fatal */ }
+    }
   }
 
   // Needs: decay toward 0 (depletion model)
@@ -516,6 +532,10 @@ export function applySignalsToUserState(
       if (domain in us.trust) {
         const clamped = Math.max(-0.05, Math.min(0.05, val));
         us.trust[domain] = Math.round(Math.max(0, Math.min(1, us.trust[domain] + clamped)) * 1000) / 1000;
+        // Log trust change from signal to preserve history
+        try {
+          writeTrustLog(domain, clamped, us.trust[domain], 'signal from inference', 'signal');
+        } catch { /* non-fatal */ }
       }
     } else if (key.startsWith('_rel_')) {
       const dim = key.replace('_rel_', '') as keyof Relationship;

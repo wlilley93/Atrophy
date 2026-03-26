@@ -1,0 +1,48 @@
+2026-03-25 09:04:48,862 [LIB] Taxonomy filing cycle starting
+2026-03-25 09:04:48,866 [LIB] Processing brief 1: External Backers in the Sudanese Civil War
+2026-03-25 09:04:53,297 [LIB] Entity extraction failed: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+2026-03-25 09:04:53,298 [LIB] Filing complete. New entities added: 0
+2026-03-25 10:04:53,441 [LIB] Taxonomy filing cycle starting
+2026-03-25 10:04:53,442 [LIB] Processing brief 2: Contradiction Check - 2026-03-25
+2026-03-25 10:04:56,466 [LIB] Entity extraction failed: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+2026-03-25 10:04:56,466 [LIB] Processing brief 3: Entity Enrichment Run - 2026-03-25
+2026-03-25 10:04:56,470 [LIB] Entity extraction failed: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+2026-03-25 10:04:56,471 [LIB] Processing brief 4: Daily Triage - 2026-03-25
+2026-03-25 10:04:56,474 [LIB] Entity extraction failed: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+2026-03-25 10:04:56,474 [LIB] Processing brief 5: Economic Weekly - 2026-03-25
+2026-03-25 10:04:56,478 [LIB] Entity extraction failed: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+2026-03-25 10:04:56,478 [LIB] Processing brief 6: Competitor Scan - 2026-03-25
+2026-03-25 10:04:56,482 [LIB] Entity extraction failed: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+2026-03-25 10:04:56,482 [LIB] Processing brief 7: Daily Triage - 2026-03-25
+2026-03-25 10:04:56,486 [LIB] Entity extraction failed: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+2026-03-25 10:04:56,486 [LIB] Processing brief 8: Economic Weekly - 2026-03-25
+2026-03-25 10:04:56,489 [LIB] Entity extraction failed: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+2026-03-25 10:04:56,489 [LIB] Filing complete. New entities added: 0
+2026-03-25 11:04:56,721 [LIB] Taxonomy filing cycle starting
+2026-03-25 11:04:56,724 [LIB] No new briefs to process
+2026-03-25 12:04:56,807 [LIB] Taxonomy filing cycle starting
+2026-03-25 12:04:56,809 [LIB] Processing brief 9: Contradiction Check - 2026-03-25
+2026-03-25 12:05:06,205 [LIB] Entity extraction failed: Extra data: line 1 column 3 (char 2)
+2026-03-25 12:05:06,205 [LIB] Processing brief 10: Contradiction Check - 2026-03-25
+2026-03-25 12:05:15,022 [LIB] Entity extraction failed: Expecting value: line 2 column 12 (char 13)
+2026-03-25 12:05:15,022 [LIB] Filing complete. New entities added: 0
+2026-03-25 13:05:15,132 [LIB] Taxonomy filing cycle starting
+2026-03-25 13:05:15,172 [LIB] No new briefs to process
+2026-03-25 14:05:15,257 [LIB] Taxonomy filing cycle starting
+2026-03-25 14:05:15,259 [LIB] No new briefs to process
+2026-03-25 15:05:15,329 [LIB] Taxonomy filing cycle starting
+2026-03-25 15:05:15,332 [LIB] No new briefs to process
+2026-03-25 16:05:15,509 [LIB] Taxonomy filing cycle starting
+2026-03-25 16:05:15,534 [LIB] No new briefs to process
+2026-03-25 17:05:15,605 [LIB] Taxonomy filing cycle starting
+2026-03-25 17:05:15,606 [LIB] No new briefs to process
+2026-03-25 18:05:15,684 [LIB] Taxonomy filing cycle starting
+2026-03-25 18:05:15,689 [LIB] No new briefs to process
+2026-03-25 19:05:15,759 [LIB] Taxonomy filing cycle starting
+2026-03-25 19:05:15,763 [LIB] No new briefs to process
+2026-03-25 20:05:15,839 [LIB] Taxonomy filing cycle starting
+2026-03-25 20:05:15,842 [LIB] No new briefs to process
+2026-03-25 21:05:15,919 [LIB] Taxonomy filing cycle starting
+2026-03-25 21:05:15,923 [LIB] No new briefs to process
+2026-03-25 22:05:16,032 [LIB] Taxonomy filing cycle starting
+2026-03-25 22:05:16,038 [LIB] No new briefs to process

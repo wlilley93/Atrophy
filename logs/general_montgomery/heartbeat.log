@@ -121,3 +121,196 @@
 [heartbeat] Response: [SEVERITY:8] Routine WorldMonitor cycle with no material changes. ALERTS and MARITIME cleared - de-escalation signal, no...
 [heartbeat] Severity: 8/100
 [heartbeat] Below threshold (8). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 224 chars, 3 sentences | 12.6s
+[heartbeat] Response: [SEVERITY:38]
+
+[HEARTBEAT_OK] Maritime sensor count increased (2→5 items), but recent interaction and insufficient signa...
+[heartbeat] Severity: 38/100
+[heartbeat] OK (38): Maritime sensor count increased (2→5 items), but recent interaction and insuffic
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 137 chars, 3 sentences | 8.4s
+[heartbeat] Response: [SEVERITY:15]
+[HEARTBEAT_OK] OSINT churn with no net signal - algorithmic refresh. Will active in conversation. No mater...
+[heartbeat] Severity: 15/100
+[heartbeat] Below threshold (15). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 277 chars, 4 sentences | 12.1s
+[heartbeat] Response: [SEVERITY:18] 
+
+[HEARTBEAT_OK] WorldMonitor shows alert cycling (one flagged, one cleared) but no substantive intelligen...
+[heartbeat] Severity: 18/100
+[heartbeat] Below threshold (18). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 227 chars, 3 sentences | 14.8s
+[heartbeat] Response: [SEVERITY:42]
+
+[HEARTBEAT_OK] He's actively here. Material GPS jamming expansion (74 new hexes - total now 649) is track...
+[heartbeat] Severity: 42/100
+[heartbeat] OK (42): He's actively here. Material GPS jamming expansion (74 new hexes - total now 649
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 291 chars, 3 sentences | 25.0s
+[heartbeat] Response: [SEVERITY:42]
+
+[HEARTBEAT_OK] GPS jamming expansion flagged (+74 hexes, total 649) but lacks geographic context and chai...
+[heartbeat] Severity: 42/100
+[heartbeat] OK (42): GPS jamming expansion flagged (+74 hexes, total 649) but lacks geographic contex
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 177 chars, 4 sentences | 11.4s
+[heartbeat] Response: [SEVERITY:12] 
+
+[HEARTBEAT_OK] Routine OSINT cycling with no net pattern shift. Baseline stable. No kinetic events, esca...
+[heartbeat] Severity: 12/100
+[heartbeat] Below threshold (12). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 162 chars, 2 sentences | 8.3s
+[heartbeat] Response: [SEVERITY:18]
+
+[HEARTBEAT_OK] OSINT data cycling in balanced patterns, no escalation indicators, no kinetic activity fla...
+[heartbeat] Severity: 18/100
+[heartbeat] Below threshold (18). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 189 chars, 3 sentences | 11.1s
+[heartbeat] Response: [SEVERITY:12]
+
+[SUPPRESS] Will was online 40 minutes ago, he's on personal time with family, and OSINT shows only routin...
+[heartbeat] Severity: 12/100
+[heartbeat] Below threshold (12). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 231 chars, 3 sentences | 11.4s
+[heartbeat] Response: [SEVERITY:18] 
+
+[HEARTBEAT_OK] Will was in active session an hour ago discussing Meridian Institute strategy. OSINT cycl...
+[heartbeat] Severity: 18/100
+[heartbeat] Below threshold (18). Suppressed.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] Outside active hours (7-23). Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 215 chars, 3 sentences | 12.4s
+[heartbeat] Response: [SEVERITY:15]
+
+[HEARTBEAT_OK] Last contact two hours ago, OSINT cycling normally with no net accumulation, no kinetic in...
+[heartbeat] Severity: 15/100
+[heartbeat] Below threshold (15). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 299 chars, 5 sentences | 8.8s
+[heartbeat] Response: [SEVERITY:8] 
+
+[HEARTBEAT_OK] You're back after a brief absence. WorldMonitor shows steady state - no kinetic activity, ...
+[heartbeat] Severity: 8/100
+[heartbeat] Below threshold (8). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 240 chars, 5 sentences | 10.2s
+[heartbeat] Response: [SEVERITY:08] [HEARTBEAT_OK] Stable intelligence picture. Will just resumed. Meridian Institute work is strategic, not t...
+[heartbeat] Severity: 8/100
+[heartbeat] Below threshold (8). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 269 chars, 5 sentences | 9.4s
+[heartbeat] Response: [SEVERITY:15]
+
+[HEARTBEAT_OK] Will is active (message 3 minutes ago). WorldMonitor shows routine churn - OSINT stable at...
+[heartbeat] Severity: 15/100
+[heartbeat] Below threshold (15). Suppressed.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 203 chars, 2 sentences | 8.8s
+[heartbeat] Response: [SEVERITY: 15]
+
+[HEARTBEAT_OK] Routine WorldMonitor churn with no pattern escalation. You're actively engaged and the bu...
+[heartbeat] Severity: 50/100
+[heartbeat] Unexpected format: [SEVERITY: 15]
+
+[HEARTBEAT_OK] Routine WorldMonitor churn with no pattern escala
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 225 chars, 4 sentences | 8.7s
+[heartbeat] Response: [SEVERITY:15]
+
+[HEARTBEAT_OK] WorldMonitor showing routine OSINT cycle (+42/-42) and minor maritime flux. No kinetic act...
+[heartbeat] Severity: 15/100
+[heartbeat] Below threshold (15). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 122 chars, 2 sentences | 11.2s
+[heartbeat] Response: [SEVERITY:08]
+
+[HEARTBEAT_OK] Build sprint just completed, no kinetic events or pattern shifts in WorldMonitor. Stay dar...
+[heartbeat] Severity: 8/100
+[heartbeat] Below threshold (8). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 222 chars, 4 sentences | 15.2s
+[heartbeat] Response: [SEVERITY:12] 
+
+[HEARTBEAT_OK] System nominal. WorldMonitor stable, OSINT cycling cleanly, no threshold breaches. You're...
+[heartbeat] Severity: 12/100
+[heartbeat] Below threshold (12). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 230 chars, 4 sentences | 10.8s
+[heartbeat] Response: [SEVERITY: 12]
+
+[HEARTBEAT_OK] You were active 90 seconds ago. No material change since - OSINT feeds stable, no kinetic...
+[heartbeat] Severity: 50/100
+[heartbeat] Unexpected format: [SEVERITY: 12]
+
+[HEARTBEAT_OK] You were active 90 seconds ago. No material chang
+[heartbeat] Running evaluation (cold)...
+  [effort: medium]
+  [inference] new | 280 chars, 6 sentences | 10.7s
+[heartbeat] Response: [SEVERITY:12] 
+
+[HEARTBEAT_OK] System stable. OSINT maintains 50-item rotation (expected churn). Last brief was 2h ago w...
+[heartbeat] Severity: 12/100
+[heartbeat] Below threshold (12). Suppressed.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
+[heartbeat] User is away. Skipping.
