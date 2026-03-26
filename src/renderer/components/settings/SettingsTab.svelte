@@ -913,6 +913,8 @@
     align-items: center;
     gap: 12px;
     margin-bottom: 8px;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .field-label {
@@ -923,6 +925,7 @@
 
   .field-input {
     flex: 1;
+    min-width: 0;
     height: 30px;
     padding: 0 10px;
     background: rgba(255, 255, 255, 0.08);
@@ -933,6 +936,7 @@
     font-size: 12px;
     outline: none;
     transition: border-color 0.15s;
+    box-sizing: border-box;
   }
 
   .field-input:focus {

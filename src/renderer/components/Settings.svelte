@@ -548,7 +548,9 @@
   .settings-content {
     flex: 1;
     min-height: 0;
+    min-width: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 24px 28px;
   }
 
