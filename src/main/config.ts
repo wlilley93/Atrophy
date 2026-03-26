@@ -520,6 +520,7 @@ export class Config {
   // Telegram
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_CHAT_ID: string;
+  TELEGRAM_DM_CHAT_ID: string;
 
   // Notifications
   NOTIFICATIONS_ENABLED: boolean;
@@ -618,6 +619,7 @@ export class Config {
     this.HEARTBEAT_INTERVAL_MINS = 30;
     this.TELEGRAM_BOT_TOKEN = '';
     this.TELEGRAM_CHAT_ID = '';
+    this.TELEGRAM_DM_CHAT_ID = '';
     this.NOTIFICATIONS_ENABLED = true;
     this.SILENCE_TIMER_ENABLED = true;
     this.SILENCE_TIMER_MINUTES = 5;
@@ -699,6 +701,8 @@ export class Config {
       (_agentManifest.telegram_bot_token as string) || '';
     this.TELEGRAM_CHAT_ID =
       (_agentManifest.telegram_chat_id as string) || '';
+    this.TELEGRAM_DM_CHAT_ID =
+      (_agentManifest.telegram_dm_chat_id as string) || '';
 
     // TTS (per-agent from manifest voice object, matching Python's AGENT.get("voice", {}))
     // Use || for string IDs so empty string "" falls through to cfg() fallback.
@@ -883,6 +887,7 @@ const AGENT_KEY_ROOT: Record<string, string> = {
   DISABLED_TOOLS: 'disabled_tools',
   TELEGRAM_BOT_TOKEN: 'telegram_bot_token',
   TELEGRAM_CHAT_ID: 'telegram_chat_id',
+  TELEGRAM_DM_CHAT_ID: 'telegram_dm_chat_id',
 };
 
 export function saveAgentConfig(
