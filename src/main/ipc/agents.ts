@@ -11,7 +11,7 @@ import { getConfig, saveAgentConfig, saveUserConfig, saveEnvVar, USER_DATA } fro
 import {
   discoverUiAgents, cycleAgent, getAgentState, setAgentState,
   suspendAgentSession, resumeAgentSession,
-  writeAskResponse,
+  writeAskResponse, findManifest,
 } from '../agent-manager';
 import { endSession as endSessionInDb } from '../memory';
 import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSourcePhoto } from '../jobs/generate-mirror-avatar';
@@ -159,6 +159,29 @@ export function registerAgentHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('queue:drainAll', () => {
     return drainAllAgentQueues();
+  });
+
+  // -- Agent detail (full manifest for settings display) --
+
+  ipcMain.handle('agent:getDetail', (_event, agentName: string) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(agentName)) return null;
+    const manifest = findManifest(agentName);
+    if (!manifest) return null;
+
+    return {
+      name: agentName,
+      displayName: (manifest.display_name as string) || agentName,
+      description: (manifest.description as string) || '',
+      notifyVia: (manifest.notify_via as string) || 'auto',
+      org: manifest.org || null,
+      channels: manifest.channels || {},
+      mcp: manifest.mcp || { include: [], exclude: [], custom: {} },
+      jobs: manifest.jobs || {},
+      router: manifest.router || {},
+      voice: manifest.voice || {},
+      heartbeat: manifest.heartbeat || {},
+      personality: manifest.personality || {},
+    };
   });
 
   // -- Per-agent config read/write --

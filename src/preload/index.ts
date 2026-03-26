@@ -36,6 +36,7 @@ export interface AtrophyAPI {
   getAgentsFull: () => Promise<{ name: string; display_name: string; description: string; role: string }[]>;
   onAgentSwitched: (cb: (data: { agentName: string; agentDisplayName: string; customSetup?: string | null }) => void) => () => void;
   getAgentNotifyVia: (agentName: string) => Promise<string>;
+  getAgentDetail: (agentName: string) => Promise<Record<string, unknown> | null>;
   updateAgentConfig: (agentName: string, updates: Record<string, unknown>) => Promise<void>;
 
   // Config
@@ -288,6 +289,7 @@ const api: AtrophyAPI = {
   getAgentsFull: () => ipcRenderer.invoke('agent:listFull'),
   onAgentSwitched: createListener('agent:switched') as AtrophyAPI['onAgentSwitched'],
   getAgentNotifyVia: (agentName) => ipcRenderer.invoke('agent:getNotifyVia', agentName),
+  getAgentDetail: (agentName) => ipcRenderer.invoke('agent:getDetail', agentName),
   updateAgentConfig: (agentName, updates) => ipcRenderer.invoke('agent:updateConfig', agentName, updates),
 
   // Config

@@ -168,6 +168,29 @@
 
   // Per-agent delivery mode
   let agentNotifyVia = $state<Record<string, string>>({});
+  let agentDetailExpanded = $state<string | null>(null);
+  let agentDetail = $state<Record<string, unknown> | null>(null);
+
+  async function toggleAgentDetail(agentName: string) {
+    if (agentDetailExpanded === agentName) {
+      agentDetailExpanded = null;
+      agentDetail = null;
+      return;
+    }
+    agentDetailExpanded = agentName;
+    agentDetail = await api?.getAgentDetail(agentName) || null;
+  }
+
+  function formatJobSchedule(job: Record<string, unknown>): string {
+    if (job.cron) return job.cron as string;
+    if (job.interval_seconds) {
+      const s = job.interval_seconds as number;
+      if (s >= 3600) return `every ${(s / 3600).toFixed(s % 3600 ? 1 : 0)}h`;
+      if (s >= 60) return `every ${Math.round(s / 60)}m`;
+      return `every ${s}s`;
+    }
+    return '';
+  }
 
   $effect(() => {
     if (agentList.length > 0 && api) {
@@ -219,6 +242,13 @@
               <button class="small-btn" onclick={() => switchToAgent(agent.name)}>Switch</button>
             {/if}
             <button
+              class="agent-detail-btn"
+              class:active={agentDetailExpanded === agent.name}
+              onclick={() => toggleAgentDetail(agent.name)}
+            >
+              Detail
+            </button>
+            <button
               class="agent-telegram-btn"
               class:active={agentTelegramEditing === agent.name}
               onclick={async () => {
@@ -242,6 +272,71 @@
             </button>
           </div>
         </div>
+        {#if agentDetailExpanded === agent.name && agentDetail}
+          {@const mcp = agentDetail.mcp as Record<string, unknown> || {}}
+          {@const jobs = agentDetail.jobs as Record<string, Record<string, unknown>> || {}}
+          {@const channels = agentDetail.channels as Record<string, Record<string, unknown>> || {}}
+          {@const router = agentDetail.router as Record<string, unknown> || {}}
+          {@const org = agentDetail.org as Record<string, unknown> || null}
+          <div class="agent-detail-panel">
+            {#if org}
+              <div class="detail-group">
+                <span class="detail-label">Org</span>
+                <span class="detail-value">{org.slug} - tier {org.tier} - {org.role}</span>
+              </div>
+            {/if}
+
+            <div class="detail-group">
+              <span class="detail-label">Channels</span>
+              <div class="detail-pills">
+                {#each Object.keys(channels) as ch}
+                  {@const cfg = channels[ch] || {}}
+                  <span class="detail-pill" class:active={cfg.enabled !== false}>{ch}</span>
+                {/each}
+                {#if Object.keys(channels).length === 0}
+                  <span class="detail-dim">none</span>
+                {/if}
+              </div>
+            </div>
+
+            <div class="detail-group">
+              <span class="detail-label">MCP</span>
+              <div class="detail-pills">
+                {#each ((mcp.include || []) as string[]) as server}
+                  <span class="detail-pill active">{server}</span>
+                {/each}
+                {#if ((mcp.include || []) as string[]).length === 0}
+                  <span class="detail-dim">none</span>
+                {/if}
+              </div>
+            </div>
+
+            <div class="detail-group">
+              <span class="detail-label">Jobs</span>
+              {#if Object.keys(jobs).length > 0}
+                <div class="detail-jobs">
+                  {#each Object.entries(jobs) as [jobName, job]}
+                    <div class="detail-job-row">
+                      <span class="detail-job-name">{jobName}</span>
+                      <span class="detail-job-schedule">{formatJobSchedule(job)}</span>
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <span class="detail-dim">none</span>
+              {/if}
+            </div>
+
+            <div class="detail-group">
+              <span class="detail-label">Router</span>
+              <span class="detail-value">
+                accept: {(router.accept_from as string[] || ['*']).join(', ')}
+                {#if router.system_access} - system access{/if}
+                {#if router.can_address_agents} - can address agents{/if}
+              </span>
+            </div>
+          </div>
+        {/if}
         {#if agentTelegramEditing === agent.name}
           <div class="agent-telegram-config">
             <label class="field">
@@ -820,6 +915,101 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .agent-detail-btn {
+    font-size: 11px;
+    padding: 2px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .agent-detail-btn:hover {
+    background: var(--accent);
+  }
+
+  .agent-detail-btn.active {
+    background: var(--accent);
+    border-color: rgba(100, 140, 255, 0.4);
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .agent-detail-panel {
+    padding: 8px 0 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .detail-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .detail-label {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .detail-value {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+  }
+
+  .detail-dim {
+    color: rgba(255, 255, 255, 0.25);
+    font-size: 11px;
+    font-style: italic;
+  }
+
+  .detail-pills {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .detail-pill {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  .detail-pill.active {
+    background: rgba(92, 224, 214, 0.1);
+    color: rgba(92, 224, 214, 0.6);
+  }
+
+  .detail-jobs {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .detail-job-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .detail-job-name {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+  }
+
+  .detail-job-schedule {
+    color: rgba(255, 255, 255, 0.25);
+    font-size: 10px;
+    font-family: var(--font-mono);
   }
 
   .agent-telegram-btn {
