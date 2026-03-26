@@ -133,8 +133,16 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
             break;
           }
 
+          case 'ThinkingDelta':
+            ctx.mainWindow.webContents.send('inference:thinkingDelta', evt.text);
+            break;
+
           case 'ToolUse':
-            ctx.mainWindow.webContents.send('inference:toolUse', evt.name);
+            ctx.mainWindow.webContents.send('inference:toolUse', evt.name, evt.toolId);
+            break;
+
+          case 'ToolResult':
+            ctx.mainWindow.webContents.send('inference:toolResult', evt.toolId, evt.toolName, evt.output?.slice(0, 500));
             break;
 
           case 'Compacting':

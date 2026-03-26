@@ -9,7 +9,9 @@ export interface AtrophyAPI {
   sendMessage: (text: string) => Promise<void>;
   onTextDelta: (cb: (text: string) => void) => () => void;
   onSentenceReady: (cb: (sentence: string, index: number, ttsActive: boolean) => void) => () => void;
-  onToolUse: (cb: (name: string) => void) => () => void;
+  onToolUse: (cb: (name: string, toolId?: string) => void) => () => void;
+  onToolResult: (cb: (toolId: string, toolName: string, output: string) => void) => () => void;
+  onThinkingDelta: (cb: (text: string) => void) => () => void;
   onDone: (cb: (fullText: string) => void) => () => void;
   onCompacting: (cb: () => void) => () => void;
   onError: (cb: (message: string) => void) => () => void;
@@ -276,6 +278,8 @@ const api: AtrophyAPI = {
   onTextDelta: createListener('inference:textDelta') as AtrophyAPI['onTextDelta'],
   onSentenceReady: createListener('inference:sentenceReady') as AtrophyAPI['onSentenceReady'],
   onToolUse: createListener('inference:toolUse') as AtrophyAPI['onToolUse'],
+  onToolResult: createListener('inference:toolResult') as AtrophyAPI['onToolResult'],
+  onThinkingDelta: createListener('inference:thinkingDelta') as AtrophyAPI['onThinkingDelta'],
   onDone: createListener('inference:done') as AtrophyAPI['onDone'],
   onCompacting: createListener('inference:compacting') as AtrophyAPI['onCompacting'],
   onError: createListener('inference:error') as AtrophyAPI['onError'],
@@ -520,6 +524,7 @@ const api: AtrophyAPI = {
   on: (channel, cb) => {
     const ALLOWED_CHANNELS = new Set([
       'inference:textDelta', 'inference:sentenceReady', 'inference:toolUse',
+      'inference:toolResult', 'inference:thinkingDelta',
       'inference:done', 'inference:compacting', 'inference:error',
       'tts:started', 'tts:done', 'tts:queueEmpty',
       'wakeword:start', 'wakeword:stop',

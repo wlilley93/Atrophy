@@ -21,7 +21,7 @@ import { spawnSync } from 'child_process';
 import { BrowserWindow } from 'electron';
 import { getConfig, USER_DATA, BUNDLE_ROOT, saveAgentConfig } from '../../config';
 import { setActive, getStatus } from '../../status';
-import { sendMessage, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument, sendPhoto } from './api';
+import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument, sendPhoto } from './api';
 import { buildStatusDisplay, formatElapsed, type StreamState, type ToolCallState } from './formatter';
 import { discoverAgents, getAgentState } from '../../agent-manager';
 import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from '../../inference';
@@ -631,10 +631,14 @@ async function dispatchToAgent(
   const display = (manifest.display_name as string) || agentName.charAt(0).toUpperCase() + agentName.slice(1);
   const header = emoji ? `${emoji} *${display}*\n\n` : '';
 
-  // Show typing indicator instead of "Thinking..." message for realism
+  // Send an initial "thinking" message so the user knows we received it.
+  // This message gets progressively edited as tool calls happen, then
+  // replaced with the final response text.
   let msgId: number | null = null;
   if (isTelegramOrigin) {
     await sendChatAction('typing', chatId, botToken);
+    const thinkingMsg = `${header}_thinking..._`;
+    msgId = await sendMessageGetId(thinkingMsg, chatId, botToken);
   }
 
   try {
@@ -718,9 +722,11 @@ async function dispatchToAgent(
       emitter.on('event', async (evt: InferenceEvent) => {
         switch (evt.type) {
           case 'ThinkingDelta':
-            // Don't show thinking in Telegram - just keep typing indicator alive
+            // Accumulate thinking text for streaming display
+            state.thinkingText += evt.text;
             if (isTelegramOrigin) {
               await sendChatAction('typing', chatId, botToken);
+              await doEdit();
             }
             break;
 
@@ -832,9 +838,18 @@ async function dispatchToAgent(
 
     log.info(`[${agentName}] completed in ${elapsed}`);
 
-    // Send final response as a fresh message (no editing, no thinking shown)
+    // Replace the thinking/progress message with the final response
     if (finalText && isTelegramOrigin) {
-      await sendMessage(`${header}${finalText}`, chatId, false, botToken);
+      if (msgId) {
+        // Edit the existing message to show the final text (clean, no thinking artifacts)
+        const edited = await editMessage(msgId, `${header}${finalText}`, chatId, botToken);
+        // If edit failed (message too old, deleted, etc.), send as new message
+        if (!edited) {
+          await sendMessage(`${header}${finalText}`, chatId, false, botToken);
+        }
+      } else {
+        await sendMessage(`${header}${finalText}`, chatId, false, botToken);
+      }
 
       // Auto-upload files mentioned in the response (e.g. generated docs)
       // Match paths like /Users/.../file.docx or ~/.atrophy/.../file.pdf
