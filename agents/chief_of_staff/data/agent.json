@@ -1,0 +1,49 @@
+{
+  "name": "chief_of_staff",
+  "display_name": "Chief of Staff",
+  "description": "Coordination and quality assurance - daily triage of overnight activity, contradiction detection across analyst output.",
+  "channels": {
+    "desktop": {
+      "enabled": false
+    }
+  },
+  "mcp": {
+    "include": [
+      "memory"
+    ],
+    "exclude": [],
+    "custom": {}
+  },
+  "jobs": {
+    "daily_triage": {
+      "cron": "30 5 * * *",
+      "script": "scripts/agents/chief_of_staff/daily_triage.py",
+      "description": "Daily 05:30 - overnight activity triage, agent health check, schedule management",
+      "route_output_to": "self"
+    },
+    "contradiction_check": {
+      "cron": "0 12 * * *",
+      "script": "scripts/agents/chief_of_staff/contradiction_check.py",
+      "description": "Daily 12:00 - scan recent briefs for contradictory assessments"
+    }
+  },
+  "router": {
+    "accept_from": [
+      "agent:general_montgomery",
+      "cron:*",
+      "system"
+    ],
+    "reject_from": [],
+    "max_queue_depth": 5,
+    "system_access": false,
+    "can_address_agents": false
+  },
+  "org": {
+    "slug": "defence",
+    "tier": 2,
+    "role": "Chief of Staff",
+    "reports_to": "general_montgomery",
+    "can_address_user": false,
+    "can_provision": false
+  }
+}
