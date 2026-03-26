@@ -54,6 +54,7 @@
     googleAuthStatus: string;
     telegramBotToken: string;
     telegramChatId: string;
+    telegramUsername: string;
     telegramDaemonRunning: boolean;
     version: string;
     bundleRoot: string;
@@ -116,6 +117,7 @@
     googleAuthStatus,
     telegramBotToken = $bindable(),
     telegramChatId = $bindable(),
+    telegramUsername = $bindable(),
     telegramDaemonRunning = $bindable(),
     version,
     bundleRoot,
@@ -548,6 +550,11 @@
   <label class="field">
     <span class="field-label">Chat ID</span>
     <input type="text" bind:value={telegramChatId} class="field-input" />
+  </label>
+  <label class="field">
+    <span class="field-label">Your Telegram Name</span>
+    <input type="text" bind:value={telegramUsername} class="field-input" placeholder="e.g. fellowear" />
+    <span class="field-hint">Your Telegram display name or @username - maps to your name in conversations</span>
   </label>
   {#if telegramBotToken && telegramBotToken !== '***' && !telegramChatId}
     <div class="field row">

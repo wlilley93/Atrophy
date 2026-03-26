@@ -32,6 +32,7 @@ import { createLogger } from '../../logger';
 import { switchboard, type Envelope } from '../switchboard';
 import { AgentRouter, defaultConfigForAgent } from '../agent-router';
 import { Session } from '../../session';
+import { fileEntities } from '../../entity-extract';
 
 // ---------------------------------------------------------------------------
 // Per-agent session persistence with idle rotation
@@ -849,6 +850,11 @@ async function dispatchToAgent(
     const finalText = fullText.trim() || null;
     const elapsed = formatElapsed(Date.now() - startTime);
 
+    // Entity auto-filing: extract and file named entities (fire-and-forget)
+    if (finalText) {
+      try { fileEntities(agentName, finalText); } catch { /* best effort */ }
+    }
+
     log.info(`[${agentName}] completed in ${elapsed}`);
 
     // Replace the thinking/progress message with the final response
@@ -1089,7 +1095,7 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     message?: {
       text?: string;
       caption?: string;
-      from?: { id: number; is_bot?: boolean; first_name?: string; last_name?: string };
+      from?: { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string };
       chat?: { id: number; type?: string };
       photo?: { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }[];
       voice?: { file_id: string; duration: number; mime_type?: string; file_size?: number };
@@ -1141,10 +1147,18 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     const promptParts: string[] = [];
     const mediaDir = path.join(USER_DATA, 'agents', agent.name, 'media');
 
-    // Use full name (first + last) to disambiguate in groups (e.g. two Henrys)
+    // Resolve sender name: check telegram_usernames map first (case-insensitive),
+    // then fall back to Telegram first+last name.
     const senderFirst = msg.from?.first_name || '';
     const senderLast = msg.from?.last_name || '';
-    const senderName = (senderFirst + (senderLast ? ` ${senderLast}` : '')).trim() || 'Someone';
+    const telegramName = (senderFirst + (senderLast ? ` ${senderLast}` : '')).trim();
+    const telegramUsername = msg.from?.username || '';
+    const userMap = getConfig().TELEGRAM_USERNAMES;
+    const senderName =
+      (telegramUsername && userMap[telegramUsername.toLowerCase()]) ||
+      (telegramName && userMap[telegramName.toLowerCase()]) ||
+      (senderFirst && userMap[senderFirst.toLowerCase()]) ||
+      telegramName || 'Someone';
 
     if (msg.photo && msg.photo.length > 0) {
       // Telegram sends multiple sizes - take the largest (last in array)

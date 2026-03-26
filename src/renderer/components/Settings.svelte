@@ -113,6 +113,7 @@
   // Telegram
   let telegramBotToken = $state('');
   let telegramChatId = $state('');
+  let telegramUsername = $state('');
   let telegramDaemonRunning = $state(false);
 
   // About
@@ -207,6 +208,7 @@
 
       telegramBotToken = cfg.telegramBotToken ?? '';
       telegramChatId = cfg.telegramChatId ?? '';
+      telegramUsername = cfg.telegramUsername ?? '';
       telegramDaemonRunning = cfg.telegramDaemonRunning ?? false;
 
       version = cfg.version ?? '0.0.0';
@@ -266,6 +268,7 @@
       HEARTBEAT_INTERVAL_MINS: heartbeatIntervalMins,
       OBSIDIAN_VAULT: obsidianVault,
       TELEGRAM_CHAT_ID: telegramChatId,
+      TELEGRAM_USERNAME: telegramUsername,
     };
   }
 
@@ -424,6 +427,7 @@
         {googleAuthStatus}
         bind:telegramBotToken
         bind:telegramChatId
+        bind:telegramUsername
         bind:telegramDaemonRunning
         {version}
         {bundleRoot}

@@ -30,7 +30,7 @@ const userKeys = new Set([
   'AVATAR_ENABLED', 'AVATAR_RESOLUTION', 'OBSIDIAN_VAULT',
   'setup_complete',
 ]);
-const safeKeys = new Set([...agentKeys, ...userKeys]);
+const safeKeys = new Set([...agentKeys, ...userKeys, 'TELEGRAM_USERNAME']);
 
 export function registerConfigHandlers(ctx: IpcContext): void {
   ipcMain.handle('config:reload', () => {
@@ -85,6 +85,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
       // Telegram
       telegramBotToken: c.TELEGRAM_BOT_TOKEN ? '***' : '',
       telegramChatId: c.TELEGRAM_CHAT_ID,
+      telegramUsername: Object.keys(c.TELEGRAM_USERNAMES).find(k => c.TELEGRAM_USERNAMES[k] === c.USER_NAME) || '',
       telegramDaemonRunning: isDaemonRunning(),
       // Keep Awake
       keepAwakeActive: ctx.isKeepAwakeActive(),
@@ -157,6 +158,22 @@ export function registerConfigHandlers(ctx: IpcContext): void {
           );
         } catch { /* non-critical */ }
       }
+    }
+
+    // Handle telegram username mapping: UI sends TELEGRAM_USERNAME as a flat
+    // string, but we store it as telegram_usernames: { name: USER_NAME } in config.json.
+    if ('TELEGRAM_USERNAME' in updates) {
+      const tgName = String(updates.TELEGRAM_USERNAME || '').trim().toLowerCase();
+      const displayName = c.USER_NAME || 'User';
+      // Rebuild the map: remove old entries pointing to this user, add new one
+      const existing = { ...c.TELEGRAM_USERNAMES };
+      for (const [k, v] of Object.entries(existing)) {
+        if (v === displayName) delete existing[k];
+      }
+      if (tgName) existing[tgName] = displayName;
+      c.TELEGRAM_USERNAMES = existing;
+      userUpdates['telegram_usernames'] = existing;
+      delete userUpdates['TELEGRAM_USERNAME'];
     }
 
     if (Object.keys(userUpdates).length > 0) {

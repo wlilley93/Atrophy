@@ -540,6 +540,7 @@ export class Config {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_CHAT_ID: string;
   TELEGRAM_DM_CHAT_ID: string;
+  TELEGRAM_USERNAMES: Record<string, string>; // maps telegram name/username -> display name
   NOTIFY_VIA: string; // 'auto' | 'telegram' | 'both'
 
   // Notifications
@@ -640,6 +641,7 @@ export class Config {
     this.TELEGRAM_BOT_TOKEN = '';
     this.TELEGRAM_CHAT_ID = '';
     this.TELEGRAM_DM_CHAT_ID = '';
+    this.TELEGRAM_USERNAMES = {};
     this.NOTIFY_VIA = 'auto';
     this.NOTIFICATIONS_ENABLED = true;
     this.SILENCE_TIMER_ENABLED = true;
@@ -726,6 +728,13 @@ export class Config {
       (_agentManifest.telegram_dm_chat_id as string) || '';
     this.NOTIFY_VIA =
       (_agentManifest.notify_via as string) || 'auto';
+
+    // Telegram username -> display name mapping (global, from config.json)
+    // Allows the system to recognise e.g. "Fellowear" as "Will"
+    const rawUsernames = _userCfg.telegram_usernames;
+    this.TELEGRAM_USERNAMES = (rawUsernames && typeof rawUsernames === 'object' && !Array.isArray(rawUsernames))
+      ? rawUsernames as Record<string, string>
+      : {};
 
     // TTS (per-agent from manifest voice object, matching Python's AGENT.get("voice", {}))
     // Use || for string IDs so empty string "" falls through to cfg() fallback.
