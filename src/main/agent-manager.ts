@@ -27,17 +27,59 @@ function agentSearchDirs(): string[] {
 }
 
 export function findManifest(name: string): Record<string, unknown> | null {
-  for (const agentsDir of agentSearchDirs()) {
-    const manifestPath = path.join(agentsDir, name, 'data', 'agent.json');
-    if (fs.existsSync(manifestPath)) {
-      try {
-        return JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-      } catch {
-        continue;
-      }
-    }
+  // Use getAgentDir which searches flat and org-nested locations
+  const agentDir = getAgentDir(name);
+  const manifestPath = path.join(agentDir, 'data', 'agent.json');
+  if (fs.existsSync(manifestPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    } catch { /* fall through */ }
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Agent path resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the filesystem path for an agent's directory.
+ *
+ * Tier 0-1 agents live at: ~/.atrophy/agents/<name>/
+ * Tier 2+ agents live at: ~/.atrophy/agents/<org-slug>/<name>/
+ *
+ * Searches both locations (org-nested first, then flat) and returns
+ * the first match. Falls back to flat path for new agents.
+ */
+export function getAgentDir(name: string): string {
+  // 1. Check org-nested paths: agents/<org>/<name>/data/
+  const userAgents = path.join(USER_DATA, 'agents');
+  if (fs.existsSync(userAgents)) {
+    try {
+      for (const entry of fs.readdirSync(userAgents)) {
+        const nested = path.join(userAgents, entry, name, 'data');
+        if (fs.existsSync(nested)) {
+          return path.join(userAgents, entry, name);
+        }
+      }
+    } catch { /* non-critical */ }
+  }
+
+  // 2. Check flat path: agents/<name>/data/
+  const flat = path.join(userAgents, name);
+  if (fs.existsSync(path.join(flat, 'data'))) {
+    return flat;
+  }
+
+  // 3. Check bundle
+  const bundleAgents = path.join(BUNDLE_ROOT, 'agents');
+  const bundlePath = path.join(bundleAgents, name);
+  if (fs.existsSync(path.join(bundlePath, 'data'))) {
+    return bundlePath;
+  }
+
+  // 4. Default to flat user data path (for new agents)
+  return flat;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +98,22 @@ export function discoverAgents(): AgentInfo[] {
   const seen = new Set<string>();
   const agents: AgentInfo[] = [];
 
+  function addAgent(dirPath: string, name: string) {
+    if (seen.has(name)) return;
+    if (!fs.existsSync(path.join(dirPath, 'data'))) return;
+    seen.add(name);
+
+    const data = findManifest(name) || {};
+    const orgSection = data.org as Record<string, unknown> | undefined;
+    agents.push({
+      name,
+      display_name: (data.display_name as string) || name.charAt(0).toUpperCase() + name.slice(1),
+      description: (data.description as string) || '',
+      role: (data.role as string) || '',
+      tier: (orgSection?.tier as number) ?? 1,
+    });
+  }
+
   for (const agentsDir of agentSearchDirs()) {
     let entries: string[];
     try {
@@ -65,20 +123,22 @@ export function discoverAgents(): AgentInfo[] {
     }
 
     for (const name of entries) {
-      if (seen.has(name)) continue;
       const dirPath = path.join(agentsDir, name);
-      if (!fs.existsSync(path.join(dirPath, 'data'))) continue;
-      seen.add(name);
 
-      const data = findManifest(name) || {};
-      const orgSection = data.org as Record<string, unknown> | undefined;
-      agents.push({
-        name,
-        display_name: (data.display_name as string) || name.charAt(0).toUpperCase() + name.slice(1),
-        description: (data.description as string) || '',
-        role: (data.role as string) || '',
-        tier: (orgSection?.tier as number) ?? 1,
-      });
+      // Direct agent (has data/ subdirectory)
+      if (fs.existsSync(path.join(dirPath, 'data'))) {
+        addAgent(dirPath, name);
+        continue;
+      }
+
+      // Org directory - scan for nested agents (tier 2+ live inside org dirs)
+      try {
+        if (!fs.statSync(dirPath).isDirectory()) continue;
+        for (const subName of fs.readdirSync(dirPath).sort()) {
+          const subPath = path.join(dirPath, subName);
+          addAgent(subPath, subName);
+        }
+      } catch { /* not a directory or unreadable */ }
     }
   }
 

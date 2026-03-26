@@ -226,15 +226,34 @@ function cfg<T>(key: string, fallback: T): T {
 // ---------------------------------------------------------------------------
 
 function findAgentDir(name: string): string {
-  const userDir = path.join(USER_DATA, 'agents', name);
+  const userAgents = path.join(USER_DATA, 'agents');
+
+  // 1. Check org-nested paths: agents/<org>/<name>/data/agent.json
+  if (fs.existsSync(userAgents)) {
+    try {
+      for (const entry of fs.readdirSync(userAgents)) {
+        const nested = path.join(userAgents, entry, name, 'data', 'agent.json');
+        if (fs.existsSync(nested)) {
+          return path.join(userAgents, entry, name);
+        }
+      }
+    } catch { /* non-critical */ }
+  }
+
+  // 2. Flat user path: agents/<name>/data/agent.json
+  const userDir = path.join(userAgents, name);
   if (fs.existsSync(path.join(userDir, 'data', 'agent.json'))) return userDir;
+
+  // 3. Bundle path
   const bundleDir = path.join(BUNDLE_ROOT, 'agents', name);
   if (fs.existsSync(path.join(bundleDir, 'data', 'agent.json'))) return bundleDir;
-  return userDir; // prefer user dir for new agents
+
+  return userDir; // prefer flat user dir for new agents
 }
 
 function agentDataDir(name: string): string {
-  const d = path.join(USER_DATA, 'agents', name, 'data');
+  const dir = findAgentDir(name);
+  const d = path.join(dir, 'data');
   fs.mkdirSync(d, { recursive: true });
   return d;
 }
@@ -903,7 +922,8 @@ export function saveAgentConfig(
     console.warn(`[config] saveAgentConfig: invalid agent name "${agentName}"`);
     return;
   }
-  const agentJsonPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+  const agentDir = findAgentDir(agentName);
+  const agentJsonPath = path.join(agentDir, 'data', 'agent.json');
   let existing: Record<string, unknown> = {};
   try {
     existing = JSON.parse(fs.readFileSync(agentJsonPath, 'utf-8'));

@@ -625,7 +625,13 @@ export function createAgent(opts: CreateAgentOptions): AgentManifest {
     throw new Error('Agent name is required (provide name or displayName)');
   }
 
-  const agentDir = path.join(USER_DATA, 'agents', name);
+  // Tier 2+ agents go inside their org directory: agents/<org>/<name>/
+  // Tier 0-1 agents go flat: agents/<name>/
+  const orgTier = opts.orgContext?.tier ?? 1;
+  const orgSlug = opts.orgContext?.slug;
+  const agentDir = (orgTier >= 2 && orgSlug)
+    ? path.join(USER_DATA, 'agents', orgSlug, name)
+    : path.join(USER_DATA, 'agents', name);
 
   // -- Directories ----------------------------------------------------------
   const dirs = [
