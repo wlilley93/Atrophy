@@ -1562,7 +1562,7 @@
   {/if}
 
   {#if showSettings}
-    <Settings onClose={() => showSettings = false} />
+    <Settings onClose={() => showSettings = false} onOpenSystemMap={() => showSystemMap = true} />
   {/if}
 
   {#if showSystemMap}

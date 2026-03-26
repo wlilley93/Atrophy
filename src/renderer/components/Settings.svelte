@@ -11,9 +11,10 @@
 
   interface Props {
     onClose: () => void;
+    onOpenSystemMap?: () => void;
   }
 
-  let { onClose }: Props = $props();
+  let { onClose, onOpenSystemMap }: Props = $props();
 
   type Tab = 'settings' | 'usage' | 'activity' | 'jobs' | 'updates' | 'console';
   let activeTab = $state<Tab>('settings');
@@ -343,6 +344,9 @@
         <button class="tab" class:active={activeTab === 'jobs'} onclick={() => switchTab('jobs')}>Jobs</button>
         <button class="tab" class:active={activeTab === 'updates'} onclick={() => switchTab('updates')}>Updates</button>
         <button class="tab" class:active={activeTab === 'console'} onclick={() => switchTab('console')}>Console</button>
+        {#if onOpenSystemMap}
+          <button class="tab" onclick={() => { onClose(); onOpenSystemMap?.(); }}>System</button>
+        {/if}
       </div>
       <button class="close-btn" onclick={close} aria-label="Close settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
