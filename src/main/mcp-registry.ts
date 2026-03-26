@@ -114,7 +114,7 @@ export const EXTERNAL_SERVER_META: Record<string, {
   elevenlabs: {
     description: 'ElevenLabs - text-to-speech, voice cloning, audio processing, transcription, sound effects',
     capabilities: ['tts', 'stt', 'voice', 'audio', 'clone', 'sound_effects'],
-    commandCandidates: ['uvx', '/Users/williamlilley/.local/bin/uvx', '/opt/homebrew/bin/uvx'],
+    commandCandidates: ['uvx', path.join(os.homedir(), '.local/bin/uvx'), '/opt/homebrew/bin/uvx'],
     args: ['elevenlabs-mcp'],
     requiresEnvKey: 'ELEVENLABS_API_KEY',
   },
@@ -142,7 +142,7 @@ function findPythonPath(): string {
     log.warn('PYTHON_PATH contains invalid characters, ignoring');
   }
 
-  const home = process.env.HOME || '/Users/williamlilley';
+  const home = process.env.HOME || os.homedir();
   const candidates = [
     'python3',
     '/opt/homebrew/bin/python3',

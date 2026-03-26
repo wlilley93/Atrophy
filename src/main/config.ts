@@ -331,7 +331,7 @@ function findPython(): string {
   // so bare 'python3' often fails. Try full-path interpreters first (where
   // pip-installed deps like dotenv live), then fall back to bare 'python3'
   // which may resolve to macOS system Python (no pip packages).
-  const home = process.env.HOME || '/Users/williamlilley';
+  const home = process.env.HOME || os.homedir();
   const candidates = [
     // pyenv shim first - delegates to the user's active version
     `${home}/.pyenv/shims/python3`,
