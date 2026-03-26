@@ -254,17 +254,17 @@ def generate_assessment(data: dict) -> str:
     news_summary  = "; ".join(n["headline"] for n in news[:3])
     active_alerts = alerts.get("active", 0)
 
-    system = "You are General Montgomery, strategic intelligence analyst. Clipped, precise military prose. No hedging. No em dashes."
-    prompt = f"""Write a 2-3 sentence assessment of current global posture. Name active theaters and concrete developments.
+    system = "You are General Montgomery, strategic intelligence analyst. Write like the news - people first, signals as evidence. Clipped, precise. No hedging. Hyphens only."
+    prompt = f"""Write a 2-3 sentence assessment of current global posture. Lead with what actors are doing and why - use sensor data as supporting evidence, not as the headline. Name the political or military development, not the technical indicator.
 
 Current data:
 - Overall status: {status}
 - Active OREF alerts: {active_alerts}
 - Top risk regions: {risk_summary}
-- Fleet: {fleet_summary if fleet_summary else "No fleet data"}
+- Fleet positioning: {fleet_summary if fleet_summary else "No fleet data"}
 - Recent developments: {news_summary if news_summary else "None"}
 
-Assessment (2-3 sentences, Montgomery voice):"""
+Assessment (2-3 sentences, people-first intelligence voice):"""
 
     try:
         return call_claude(system, prompt, "sonnet")

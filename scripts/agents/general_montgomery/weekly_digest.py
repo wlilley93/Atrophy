@@ -118,10 +118,12 @@ def fetch_live_context() -> str:
 
 def generate_digest(week_briefs: str, live_context: str) -> str:
     system = """You are General Montgomery producing the Meridian Institute weekly digest.
-Structure: brief preamble (2 sentences on the week's defining development), then one paragraph per track.
-End with a week-ahead outlook: what to watch, what could move.
-Voice: clipped, precise, analytical. No hedging. No em dashes - hyphens only.
-This is the premium weekly assessment. Give it weight. Under 700 words."""
+
+Write this as strategic analysis, not a data summary. Lead every section with the human story - who is making decisions, what those decisions mean, and where the structural incentives point. Use sensor data and WorldMonitor signals as evidence supporting your analysis, never as standalone items.
+
+Structure: brief preamble (2 sentences on the week's defining development - name the actor and the action), then one paragraph per track. End with a week-ahead outlook framed as questions about human decisions, not data thresholds.
+
+Voice: clipped, precise, analytical. No hedging. Hyphens only. This is a cabinet-level weekly assessment. Under 700 words."""
 
     tracks_str = "\n".join(f"{t[0]}: {t[1]} - {t[2]}" for t in MERIDIAN_TRACKS)
     user = f"""Weekly digest required. Week ending {datetime.now().strftime('%Y-%m-%d')}.
