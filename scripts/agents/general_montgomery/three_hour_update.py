@@ -19,6 +19,9 @@ import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from shared.credentials import load_telegram_credentials
+
 _ATROPHY_DIR = Path.home() / ".atrophy"
 _AGENT_DIR   = _ATROPHY_DIR / "agents" / "general_montgomery"
 _AGENT_JSON  = _AGENT_DIR / "data" / "agent.json"
@@ -225,7 +228,7 @@ def main():
         assessment = call_claude(SYSTEM_PROMPT, prompt, "sonnet")
 
         header = f"*SITUATION - {now_str}*\n\n"
-        send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], header + assessment)
+        send_telegram(*load_telegram_credentials("general_montgomery"), header + assessment)
         log.info("Three-hour update sent")
 
     except Exception as e:

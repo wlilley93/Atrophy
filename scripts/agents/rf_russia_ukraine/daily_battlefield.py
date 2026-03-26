@@ -20,6 +20,7 @@ _LOG_DIR     = _ATROPHY_DIR / "logs" / "rf_russia_ukraine"
 
 _APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_APP_DIR / "mcp"))
+from shared.credentials import load_telegram_credentials
 
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -54,7 +55,7 @@ def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:
 def load_credentials():
     with open(_AGENT_JSON) as f:
         d = json.load(f)
-    return d["telegram_bot_token"], d["telegram_chat_id"]
+    return *load_telegram_credentials("rf_russia_ukraine")
 
 
 def fetch_ukraine_data() -> str:

@@ -125,10 +125,9 @@ Requirements:
 MAX_COMMISSIONS_PER_RUN = 5
 
 
-def load_credentials() -> tuple[str, str]:
-    with open(_AGENT_JSON) as f:
-        d = json.load(f)
-    return d["telegram_bot_token"], d["telegram_chat_id"]
+def load_credentials():
+    from shared.credentials import load_telegram_credentials
+    return load_telegram_credentials("general_montgomery")
 
 
 def send_telegram(token: str, chat_id: str, text: str):

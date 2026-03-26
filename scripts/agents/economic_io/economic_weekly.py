@@ -25,6 +25,7 @@ _LOG_DIR.mkdir(parents=True, exist_ok=True)
 _APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _MCP_DIR = _APP_DIR / "mcp"
 sys.path.insert(0, str(_MCP_DIR))
+from shared.credentials import load_telegram_credentials
 
 logging.basicConfig(
     level=logging.INFO,
@@ -248,7 +249,7 @@ def main():
     conn.close()
 
     try:
-        send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], assessment)
+        send_telegram(*load_telegram_credentials("economic_io"), assessment)
         log.info("Economic weekly sent")
     except Exception as e:
         log.error(f"Telegram send failed: {e}")

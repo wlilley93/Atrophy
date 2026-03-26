@@ -66,9 +66,8 @@ def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:
     return result.stdout.strip()
 
 def load_credentials():
-    with open(_AGENT_JSON) as f:
-        d = json.load(f)
-    return d["telegram_bot_token"], d["telegram_chat_id"]
+    from shared.credentials import load_telegram_credentials
+    return load_telegram_credentials("general_montgomery")
 
 
 def get_week_briefs(db: sqlite3.Connection) -> str:
@@ -115,25 +114,6 @@ def fetch_live_context() -> str:
         log.warning(f"WorldMonitor fetch failed: {e}")
 
     return "\n\n".join(parts)
-
-
-CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
-
-
-def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:
-    """One-shot Claude call via CLI. Returns response text."""
-    import subprocess
-    result = subprocess.run(
-        [CLAUDE_BIN, "-p", "--model", model, "--system-prompt", system,
-         "--no-session-persistence", "--output-format", "text"],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:200]}")
-    return result.stdout.strip()
 
 
 def generate_digest(week_briefs: str, live_context: str) -> str:

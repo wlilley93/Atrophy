@@ -80,7 +80,7 @@ Under 200 words. No em dashes. Start with FLASH CHALLENGE."""
 def load_credentials():
     with open(_AGENT_JSON) as f:
         d = json.load(f)
-    return d["telegram_bot_token"], d["telegram_chat_id"]
+    return *load_telegram_credentials("red_team")
 
 
 def send_telegram(token: str, chat_id: str, text: str):

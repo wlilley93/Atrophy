@@ -18,6 +18,9 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from shared.credentials import load_telegram_credentials
+
 _ATROPHY_DIR = Path.home() / ".atrophy"
 _AGENT_DIR   = _ATROPHY_DIR / "agents" / "general_montgomery"
 _AGENT_JSON  = _AGENT_DIR / "data" / "agent.json"
@@ -261,7 +264,7 @@ def main():
     conn.close()
 
     try:
-        send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], report)
+        send_telegram(*load_telegram_credentials("general_montgomery"), report)
         log.info(f"Competitor scan sent: {len(scored)} items")
     except Exception as e:
         log.error(f"Telegram send failed: {e}")

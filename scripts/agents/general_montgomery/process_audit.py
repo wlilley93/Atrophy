@@ -27,6 +27,9 @@ import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from shared.credentials import load_telegram_credentials
+
 _ATROPHY_DIR   = Path.home() / ".atrophy"
 _AGENT_DIR     = _ATROPHY_DIR / "agents" / "general_montgomery"
 _AGENT_JSON    = _AGENT_DIR / "data" / "agent.json"
@@ -265,7 +268,7 @@ def main():
         f"_Monthly institutional self-assessment_\n\n"
     )
     try:
-        send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], header + audit_text)
+        send_telegram(*load_telegram_credentials("general_montgomery"), header + audit_text)
         log.info("Process audit sent")
     except Exception as e:
         log.error(f"Telegram send failed: {e}")

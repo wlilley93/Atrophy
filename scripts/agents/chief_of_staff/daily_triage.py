@@ -14,6 +14,10 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from shared.credentials import load_telegram_credentials
+
 _ATROPHY_DIR = Path.home() / ".atrophy"
 _AGENT_DIR   = _ATROPHY_DIR / "agents" / "chief_of_staff"
 _INTEL_DB    = _ATROPHY_DIR / "agents" / "general_montgomery" / "data" / "intelligence.db"
@@ -168,7 +172,7 @@ def main():
     is_monday = datetime.now().weekday() == 0
     if overdue or is_monday:
         try:
-            send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], report)
+            send_telegram(*load_telegram_credentials("chief_of_staff"), report)
             log.info("Triage report sent to Telegram")
         except Exception as e:
             log.error(f"Telegram send failed: {e}")

@@ -31,6 +31,7 @@ _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 _APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_APP_DIR / "mcp"))
+from shared.credentials import load_telegram_credentials
 sys.path.insert(0, str(_APP_DIR / "scripts" / "agents" / "shared"))
 
 from claude_cli import call_claude  # noqa: E402
@@ -191,7 +192,7 @@ def generate_monitor(news: str, prior: str, date_str: str) -> str:
 def load_credentials() -> tuple[str, str]:
     with open(_AGENT_JSON) as f:
         d = json.load(f)
-    return d["telegram_bot_token"], d["telegram_chat_id"]
+    return *load_telegram_credentials("rf_eu_nordic_monitor")
 
 
 def send_telegram(token: str, chat_id: str, text: str) -> None:

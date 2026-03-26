@@ -26,6 +26,9 @@ import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from shared.credentials import load_telegram_credentials
+
 _ATROPHY_DIR = Path.home() / ".atrophy"
 _AGENT_DIR   = _ATROPHY_DIR / "agents" / "general_montgomery"
 _AGENT_JSON  = _AGENT_DIR / "data" / "agent.json"
@@ -278,7 +281,7 @@ def cmd_report(conn: sqlite3.Connection, cfg: dict):
     lines.append(f"\n_Pending review: {pending} predictions_")
 
     report = "\n".join(lines)
-    send_telegram(cfg["telegram_bot_token"], cfg["telegram_chat_id"], report)
+    send_telegram(*load_telegram_credentials("general_montgomery"), report)
     log.info("Track record report sent")
 
 

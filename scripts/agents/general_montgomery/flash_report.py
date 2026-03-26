@@ -64,9 +64,8 @@ def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:
     return result.stdout.strip()
 
 def load_credentials():
-    with open(_AGENT_JSON) as f:
-        d = json.load(f)
-    return d["telegram_bot_token"], d["telegram_chat_id"]
+    from shared.credentials import load_telegram_credentials
+    return load_telegram_credentials("general_montgomery")
 
 
 def load_state() -> dict:

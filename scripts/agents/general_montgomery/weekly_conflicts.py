@@ -71,9 +71,8 @@ CONFLICT_OBSIDIAN_DIRS = {
 
 
 def load_credentials():
-    with open(_AGENT_JSON) as f:
-        data = json.load(f)
-    return data["telegram_bot_token"], data["telegram_chat_id"]
+    from shared.credentials import load_telegram_credentials
+    return load_telegram_credentials("general_montgomery")
 
 
 def pick_conflict(db: sqlite3.Connection) -> dict:

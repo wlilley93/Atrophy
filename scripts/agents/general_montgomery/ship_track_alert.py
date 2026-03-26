@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -85,9 +86,8 @@ SURGE_THRESHOLDS = {
 
 
 def load_credentials():
-    with open(_AGENT_JSON) as f:
-        data = json.load(f)
-    return data["telegram_bot_token"], data["telegram_chat_id"]
+    from shared.credentials import load_telegram_credentials
+    return load_telegram_credentials("general_montgomery")
 
 
 def load_state() -> dict:
