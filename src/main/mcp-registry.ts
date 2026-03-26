@@ -92,6 +92,10 @@ const BUNDLED_SERVER_META: Record<string, {
     description: 'Web browsing proxy - puppeteer with injection detection and content sandboxing',
     capabilities: ['web', 'browse', 'screenshot'],
   },
+  defence_sources_server: {
+    description: 'Defence primary sources - official feeds, UK/EU procurement, specialist press',
+    capabilities: ['feeds', 'procurement', 'intelligence', 'search'],
+  },
 };
 
 /**

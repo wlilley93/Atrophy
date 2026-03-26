@@ -21,7 +21,8 @@
       "shell",
       "worldmonitor",
       "elevenlabs",
-      "fal"
+      "fal",
+      "defence_sources"
     ],
     "exclude": [],
     "custom": {}
