@@ -169,7 +169,7 @@
 
   const tierGroups = $derived(groupByTier(roster));
 
-  const rosterStats = $derived(() => {
+  const rosterStats = $derived.by(() => {
     const counts = new Map<number, number>();
     for (const a of roster) {
       const t = a.tier || 1;
@@ -286,7 +286,7 @@
     <!-- Roster stats -->
     {#if roster.length > 0}
       <div class="roster-stats">
-        {#each rosterStats() as [tier, count]}
+        {#each rosterStats as [tier, count]}
           <span class="stat-pill" style="border-color: {tierColor(tier)}; color: {tierColor(tier)}">
             {tierLabel(tier)}: {count}
           </span>

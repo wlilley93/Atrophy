@@ -493,7 +493,8 @@ export function deleteAgent(name: string): void {
   }
 
   const dbPath = path.join(agentDir, 'memory.db');
-  const backupPath = path.join(agentDir, 'memory.db.preserved');
+  // Back up OUTSIDE agentDir so rmSync doesn't destroy it
+  const backupPath = path.join(USER_DATA, 'agents', `${name}.memory.db.preserved`);
 
   // Back up memory.db if it exists
   let hadDb = false;
@@ -513,11 +514,12 @@ export function deleteAgent(name: string): void {
     throw new Error(`Failed to remove agent directory for "${name}": ${e}`);
   }
 
-  // Restore memory backup if we had one
+  // Restore memory backup into a fresh data dir
   if (hadDb) {
     try {
-      fs.mkdirSync(agentDir, { recursive: true });
-      fs.renameSync(backupPath, path.join(agentDir, 'memory.db.preserved'));
+      const dataDir = path.join(agentDir, 'data');
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.renameSync(backupPath, path.join(dataDir, 'memory.db'));
     } catch (e) {
       log.warn(`deleteAgent: failed to restore memory backup for "${name}": ${e}`);
     }

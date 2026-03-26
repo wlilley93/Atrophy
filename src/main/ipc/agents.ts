@@ -7,7 +7,7 @@
 import { ipcMain, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getConfig, saveAgentConfig, saveUserConfig, saveEnvVar, USER_DATA } from '../config';
+import { getConfig, saveAgentConfig, saveUserConfig, saveEnvVar, USER_DATA, BUNDLE_ROOT } from '../config';
 import {
   discoverUiAgents, discoverAgents, cycleAgent, getAgentState, setAgentState,
   suspendAgentSession, resumeAgentSession,
@@ -279,16 +279,23 @@ export function registerAgentHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('agent:getPrompt', (_event, name: string, promptName: string) => {
     if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
-    // Validate promptName - only allow simple filenames, no path traversal
     if (!/^[a-zA-Z0-9_-]+$/.test(promptName.replace(/\.md$/, ''))) {
       throw new Error('Invalid prompt name');
     }
-    const config = getConfig();
-    const originalAgent = config.AGENT_NAME;
-    config.reloadForAgent(name);
-    const content = loadPrompt(promptName, '');
-    config.reloadForAgent(originalAgent);
-    return content;
+    // Read directly from agent's prompts directory without mutating config singleton.
+    // This avoids the TOCTOU race where reloadForAgent corrupts config for concurrent callers.
+    const filename = promptName.endsWith('.md') ? promptName : `${promptName}.md`;
+    const searchDirs = [
+      path.join(USER_DATA, 'agents', name, 'prompts'),
+      path.join(BUNDLE_ROOT, 'agents', name, 'prompts'),
+    ];
+    for (const dir of searchDirs) {
+      const fp = path.join(dir, filename);
+      if (fs.existsSync(fp)) {
+        return fs.readFileSync(fp, 'utf-8');
+      }
+    }
+    return '';
   });
 
   ipcMain.handle('agent:updatePrompt', (_event, name: string, promptName: string, content: string) => {

@@ -63,6 +63,9 @@
 
   // Reset reportsTo when org or tier changes
   $effect(() => {
+    // Read reactive deps so this effect re-runs on change
+    void selectedOrgSlug;
+    void tier;
     reportsTo = '';
   });
 

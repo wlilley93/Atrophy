@@ -233,9 +233,14 @@
     }
   }
 
-  function handleJobsSave(updatedJobs: Record<string, unknown>) {
+  async function handleJobsSave(updatedJobs: Record<string, unknown>) {
     jobs = updatedJobs as typeof jobs;
-    api?.updateAgentManifest(agentName, { jobs: updatedJobs });
+    try {
+      await api?.updateAgentManifest(agentName, { jobs: updatedJobs });
+    } catch (e) {
+      saveStatus = `Error saving jobs: ${e}`;
+      setTimeout(() => saveStatus = '', 3000);
+    }
   }
 
   function toggleMcpItem(item: string, currentList: string[], otherList: string[]): void {
