@@ -1,0 +1,45 @@
+{
+  "name": "rf_eu_nordic_monitor",
+  "display_name": "RF EU/Nordic Monitor",
+  "description": "Research Fellow - EU and Nordic defence monitoring. Procurement, exercises, policy shifts.",
+  "channels": {
+    "desktop": {
+      "enabled": false
+    }
+  },
+  "mcp": {
+    "include": [
+      "memory",
+      "defence_sources"
+    ],
+    "exclude": [],
+    "custom": {}
+  },
+  "jobs": {
+    "eu_nordic_monitor": {
+      "cron": "30 7 */3 * *",
+      "script": "scripts/agents/rf_eu_nordic_monitor/eu_nordic_monitor.py",
+      "description": "Every 3 days 07:30 - comprehensive EU/Nordic defence monitoring",
+      "route_output_to": "self"
+    }
+  },
+  "router": {
+    "accept_from": [
+      "agent:general_montgomery",
+      "cron:*",
+      "system"
+    ],
+    "reject_from": [],
+    "max_queue_depth": 5,
+    "system_access": false,
+    "can_address_agents": false
+  },
+  "org": {
+    "slug": "defence",
+    "tier": 2,
+    "role": "Research Fellow",
+    "reports_to": "general_montgomery",
+    "can_address_user": false,
+    "can_provision": false
+  }
+}

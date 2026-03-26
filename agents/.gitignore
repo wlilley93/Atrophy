@@ -1,0 +1,9 @@
+# Only xan and mirror ship with the app.
+# All other agents are created at runtime and live in ~/.atrophy/agents/.
+# This prevents runtime agent data from being committed to the repo.
+*
+!.gitignore
+!xan/
+!xan/**
+!mirror/
+!mirror/**

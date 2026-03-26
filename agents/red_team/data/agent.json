@@ -1,0 +1,44 @@
+{
+  "name": "red_team",
+  "display_name": "Red Team",
+  "description": "Devil's advocate - challenges Montgomery's assessments to prevent groupthink. Produces dissent/confirmation paragraphs.",
+  "channels": {
+    "desktop": {
+      "enabled": false
+    }
+  },
+  "mcp": {
+    "include": [
+      "memory"
+    ],
+    "exclude": [],
+    "custom": {}
+  },
+  "jobs": {
+    "red_team_review": {
+      "cron": "30 7 * * 1",
+      "script": "scripts/agents/red_team/red_team_review.py",
+      "description": "Monday 07:30 - review weekly digest and conflict assessments, produce dissent/confirmation",
+      "route_output_to": "self"
+    }
+  },
+  "router": {
+    "accept_from": [
+      "agent:general_montgomery",
+      "cron:*",
+      "system"
+    ],
+    "reject_from": [],
+    "max_queue_depth": 5,
+    "system_access": false,
+    "can_address_agents": false
+  },
+  "org": {
+    "slug": "defence",
+    "tier": 2,
+    "role": "Red Team Analyst",
+    "reports_to": "general_montgomery",
+    "can_address_user": false,
+    "can_provision": false
+  }
+}

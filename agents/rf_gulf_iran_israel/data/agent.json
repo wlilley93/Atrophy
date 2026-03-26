@@ -1,0 +1,46 @@
+{
+  "name": "rf_gulf_iran_israel",
+  "display_name": "RF Gulf/Iran/Israel",
+  "description": "Research Fellow - Gulf, Iran, and Israel theatre. Monthly deep-dive papers, escalation monitoring.",
+  "channels": {
+    "desktop": {
+      "enabled": false
+    }
+  },
+  "mcp": {
+    "include": [
+      "memory",
+      "defence_sources",
+      "worldmonitor"
+    ],
+    "exclude": [],
+    "custom": {}
+  },
+  "jobs": {
+    "monthly_paper": {
+      "cron": "0 9 1 * *",
+      "script": "scripts/agents/rf_gulf_iran_israel/monthly_paper.py",
+      "description": "1st of month 09:00 - deep-dive analytical paper from prior briefs + live data",
+      "route_output_to": "self"
+    }
+  },
+  "router": {
+    "accept_from": [
+      "agent:general_montgomery",
+      "cron:*",
+      "system"
+    ],
+    "reject_from": [],
+    "max_queue_depth": 5,
+    "system_access": false,
+    "can_address_agents": false
+  },
+  "org": {
+    "slug": "defence",
+    "tier": 2,
+    "role": "Research Fellow",
+    "reports_to": "general_montgomery",
+    "can_address_user": false,
+    "can_provision": false
+  }
+}

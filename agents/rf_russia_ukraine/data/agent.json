@@ -1,0 +1,46 @@
+{
+  "name": "rf_russia_ukraine",
+  "display_name": "RF Russia/Ukraine",
+  "description": "Research Fellow - Russia/Ukraine theatre. Daily battlefield reporting, pattern analysis, escalation tracking.",
+  "channels": {
+    "desktop": {
+      "enabled": false
+    }
+  },
+  "mcp": {
+    "include": [
+      "memory",
+      "defence_sources",
+      "worldmonitor"
+    ],
+    "exclude": [],
+    "custom": {}
+  },
+  "jobs": {
+    "daily_battlefield": {
+      "cron": "0 6 * * *",
+      "script": "scripts/agents/rf_russia_ukraine/daily_battlefield.py",
+      "description": "Daily 06:00 - battlefield situation report, logs to intelligence.db",
+      "route_output_to": "self"
+    }
+  },
+  "router": {
+    "accept_from": [
+      "agent:general_montgomery",
+      "cron:*",
+      "system"
+    ],
+    "reject_from": [],
+    "max_queue_depth": 5,
+    "system_access": false,
+    "can_address_agents": false
+  },
+  "org": {
+    "slug": "defence",
+    "tier": 2,
+    "role": "Research Fellow",
+    "reports_to": "general_montgomery",
+    "can_address_user": false,
+    "can_provision": false
+  }
+}
