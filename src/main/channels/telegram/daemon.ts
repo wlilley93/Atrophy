@@ -959,6 +959,13 @@ async function handleMembershipChange(
     );
 
   } else if (isGroup && isRemoved) {
+    // Only revert if removed from the currently active group.
+    // If the bot was in two groups and removed from the non-active one, ignore it.
+    if (groupChatId !== agent.chatId) {
+      log.debug(`[${agent.name}] Removed from ${groupTitle} (${groupChatId}) but active chat is ${agent.chatId} - ignoring`);
+      return;
+    }
+
     // Revert to DM fallback (under config lock)
     let dmChatId = '';
     await withConfigLock(async () => {
