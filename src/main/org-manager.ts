@@ -405,8 +405,8 @@ export function updateOrg(slug: string, updates: { name?: string; purpose?: stri
     throw new Error(`Org '${slug}' not found`);
   }
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as OrgManifest;
-  if (updates.name) manifest.name = updates.name;
-  if (updates.purpose) manifest.purpose = updates.purpose;
+  if (updates.name !== undefined && updates.name.trim()) manifest.name = updates.name;
+  if (updates.purpose !== undefined) manifest.purpose = updates.purpose;
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   clearCache();
   log.info(`Updated org "${slug}"`);

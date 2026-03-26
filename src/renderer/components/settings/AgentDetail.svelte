@@ -186,6 +186,10 @@
           system_access: systemAccess,
           can_address_agents: canAddressAgents,
         },
+        mcp: {
+          include: mcpInclude,
+          exclude: mcpExclude,
+        },
       };
 
       const tasks: Promise<unknown>[] = [

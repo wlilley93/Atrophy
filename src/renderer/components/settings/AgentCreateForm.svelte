@@ -54,7 +54,7 @@
   });
 
   // Agents in selected org with tier lower than selected tier (for reports-to)
-  const reportsToOptions = $derived(() => {
+  const reportsToOptions = $derived.by(() => {
     if (!selectedOrgSlug) return [];
     return allAgents.filter(
       (a) => a.orgSlug === selectedOrgSlug && a.tier < tier,
@@ -191,12 +191,12 @@
       </label>
 
       <!-- Reports To (only when eligible agents exist) -->
-      {#if reportsToOptions().length > 0}
+      {#if reportsToOptions.length > 0}
         <label class="field">
           <span class="field-label">Reports To</span>
           <select bind:value={reportsTo} class="field-select">
             <option value="">None</option>
-            {#each reportsToOptions() as agent}
+            {#each reportsToOptions as agent}
               <option value={agent.name}>{agent.display_name || agent.name}</option>
             {/each}
           </select>
