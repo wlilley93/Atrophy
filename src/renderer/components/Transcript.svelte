@@ -75,14 +75,20 @@
       .replace(/"/g, '&quot;');
   }
 
-  let codeBlockCounter = 0;
+  function simpleHash(s: string): string {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
 
   function renderMarkdown(text: string): string {
     // Extract fenced code blocks first to protect them from other processing
     const codeBlocks: { id: string; lang: string; code: string }[] = [];
+    let blockIdx = 0;
 
     text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, lang: string, code: string) => {
-      const id = `codeblock-${codeBlockCounter++}`;
+      // Use content hash so the ID is stable across re-renders during streaming
+      const id = `cb-${simpleHash(code)}-${blockIdx++}`;
       codeBlocks.push({ id, lang: lang || '', code: code.replace(/\n$/, '') });
       return `\x00CODEBLOCK:${id}\x00`;
     });
@@ -110,9 +116,9 @@
       }
     );
 
-    // Bare URLs - match http(s) URLs not already inside an href or tag
+    // Bare URLs - match http(s) URLs not already inside an href attribute or anchor tag text
     text = text.replace(
-      /(?<!")(?<!=)(https?:\/\/[^\s<&]+)/g,
+      /(?<!")(?<!=)(?<!>)(https?:\/\/[^\s<&]+)/g,
       '<a href="$1" target="_blank" rel="noopener" class="md-link">$1</a>'
     );
 
@@ -129,7 +135,7 @@
       let line = lines[i];
 
       // Check for code block placeholder
-      const codeMatch = line.match(/\x00CODEBLOCK:(codeblock-\d+)\x00/);
+      const codeMatch = line.match(/\x00CODEBLOCK:(cb-[\w]+-\d+)\x00/);
       if (codeMatch) {
         closeList();
         const block = codeBlocks.find(b => b.id === codeMatch[1]);
