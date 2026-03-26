@@ -640,9 +640,16 @@
 <style>
   .settings-form {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 24px;
+    grid-template-columns: 1fr;
+    gap: 0;
     align-items: start;
+  }
+
+  @media (min-width: 700px) {
+    .settings-form {
+      grid-template-columns: 1fr 1fr;
+      gap: 0 24px;
+    }
   }
 
   .section {
