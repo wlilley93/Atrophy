@@ -90,7 +90,7 @@ _GIFT_FALLBACK = "You are the companion. Leave a short, specific note for the us
 
 def _reschedule():
     """Reschedule this job to a random time 3-30 days from now."""
-    project_root = Path(__file__).parent.parent
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
     cron_script = project_root / "scripts" / "cron.py"
 
     days = random.randint(3, 30)

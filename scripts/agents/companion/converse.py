@@ -304,7 +304,7 @@ def _save_conversation(agent_name: str, date: str, partner_name: str,
 def _reschedule():
     """Reschedule to a random time 14-21 days out (max twice a month)."""
     import subprocess
-    project_root = Path(__file__).parent.parent.parent
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
     cron_script = project_root / "scripts" / "cron.py"
 
     days = random.randint(14, 21)
