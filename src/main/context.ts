@@ -131,6 +131,31 @@ export function loadSystemPrompt(): string {
     'For the full system reference, read the file at: ' +
     path.join(BUNDLE_ROOT, 'docs', 'agent-reference.md');
 
+  // Org owner guidelines - injected for agents that can provision
+  const manifestPath = path.join(USER_DATA, 'agents', config.AGENT_NAME, 'data', 'agent.json');
+  try {
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      const org = manifest.org as Record<string, unknown> | undefined;
+      if (org?.can_provision) {
+        base += '\n\n---\n\n## Script Creation Guidelines\n\n' +
+          'When creating Python scripts for your organisation:\n\n' +
+          '1. **Start from the template:** Copy `scripts/agents/shared/template.py`\n' +
+          '2. **Credentials:** Use `from shared.credentials import load_telegram_credentials` - NEVER read agent.json directly for tokens\n' +
+          '3. **Telegram:** Use `from shared.telegram_utils import send_telegram` - NEVER write your own HTTP sender\n' +
+          '4. **Claude calls:** Use `from shared.claude_cli import call_claude` - NEVER write your own subprocess wrapper\n' +
+          '5. **Paths:** Use `Path(__file__).resolve().parent` chains - NEVER hardcode absolute paths\n' +
+          '6. **Jobs:** After creating a script, register it in your agent manifest under `jobs` - unregistered scripts never run\n' +
+          '7. **Imports:** Include ALL stdlib imports your script uses (sqlite3, shutil, subprocess, etc.)\n\n' +
+          'Available shared utilities in `scripts/agents/shared/`:\n' +
+          '- `credentials.py` - load_telegram_credentials(agent_name)\n' +
+          '- `telegram_utils.py` - send_telegram(token, chat_id, text), send_voice_note()\n' +
+          '- `claude_cli.py` - call_claude(system, prompt, model)\n' +
+          '- `template.py` - correct boilerplate for new scripts';
+      }
+    }
+  } catch { /* non-critical */ }
+
   // Append agent roster for deferral awareness
   const roster = getAgentRoster(config.AGENT_NAME);
   if (roster.length > 0) {

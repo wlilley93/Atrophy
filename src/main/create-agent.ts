@@ -779,6 +779,25 @@ export function wireAgent(name: string, manifest: AgentManifest): void {
     }
   }
 
+  // 2b. Warn about orphaned scripts (exist but not registered as jobs)
+  const scriptsDir = path.join(BUNDLE_ROOT, 'scripts', 'agents', name);
+  if (fs.existsSync(scriptsDir)) {
+    try {
+      const scriptFiles = fs.readdirSync(scriptsDir)
+        .filter(f => f.endsWith('.py') && !f.startsWith('__'));
+      const registeredScripts = new Set(
+        Object.values(jobs || {}).map((j: any) => {
+          const script = (j.script as string) || '';
+          return path.basename(script);
+        }),
+      );
+      const orphaned = scriptFiles.filter(f => !registeredScripts.has(f));
+      if (orphaned.length > 0) {
+        log.warn(`[${name}] ${orphaned.length} script(s) not registered as jobs: ${orphaned.join(', ')}`);
+      }
+    } catch { /* non-critical */ }
+  }
+
   // 3. Build per-agent MCP config
   if (manifest.mcp) {
     try {
