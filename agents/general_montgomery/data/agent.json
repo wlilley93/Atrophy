@@ -54,6 +54,96 @@
       "description": "Slow-cycle world monitoring - deep analysis and pattern review",
       "route_output_to": "self",
       "notify_via": "telegram"
+    },
+    "ship_track_alert": {
+      "type": "interval",
+      "interval_seconds": 900,
+      "script": "scripts/agents/general_montgomery/ship_track_alert.py",
+      "description": "AIS maritime monitoring - 5 vector chokepoint tracking (Hormuz, Black Sea, Red Sea, etc.)",
+      "route_output_to": "self"
+    },
+    "three_hour_update": {
+      "type": "interval",
+      "interval_seconds": 10800,
+      "script": "scripts/agents/general_montgomery/three_hour_update.py",
+      "description": "Regular 3-hour situational check-in - what has moved, brief posture update",
+      "route_output_to": "self"
+    },
+    "dashboard_brief": {
+      "type": "interval",
+      "interval_seconds": 14400,
+      "script": "scripts/agents/general_montgomery/dashboard_brief.py",
+      "args": "--mode send",
+      "description": "4-hour full assessment via Claude - always sends, deep analysis",
+      "route_output_to": "self"
+    },
+    "parliamentary_monitor": {
+      "cron": "0 8 * * 1-5",
+      "script": "scripts/agents/general_montgomery/parliamentary_monitor.py",
+      "description": "Weekday 08:00 - UK Parliament Hansard API monitoring for defence/foreign affairs"
+    },
+    "competitor_scan": {
+      "cron": "0 9 * * 1-5",
+      "script": "scripts/agents/general_montgomery/competitor_scan.py",
+      "description": "Weekday 09:00 - RUSI, ISW, IISS, Chatham House, CSIS, RAND publication monitoring"
+    },
+    "weekly_digest": {
+      "cron": "0 7 * * 1",
+      "script": "scripts/agents/general_montgomery/weekly_digest.py",
+      "description": "Monday 07:00 - full Meridian Institute weekly assessment across all research tracks",
+      "route_output_to": "self"
+    },
+    "weekly_conflicts": {
+      "cron": "0 8 * * 3",
+      "script": "scripts/agents/general_montgomery/weekly_conflicts.py",
+      "description": "Wednesday 08:00 - rotating deep-dive conflict assessment (Sudan, Myanmar, Iran-Israel, Ukraine, etc.)",
+      "route_output_to": "self"
+    },
+    "commission_dispatcher": {
+      "type": "interval",
+      "interval_seconds": 14400,
+      "script": "scripts/agents/general_montgomery/commission_dispatcher.py",
+      "description": "Every 4 hours - processes open research commissions, dispatches to Research Fellows"
+    },
+    "track_record": {
+      "cron": "0 10 * * 5",
+      "script": "scripts/agents/general_montgomery/track_record.py",
+      "args": "extract",
+      "description": "Friday 10:00 - extract and log predictions from the week's assessments"
+    },
+    "process_audit": {
+      "cron": "0 10 1-7 * 1",
+      "script": "scripts/agents/general_montgomery/process_audit.py",
+      "description": "First Monday of month 10:00 - institutional self-assessment: synthesis quality, track health, red team validation",
+      "route_output_to": "self"
+    },
+    "observer": {
+      "type": "interval",
+      "interval_seconds": 900,
+      "script": "scripts/agents/shared/observer.py",
+      "description": "Periodic fact extraction from recent conversation"
+    },
+    "heartbeat": {
+      "type": "interval",
+      "interval_seconds": 1800,
+      "script": "scripts/agents/shared/heartbeat.py",
+      "description": "Periodic check-in evaluation - decides whether to reach out unprompted",
+      "route_output_to": "self"
+    },
+    "sleep_cycle": {
+      "cron": "0 3 * * *",
+      "script": "scripts/agents/shared/sleep_cycle.py",
+      "description": "Nightly memory reconciliation - processes day's sessions, extracts facts, updates threads"
+    },
+    "introspect": {
+      "cron": "33 3 * * *",
+      "script": "scripts/agents/shared/introspect.py",
+      "description": "Daily self-reflection - reviews sessions, writes journal entry to Obsidian"
+    },
+    "evolve": {
+      "cron": "0 3 1 * *",
+      "script": "scripts/agents/shared/evolve.py",
+      "description": "Monthly self-evolution - revises soul.md and system.md from journal reflections"
     }
   },
   "router": {
