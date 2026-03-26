@@ -39,4 +39,5 @@ export {
   installLaunchd,
   uninstallLaunchd,
   isLaunchdInstalled,
+  setMainWindowAccessor,
 } from './daemon';

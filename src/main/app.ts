@@ -34,7 +34,7 @@ import { discoverAgents, syncBundledPrompts, cycleAgent, setLastActiveAgent, get
 import { runCoherenceCheck } from './sentinel';
 import { drainAllAgentQueues } from './queue';
 import { startServer, stopServer } from './server';
-import { startDaemon, stopDaemon } from './channels/telegram';
+import { startDaemon, stopDaemon, setMainWindowAccessor } from './channels/telegram';
 import { cronScheduler, stopAllJobs } from './channels/cron';
 import { mcpRegistry } from './mcp-registry';
 import { wireAgent, markBootComplete } from './create-agent';
@@ -741,6 +741,9 @@ app.whenReady().then(() => {
       log.debug('Telegram daemon not started (no agents with credentials, or lock held)');
     }
   }
+
+  // Give telegram daemon access to mainWindow for desktop delivery
+  setMainWindowAccessor(() => mainWindow);
 
   // 5. Start switchboard MCP queue polling - processes envelopes from
   // agent MCP tools (Python subprocess writes, TypeScript reads).

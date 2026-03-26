@@ -507,6 +507,7 @@ const api: AtrophyAPI = {
       'voice-agent:agentResponseCorrection',
       'app:shutdownRequested', 'app:openSettings',
       'bundle:ready', 'bundle:downloadProgress',
+      'cron:desktopDelivery',
     ]);
     if (!ALLOWED_CHANNELS.has(channel)) {
       console.warn(`IPC channel not allowed: ${channel}`);

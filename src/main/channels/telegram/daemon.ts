@@ -18,8 +18,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
+import { BrowserWindow } from 'electron';
 import { getConfig, USER_DATA, BUNDLE_ROOT, saveAgentConfig } from '../../config';
-import { setActive } from '../../status';
+import { setActive, getStatus } from '../../status';
 import { sendMessage, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument, sendPhoto } from './api';
 import { buildStatusDisplay, formatElapsed, type StreamState, type ToolCallState } from './formatter';
 import { discoverAgents, getAgentState } from '../../agent-manager';
@@ -106,6 +107,16 @@ function getAgentSession(agentName: string): Session {
 // ---------------------------------------------------------------------------
 
 const _agentRouters: Map<string, AgentRouter> = new Map();
+
+// ---------------------------------------------------------------------------
+// Main window accessor (set during boot, after BrowserWindow is created)
+// ---------------------------------------------------------------------------
+
+let _getMainWindow: (() => BrowserWindow | null) | null = null;
+
+export function setMainWindowAccessor(fn: () => BrowserWindow | null): void {
+  _getMainWindow = fn;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1354,16 +1365,52 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
       _activeDispatches.delete(agent.name);
     }
 
-    // For cron dispatches with meaningful responses, send to Telegram.
+    // For cron dispatches with meaningful responses, route based on notify_via.
     // dispatchToAgent only sends via edit for Telegram-origin messages
     // (where msgId exists). For cron, we need to explicitly send.
     if (isCron && response) {
-      const manifest = getAgentManifest(agent.name);
-      const emoji = (manifest.telegram_emoji as string) || '';
-      const display = (manifest.display_name as string) || agent.name;
-      const header = emoji ? `${emoji} *${display}*\n\n` : '';
-      await sendMessage(`${header}${response}`, chatId, false, botToken);
-      log.info(`[${agent.name}] Cron response sent to Telegram (${response.length} chars)`);
+      // Route based on per-agent notify_via setting
+      await withConfigLock(async () => {
+        const config = getConfig();
+        config.reloadForAgent(agent.name);
+        const notifyVia = config.NOTIFY_VIA || 'auto';
+        const userStatus = getStatus();
+        const isActive = userStatus.status === 'active';
+
+        const sendToTelegram = notifyVia === 'telegram'
+          || notifyVia === 'both'
+          || (notifyVia === 'auto' && !isActive);
+        const sendToDesktop = notifyVia === 'both'
+          || (notifyVia === 'auto' && isActive);
+
+        const manifest = getAgentManifest(agent.name);
+        const emoji = (manifest.telegram_emoji as string) || '';
+        const display = (manifest.display_name as string) || agent.name;
+
+        if (sendToTelegram) {
+          const header = emoji ? `${emoji} *${display}*\n\n` : '';
+          await sendMessage(`${header}${response}`, chatId, false, botToken);
+          log.info(`[${agent.name}] Cron response sent to Telegram (${response.length} chars)`);
+        }
+
+        if (sendToDesktop) {
+          const win = _getMainWindow?.();
+          if (win) {
+            win.webContents.send('cron:desktopDelivery', {
+              agent: agent.name,
+              displayName: display,
+              emoji,
+              text: response,
+            });
+            log.info(`[${agent.name}] Cron response sent to desktop (${response.length} chars)`);
+          } else if (!sendToTelegram) {
+            // Desktop unavailable and not already sent to Telegram - fall back
+            const header = emoji ? `${emoji} *${display}*\n\n` : '';
+            await sendMessage(`${header}${response}`, chatId, false, botToken);
+            log.info(`[${agent.name}] Desktop unavailable - fell back to Telegram`);
+          }
+        }
+      });
     } else if (response) {
       log.info(`[${agent.name}] Responded via switchboard (${response.length} chars)`);
     } else if (!isCron) {
