@@ -140,6 +140,12 @@
       "script": "scripts/agents/shared/introspect.py",
       "description": "Daily self-reflection - reviews sessions, writes journal entry to Obsidian"
     },
+    "check_reminders": {
+      "type": "interval",
+      "interval_seconds": 60,
+      "script": "scripts/agents/shared/check_reminders.py",
+      "description": "Check and fire due reminders - runs every minute"
+    },
     "evolve": {
       "cron": "0 3 1 * *",
       "script": "scripts/agents/shared/evolve.py",

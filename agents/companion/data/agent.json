@@ -99,6 +99,11 @@
       "cron": "42 14 24 3 *",
       "script": "scripts/agents/companion/voice_note.py",
       "description": "Spontaneous voice note via Telegram - self-rescheduling"
+    },
+    "converse": {
+      "cron": "30 2 7 4 *",
+      "script": "scripts/agents/companion/converse.py",
+      "description": "Inter-agent conversation - self-rescheduling, max twice a month"
     }
   },
   "router": {

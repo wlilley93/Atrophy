@@ -894,7 +894,7 @@ if __name__ == "__main__":
     register: (
       address: string,
       handler: (envelope: unknown) => Promise<void>,
-      meta?: { type?: string; description?: string; capabilities?: string[] },
+      meta?: { type?: 'channel' | 'agent' | 'system' | 'webhook' | 'mcp'; description?: string; capabilities?: string[] },
     ) => void;
   }): void {
     // Accept switchboard as a parameter to avoid dynamic require() that breaks
