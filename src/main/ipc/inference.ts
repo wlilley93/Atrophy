@@ -16,6 +16,7 @@ import { parseArtifacts } from '../artifact-parser';
 import { loadCachedOpening, generateOpening, cacheNextOpening, getStaticFallback } from '../opening';
 import { createLogger } from '../logger';
 import { switchboard, type Envelope } from '../channels/switchboard';
+import { discoverAgents } from '../agent-manager';
 import type { IpcContext } from '../ipc-handlers';
 
 const log = createLogger('ipc:inference');
@@ -29,7 +30,7 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
       if (!ctx.mainWindow) return;
       ctx.mainWindow.webContents.send('inference:done', envelope.text);
     };
-    const { discoverAgents } = require('../agent-manager');
+    // discoverAgents imported statically at top (dynamic require breaks Vite bundling)
     for (const agent of discoverAgents()) {
       switchboard.register(`desktop:${agent.name}`, desktopHandler);
     }

@@ -259,7 +259,7 @@ export function getAgentState(agentName: string): AgentState {
   let defaultEnabled = true;
   if (state?.enabled === undefined) {
     try {
-      const { USER_DATA, BUNDLE_ROOT } = require('./config');
+      // USER_DATA and BUNDLE_ROOT already imported at top of file
       for (const base of [
         path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json'),
         path.join(BUNDLE_ROOT, 'agents', agentName, 'data', 'agent.json'),
