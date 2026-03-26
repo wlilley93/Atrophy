@@ -10,8 +10,8 @@
 
   const categoryBadges: Record<string, [string, string]> = {
     tool_call: ['TOOL', '#4a9eff'],
-    heartbeat: ['BEAT', '#9b59b6'],
-    inference: ['INFER', '#2ecc71'],
+    heartbeat: ['\u2764 BEAT', '#e74c3c'],
+    inference: ['\uD83E\uDDE0 INFER', '#b07cc6'],
   };
 
   export async function load() {
@@ -233,8 +233,9 @@
     background: rgba(255, 255, 255, 0.05);
     border-radius: 4px;
     padding: 2px 6px;
-    min-width: 36px;
+    min-width: 52px;
     text-align: center;
+    white-space: nowrap;
   }
 
   .activity-flag {
