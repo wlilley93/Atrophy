@@ -143,9 +143,9 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse): 
     return;
   }
 
-  inferLock = true;
-
   try {
+    inferLock = true;
+
     if (!session) {
       session = new Session();
       session.start();
@@ -239,22 +239,33 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
 
   inferLock = true;
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
+  try {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
 
-  if (!session) {
-    session = new Session();
-    session.start();
-    session.inheritCliSessionId();
-  }
-  if (!systemPrompt) {
-    systemPrompt = loadSystemPrompt();
-  }
+    if (!session) {
+      session = new Session();
+      session.start();
+      session.inheritCliSessionId();
+    }
+    if (!systemPrompt) {
+      systemPrompt = loadSystemPrompt();
+    }
 
-  session.addTurn('will', message);
+    session.addTurn('will', message);
+  } catch (err) {
+    inferLock = false;
+    if (!res.headersSent) {
+      sendJson(res, { error: String(err) }, 500);
+    } else {
+      res.write(`data: ${JSON.stringify({ type: 'error', message: String(err) })}\n\n`);
+      res.end();
+    }
+    return;
+  }
 
   let fullText = '';
   let sessionId = session.cliSessionId || '';
@@ -344,23 +355,33 @@ async function handleChatStreamJson(req: http.IncomingMessage, res: http.ServerR
 
   inferLock = true;
 
-  // NDJSON - one JSON object per line, compatible with Claude CLI stream-json format
-  res.writeHead(200, {
-    'Content-Type': 'application/x-ndjson',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
+  try {
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
 
-  if (!session) {
-    session = new Session();
-    session.start();
-    session.inheritCliSessionId();
-  }
-  if (!systemPrompt) {
-    systemPrompt = loadSystemPrompt();
-  }
+    if (!session) {
+      session = new Session();
+      session.start();
+      session.inheritCliSessionId();
+    }
+    if (!systemPrompt) {
+      systemPrompt = loadSystemPrompt();
+    }
 
-  session.addTurn('will', message);
+    session.addTurn('will', message);
+  } catch (err) {
+    inferLock = false;
+    if (!res.headersSent) {
+      sendJson(res, { error: String(err) }, 500);
+    } else {
+      res.write(JSON.stringify({ type: 'error', message: String(err) }) + '\n');
+      res.end();
+    }
+    return;
+  }
 
   let fullText = '';
   let sessionId = session.cliSessionId || '';

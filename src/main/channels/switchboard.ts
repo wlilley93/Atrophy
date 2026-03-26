@@ -285,7 +285,14 @@ class Switchboard {
         const raw = fs.readFileSync(tmpPath, 'utf8');
         try { fs.unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
 
-        const envelopes: Envelope[] = JSON.parse(raw);
+        let envelopes: Envelope[];
+        try {
+          envelopes = JSON.parse(raw);
+        } catch (parseErr) {
+          log.error(`Queue file contained malformed JSON - ${raw.length} bytes dropped: ${parseErr}`);
+          log.error(`Queue raw content (first 500 chars): ${raw.slice(0, 500)}`);
+          return;
+        }
         if (envelopes.length === 0) return;
 
         // Process each envelope

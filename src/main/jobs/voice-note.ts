@@ -204,7 +204,14 @@ export async function run(): Promise<void> {
     return;
   }
 
-  const context = gatherContext();
+  let context: string;
+  try {
+    context = gatherContext();
+  } catch (e) {
+    log.error(`Context gather failed: ${e}`);
+    reschedule(); // Always reschedule to prevent permanent job death
+    return;
+  }
   if (!context.trim()) {
     log.info('No context material - skipping');
     reschedule();

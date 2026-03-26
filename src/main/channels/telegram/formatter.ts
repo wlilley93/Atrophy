@@ -202,7 +202,8 @@ export function buildStatusDisplay(state: StreamState): string {
     const resultDisplay = tool.result ? formatToolResult(tool.name, tool.input, tool.result) : 'done';
 
     let line = `\u2705 \`${name}\``;
-    if (inputDisplay) line += ` ${escapeMarkdown(inputDisplay)}`;
+    // inputDisplay already contains backtick-formatted spans - don't double-escape
+    if (inputDisplay) line += ` ${inputDisplay}`;
     line += ` - ${escapeMarkdown(resultDisplay)}`;
     parts.push(line);
   }
@@ -212,7 +213,7 @@ export function buildStatusDisplay(state: StreamState): string {
     const name = formatToolName(state.activeTool.name);
     const inputDisplay = formatToolInput(state.activeTool.name, state.activeTool.input);
     let line = `\u23f3 \`${name}\``;
-    if (inputDisplay) line += ` ${escapeMarkdown(inputDisplay)}`;
+    if (inputDisplay) line += ` ${inputDisplay}`;
     else line += '\u2026';
     parts.push(line);
   }

@@ -147,9 +147,11 @@ async function gatherSources(sources: string[]): Promise<string> {
         headers: { 'User-Agent': 'curl/7.0' },
         signal: AbortSignal.timeout(10_000),
       });
-      const weather = (await resp.text()).trim();
-      if (weather) {
-        parts.push(`## Weather\n${weather}`);
+      if (resp.ok) {
+        const weather = (await resp.text()).trim();
+        if (weather) {
+          parts.push(`## Weather\n${weather}`);
+        }
       }
     } catch { /* non-fatal */ }
   }

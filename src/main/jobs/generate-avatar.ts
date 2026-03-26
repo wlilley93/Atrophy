@@ -491,6 +491,7 @@ export async function trimStaticTails(audioPath: string): Promise<void> {
       '-v', 'error',
       '-f', 'lavfi',
       '-i', `amovie=${audioPath},silencedetect=noise=-40dB:d=0.5`,
+      '-show_frames',
       '-show_entries', 'frame_tags=lavfi.silence_start',
       '-of', 'csv=p=0',
     ], { encoding: 'utf-8', timeout: 30000 });
