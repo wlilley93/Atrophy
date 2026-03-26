@@ -641,32 +641,32 @@ async function processQueue(): Promise<void> {
     // If sentence 2 arrives before sentence 1, wait up to 3s for sentence 1.
     if (_queue[0].index > _nextExpectedIndex) {
       const arrived = await new Promise<boolean>((resolve) => {
-        const check = () => {
-          if (_queue.length > 0 && _queue[0].index === _nextExpectedIndex) {
-            resolve(true);
-          }
+        let settled = false;
+        const settle = (val: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearInterval(interval);
+          if (_waitTimer) { clearTimeout(_waitTimer); _waitTimer = null; }
+          resolve(val);
         };
-        check();
-        // Re-check when new items arrive (enqueueAudio calls processQueue which
-        // won't re-enter because _playing is true, but we poll briefly)
-        // Also check periodically in case enqueue happened between checks
+
+        // Set up timers first, then check synchronously (avoids leaking
+        // interval/timeout if check() resolves before they're assigned)
         const interval = setInterval(() => {
-          if (_ttsGeneration !== gen) {
-            clearInterval(interval);
-            resolve(false);
-            return;
-          }
+          if (_ttsGeneration !== gen) { settle(false); return; }
           if (_queue.length > 0 && _queue[0].index === _nextExpectedIndex) {
-            clearInterval(interval);
-            if (_waitTimer) { clearTimeout(_waitTimer); _waitTimer = null; }
-            resolve(true);
+            settle(true);
           }
         }, 50);
         _waitTimer = setTimeout(() => {
           _waitTimer = null;
-          clearInterval(interval); // Prevent permanent 50ms poll leak
-          resolve(false); // Give up waiting, play whatever is next
+          settle(false); // Give up waiting, play whatever is next
         }, 3000);
+
+        // Immediate check in case the expected index is already at the front
+        if (_queue.length > 0 && _queue[0].index === _nextExpectedIndex) {
+          settle(true);
+        }
       });
       if (_ttsGeneration !== gen) break;
       if (!arrived && _queue.length === 0) break;

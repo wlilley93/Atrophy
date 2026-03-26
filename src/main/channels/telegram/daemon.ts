@@ -689,9 +689,10 @@ async function dispatchToAgent(
     const EDIT_INTERVAL_MS = 1500;
     let lastEditTime = 0;
     let editPending = false;
+    let streamDone = false; // Set when StreamDone/StreamError fires to stop in-flight edits
 
     const doEdit = async (): Promise<void> => {
-      if (!msgId) return;
+      if (!msgId || streamDone) return;
       const now = Date.now();
       if (now - lastEditTime < EDIT_INTERVAL_MS) {
         editPending = true;
@@ -700,6 +701,8 @@ async function dispatchToAgent(
       editPending = false;
       lastEditTime = now;
       const displayText = buildStatusDisplay(state);
+      // Double-check streamDone after building display (could have changed during await)
+      if (streamDone) return;
       await editMessage(msgId, `${header}${displayText}`, chatId, botToken);
     };
 
@@ -791,16 +794,17 @@ async function dispatchToAgent(
             break;
 
           case 'StreamDone':
+            streamDone = true; // Stop in-flight async edits from overwriting final response
             clearTimeout(timer);
             clearInterval(flushTimer);
             state.isCompacting = false;
             fullText = evt.fullText;
-            // Stash session ID for persistence after promise resolves
             _lastStreamSessionId = evt.sessionId || null;
             resolve();
             break;
 
           case 'StreamError':
+            streamDone = true;
             clearTimeout(timer);
             clearInterval(flushTimer);
             log.error(`[${agentName}] inference error: ${evt.message}`);
@@ -845,11 +849,16 @@ async function dispatchToAgent(
         const edited = await editMessage(msgId, `${header}${finalText}`, chatId, botToken);
         // If edit failed (message too old, deleted, etc.), send as new message
         if (!edited) {
+          // Clean up orphaned thinking message
+          try { await deleteMessage(msgId, chatId, botToken); } catch { /* best effort */ }
           await sendMessage(`${header}${finalText}`, chatId, false, botToken);
         }
       } else {
         await sendMessage(`${header}${finalText}`, chatId, false, botToken);
       }
+    } else if (!finalText && msgId && isTelegramOrigin) {
+      // No response text (error/empty) - delete the thinking message to avoid orphan
+      try { await deleteMessage(msgId, chatId, botToken); } catch { /* best effort */ }
 
       // Auto-upload files mentioned in the response (e.g. generated docs)
       // Match paths like /Users/.../file.docx or ~/.atrophy/.../file.pdf
