@@ -463,11 +463,13 @@
     background: var(--bg, #0C0C0E);
     z-index: 60;
     -webkit-app-region: no-drag;
+    overflow: hidden;
   }
 
   .settings-sidebar {
     width: 180px;
     flex-shrink: 0;
+    min-height: 0;
     background: rgba(8, 8, 10, 0.98);
     border-right: 1px solid var(--border);
     display: flex;
@@ -541,6 +543,7 @@
 
   .settings-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 24px 28px;
   }

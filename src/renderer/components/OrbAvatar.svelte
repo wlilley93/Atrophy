@@ -516,6 +516,8 @@
     object-fit: contain;
     opacity: 0;
     transition: opacity 0.8s ease;
+    mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, black 40%, transparent 72%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, black 40%, transparent 72%);
   }
 
   .avatar-video.visible {
