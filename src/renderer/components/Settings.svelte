@@ -8,6 +8,7 @@
   import JobsTab from './settings/JobsTab.svelte';
   import UpdatesTab from './settings/UpdatesTab.svelte';
   import ConsoleTab from './settings/ConsoleTab.svelte';
+  import AgentsTab from './settings/AgentsTab.svelte';
 
   interface Props {
     onClose: () => void;
@@ -16,7 +17,7 @@
 
   let { onClose, onOpenSystemMap }: Props = $props();
 
-  type Tab = 'settings' | 'usage' | 'activity' | 'jobs' | 'updates' | 'console';
+  type Tab = 'settings' | 'agents' | 'usage' | 'activity' | 'jobs' | 'updates' | 'console';
   let activeTab = $state<Tab>('settings');
 
   // ---------------------------------------------------------------------------
@@ -121,6 +122,7 @@
   // Tab component refs
   // ---------------------------------------------------------------------------
 
+  let agentsTab: AgentsTab;
   let usageTab: UsageTab;
   let activityTab: ActivityTab;
   let jobsTab: JobsTab;
@@ -314,6 +316,7 @@
     if (activeTab === 'console' && tab !== 'console') consoleTab?.cleanup();
     activeTab = tab;
     await tick(); // Wait for Svelte to mount the new tab component before calling load()
+    if (tab === 'agents') agentsTab?.load();
     if (tab === 'usage') usageTab?.load();
     if (tab === 'activity') activityTab?.load();
     if (tab === 'jobs') jobsTab?.load();
@@ -339,6 +342,7 @@
     <div class="settings-header">
       <div class="tabs">
         <button class="tab" class:active={activeTab === 'settings'} onclick={() => switchTab('settings')}>Settings</button>
+        <button class="tab" class:active={activeTab === 'agents'} onclick={() => switchTab('agents')}>Agents</button>
         <button class="tab" class:active={activeTab === 'usage'} onclick={() => switchTab('usage')}>Usage</button>
         <button class="tab" class:active={activeTab === 'activity'} onclick={() => switchTab('activity')}>Activity</button>
         <button class="tab" class:active={activeTab === 'jobs'} onclick={() => switchTab('jobs')}>Jobs</button>
@@ -356,7 +360,7 @@
     </div>
 
     <!-- Content -->
-    <div class="settings-content">
+    <div class="settings-content" class:no-pad={activeTab === 'agents'}>
 
       {#if activeTab === 'settings'}
         <SettingsTab
@@ -420,6 +424,9 @@
           onSave={save}
           onResetSetup={resetSetup}
         />
+
+      {:else if activeTab === 'agents'}
+        <AgentsTab bind:this={agentsTab} />
 
       {:else if activeTab === 'usage'}
         <UsageTab bind:this={usageTab} />
@@ -522,6 +529,11 @@
     flex: 1;
     overflow-y: auto;
     padding: 16px 20px;
+  }
+
+  .settings-content.no-pad {
+    padding: 0;
+    overflow: hidden;
   }
 
   /* Scrollbar */
