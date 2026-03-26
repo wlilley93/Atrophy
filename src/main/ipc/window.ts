@@ -87,7 +87,11 @@ export function registerWindowHandlers(ctx: IpcContext): void {
         try {
           if (!fs.existsSync(candidate)) continue;
           const ver = execFileSync(candidate, ['--version'], { timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
-          return { ok: true, version: ver, bin: candidate, hint: `Found at ${candidate} - updating config` };
+          // Persist the discovered path so inference uses it
+          const { saveUserConfig } = await import('../config');
+          saveUserConfig({ CLAUDE_BIN: candidate });
+          getConfig().CLAUDE_BIN = candidate;
+          return { ok: true, version: ver, bin: candidate, hint: `Found Claude at ${candidate}` };
         } catch { continue; }
       }
       return {
@@ -300,6 +304,9 @@ Output EXACTLY this format - a single fenced JSON block:
       wontDo: agentConfig.wont_do,
       frictionModes: agentConfig.friction_modes,
       writingStyle: agentConfig.writing_style,
+      voice: agentConfig.elevenlabs_voice_id
+        ? { elevenlabsVoiceId: agentConfig.elevenlabs_voice_id }
+        : undefined,
     });
     // Agent created - reset wizard session so it doesn't leak into future runs
     wizardSessionId = null;

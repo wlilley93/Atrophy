@@ -80,6 +80,8 @@
   let telegramVerified = $state<boolean | null>(null);
   let telegramDiscovering = $state(false);
   let telegramChatDiscovered = $state(false);
+  let telegramDiscoverFailed = $state(false);
+  let saving = $state(false);
 
   // Google OAuth
   let googleWorkspace = $state(true);
@@ -223,13 +225,31 @@
     const s = SERVICE_PROMPTS[step];
     if (!s) return;
 
+    if (saving) return;
+    saving = true;
+    try {
     if (s.key === 'ELEVENLABS_API_KEY' && elevenLabsKey.trim()) {
+      // Auto-verify if not already verified
+      if (elevenLabsVerified !== true) {
+        await verifyElevenLabs();
+        if (elevenLabsVerified !== true) return;
+      }
       await api?.saveSecret('ELEVENLABS_API_KEY', elevenLabsKey.trim());
       onSaved('ELEVENLABS_API_KEY');
     } else if (s.key === 'FAL_KEY' && falKey.trim()) {
+      // Auto-verify if not already verified
+      if (falVerified !== true) {
+        await verifyFal();
+        if (falVerified !== true) return;
+      }
       await api?.saveSecret('FAL_KEY', falKey.trim());
       onSaved('FAL_KEY');
     } else if (s.key === 'TELEGRAM' && telegramToken.trim()) {
+      // Require verification before save - prevents saving invalid tokens
+      if (telegramVerified !== true) {
+        await verifyTelegram();
+        if (telegramVerified !== true) return;
+      }
       // Save token first
       await api?.saveSecret('TELEGRAM_BOT_TOKEN', telegramToken.trim());
       // Discover chat ID if not already done
@@ -239,10 +259,20 @@
           const result = await api?.discoverTelegramChatId?.(telegramToken.trim());
           if (result?.chatId) {
             telegramChatDiscovered = true;
+          } else {
+            telegramDiscoverFailed = true;
+            telegramDiscovering = false;
+            // Don't advance - let user retry after sending a message to the bot
+            return;
           }
-        } catch { /* non-critical */ }
+        } catch {
+          telegramDiscoverFailed = true;
+          telegramDiscovering = false;
+          return;
+        }
         telegramDiscovering = false;
       }
+      telegramDiscoverFailed = false;
       // Start the polling daemon now that credentials are saved
       api?.startTelegramDaemon?.().catch(() => { /* non-critical */ });
       onSaved('TELEGRAM_BOT_TOKEN');
@@ -250,6 +280,9 @@
       onSaved('GOOGLE');
     } else if (s.key === 'GITHUB' && githubAuthed) {
       onSaved('GITHUB');
+    }
+    } finally {
+      saving = false;
     }
   }
 
@@ -275,15 +308,24 @@
     skipConfirmVisible = false;
   });
 
-  function hasValue(): boolean {
-    const s = SERVICE_PROMPTS[step];
-    if (!s) return false;
-    if (s.key === 'ELEVENLABS_API_KEY') return !!elevenLabsKey.trim();
-    if (s.key === 'FAL_KEY') return !!falKey.trim();
-    if (s.key === 'TELEGRAM') return !!telegramToken.trim();
-    if (s.key === 'GOOGLE') return googleResult === 'complete';
-    if (s.key === 'GITHUB') return githubAuthed === true;
-    return false;
+  // Clear stale verification state when input values change
+  $effect(() => {
+    telegramToken; // track
+    telegramDiscoverFailed = false;
+    telegramVerified = null;
+  });
+  $effect(() => {
+    elevenLabsKey; // track
+    elevenLabsVerified = null;
+  });
+  $effect(() => {
+    falKey; // track
+    falVerified = null;
+  });
+
+  /** Whether any async operation is in progress (blocks all buttons) */
+  function isBusy(): boolean {
+    return saving || googleAuthing || githubAuthing;
   }
 </script>
 
@@ -320,6 +362,7 @@
               class="svc-input secure-input has-eye"
               placeholder={svc.placeholder}
               autofocus
+              onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' && elevenLabsKey.trim()) saveCurrentService(); }}
             />
             <button class="eye-toggle" type="button" onclick={() => showElevenLabsKey = !showElevenLabsKey} aria-label={showElevenLabsKey ? 'Hide' : 'Show'}>
               {#if showElevenLabsKey}
@@ -336,11 +379,11 @@
           <span class="verify-status failed">Invalid key</span>
         {/if}
         <div class="service-card-actions">
-          <button class="svc-btn verify-btn" disabled={!elevenLabsKey.trim() || elevenLabsVerifying} onclick={verifyElevenLabs}>
+          <button class="svc-btn verify-btn" disabled={!elevenLabsKey.trim() || elevenLabsVerifying || saving} onclick={verifyElevenLabs}>
             {elevenLabsVerifying ? 'Checking...' : 'Verify'}
           </button>
-          <button class="svc-btn" onclick={elevenLabsKey.trim() ? saveCurrentService : skipCurrentService}>
-            {elevenLabsKey.trim() ? 'Save' : 'Skip'}
+          <button class="svc-btn" disabled={saving} onclick={elevenLabsKey.trim() ? saveCurrentService : skipCurrentService}>
+            {saving ? 'Saving...' : elevenLabsKey.trim() ? 'Save' : 'Skip'}
           </button>
         </div>
 
@@ -354,6 +397,7 @@
               class="svc-input secure-input has-eye"
               placeholder={svc.placeholder}
               autofocus
+              onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' && falKey.trim()) saveCurrentService(); }}
             />
             <button class="eye-toggle" type="button" onclick={() => showFalKey = !showFalKey} aria-label={showFalKey ? 'Hide' : 'Show'}>
               {#if showFalKey}
@@ -370,11 +414,11 @@
           <span class="verify-status failed">Invalid key</span>
         {/if}
         <div class="service-card-actions">
-          <button class="svc-btn verify-btn" disabled={!falKey.trim() || falVerifying} onclick={verifyFal}>
+          <button class="svc-btn verify-btn" disabled={!falKey.trim() || falVerifying || saving} onclick={verifyFal}>
             {falVerifying ? 'Checking...' : 'Verify'}
           </button>
-          <button class="svc-btn" onclick={falKey.trim() ? saveCurrentService : skipCurrentService}>
-            {falKey.trim() ? 'Save' : 'Skip'}
+          <button class="svc-btn" disabled={saving} onclick={falKey.trim() ? saveCurrentService : skipCurrentService}>
+            {saving ? 'Saving...' : falKey.trim() ? 'Save' : 'Skip'}
           </button>
         </div>
 
@@ -388,6 +432,7 @@
               class="svc-input secure-input has-eye"
               placeholder="123456:ABC-DEF..."
               autofocus
+              onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' && telegramToken.trim()) saveCurrentService(); }}
             />
             <button class="eye-toggle" type="button" onclick={() => showTelegramToken = !showTelegramToken} aria-label={showTelegramToken ? 'Hide' : 'Show'}>
               {#if showTelegramToken}
@@ -400,24 +445,27 @@
         </label>
         {#if telegramVerified === true}
           <span class="verify-status verified">Bot verified</span>
-          {#if !telegramChatDiscovered && !telegramDiscovering}
+          {#if !telegramChatDiscovered && !telegramDiscovering && !telegramDiscoverFailed}
             <p class="svc-hint">Send any message to your bot in Telegram, then press Save. This links your chat.</p>
           {/if}
+          {#if telegramDiscoverFailed}
+            <span class="verify-status failed">No message found - send a message to your bot first, then press Save again.</span>
+          {/if}
           {#if telegramDiscovering}
-            <span class="verify-status">Waiting for your message to the bot...</span>
+            <span class="verify-status">Linking your chat...</span>
           {/if}
           {#if telegramChatDiscovered}
             <span class="verify-status verified">Chat linked</span>
           {/if}
         {:else if telegramVerified === false}
-          <span class="verify-status failed">Invalid token</span>
+          <span class="verify-status failed">Invalid token - check it and try again</span>
         {/if}
         <div class="service-card-actions">
-          <button class="svc-btn verify-btn" disabled={!telegramToken.trim() || telegramVerifying || telegramDiscovering} onclick={verifyTelegram}>
+          <button class="svc-btn verify-btn" disabled={!telegramToken.trim() || telegramVerifying || telegramDiscovering || saving} onclick={verifyTelegram}>
             {telegramVerifying ? 'Checking...' : 'Verify'}
           </button>
-          <button class="svc-btn" disabled={telegramDiscovering} onclick={telegramToken.trim() ? saveCurrentService : skipCurrentService}>
-            {telegramDiscovering ? 'Linking...' : telegramToken.trim() ? 'Save' : 'Skip'}
+          <button class="svc-btn" disabled={telegramDiscovering || saving} onclick={telegramToken.trim() ? saveCurrentService : skipCurrentService}>
+            {telegramDiscovering ? 'Linking...' : saving ? 'Saving...' : telegramToken.trim() ? 'Save' : 'Skip'}
           </button>
         </div>
 
@@ -439,13 +487,13 @@
         {#if googleResult === 'complete'}
           <span class="verify-status verified">Connected</span>
         {:else if googleResult}
-          <span class="verify-status failed">{googleResult}</span>
+          <span class="verify-status failed">{googleResult.replace(/^error:\s*/i, '')}</span>
         {/if}
         <div class="service-card-actions">
-          <button class="svc-btn verify-btn" disabled={googleAuthing || (!googleWorkspace && !googleExtra)} onclick={startGoogleAuth}>
+          <button class="svc-btn verify-btn" disabled={googleAuthing || isBusy() || (!googleWorkspace && !googleExtra)} onclick={startGoogleAuth}>
             {googleAuthing ? 'Waiting for browser...' : 'Connect selected'}
           </button>
-          <button class="svc-btn" onclick={googleResult === 'complete' ? saveCurrentService : skipCurrentService}>
+          <button class="svc-btn" disabled={isBusy()} onclick={googleResult === 'complete' ? saveCurrentService : skipCurrentService}>
             {googleResult === 'complete' ? 'Next' : 'Skip'}
           </button>
         </div>
@@ -455,7 +503,7 @@
             <button class="svc-btn verify-btn" disabled={true}>
               Checking...
             </button>
-            <button class="svc-btn" onclick={skipCurrentService}>Skip</button>
+            <button class="svc-btn" disabled={isBusy()} onclick={skipCurrentService}>Skip</button>
           </div>
         {:else if !githubInstalled}
           <p class="github-hint">
@@ -464,15 +512,15 @@
             Then come back and tap "Check again".
           </p>
           <div class="service-card-actions">
-            <button class="svc-btn verify-btn" disabled={githubChecking} onclick={checkGitHub}>
+            <button class="svc-btn verify-btn" disabled={githubChecking || isBusy()} onclick={checkGitHub}>
               {githubChecking ? 'Checking...' : 'Check again'}
             </button>
-            <button class="svc-btn" onclick={skipCurrentService}>Skip</button>
+            <button class="svc-btn" disabled={isBusy()} onclick={skipCurrentService}>Skip</button>
           </div>
         {:else if githubAuthed}
           <span class="verify-status verified">Connected as {githubAccount}</span>
           <div class="service-card-actions">
-            <button class="svc-btn" onclick={saveCurrentService}>Next</button>
+            <button class="svc-btn" disabled={isBusy()} onclick={saveCurrentService}>Next</button>
           </div>
         {:else}
           <p class="github-hint">
@@ -483,10 +531,10 @@
             <span class="verify-status failed">{githubError}</span>
           {/if}
           <div class="service-card-actions">
-            <button class="svc-btn verify-btn" disabled={githubAuthing} onclick={startGitHubAuth}>
+            <button class="svc-btn verify-btn" disabled={githubAuthing || isBusy()} onclick={startGitHubAuth}>
               {githubAuthing ? 'Waiting for browser...' : 'Connect GitHub'}
             </button>
-            <button class="svc-btn" onclick={skipCurrentService}>Skip</button>
+            <button class="svc-btn" disabled={isBusy()} onclick={skipCurrentService}>Skip</button>
           </div>
         {/if}
       {/if}

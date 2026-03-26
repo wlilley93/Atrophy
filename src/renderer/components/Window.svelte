@@ -134,6 +134,7 @@
   let askInputType = $state<'password' | 'email' | 'url' | 'number' | 'text'>('password');
   let askLabel = $state('');
   let askDestination = $state('');
+  let askShowSecure = $state(false);
 
   // Silence timer - prompts after configurable idle period
   let lastInputTime = $state(Date.now());
@@ -618,9 +619,13 @@
     session.inferenceState = 'idle';
   }
 
-  function skipAgentCreation() {
+  let _finishingSetup = $state(false);
+  async function skipAgentCreation() {
+    if (_finishingSetup) return;
+    _finishingSetup = true;
     clearTranscript();
-    finishSetup();
+    await finishSetup();
+    _finishingSetup = false;
   }
 
   async function finishSetup() {
@@ -659,8 +664,10 @@
     }
   }
 
-  function onSetupWizardComplete() {
-    finishSetup();
+  async function onSetupWizardComplete() {
+    _finishingSetup = true;
+    await finishSetup();
+    _finishingSetup = false;
   }
 
   function onSplashComplete() {
@@ -789,6 +796,7 @@
     askInputType = 'password';
     askLabel = '';
     askDestination = '';
+    askShowSecure = false;
   }
 
   function handleAskConfirm(approved: boolean) {
@@ -1270,15 +1278,27 @@
           </div>
         {:else if askActionType === 'secure_input'}
           <div class="ask-input-row">
-            <input
-              type={askInputType}
-              class="ask-input"
-              placeholder={askLabel || 'Enter value...'}
-              bind:value={askReply}
-              onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleAskReply(); }}
-              autocomplete="off"
-              spellcheck="false"
-            />
+            <div class="ask-input-eye-wrap">
+              <input
+                type={askShowSecure ? 'text' : askInputType}
+                class="ask-input ask-input-secure"
+                placeholder={askLabel || 'Enter value...'}
+                bind:value={askReply}
+                onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleAskReply(); }}
+                autocomplete="off"
+                spellcheck="false"
+                autofocus
+              />
+              {#if askInputType === 'password'}
+                <button class="ask-eye-toggle" type="button" onclick={() => askShowSecure = !askShowSecure} aria-label={askShowSecure ? 'Hide' : 'Show'}>
+                  {#if askShowSecure}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                  {:else}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  {/if}
+                </button>
+              {/if}
+            </div>
             <button class="ask-btn ask-btn-yes" onclick={handleAskReply}>Save</button>
           </div>
           {#if askDestination}
@@ -1292,6 +1312,7 @@
               placeholder="Type your reply..."
               bind:value={askReply}
               onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleAskReply(); }}
+              autofocus
             />
             <button class="ask-btn ask-btn-yes" onclick={handleAskReply}>Send</button>
           </div>
@@ -1457,8 +1478,8 @@
     />
   {/if}
 
-  <!-- Input bar - hidden during splash, welcome, setup service phase, and creating/done overlays -->
-  {#if !(setupWizardPhase === 'welcome' || setupWizardPhase === 'creating' || setupWizardPhase === 'done' || splashVisible || (setupActive && setupServiceStep < SETUP_SERVICE_TITLES.length))}
+  <!-- Input bar - hidden during splash, welcome, setup service phase, creating/done overlays, and finishSetup -->
+  {#if !(setupWizardPhase === 'welcome' || setupWizardPhase === 'creating' || setupWizardPhase === 'done' || splashVisible || _finishingSetup || (setupActive && setupServiceStep < SETUP_SERVICE_TITLES.length))}
     <InputBar
       onSubmit={setupActive && setupServiceStep >= SETUP_SERVICE_TITLES.length ? setupSubmit : undefined}
       placeholder={setupActive && setupServiceStep >= SETUP_SERVICE_TITLES.length ? 'Describe who you want to create...' : undefined}
@@ -1901,6 +1922,41 @@
 
   .ask-input::placeholder {
     color: var(--text-dim);
+  }
+
+  .ask-input-eye-wrap {
+    position: relative;
+    flex: 1;
+  }
+
+  .ask-input-secure {
+    padding-right: 36px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+
+  .ask-eye-toggle {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .ask-eye-toggle:hover {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
   }
 
   .ask-destination-note {
