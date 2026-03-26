@@ -502,8 +502,11 @@ function withAgentDispatchLock<T>(agentName: string, fn: () => Promise<T>): Prom
     _dispatchStartTimes.set(agentName, Date.now());
     // Safety timer: force-release the lock if fn never completes.
     // This prevents permanently stuck dispatch queues from hung inference.
+    // Also kills the inference process so fn() stops promptly rather than
+    // running concurrently with the next dispatch.
     const safety = setTimeout(() => {
       log.error(`[${agentName}] dispatch lock force-released after ${DISPATCH_LOCK_TIMEOUT_MS / 1000}s`);
+      stopInference(agentName);
       _dispatchStartTimes.delete(agentName);
       resolve!();
     }, DISPATCH_LOCK_TIMEOUT_MS);
@@ -805,8 +808,10 @@ async function dispatchToAgent(
       await sendMessage(`${header}${finalText}`, chatId, false, botToken);
 
       // Auto-upload files mentioned in the response (e.g. generated docs)
-      // Matches paths like /Users/.../file.docx or ~/.atrophy/.../file.pdf
-      const fileRe = /(?:\/Users\/\S+|~\/\S+)\.(?:docx|pdf|xlsx|csv|txt|md|html|json|png|jpg)/g;
+      // Match paths like /Users/.../file.docx or ~/.atrophy/.../file.pdf
+      // Use [^\s`"')>\]] to stop at markdown delimiters, backticks, quotes, etc.
+      // and restrict to ~/.atrophy/ paths to prevent AI-generated path traversal.
+      const fileRe = /(?:\/Users\/\w[\w/._-]+|~\/\.atrophy\/[\w/._-]+)\.(?:docx|pdf|xlsx|csv|txt|md|html|json|png|jpg)(?=[\s`"')\]>,;:]|$)/g;
       const filePaths = finalText.match(fileRe);
       if (filePaths) {
         for (const raw of filePaths) {
@@ -915,7 +920,7 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     raw = await post('getUpdates', {
       offset: agentState.last_update_id + 1,
       timeout: 30,
-      allowed_updates: ['message'],
+      allowed_updates: ['message', 'my_chat_member'],
     }, 45_000, agent.botToken);
   } catch (e) {
     if (!_running) return;
@@ -928,11 +933,16 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
       text?: string;
       caption?: string;
       from?: { id: number; is_bot?: boolean };
-      chat?: { id: number };
+      chat?: { id: number; type?: string };
       photo?: { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }[];
       voice?: { file_id: string; duration: number; mime_type?: string; file_size?: number };
       document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
       video?: { file_id: string; duration: number; width: number; height: number; mime_type?: string; file_size?: number };
+    };
+    my_chat_member?: {
+      chat: { id: number; type: string; title?: string };
+      new_chat_member: { status: string };
+      old_chat_member: { status: string };
     };
   }[] : null;
 
@@ -940,6 +950,12 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
 
   for (const update of result) {
     agentState.last_update_id = Math.max(agentState.last_update_id, update.update_id);
+
+    // Handle bot membership changes (added/removed from groups)
+    if (update.my_chat_member) {
+      await handleMembershipChange(agent, update.my_chat_member);
+      continue;
+    }
 
     const msg = update.message;
     if (!msg) continue;
