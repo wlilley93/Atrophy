@@ -391,6 +391,13 @@ function discoverTelegramAgents(): TelegramAgent[] {
 
       if (!botToken || !chatId) continue;
 
+      // Backfill DM chat ID for agents that predate the group feature.
+      // If telegram_dm_chat_id is empty, the current chat_id is the DM.
+      const dmChatId = config.TELEGRAM_DM_CHAT_ID;
+      if (!dmChatId && chatId) {
+        saveAgentConfig(agent.name, { TELEGRAM_DM_CHAT_ID: chatId });
+      }
+
       const manifest = getAgentManifest(agent.name);
       agents.push({
         name: agent.name,
