@@ -61,12 +61,13 @@ FEED_CATALOG: dict[str, dict] = {
         "type": "official",
         "url": "https://www.gov.uk/search/news-and-communications.atom?organisations%5B%5D=ministry-of-defence",
     },
-    "french_mod": {
-        "name": "French Ministry of Defence (DGA)",
-        "region": "France",
-        "type": "official",
-        "url": "https://www.defense.gouv.fr/actualites/rss.xml",
-    },
+    # french_mod: RSS feed removed by defense.gouv.fr (404 as of 2026-03)
+    # "french_mod": {
+    #     "name": "French Ministry of Defence (DGA)",
+    #     "region": "France",
+    #     "type": "official",
+    #     "url": "https://www.defense.gouv.fr/actualites/rss.xml",
+    # },
     "german_bmvg": {
         "name": "German Federal Ministry of Defence (BMVg)",
         "region": "Germany",
@@ -121,7 +122,7 @@ FEED_CATALOG: dict[str, dict] = {
         "name": "Swedish Defence Research Agency (FOI)",
         "region": "Sweden",
         "type": "nordic",
-        "url": "https://www.foi.se/en/foi/news/news-from-foi.rss.xml",
+        "url": "https://www.foi.se/en/rss",  # updated 2026-03 - old path was 404
     },
     "fiia_finland": {
         "name": "Finnish Institute of International Affairs (FIIA)",
@@ -129,18 +130,20 @@ FEED_CATALOG: dict[str, dict] = {
         "type": "nordic",
         "url": "https://www.fiia.fi/feed/",
     },
-    "nupi_norway": {
-        "name": "Norwegian Institute of International Affairs (NUPI)",
-        "region": "Norway",
-        "type": "nordic",
-        "url": "https://www.nupi.no/feed",
-    },
-    "diis_denmark": {
-        "name": "Danish Institute for International Studies (DIIS)",
-        "region": "Denmark",
-        "type": "nordic",
-        "url": "https://www.diis.dk/en/rss",
-    },
+    # nupi_norway: RSS feed removed by nupi.no (404 as of 2026-03)
+    # "nupi_norway": {
+    #     "name": "Norwegian Institute of International Affairs (NUPI)",
+    #     "region": "Norway",
+    #     "type": "nordic",
+    #     "url": "https://www.nupi.no/feed",
+    # },
+    # diis_denmark: RSS feed removed by diis.dk (404 as of 2026-03)
+    # "diis_denmark": {
+    #     "name": "Danish Institute for International Studies (DIIS)",
+    #     "region": "Denmark",
+    #     "type": "nordic",
+    #     "url": "https://www.diis.dk/en/rss",
+    # },
     # Regional / thematic
     "chatham_house": {
         "name": "Chatham House (RIIIA)",
@@ -158,7 +161,7 @@ FEED_CATALOG: dict[str, dict] = {
         "name": "ACLED Research & Analysis",
         "region": "Global",
         "type": "analysis",
-        "url": "https://acleddata.com/feed/",
+        "url": "https://www.acleddata.com/feed/",
     },
 }
 

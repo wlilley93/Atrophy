@@ -63,7 +63,7 @@ def fetch_ukraine_data() -> str:
         from worldmonitor_server import WorldMonitorClient
         client = WorldMonitorClient(cache_db=str(Path.home() / '.atrophy' / 'worldmonitor_cache.db'))
         conflicts, _wm_delta = client.fetch_cached("api/conflict/v1/list-acled-events")
-        news = client.get_news_summary()
+        news, _news_delta = client.fetch_cached("api/news/v1/digest")
         parts = []
         if conflicts:
             parts.append(f"CONFLICTS DATA:\n{json.dumps(conflicts)[:2500]}")

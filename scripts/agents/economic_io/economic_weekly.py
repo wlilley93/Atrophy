@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _ATROPHY_DIR = Path.home() / ".atrophy"
-_AGENT_DIR   = _ATROPHY_DIR / "agents" / "general_montgomery"
+_AGENT_DIR   = _ATROPHY_DIR / "agents" / "economic_io"
 _AGENT_JSON  = _AGENT_DIR / "data" / "agent.json"
 _INTEL_DB    = _AGENT_DIR / "data" / "intelligence.db"
 _LOG_DIR     = _ATROPHY_DIR / "logs" / "economic_io"

@@ -71,7 +71,7 @@ def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:
         input=prompt,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=180,
     )
     if result.returncode != 0:
         raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:200]}")
