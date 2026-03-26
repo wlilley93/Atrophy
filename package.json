@@ -1,6 +1,6 @@
 {
   "name": "atrophy",
-  "version": "1.5.38",
+  "version": "1.5.39",
   "description": "A companion agent system - voice-enabled, memory-bearing, self-evolving",
   "main": "./out/main/index.js",
   "scripts": {
