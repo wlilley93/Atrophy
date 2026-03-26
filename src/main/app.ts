@@ -22,7 +22,7 @@ function bootLog(msg: string): void {
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 app.commandLine.appendSwitch('enable-features', 'V8ConcurrentSparkplug');
 import { ensureUserData, getConfig, BUNDLE_ROOT, USER_DATA } from './config';
-import { initDb, closeAll as closeAllDbs, closeStaleOpenSessions, endSession } from './memory';
+import { initDb, closeAll as closeAllDbs, closeForPath, closeStaleOpenSessions, endSession } from './memory';
 import { stopAllInference, stopInference, resetMcpConfig, prefetchContext, invalidateContextCache } from './inference';
 import { loadSystemPrompt } from './context';
 import { Session } from './session';
@@ -32,7 +32,7 @@ import { registerAudioHandlers } from './audio';
 import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
 import { discoverAgents, syncBundledPrompts, cycleAgent, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, checkAskRequest, cleanupAskFiles } from './agent-manager';
 import { runCoherenceCheck } from './sentinel';
-import { drainQueue } from './queue';
+import { drainAllAgentQueues } from './queue';
 import { startServer, stopServer } from './server';
 import { startDaemon, stopDaemon } from './channels/telegram';
 import { cronScheduler } from './channels/cron';
@@ -79,6 +79,8 @@ let askUserTimer: ReturnType<typeof setInterval> | null = null;
 let pendingAskId: string | null = null; // track which ask is currently shown in UI
 let pendingAskDestination: string | null = null; // destination for secure_input auto-save
 let artefactTimer: ReturnType<typeof setInterval> | null = null;
+let canvasTimer: ReturnType<typeof setInterval> | null = null;
+let canvasLastMtime = 0;
 let currentAgentName: string | null = null;
 let keepAwakeBlockerId: number | null = null;
 let statusTimer: ReturnType<typeof setInterval> | null = null;
@@ -463,6 +465,12 @@ async function switchAgent(name: string): Promise<SwitchAgentResult> {
   currentSession = null;
   systemPrompt = null;
 
+  // Close the outgoing agent's DB connection to prevent FD accumulation.
+  // Each agent has its own memory.db and connect() caches connections by path.
+  // Without this, repeated agent switches exhaust the 256 FD limit.
+  const oldDbPath = getConfig().DB_PATH;
+  closeForPath(oldDbPath);
+
   // Switch config and reinitialise
   getConfig().reloadForAgent(name);
   initDb();
@@ -751,12 +759,14 @@ app.whenReady().then(() => {
     }
   }, 5 * 60 * 1000);
 
-  // Queue poller - check for messages from background jobs every 10s
+  // Queue poller - drain ALL agents' queues (not just the active one)
   queueTimer = setInterval(async () => {
-    const messages = await drainQueue();
-    for (const msg of messages) {
-      if (mainWindow) {
-        mainWindow.webContents.send('queue:message', msg);
+    const allMessages = await drainAllAgentQueues();
+    for (const [, messages] of Object.entries(allMessages)) {
+      for (const msg of messages) {
+        if (mainWindow) {
+          mainWindow.webContents.send('queue:message', msg);
+        }
       }
     }
   }, 10_000);
@@ -885,6 +895,25 @@ app.whenReady().then(() => {
       try { fs.unlinkSync(displayFile); } catch { /* already gone */ }
     }
   }, 5_000);
+
+  // Canvas content watcher - polls CANVAS_CONTENT_FILE for changes and emits
+  // canvas:updated with a file:// URL so Canvas.svelte can display it.
+  canvasTimer = setInterval(() => {
+    if (!mainWindow) return;
+    const config = getConfig();
+    const canvasFile = config.CANVAS_CONTENT_FILE;
+    if (!canvasFile || !fs.existsSync(canvasFile)) return;
+
+    try {
+      const stat = fs.statSync(canvasFile);
+      const mtime = stat.mtimeMs;
+      if (mtime <= canvasLastMtime) return; // unchanged
+      canvasLastMtime = mtime;
+
+      const fileUrl = `file://${canvasFile}`;
+      mainWindow.webContents.send('canvas:updated', fileUrl);
+    } catch { /* file gone mid-read */ }
+  }, 2_000);
 
   // Session idle rotation - close and summarise desktop sessions after 30 min
   // of inactivity, giving them clean arcs (start, summary, end) rather than
@@ -1027,6 +1056,7 @@ app.on('will-quit', () => {
   if (deferralTimer) clearInterval(deferralTimer);
   if (askUserTimer) clearInterval(askUserTimer);
   if (artefactTimer) clearInterval(artefactTimer);
+  if (canvasTimer) clearInterval(canvasTimer);
   if (statusTimer) clearInterval(statusTimer);
   if (sessionIdleTimer) clearInterval(sessionIdleTimer);
   if (journalNudgeTimer) clearTimeout(journalNudgeTimer);
@@ -1076,29 +1106,34 @@ const CRASH_LOG_PATH = path.join(USER_DATA, 'crash-log.json');
 const CRASH_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_CRASHES_IN_WINDOW = 5;
 
+function readCrashTimestamps(): number[] {
+  try {
+    if (!fs.existsSync(CRASH_LOG_PATH)) return [];
+    const raw = JSON.parse(fs.readFileSync(CRASH_LOG_PATH, 'utf-8'));
+    if (Array.isArray(raw) && raw.every((v) => typeof v === 'number')) return raw;
+    // File has unexpected shape - remove it so we self-heal
+    fs.unlinkSync(CRASH_LOG_PATH);
+    return [];
+  } catch {
+    // Corrupt file (partial write, bad JSON) - delete so future boots aren't blind
+    try { fs.unlinkSync(CRASH_LOG_PATH); } catch { /* already gone */ }
+    return [];
+  }
+}
+
 function recordCrash(): void {
   try {
-    let timestamps: number[] = [];
-    if (fs.existsSync(CRASH_LOG_PATH)) {
-      timestamps = JSON.parse(fs.readFileSync(CRASH_LOG_PATH, 'utf-8'));
-    }
     const cutoff = Date.now() - CRASH_WINDOW_MS;
-    timestamps = timestamps.filter((t: number) => t > cutoff);
+    const timestamps = readCrashTimestamps().filter((t) => t > cutoff);
     timestamps.push(Date.now());
     fs.writeFileSync(CRASH_LOG_PATH, JSON.stringify(timestamps));
   } catch { /* best effort */ }
 }
 
 function isCrashRateSafe(): boolean {
-  try {
-    if (!fs.existsSync(CRASH_LOG_PATH)) return true;
-    const timestamps: number[] = JSON.parse(fs.readFileSync(CRASH_LOG_PATH, 'utf-8'));
-    const cutoff = Date.now() - CRASH_WINDOW_MS;
-    const recent = timestamps.filter((t: number) => t > cutoff);
-    return recent.length < MAX_CRASHES_IN_WINDOW;
-  } catch {
-    return true; // can't read - assume safe
-  }
+  const cutoff = Date.now() - CRASH_WINDOW_MS;
+  const recent = readCrashTimestamps().filter((t) => t > cutoff);
+  return recent.length < MAX_CRASHES_IN_WINDOW;
 }
 
 // Record a boot timestamp so we can detect crash loops.
