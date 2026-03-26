@@ -472,7 +472,7 @@
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    padding: 12px 0;
+    padding: 38px 0 12px; /* Leave room for macOS traffic lights */
     overflow-y: auto;
     -webkit-app-region: drag;
   }

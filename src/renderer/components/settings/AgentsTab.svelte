@@ -70,17 +70,21 @@
     loading = true;
     loadError = '';
     try {
+      // Fetch independently so one failure doesn't block all
       const [orgsResult, agentsResult, scheduleResult] = await Promise.all([
-        api.listOrgs(),
-        api.listAllAgents(),
-        api.getSchedule(),
+        api.listOrgs().catch((e: unknown) => { console.warn('listOrgs failed:', e); return []; }),
+        api.listAllAgents().catch((e: unknown) => { console.warn('listAllAgents failed:', e); return []; }),
+        api.getSchedule().catch((e: unknown) => { console.warn('getSchedule failed:', e); return []; }),
       ]);
       orgs = orgsResult || [];
       allAgents = agentsResult || [];
       schedule = scheduleResult || [];
       buildTree();
+      if (allAgents.length === 0) {
+        loadError = 'No agents found';
+      }
     } catch (e) {
-      loadError = 'Failed to load agents';
+      loadError = `Failed to load: ${e}`;
       console.error('AgentsTab load error:', e);
     } finally {
       loading = false;
