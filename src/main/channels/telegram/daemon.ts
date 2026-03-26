@@ -932,17 +932,19 @@ async function handleMembershipChange(
   const isRemoved = newStatus === 'left' || newStatus === 'kicked';
 
   if (isGroup && isAdded) {
-    // Save the current chat ID as DM fallback (only if not already saved)
-    const config = getConfig();
-    config.reloadForAgent(agent.name);
-    const existingDm = config.TELEGRAM_DM_CHAT_ID;
+    // Save DM fallback and switch active chat (under config lock to prevent
+    // race conditions with concurrent agent dispatches)
+    await withConfigLock(async () => {
+      const config = getConfig();
+      config.reloadForAgent(agent.name);
+      const existingDm = config.TELEGRAM_DM_CHAT_ID;
 
-    if (!existingDm) {
-      saveAgentConfig(agent.name, { TELEGRAM_DM_CHAT_ID: agent.chatId });
-    }
+      if (!existingDm) {
+        saveAgentConfig(agent.name, { TELEGRAM_DM_CHAT_ID: agent.chatId });
+      }
 
-    // Switch active chat to the group
-    saveAgentConfig(agent.name, { TELEGRAM_CHAT_ID: groupChatId });
+      saveAgentConfig(agent.name, { TELEGRAM_CHAT_ID: groupChatId });
+    });
     agent.chatId = groupChatId;
 
     log.info(`[${agent.name}] Joined ${groupTitle} (${groupChatId}) - switched active chat`);
@@ -956,19 +958,24 @@ async function handleMembershipChange(
       agent.botToken,
     );
 
-  } else if (isRemoved) {
-    // Revert to DM fallback
-    const config = getConfig();
-    config.reloadForAgent(agent.name);
-    const dmChatId = config.TELEGRAM_DM_CHAT_ID;
+  } else if (isGroup && isRemoved) {
+    // Revert to DM fallback (under config lock)
+    let dmChatId = '';
+    await withConfigLock(async () => {
+      const config = getConfig();
+      config.reloadForAgent(agent.name);
+      dmChatId = config.TELEGRAM_DM_CHAT_ID;
+
+      if (dmChatId) {
+        saveAgentConfig(agent.name, { TELEGRAM_CHAT_ID: dmChatId });
+      }
+    });
 
     if (dmChatId) {
-      saveAgentConfig(agent.name, { TELEGRAM_CHAT_ID: dmChatId });
       agent.chatId = dmChatId;
 
       log.info(`[${agent.name}] Removed from ${groupTitle} - reverted to DM (${dmChatId})`);
 
-      // Notify in the DM
       const prefix = agent.emoji ? `${agent.emoji} ` : '';
       await sendMessage(
         `${prefix}*${agent.display_name}* removed from _${groupTitle}_. Back to this chat.`,
