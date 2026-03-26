@@ -23,7 +23,7 @@ app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 app.commandLine.appendSwitch('enable-features', 'V8ConcurrentSparkplug');
 import { ensureUserData, getConfig, BUNDLE_ROOT, USER_DATA } from './config';
 import { initDb, closeAll as closeAllDbs, closeStaleOpenSessions, endSession } from './memory';
-import { stopAllInference, resetMcpConfig, prefetchContext, invalidateContextCache } from './inference';
+import { stopAllInference, stopInference, resetMcpConfig, prefetchContext, invalidateContextCache } from './inference';
 import { loadSystemPrompt } from './context';
 import { Session } from './session';
 import { setActive, setAway, isAway, isMacIdle, getStatus, IDLE_TIMEOUT_SECS } from './status';
@@ -452,8 +452,8 @@ async function switchAgent(name: string): Promise<SwitchAgentResult> {
     throw new Error(`Agent "${name}" not found`);
   }
 
-  // Stop inference and audio first
-  stopAllInference();
+  // Stop only the current agent's inference (not background agents like Montgomery)
+  stopInference(currentAgentName ?? undefined);
   clearAudioQueue();
 
   // End current session (writes summary to old agent's DB)
@@ -515,6 +515,23 @@ function initIpcHandlers(): void {
     resetJournalNudgeTimer,
   };
   registerIpcHandlers(ctx);
+}
+
+// ---------------------------------------------------------------------------
+// Single instance lock - prevent multiple app windows from opening
+// ---------------------------------------------------------------------------
+
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // Focus existing window when a second instance is launched
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -876,14 +893,17 @@ app.whenReady().then(() => {
     if (!currentSession || currentSession.sessionId === null) return;
     if (currentSession.turnHistory.length === 0) return;
 
-    const gap = Date.now() - lastUserInputTime;
+    // Use the session's own activity timestamp (updated on every turn from
+    // any channel - GUI, Telegram, cron) rather than GUI-only lastUserInputTime.
+    const lastActivity = currentSession.lastActivityAt ?? lastUserInputTime;
+    const gap = Date.now() - lastActivity;
     if (gap < SESSION_IDLE_THRESHOLD_MS) return;
 
     const oldSession = currentSession;
     const sys = systemPrompt || loadSystemPrompt();
     try {
       await oldSession.end(sys);
-      log.info(`rotated idle desktop session (gap: ${Math.round(gap / 60000)}m, turns: ${oldSession.turnHistory.length})`);
+      log.info(`rotated idle session (gap: ${Math.round(gap / 60000)}m, turns: ${oldSession.turnHistory.length})`);
     } catch (e) {
       log.error(`failed to end idle session: ${e}`);
     }

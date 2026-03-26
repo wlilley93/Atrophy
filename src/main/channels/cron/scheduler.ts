@@ -87,11 +87,25 @@ export interface ScheduledJob {
 
 /**
  * Parse a cron field value against the current date field.
- * Returns true if the field matches. Supports '*' (any) and
- * specific numeric values.
+ * Supports: '*', specific numbers, comma lists ('1,3,5'),
+ * ranges ('1-5'), and step values ('*&#47;3').
  */
 function fieldMatches(field: string, value: number): boolean {
   if (field === '*') return true;
+  // Comma-separated list: '0,3,6,9'
+  if (field.includes(',')) {
+    return field.split(',').some(part => fieldMatches(part.trim(), value));
+  }
+  // Step: '*/3'
+  if (field.startsWith('*/')) {
+    const step = parseInt(field.slice(2), 10);
+    return step > 0 && value % step === 0;
+  }
+  // Range: '1-5'
+  if (field.includes('-')) {
+    const [lo, hi] = field.split('-').map(s => parseInt(s, 10));
+    return value >= lo && value <= hi;
+  }
   return parseInt(field, 10) === value;
 }
 
@@ -99,9 +113,7 @@ function fieldMatches(field: string, value: number): boolean {
  * Calculate the next run time for a 5-field cron expression.
  *
  * Format: "minute hour day-of-month month day-of-week"
- * Supports '*' (any) and specific numbers. Does not support
- * ranges, lists, or step values - the existing jobs.json uses
- * simple expressions only.
+ * Supports '*', specific numbers, comma lists, ranges, and step values.
  *
  * Scans forward minute-by-minute from the start time, capped at
  * 400 days to prevent infinite loops.

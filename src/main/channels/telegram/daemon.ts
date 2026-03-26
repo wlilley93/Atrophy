@@ -429,6 +429,69 @@ async function setAgentBotPhoto(agentName: string, botToken: string): Promise<vo
 
 const _agentDispatchQueues = new Map<string, Promise<void>>();
 const _activeDispatches = new Set<string>();
+const _dispatchStartTimes = new Map<string, number>();
+const DISPATCH_LOCK_TIMEOUT_MS = 25 * 60 * 1000; // hard cap - releases lock even if fn hangs
+
+// ---------------------------------------------------------------------------
+// Consecutive failure tracking - alerts when an agent is silently broken
+// ---------------------------------------------------------------------------
+
+const _consecutiveFailures = new Map<string, number>();
+const _lastAlertTime = new Map<string, number>();
+const FAILURE_ALERT_THRESHOLD = 3;      // alert after this many consecutive failures
+const ALERT_COOLDOWN_MS = 30 * 60 * 1000; // don't spam - max one alert per 30 min per agent
+
+/**
+ * Record a dispatch outcome. On consecutive failures past the threshold,
+ * send a Telegram alert so Will knows an agent is broken.
+ */
+async function recordDispatchOutcome(
+  agentName: string,
+  success: boolean,
+  chatId: string,
+  botToken: string,
+  error?: string,
+): Promise<void> {
+  if (success) {
+    const prev = _consecutiveFailures.get(agentName) || 0;
+    if (prev >= FAILURE_ALERT_THRESHOLD) {
+      // Agent recovered - send a recovery notice
+      log.info(`[${agentName}] recovered after ${prev} consecutive failures`);
+      try {
+        await sendMessage(
+          `\u2705 *${agentName}* recovered after ${prev} consecutive dispatch failures.`,
+          chatId, false, botToken,
+        );
+      } catch { /* best effort */ }
+    }
+    _consecutiveFailures.set(agentName, 0);
+    return;
+  }
+
+  const count = (_consecutiveFailures.get(agentName) || 0) + 1;
+  _consecutiveFailures.set(agentName, count);
+  log.warn(`[${agentName}] consecutive failure #${count}`);
+
+  if (count >= FAILURE_ALERT_THRESHOLD) {
+    const lastAlert = _lastAlertTime.get(agentName) || 0;
+    if (Date.now() - lastAlert < ALERT_COOLDOWN_MS) {
+      log.debug(`[${agentName}] alert suppressed (cooldown)`);
+      return;
+    }
+    _lastAlertTime.set(agentName, Date.now());
+
+    const errSnippet = error ? `\n\nLast error: \`${error.slice(0, 200)}\`` : '';
+    const msg = `\u26a0\ufe0f *${agentName}* has failed ${count} consecutive dispatches. `
+      + `Inference may be broken - check logs or restart the app.${errSnippet}`;
+
+    log.error(`[${agentName}] ALERT: ${count} consecutive failures - sending Telegram alert`);
+    try {
+      await sendMessage(msg, chatId, false, botToken);
+    } catch (alertErr) {
+      log.error(`[${agentName}] failed to send alert: ${alertErr}`);
+    }
+  }
+}
 
 function withAgentDispatchLock<T>(agentName: string, fn: () => Promise<T>): Promise<T> {
   let resolve: () => void;
@@ -436,9 +499,19 @@ function withAgentDispatchLock<T>(agentName: string, fn: () => Promise<T>): Prom
   const prev = _agentDispatchQueues.get(agentName) || Promise.resolve();
   _agentDispatchQueues.set(agentName, next);
   return prev.then(async () => {
+    _dispatchStartTimes.set(agentName, Date.now());
+    // Safety timer: force-release the lock if fn never completes.
+    // This prevents permanently stuck dispatch queues from hung inference.
+    const safety = setTimeout(() => {
+      log.error(`[${agentName}] dispatch lock force-released after ${DISPATCH_LOCK_TIMEOUT_MS / 1000}s`);
+      _dispatchStartTimes.delete(agentName);
+      resolve!();
+    }, DISPATCH_LOCK_TIMEOUT_MS);
     try {
       return await fn();
     } finally {
+      clearTimeout(safety);
+      _dispatchStartTimes.delete(agentName);
       resolve!();
     }
   });
@@ -469,7 +542,7 @@ function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
 // Agent dispatch
 // ---------------------------------------------------------------------------
 
-const DISPATCH_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 hours - agents need time for deep research
+const DISPATCH_TIMEOUT_MS = 22 * 60 * 1000; // 22 minutes max per dispatch (slightly above inference timeout)
 
 // ---------------------------------------------------------------------------
 // Message deduplication
@@ -789,7 +862,9 @@ async function dispatchToAgent(
 
     return finalText;
   } catch (e) {
-    log.error(`[${agentName}] dispatch failed: ${e}`);
+    const errMsg = e instanceof Error ? e.message : String(e);
+    const stack = e instanceof Error ? e.stack?.split('\n').slice(0, 3).join(' | ') : '';
+    log.error(`[${agentName}] dispatch failed: ${errMsg}${stack ? ` -- ${stack}` : ''}`);
     return null;
   } finally {
     await withConfigLock(async () => {
@@ -994,8 +1069,9 @@ async function runAgentPoller(agent: TelegramAgent): Promise<void> {
 
   // Check for messages that were received but never successfully dispatched
   // (e.g. daemon crashed mid-dispatch). Rewind offset to replay them.
+  // Guard: only replay once per boot to prevent crash-loop duplicates.
   const agentState = _state.agents[agent.name];
-  if (agentState) {
+  if (agentState && !agentState._replayedThisBoot) {
     const dispatched = agentState.last_dispatched_id || 0;
     const received = agentState.last_update_id || 0;
     if (dispatched > 0 && received > dispatched) {
@@ -1004,6 +1080,7 @@ async function runAgentPoller(agent: TelegramAgent): Promise<void> {
       agentState.last_update_id = dispatched;
       saveState(_state);
     }
+    (agentState as any)._replayedThisBoot = true;
   }
 
   while (_running) {
@@ -1135,6 +1212,14 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
           dispatchToAgent(agent.name, envelope.text, chatId, botToken, sourceLabel, telegramSender),
         );
       }
+
+      // Track consecutive failures for alerting
+      await recordDispatchOutcome(agent.name, !!response, chatId, botToken);
+    } catch (dispatchErr) {
+      await recordDispatchOutcome(
+        agent.name, false, chatId, botToken,
+        dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr),
+      );
     } finally {
       _activeDispatches.delete(agent.name);
     }
