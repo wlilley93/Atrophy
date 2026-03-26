@@ -17,7 +17,7 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
 
   win = mainWindow;
 
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('update-available', (info: any) => {
@@ -50,8 +50,10 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     win?.webContents.send('updater:error', err.message);
   });
 
-  // Update check is triggered by the renderer during splash screen boot sequence.
-  // No automatic delay needed here.
+  // Auto-check for full app updates shortly after boot (gives network time to settle)
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => {});
+  }, 30_000);
 }
 
 /** Manually trigger an update check. */

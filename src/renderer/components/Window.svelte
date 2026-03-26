@@ -188,10 +188,21 @@
 
     updateStatus = 'checking';
 
-    // Listen for download progress
+    // Listen for download progress - brain degrades as download progresses
     const progressCleanup = api.onBundleProgress?.((percent: number) => {
+      if (updateStatus !== 'downloading') {
+        // Stop random cycling when download starts
+        if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
+      }
       updateStatus = 'downloading';
       updatePercent = percent;
+      // Map download percent to brain frame (0% = healthy frame 0, 100% = decayed frame 9)
+      if (brainFramePaths.length > 0) {
+        updateBrainFrame = Math.min(
+          Math.floor((percent / 100) * brainFramePaths.length),
+          brainFramePaths.length - 1,
+        );
+      }
     });
 
     try {
@@ -208,6 +219,8 @@
       if (newVersion) {
         updateStatus = 'downloaded';
         updateVersion = newVersion;
+        // Trigger restart after a brief delay so the user sees the status
+        setTimeout(() => api?.restartForUpdate(), 1500);
       } else {
         updateStatus = 'up-to-date';
       }
