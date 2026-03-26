@@ -9,6 +9,7 @@
   import UpdatesTab from './settings/UpdatesTab.svelte';
   import ConsoleTab from './settings/ConsoleTab.svelte';
   import AgentsTab from './settings/AgentsTab.svelte';
+  import SystemTab from './settings/SystemTab.svelte';
 
   interface Props {
     onClose: () => void;
@@ -17,7 +18,7 @@
 
   let { onClose, onOpenSystemMap }: Props = $props();
 
-  type Tab = 'settings' | 'agents' | 'usage' | 'activity' | 'jobs' | 'updates' | 'console';
+  type Tab = 'settings' | 'agents' | 'system' | 'usage' | 'activity' | 'jobs' | 'updates' | 'console';
   let activeTab = $state<Tab>('settings');
 
   // ---------------------------------------------------------------------------
@@ -123,6 +124,7 @@
   // ---------------------------------------------------------------------------
 
   let agentsTab: AgentsTab;
+  let systemTab: SystemTab;
   let usageTab: UsageTab;
   let activityTab: ActivityTab;
   let jobsTab: JobsTab;
@@ -317,6 +319,7 @@
     activeTab = tab;
     await tick(); // Wait for Svelte to mount the new tab component before calling load()
     if (tab === 'agents') agentsTab?.load();
+    if (tab === 'system') systemTab?.load();
     if (tab === 'usage') usageTab?.load();
     if (tab === 'activity') activityTab?.load();
     if (tab === 'jobs') jobsTab?.load();
@@ -349,6 +352,7 @@
       <div class="sidebar-group-label">General</div>
       <button class="sidebar-item" class:active={activeTab === 'settings'} onclick={() => switchTab('settings')}>Settings</button>
       <button class="sidebar-item" class:active={activeTab === 'agents'} onclick={() => switchTab('agents')}>Agents</button>
+      <button class="sidebar-item" class:active={activeTab === 'system'} onclick={() => switchTab('system')}>System Map</button>
     </div>
 
     <div class="sidebar-group">
@@ -362,9 +366,6 @@
       <button class="sidebar-item" class:active={activeTab === 'jobs'} onclick={() => switchTab('jobs')}>Jobs</button>
       <button class="sidebar-item" class:active={activeTab === 'updates'} onclick={() => switchTab('updates')}>Updates</button>
       <button class="sidebar-item" class:active={activeTab === 'console'} onclick={() => switchTab('console')}>Console</button>
-      {#if onOpenSystemMap}
-        <button class="sidebar-item" onclick={() => { close(); onOpenSystemMap?.(); }}>System Map</button>
-      {/if}
     </div>
   </nav>
 
@@ -435,6 +436,9 @@
 
     {:else if activeTab === 'agents'}
       <AgentsTab bind:this={agentsTab} />
+
+    {:else if activeTab === 'system'}
+      <SystemTab bind:this={systemTab} />
 
     {:else if activeTab === 'usage'}
       <UsageTab bind:this={usageTab} />
