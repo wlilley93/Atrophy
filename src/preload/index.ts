@@ -39,6 +39,15 @@ export interface AtrophyAPI {
   getAgentDetail: (agentName: string) => Promise<Record<string, unknown> | null>;
   updateAgentConfig: (agentName: string, updates: Record<string, unknown>) => Promise<void>;
 
+  // Agent management (settings)
+  listAllAgents: () => Promise<{ name: string; display_name: string; description: string; role: string; tier: number; orgSlug: string | null; reportsTo: string | null; canAddressUser: boolean; enabled: boolean }[]>;
+  getAgentManifest: (name: string) => Promise<Record<string, unknown>>;
+  updateAgentManifest: (name: string, updates: Record<string, unknown>) => Promise<void>;
+  getAgentPrompt: (name: string, promptName: string) => Promise<string>;
+  updateAgentPrompt: (name: string, promptName: string, content: string) => Promise<void>;
+  quickCreateAgent: (opts: { name: string; displayName: string; role: string; orgSlug?: string; tier?: number; reportsTo?: string; specialism?: string }) => Promise<Record<string, unknown>>;
+  deleteAgent: (name: string) => Promise<void>;
+
   // Config
   getConfig: () => Promise<Record<string, unknown>>;
   reloadConfig: () => Promise<void>;
@@ -133,6 +142,9 @@ export interface AtrophyAPI {
   getJobHistory: () => Promise<unknown[]>;
   runJobNow: (agentName: string, jobName: string) => Promise<void>;
   getSchedulerStatus: () => Promise<{ schedule: unknown[] }>;
+  addJob: (agentName: string, jobName: string, config: { schedule: string; script: string; description?: string }) => Promise<void>;
+  editJob: (agentName: string, jobName: string, updates: Record<string, unknown>) => Promise<void>;
+  deleteJob: (agentName: string, jobName: string) => Promise<void>;
 
   // Keep Awake
   toggleKeepAwake: () => Promise<boolean>;
@@ -216,6 +228,7 @@ export interface AtrophyAPI {
   dissolveOrg: (slug: string) => Promise<void>;
   addAgentToOrg: (orgSlug: string, agentName: string, role: string, tier: number, reportsTo: string | null) => Promise<void>;
   removeAgentFromOrg: (agentName: string) => Promise<void>;
+  updateOrg: (slug: string, updates: { name?: string; purpose?: string }) => Promise<void>;
 
   // System map
   getTopology: () => Promise<{
@@ -291,6 +304,13 @@ const api: AtrophyAPI = {
   getAgentNotifyVia: (agentName) => ipcRenderer.invoke('agent:getNotifyVia', agentName),
   getAgentDetail: (agentName) => ipcRenderer.invoke('agent:getDetail', agentName),
   updateAgentConfig: (agentName, updates) => ipcRenderer.invoke('agent:updateConfig', agentName, updates),
+  listAllAgents: () => ipcRenderer.invoke('agent:listAll'),
+  getAgentManifest: (name) => ipcRenderer.invoke('agent:getManifest', name),
+  updateAgentManifest: (name, updates) => ipcRenderer.invoke('agent:updateManifest', name, updates),
+  getAgentPrompt: (name, promptName) => ipcRenderer.invoke('agent:getPrompt', name, promptName),
+  updateAgentPrompt: (name, promptName, content) => ipcRenderer.invoke('agent:updatePrompt', name, promptName, content),
+  quickCreateAgent: (opts) => ipcRenderer.invoke('agent:create', opts),
+  deleteAgent: (name) => ipcRenderer.invoke('agent:delete', name),
 
   // Config
   getConfig: () => ipcRenderer.invoke('config:get'),
@@ -386,6 +406,9 @@ const api: AtrophyAPI = {
   getJobHistory: () => ipcRenderer.invoke('cron:history'),
   runJobNow: (agentName: string, jobName: string) => ipcRenderer.invoke('cron:runNow', agentName, jobName),
   getSchedulerStatus: () => ipcRenderer.invoke('cron:schedulerStatus'),
+  addJob: (agentName, jobName, config) => ipcRenderer.invoke('cron:addJob', agentName, jobName, config),
+  editJob: (agentName, jobName, updates) => ipcRenderer.invoke('cron:editJob', agentName, jobName, updates),
+  deleteJob: (agentName, jobName) => ipcRenderer.invoke('cron:deleteJob', agentName, jobName),
 
   // Keep Awake
   toggleKeepAwake: () => ipcRenderer.invoke('keepAwake:toggle'),
@@ -486,6 +509,7 @@ const api: AtrophyAPI = {
   addAgentToOrg: (orgSlug, agentName, role, tier, reportsTo) =>
     ipcRenderer.invoke('org:addAgent', orgSlug, agentName, role, tier, reportsTo),
   removeAgentFromOrg: (agentName) => ipcRenderer.invoke('org:removeAgent', agentName),
+  updateOrg: (slug, updates) => ipcRenderer.invoke('org:update', slug, updates),
 
   // System map
   getTopology: () => ipcRenderer.invoke('system:getTopology'),
