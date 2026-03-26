@@ -80,6 +80,7 @@ let currentSession: Session | null = null;
 let systemPrompt: string | null = null;
 let sentinelTimer: ReturnType<typeof setInterval> | null = null;
 let queueTimer: ReturnType<typeof setInterval> | null = null;
+let mcpStateTimer: ReturnType<typeof setInterval> | null = null;
 let deferralTimer: ReturnType<typeof setInterval> | null = null;
 let askUserTimer: ReturnType<typeof setInterval> | null = null;
 let pendingAskId: string | null = null; // track which ask is currently shown in UI
@@ -185,13 +186,6 @@ function createWindow(): BrowserWindow {
 
   win.on('closed', () => {
     mainWindow = null;
-  });
-
-  // Actual quit - called from tray menu only
-  try { ipcMain.removeHandler('app:shutdown'); } catch { /* first time */ }
-  ipcMain.handle('app:shutdown', () => {
-    _forceQuit = true;
-    app.quit();
   });
 
   return win;
@@ -453,48 +447,56 @@ function resetJournalNudgeTimer(): void {
 // Agent switching (single implementation, used by tray, IPC, and shortcuts)
 // ---------------------------------------------------------------------------
 
+let _switchInProgress = false;
+
 async function switchAgent(name: string): Promise<SwitchAgentResult> {
-  if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Invalid agent name');
-  const knownAgents = discoverAgents();
-  if (!knownAgents.some(a => a.name === name)) {
-    throw new Error(`Agent "${name}" not found`);
+  if (_switchInProgress) throw new Error('Agent switch already in progress');
+  _switchInProgress = true;
+  try {
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Invalid agent name');
+    const knownAgents = discoverAgents();
+    if (!knownAgents.some(a => a.name === name)) {
+      throw new Error(`Agent "${name}" not found`);
+    }
+
+    // Stop only the current agent's inference (not background agents like Montgomery)
+    stopInference(currentAgentName ?? undefined);
+    clearAudioQueue();
+
+    // End current session (writes summary to old agent's DB)
+    if (currentSession && systemPrompt) {
+      try { await currentSession.end(systemPrompt); } catch { /* non-fatal */ }
+    }
+    currentSession = null;
+    systemPrompt = null;
+
+    // Close the outgoing agent's DB connection to prevent FD accumulation.
+    // Each agent has its own memory.db and connect() caches connections by path.
+    // Without this, repeated agent switches exhaust the 256 FD limit.
+    const oldDbPath = getConfig().DB_PATH;
+    closeForPath(oldDbPath);
+
+    // Switch config and reinitialise
+    getConfig().reloadForAgent(name);
+    initDb();
+    resetMcpConfig();
+    invalidateContextCache();
+    currentAgentName = name;
+    setLastActiveAgent(name);
+    invalidateAgentCache();
+
+    // Prefetch context for the new agent during idle
+    setImmediate(() => prefetchContext());
+
+    const c = getConfig();
+    return {
+      agentName: c.AGENT_NAME,
+      agentDisplayName: c.AGENT_DISPLAY_NAME,
+      customSetup: getCustomSetup(name),
+    };
+  } finally {
+    _switchInProgress = false;
   }
-
-  // Stop only the current agent's inference (not background agents like Montgomery)
-  stopInference(currentAgentName ?? undefined);
-  clearAudioQueue();
-
-  // End current session (writes summary to old agent's DB)
-  if (currentSession && systemPrompt) {
-    try { await currentSession.end(systemPrompt); } catch { /* non-fatal */ }
-  }
-  currentSession = null;
-  systemPrompt = null;
-
-  // Close the outgoing agent's DB connection to prevent FD accumulation.
-  // Each agent has its own memory.db and connect() caches connections by path.
-  // Without this, repeated agent switches exhaust the 256 FD limit.
-  const oldDbPath = getConfig().DB_PATH;
-  closeForPath(oldDbPath);
-
-  // Switch config and reinitialise
-  getConfig().reloadForAgent(name);
-  initDb();
-  resetMcpConfig();
-  invalidateContextCache();
-  currentAgentName = name;
-  setLastActiveAgent(name);
-  invalidateAgentCache();
-
-  // Prefetch context for the new agent during idle
-  setImmediate(() => prefetchContext());
-
-  const c = getConfig();
-  return {
-    agentName: c.AGENT_NAME,
-    agentDisplayName: c.AGENT_DISPLAY_NAME,
-    customSetup: getCustomSetup(name),
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -529,6 +531,12 @@ function initIpcHandlers(): void {
     resetJournalNudgeTimer,
   };
   registerIpcHandlers(ctx);
+
+  // Actual quit - called from tray menu or renderer
+  ipcMain.handle('app:shutdown', () => {
+    _forceQuit = true;
+    app.quit();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -739,7 +747,7 @@ app.whenReady().then(() => {
   switchboard.startQueuePolling();
 
   // 6. Periodically write switchboard state for MCP servers to read.
-  setInterval(() => switchboard.writeStateForMCP(), 5000);
+  mcpStateTimer = setInterval(() => switchboard.writeStateForMCP(), 5000);
 
   // Configure voice agent window reference
   import('./voice-agent').then(({ configureVoiceAgent }) => {
@@ -801,9 +809,9 @@ app.whenReady().then(() => {
   }, 5_000);
 
   // Status timer - check macOS idle state every 60s, set away if idle > 10min
-  statusTimer = setInterval(() => {
+  statusTimer = setInterval(async () => {
     const wasAway = isAway();
-    if (isMacIdle(IDLE_TIMEOUT_SECS)) {
+    if (await isMacIdle(IDLE_TIMEOUT_SECS)) {
       if (!wasAway) {
         setAway('idle');
         log.info('User idle - setting away');
@@ -1014,21 +1022,18 @@ app.whenReady().then(() => {
   // Always create tray icon (brain in macOS menu bar)
   createTray();
 
-  // Agent cycling via global shortcuts
-  let _cycleInProgress = false;
+  // Agent cycling via global shortcuts (switchAgent has its own mutex)
   async function doCycleAgent(direction: 1 | -1): Promise<void> {
-    if (_cycleInProgress) return; // guard against rapid double-tap
     const cfg = getConfig();
     const target = cycleAgent(direction, cfg.AGENT_NAME);
     if (!target || target === cfg.AGENT_NAME) return;
 
-    _cycleInProgress = true;
     try {
       const result = await switchAgent(target);
       mainWindow?.webContents.send('agent:switched', result);
       rebuildTrayMenu();
-    } finally {
-      _cycleInProgress = false;
+    } catch {
+      // switchAgent throws if already in progress - silently ignore for cycling
     }
   }
 
@@ -1067,6 +1072,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (sentinelTimer) clearInterval(sentinelTimer);
   if (queueTimer) clearInterval(queueTimer);
+  if (mcpStateTimer) clearInterval(mcpStateTimer);
   if (deferralTimer) clearInterval(deferralTimer);
   if (askUserTimer) clearInterval(askUserTimer);
   if (artefactTimer) clearInterval(artefactTimer);

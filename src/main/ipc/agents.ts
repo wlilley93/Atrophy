@@ -7,12 +7,9 @@
 import { ipcMain, shell } from 'electron';
 import * as path from 'path';
 import { getConfig, saveAgentConfig, saveUserConfig, saveEnvVar } from '../config';
-import { initDb } from '../memory';
-import { stopInference, resetMcpConfig } from '../inference';
-import { clearAudioQueue } from '../tts';
 import {
   discoverUiAgents, cycleAgent, getAgentState, setAgentState,
-  setLastActiveAgent, suspendAgentSession, resumeAgentSession,
+  suspendAgentSession, resumeAgentSession,
   writeAskResponse,
 } from '../agent-manager';
 import { endSession as endSessionInDb } from '../memory';
@@ -111,7 +108,7 @@ export function registerAgentHandlers(ctx: IpcContext): void {
   ipcMain.handle('deferral:complete', async (_event, data: { target: string; context: string; user_question: string }) => {
     if (!/^[a-zA-Z0-9_-]+$/.test(data.target)) throw new Error('Invalid agent name');
     try {
-      // End and suspend current agent's session
+      // Suspend (not end) current agent's session so it can be resumed later
       if (ctx.currentSession) {
         if (ctx.currentSession.cliSessionId) {
           suspendAgentSession(ctx.currentAgentName!, ctx.currentSession.cliSessionId, ctx.currentSession.turnHistory);
@@ -122,22 +119,14 @@ export function registerAgentHandlers(ctx: IpcContext): void {
             endSessionInDb(ctx.currentSession.sessionId, null, ctx.currentSession.mood);
           } catch { /* non-fatal */ }
         }
+        // Null out before switchAgent so it skips its own session.end() call
         ctx.currentSession = null;
       }
 
-      // Stop current inference and audio before switching
-      stopInference();
-      clearAudioQueue();
+      // Use the canonical switchAgent (handles config, DB, MCP, caches, prefetch)
+      const result = await ctx.switchAgent(data.target);
 
-      // Switch to target agent
-      const config = getConfig();
-      config.reloadForAgent(data.target);
-      initDb();
-      resetMcpConfig();
-      ctx.currentAgentName = data.target;
-      setLastActiveAgent(data.target);
-
-      // Resume or create new session for target agent
+      // Resume a previously suspended session for the target agent, or start fresh
       const resumed = resumeAgentSession(data.target);
       ctx.currentSession = new Session();
       ctx.currentSession.start();
@@ -150,8 +139,8 @@ export function registerAgentHandlers(ctx: IpcContext): void {
       ctx.systemPrompt = null; // Force reload for new agent
 
       return {
-        agentName: config.AGENT_NAME,
-        agentDisplayName: config.AGENT_DISPLAY_NAME,
+        agentName: result.agentName,
+        agentDisplayName: result.agentDisplayName,
       };
     } catch (err) {
       log.error(`deferral:complete failed: ${err}`);

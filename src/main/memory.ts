@@ -1253,17 +1253,21 @@ export function getOtherAgentsRecentSummaries(
     }
 
     try {
-      const db = connect(dbPath);
-      const rows = db
-        .prepare(
-          `SELECT su.content, su.created_at, se.mood
-           FROM summaries su
-           LEFT JOIN sessions se ON su.session_id = se.id
-           ORDER BY su.created_at DESC LIMIT ?`,
-        )
-        .all(nPerAgent) as { content: string; created_at: string; mood: string | null }[];
-      if (rows.length > 0) {
-        results.push({ agent, display_name: displayName, summaries: rows });
+      const db = new Database(dbPath, { readonly: true });
+      try {
+        const rows = db
+          .prepare(
+            `SELECT su.content, su.created_at, se.mood
+             FROM summaries su
+             LEFT JOIN sessions se ON su.session_id = se.id
+             ORDER BY su.created_at DESC LIMIT ?`,
+          )
+          .all(nPerAgent) as { content: string; created_at: string; mood: string | null }[];
+        if (rows.length > 0) {
+          results.push({ agent, display_name: displayName, summaries: rows });
+        }
+      } finally {
+        db.close();
       }
     } catch {
       continue;
@@ -1287,27 +1291,33 @@ export function searchOtherAgentMemory(
     return { agent: agentName, turns: [], summaries: [], error: `Agent '${agentName}' has no memory database.` };
   }
 
+  if (query.length > 500) query = query.slice(0, 500);
+
   try {
-    const db = connect(dbPath);
-    const likeQuery = `%${query}%`;
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const likeQuery = `%${query}%`;
 
-    const turns = db
-      .prepare(
-        `SELECT id, session_id, role, content, timestamp
-         FROM turns WHERE content LIKE ?
-         ORDER BY timestamp DESC LIMIT ?`,
-      )
-      .all(likeQuery, limit) as Pick<Turn, 'id' | 'session_id' | 'role' | 'content' | 'timestamp'>[];
+      const turns = db
+        .prepare(
+          `SELECT id, session_id, role, content, timestamp
+           FROM turns WHERE content LIKE ?
+           ORDER BY timestamp DESC LIMIT ?`,
+        )
+        .all(likeQuery, limit) as Pick<Turn, 'id' | 'session_id' | 'role' | 'content' | 'timestamp'>[];
 
-    const summaries = db
-      .prepare(
-        `SELECT session_id, content, created_at
-         FROM summaries WHERE content LIKE ?
-         ORDER BY created_at DESC LIMIT ?`,
-      )
-      .all(likeQuery, limit) as Pick<Summary, 'session_id' | 'content' | 'created_at'>[];
+      const summaries = db
+        .prepare(
+          `SELECT session_id, content, created_at
+           FROM summaries WHERE content LIKE ?
+           ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(likeQuery, limit) as Pick<Summary, 'session_id' | 'content' | 'created_at'>[];
 
-    return { agent: agentName, turns, summaries };
+      return { agent: agentName, turns, summaries };
+    } finally {
+      db.close();
+    }
   } catch (err) {
     return {
       agent: agentName,

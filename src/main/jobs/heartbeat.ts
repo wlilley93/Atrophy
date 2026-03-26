@@ -326,7 +326,7 @@ async function handleResponse(response: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 async function deliverTextMessage(message: string, config: ReturnType<typeof getConfig>): Promise<void> {
-  if (isMacIdle()) {
+  if (await isMacIdle()) {
     try {
       await sendTelegram(message);
       log.info('Sent text via Telegram (Mac idle)');
@@ -347,7 +347,7 @@ async function deliverVoiceNote(message: string, config: ReturnType<typeof getCo
   await queueMessage(message, 'heartbeat');
 
   // Only send voice via Telegram if Mac is idle
-  if (!isMacIdle()) {
+  if (!await isMacIdle()) {
     log.info('Mac active - local only, skipping voice note');
     return;
   }
@@ -395,7 +395,7 @@ async function deliverAskMessage(
   options: string[],
   config: ReturnType<typeof getConfig>,
 ): Promise<void> {
-  if (!isMacIdle()) {
+  if (!await isMacIdle()) {
     log.info('Mac active - skipping Telegram ASK');
     sendNotification(config.AGENT_DISPLAY_NAME, question.slice(0, 200));
     return;
@@ -468,7 +468,7 @@ async function deliverSelfie(caption: string, config: ReturnType<typeof getConfi
   sendNotification(config.AGENT_DISPLAY_NAME, caption.slice(0, 200));
   await queueMessage(caption, 'heartbeat');
 
-  if (!isMacIdle()) {
+  if (!await isMacIdle()) {
     log.info('Mac active - local only, skipping selfie');
     return;
   }

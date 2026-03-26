@@ -271,10 +271,12 @@ export function runCoherenceCheck(
             const toolsStr = toolsUsed.length > 0 ? ` | tools: ${toolsUsed.join(', ')}` : '';
             log.info(`reanchor complete${toolsStr}`);
           }
+          emitter.removeAllListeners();
           resolve(newSessionId);
           break;
         case 'StreamError':
           log.error(`reanchor error: ${event.message.slice(0, 120)}`);
+          emitter.removeAllListeners();
           resolve(null);
           break;
       }

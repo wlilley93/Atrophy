@@ -51,7 +51,12 @@ export function registerWindowHandlers(ctx: IpcContext): void {
     const cfgPath = path.join(USER_DATA, 'config.json');
     try {
       const userCfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-      return !userCfg.setup_complete;
+      const needsSetup = !userCfg.setup_complete;
+      if (!needsSetup) {
+        // Setup already complete - clear any stale wizard session
+        wizardSessionId = null;
+      }
+      return needsSetup;
     } catch {
       return true;
     }
@@ -296,6 +301,8 @@ Output EXACTLY this format - a single fenced JSON block:
       frictionModes: agentConfig.friction_modes,
       writingStyle: agentConfig.writing_style,
     });
+    // Agent created - reset wizard session so it doesn't leak into future runs
+    wizardSessionId = null;
     return manifest;
   });
 

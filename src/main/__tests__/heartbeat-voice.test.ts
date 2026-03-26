@@ -23,7 +23,7 @@ vi.mock('../context', () => ({
 }));
 vi.mock('../status', () => ({
   isAway: () => false,
-  isMacIdle: () => false,
+  isMacIdle: () => Promise.resolve(false),
 }));
 vi.mock('../notify', () => ({
   sendNotification: vi.fn(),
