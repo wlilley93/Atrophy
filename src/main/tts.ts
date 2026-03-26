@@ -349,18 +349,22 @@ function synthesiseMacOS(text: string): Promise<string> {
       stdio: ['ignore', 'ignore', 'ignore'],
     });
 
+    const cleanupFile = () => { try { fs.unlinkSync(audioPath); } catch { /* already gone */ } };
+
     const timeout = setTimeout(() => {
       try { proc.kill(); } catch { /* already dead */ }
+      cleanupFile();
       reject(new Error('macOS say timed out (30s)'));
     }, 30_000);
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
       if (code === 0) resolve(audioPath);
-      else reject(new Error(`say exited with code ${code}`));
+      else { cleanupFile(); reject(new Error(`say exited with code ${code}`)); }
     });
     proc.on('error', (err) => {
       clearTimeout(timeout);
+      cleanupFile();
       reject(err);
     });
   });

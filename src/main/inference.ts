@@ -986,6 +986,7 @@ export function runInferenceOneshot(
   system: string,
   model = DEFAULT_MODEL,
   effort: EffortLevel = 'low',
+  timeoutMs = 120_000,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const config = getConfig();
@@ -1042,8 +1043,8 @@ export function runInferenceOneshot(
       settled = true;
       cleanup();
       try { proc.kill(); } catch { /* noop */ }
-      reject(new Error('Oneshot inference timed out (30s)'));
-    }, 30000);
+      reject(new Error(`Oneshot inference timed out (${Math.round(timeoutMs / 1000)}s)`));
+    }, timeoutMs);
 
     proc.on('close', (code) => {
       clearTimeout(timeout);

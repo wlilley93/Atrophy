@@ -21,7 +21,6 @@ import {
   getRecentSummaries,
   getRecentObservations,
   getLastInteractionTime,
-  getLastCliSessionId,
   logHeartbeat,
 } from '../memory';
 import {
@@ -586,17 +585,17 @@ export async function runHeartbeat(agentName: string): Promise<string> {
   }
 
   const context = gatherContext();
-  const cliSessionId = getLastCliSessionId();
 
   const prompt =
     `${HEARTBEAT_PROMPT}\n\n---\n\n${checklist}\n\n---\n\n## Current Context\n\n${context}`;
 
-  const mode = cliSessionId ? 'resume' : 'cold';
-  log.info(`Running evaluation (${mode})...`);
+  // Always use a fresh session (null) for heartbeat checks to avoid
+  // contaminating the user's active conversation history with synthetic turns.
+  log.info('Running evaluation (fresh session)...');
 
   let response: string;
   try {
-    response = await runHeartbeatInference(prompt, cliSessionId);
+    response = await runHeartbeatInference(prompt, null);
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);
     logHeartbeat('ERROR', errMsg);

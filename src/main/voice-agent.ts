@@ -316,7 +316,6 @@ async function _ensureConnected(): Promise<boolean> {
 
     // Wait for the WebSocket to open
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('reconnect timeout')), 5000);
       const checkOpen = setInterval(() => {
         if (_ws && _ws.readyState === WebSocket.OPEN) {
           clearInterval(checkOpen);
@@ -324,6 +323,10 @@ async function _ensureConnected(): Promise<boolean> {
           resolve();
         }
       }, 50);
+      const timeout = setTimeout(() => {
+        clearInterval(checkOpen); // Prevent permanent 50ms poll leak
+        reject(new Error('reconnect timeout'));
+      }, 5000);
     });
 
     return true;

@@ -455,6 +455,9 @@ class CronScheduler {
     // Don't reschedule disabled jobs (circuit breaker tripped)
     if (job.disabled) return;
 
+    // Clear any existing timer to prevent orphaned duplicates
+    this.clearTimer(job);
+
     const key = `${job.agent}.${job.name}`;
 
     try {
