@@ -76,7 +76,7 @@
     return false;
   }
 
-  async function loadVideo(generation: number, colour = 'blue', clip = 'bounce_playful') {
+  async function loadVideo(generation: number, colour = 'blue', clip = 'idle_hover') {
     if (!api) return;
     try {
       const filePath = await api.getAvatarVideoPath(colour, clip);
@@ -121,21 +121,9 @@
     }
   }
 
-  /** Cycle to the next loop when the current one ends. */
+  /** When the current video ends, loop it. Emotion changes handle clip switching. */
   function onVideoEnded() {
-    if (showingAmbient) {
-      // Ambient is a long video - just loop it
-      videoEl?.play().catch(() => {});
-      return;
-    }
-    if (allLoops.length <= 1) {
-      // Single loop - just replay
-      videoEl?.play().catch(() => {});
-      return;
-    }
-    currentLoopIndex = (currentLoopIndex + 1) % allLoops.length;
-    videoSrc = `file://${allLoops[currentLoopIndex]}`;
-    videoReady = false;
+    videoEl?.play().catch(() => {});
   }
 
   function onVideoCanPlay() {
@@ -328,14 +316,9 @@
         }
       });
     } else {
-      // Emotion loop mode: load loops or single clip
-      loadAllLoops(gen).then(() => {
-        if (gen !== loadGeneration) return;
-        console.log('[OrbAvatar] loops=%d first=%s', allLoops.length, allLoops[0]?.split('/').pop());
-        if (allLoops.length === 0) {
-          loadVideo(gen);
-        }
-      });
+      // Emotion-driven mode: start with calm blue idle clip.
+      // The emotion $effect handles switching to other colours/clips.
+      loadVideo(gen, 'blue', 'idle_hover');
     }
   });
 
