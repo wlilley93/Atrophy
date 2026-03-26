@@ -216,8 +216,9 @@
   // Filter display text: strip prosody tags, audio tags
   function displayText(content: string, revealed: number): string {
     let text = content.slice(0, revealed);
-    // Strip [prosody] tags (including multi-word tags like [voice breaking])
-    text = text.replace(/\[[^\]]+\]/g, '');
+    // Strip [prosody] tags (e.g. [warmly], [voice breaking]) but not markdown
+    // links like [text](url). Prosody tags are never followed by '('.
+    text = text.replace(/\[[^\]]+\](?!\()/g, '');
     // Strip audio tags
     text = text.replace(/<audio[^>]*>.*?<\/audio>/gs, '');
     // Collapse multiple spaces
