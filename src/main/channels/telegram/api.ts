@@ -14,8 +14,19 @@ import { createLogger } from '../../logger';
 
 const log = createLogger('telegram');
 
-// Track last processed update to avoid re-reading old ones
-let _lastUpdateId = 0;
+// Track last processed update to avoid re-reading old ones.
+// Per-bot offset keyed by bot token to prevent cross-agent stomping.
+const _lastUpdateIds = new Map<string, number>();
+
+function getOffset(botToken?: string): number {
+  return _lastUpdateIds.get(botToken || getConfig().TELEGRAM_BOT_TOKEN) || 0;
+}
+
+function setOffset(updateId: number, botToken?: string): void {
+  const key = botToken || getConfig().TELEGRAM_BOT_TOKEN;
+  const cur = _lastUpdateIds.get(key) || 0;
+  if (updateId > cur) _lastUpdateIds.set(key, updateId);
+}
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -571,12 +582,12 @@ export async function downloadTelegramFile(
 // Receiving
 // ---------------------------------------------------------------------------
 
-async function flushOldUpdates(): Promise<void> {
-  const result = await post('getUpdates', { offset: _lastUpdateId + 1, timeout: 0 }) as
+async function flushOldUpdates(botToken?: string): Promise<void> {
+  const result = await post('getUpdates', { offset: getOffset(botToken) + 1, timeout: 0 }, undefined, botToken) as
     { update_id: number }[] | null;
   if (result) {
     for (const update of result) {
-      _lastUpdateId = Math.max(_lastUpdateId, update.update_id);
+      setOffset(update.update_id, botToken);
     }
   }
 }
@@ -596,7 +607,7 @@ export async function pollCallback(
     const pollTime = Math.min(remaining, 30);
 
     const raw = await post('getUpdates', {
-      offset: _lastUpdateId + 1,
+      offset: getOffset(botToken) + 1,
       timeout: pollTime,
       allowed_updates: ['callback_query', 'message'],
     }, (pollTime + 10) * 1000, botToken);
@@ -610,7 +621,7 @@ export async function pollCallback(
     retryDelay = 2000; // reset on success
 
     for (const update of result) {
-      _lastUpdateId = Math.max(_lastUpdateId, update.update_id);
+      setOffset(update.update_id, botToken);
 
       const cb = update.callback_query;
       if (cb && String(cb.from?.id) === target) {
@@ -638,7 +649,7 @@ export async function pollReply(
     const pollTime = Math.min(remaining, 30);
 
     const raw = await post('getUpdates', {
-      offset: _lastUpdateId + 1,
+      offset: getOffset(botToken) + 1,
       timeout: pollTime,
       allowed_updates: ['message'],
     }, (pollTime + 10) * 1000, botToken);
@@ -652,7 +663,7 @@ export async function pollReply(
     retryDelay = 2000;
 
     for (const update of result) {
-      _lastUpdateId = Math.max(_lastUpdateId, update.update_id);
+      setOffset(update.update_id, botToken);
 
       const msg = update.message;
       if (msg && String(msg.from?.id) === target && msg.text) {
@@ -891,7 +902,7 @@ export async function setBotProfilePhoto(photoPath: string, botToken?: string): 
 }
 
 // Export for daemon access
-export { _lastUpdateId, apiUrl };
-export function setLastUpdateId(id: number): void {
-  _lastUpdateId = id;
+export { _lastUpdateIds, apiUrl };
+export function setLastUpdateId(id: number, botToken?: string): void {
+  setOffset(id, botToken);
 }

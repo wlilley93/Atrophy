@@ -74,7 +74,7 @@ export function checkCoherence(recentTurns: string[]): CoherenceResult {
 
   const turns = recentTurns.slice(-5);
 
-  // Check 1: Repetition (n-gram overlap between consecutive turns)
+  // Check 1a: Repetition (n-gram overlap between consecutive turns)
   const overlaps: number[] = [];
   for (let i = 1; i < turns.length; i++) {
     overlaps.push(ngramOverlap(turns[i - 1], turns[i]));
@@ -88,6 +88,25 @@ export function checkCoherence(recentTurns: string[]): CoherenceResult {
       `share >40% phrasing (worst: ${Math.round(worst * 100)}%)`,
     );
     scores.push(Math.min(1.0, worst * 1.5));
+  }
+
+  // Check 1b: Alternating repetition (A-B-A-B oscillation at stride 2)
+  // Consecutive overlap can be low while stride-2 overlap is high.
+  if (turns.length >= 4) {
+    const strideOverlaps: number[] = [];
+    for (let i = 2; i < turns.length; i++) {
+      strideOverlaps.push(ngramOverlap(turns[i - 2], turns[i]));
+    }
+    const highStrideCount = strideOverlaps.filter((o) => o > 0.50).length;
+    if (highStrideCount >= 2) {
+      const worst = Math.max(...strideOverlaps);
+      signals.push(
+        `Alternating repetition: ${highStrideCount} stride-2 pair(s) ` +
+        `share >50% phrasing (worst: ${Math.round(worst * 100)}%). ` +
+        'You are oscillating between the same two responses.',
+      );
+      scores.push(Math.min(1.0, worst * 1.4));
+    }
   }
 
   // Check 2: Length flatness

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { api } from '../api';
 
   import SettingsTab from './settings/SettingsTab.svelte';
@@ -272,6 +272,7 @@
       setTimeout(() => saveStatus = '', 3000);
     } catch {
       saveStatus = 'Error';
+      setTimeout(() => saveStatus = '', 3000);
     }
   }
 
@@ -292,6 +293,7 @@
       setTimeout(() => saveStatus = '', 2000);
     } catch {
       saveStatus = 'Error';
+      setTimeout(() => saveStatus = '', 3000);
     }
   }
 
@@ -306,8 +308,11 @@
   // Tab switching
   // ---------------------------------------------------------------------------
 
-  function switchTab(tab: Tab) {
+  async function switchTab(tab: Tab) {
+    // Clean up console log listener when leaving that tab
+    if (activeTab === 'console' && tab !== 'console') consoleTab?.cleanup();
     activeTab = tab;
+    await tick(); // Wait for Svelte to mount the new tab component before calling load()
     if (tab === 'usage') usageTab?.load();
     if (tab === 'activity') activityTab?.load();
     if (tab === 'jobs') jobsTab?.load();
@@ -315,8 +320,13 @@
     if (tab === 'console') consoleTab?.load();
   }
 
+  function close() {
+    if (activeTab === 'console') consoleTab?.cleanup();
+    onClose();
+  }
+
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape') close();
   }
 </script>
 
@@ -334,7 +344,7 @@
         <button class="tab" class:active={activeTab === 'updates'} onclick={() => switchTab('updates')}>Updates</button>
         <button class="tab" class:active={activeTab === 'console'} onclick={() => switchTab('console')}>Console</button>
       </div>
-      <button class="close-btn" onclick={onClose} aria-label="Close settings">
+      <button class="close-btn" onclick={close} aria-label="Close settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>

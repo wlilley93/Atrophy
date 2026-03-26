@@ -35,8 +35,11 @@ export function appendToLast(text: string): void {
   const msgs = transcript.messages;
   if (msgs.length === 0) return;
   const last = msgs[msgs.length - 1];
-  if (last.role === 'agent' && !last.complete) {
+  if (last.role === 'agent') {
+    // Accept text even if complete flag was set (race between textDelta and done events)
     last.content += text;
+    // If already complete, keep revealed in sync so late text is visible
+    if (last.complete) last.revealed = last.content.length;
   }
 }
 

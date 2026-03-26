@@ -99,16 +99,19 @@ export function isWakeWordListening(): boolean {
 // IPC handler for audio chunks from renderer
 // ---------------------------------------------------------------------------
 
+let _transcribing = false;
+
 export function registerWakeWordHandlers(): void {
   // Receive ambient audio chunks from renderer
   ipcMain.on('wakeword:chunk', async (_event, buffer: ArrayBuffer) => {
-    if (!_running || _paused) return;
+    if (!_running || _paused || _transcribing) return;
 
     const audio = new Float32Array(buffer);
 
     // Skip near-silent chunks
     if (rms(audio) < 0.005) return;
 
+    _transcribing = true;
     try {
       const text = await transcribeFast(audio);
       if (!text) return;
@@ -126,6 +129,8 @@ export function registerWakeWordHandlers(): void {
       }
     } catch (e) {
       log.error(`transcription error: ${e}`);
+    } finally {
+      _transcribing = false;
     }
   });
 }

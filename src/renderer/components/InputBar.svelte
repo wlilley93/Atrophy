@@ -56,14 +56,17 @@
     }
   }
 
+  let _submitting = false;
   async function submit() {
+    if (_submitting) return; // Guard against rapid double-submit
     const text = inputText.trim();
     if (!text) return;
+    _submitting = true;
     inputText = '';
 
     // Custom submit handler (used by setup wizard flow)
     if (customSubmit) {
-      await customSubmit(text);
+      try { await customSubmit(text); } finally { _submitting = false; }
       return;
     }
 
@@ -78,7 +81,11 @@
       } catch (err) {
         completeLast();
         session.inferenceState = 'idle';
+      } finally {
+        _submitting = false;
       }
+    } else {
+      _submitting = false;
     }
   }
 
@@ -89,9 +96,11 @@
   // -- Push-to-talk audio capture --
 
   let recordingStarting = false;
+  let recordingCancelled = false;
   async function startRecording() {
     if (!api || isRecording || recordingStarting) return;
     recordingStarting = true;
+    recordingCancelled = false;
 
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -107,6 +116,13 @@
           autoGainControl: false,
         },
       });
+
+      // If the key was released while waiting for mic grant, clean up immediately
+      if (recordingCancelled) {
+        mediaStream.getTracks().forEach((t) => t.stop());
+        mediaStream = null;
+        return;
+      }
 
       audioContext = new AudioContext({ sampleRate: 16000 });
       const source = audioContext.createMediaStreamSource(mediaStream);
@@ -244,8 +260,9 @@
   }
 
   function onGlobalKeyup(e: KeyboardEvent) {
-    if (e.key === 'Alt' && isRecording) {
-      stopRecording();
+    if (e.key === 'Alt') {
+      recordingCancelled = true; // Signal startRecording to abort if still awaiting mic
+      if (isRecording) stopRecording();
     }
   }
 
@@ -349,9 +366,12 @@
             const afterClose = streamBuffer.slice(closeIdx + '</artifact>'.length);
             if (syncMode) {
               rawTextBuffer += streamBuffer; // Keep artifact in raw buffer for stripping
+              streamBuffer = afterClose;
+              // Don't call flushBuffer() - afterClose is already in rawTextBuffer
+            } else {
+              streamBuffer = afterClose;
+              if (streamBuffer) flushBuffer();
             }
-            streamBuffer = afterClose;
-            if (streamBuffer) flushBuffer();
           }
         } else if (streamBuffer.endsWith('<')) {
           const before = streamBuffer.slice(0, -1);
@@ -404,6 +424,8 @@
                 completeLast();
               }
             }
+            // Reset sync state so the next response starts clean
+            resetSyncState();
           }, 3000);
         }
 
@@ -479,6 +501,7 @@
       window.removeEventListener('keydown', onGlobalKeydown);
       window.removeEventListener('keyup', onGlobalKeyup);
       if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
+      recordingCancelled = true; // Signal startRecording to abort if still awaiting mic
       if (isRecording) stopRecording();
       if (callActive) stopCallMode();
     };

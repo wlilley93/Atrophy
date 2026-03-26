@@ -26,7 +26,7 @@ function agentSearchDirs(): string[] {
   return dirs;
 }
 
-function findManifest(name: string): Record<string, unknown> | null {
+export function findManifest(name: string): Record<string, unknown> | null {
   for (const agentsDir of agentSearchDirs()) {
     const manifestPath = path.join(agentsDir, name, 'data', 'agent.json');
     if (fs.existsSync(manifestPath)) {
@@ -91,6 +91,20 @@ export function discoverAgents(): AgentInfo[] {
   });
 
   return agents;
+}
+
+/**
+ * Discover agents visible in the UI (rolodex, cycling).
+ * Excludes org agents at tier 2+ (headless workers that can't address the user).
+ * Non-org agents (no org section) and tier-1 org agents are included.
+ */
+export function discoverUiAgents(): AgentInfo[] {
+  return discoverAgents().filter((a) => {
+    const manifest = findManifest(a.name) || {};
+    const org = manifest.org as Record<string, unknown> | undefined;
+    if (!org) return true; // non-org agent - always visible
+    return (org.tier as number) <= 1;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +284,7 @@ function toggleAgentCron(agentName: string, enable: boolean): void {
 // ---------------------------------------------------------------------------
 
 export function cycleAgent(direction: number, current: string): string | null {
-  const agents = discoverAgents();
+  const agents = discoverUiAgents();
   if (agents.length <= 1) return null;
 
   const names = agents.map((a) => a.name);
@@ -374,11 +388,9 @@ export function validateDeferralRequest(target: string, currentAgent: string): b
   return true;
 }
 
-/** Reset deferral counter (called after successful deferral). */
-export function resetDeferralCounter(): void {
-  deferralCount = 0;
-  deferralWindowStart = Date.now();
-}
+// NOTE: deferral counter intentionally not resettable - the 60s window
+// handles natural expiry. Resetting after each deferral defeated the
+// anti-loop protection (counter never accumulated past 1).
 
 // ---------------------------------------------------------------------------
 // Ask-user file-based communication (MCP ask_user <-> Electron GUI)

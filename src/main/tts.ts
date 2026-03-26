@@ -224,19 +224,27 @@ async function synthesiseElevenLabsStream(text: string): Promise<string> {
   // Stream chunks to disk as they arrive - avoids buffering the entire
   // response in memory and reduces time-to-first-byte latency.
   const fileHandle = fs.createWriteStream(tmpPath);
+  // Catch stream errors early - an unhandled 'error' event on a WriteStream
+  // crashes the process, and a missing reject path hangs the TTS pipeline.
+  let streamError: Error | null = null;
+  fileHandle.on('error', (err) => { streamError = err; });
   try {
     const reader = response.body.getReader();
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (streamError) throw streamError;
       fileHandle.write(Buffer.from(value));
     }
     fileHandle.end();
-    await new Promise<void>((resolve) => fileHandle.on('finish', resolve));
+    await new Promise<void>((resolve, reject) => {
+      fileHandle.on('finish', resolve);
+      fileHandle.on('error', reject);
+    });
   } catch (err) {
     fileHandle.destroy();
     try { fs.unlinkSync(tmpPath); } catch { /* cleanup best-effort */ }
-    throw err;
+    throw streamError || err;
   }
 
   return tmpPath;
@@ -401,14 +409,18 @@ async function acquireTtsSlot(): Promise<void> {
     _activeTtsCount++;
     return;
   }
+  // Slot is transferred directly by releaseTtsSlot - count stays the same
   await new Promise<void>((resolve) => _ttsWaiters.push(resolve));
-  _activeTtsCount++;
 }
 
 function releaseTtsSlot(): void {
-  _activeTtsCount--;
   const next = _ttsWaiters.shift();
-  if (next) next();
+  if (next) {
+    // Transfer slot directly to waiter - count unchanged
+    next();
+  } else {
+    _activeTtsCount--;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -627,10 +639,6 @@ async function processQueue(): Promise<void> {
         check();
         // Re-check when new items arrive (enqueueAudio calls processQueue which
         // won't re-enter because _playing is true, but we poll briefly)
-        _waitTimer = setTimeout(() => {
-          _waitTimer = null;
-          resolve(false); // Give up waiting, play whatever is next
-        }, 3000);
         // Also check periodically in case enqueue happened between checks
         const interval = setInterval(() => {
           if (_queue.length > 0 && _queue[0].index === _nextExpectedIndex) {
@@ -639,6 +647,11 @@ async function processQueue(): Promise<void> {
             resolve(true);
           }
         }, 50);
+        _waitTimer = setTimeout(() => {
+          _waitTimer = null;
+          clearInterval(interval); // Prevent permanent 50ms poll leak
+          resolve(false); // Give up waiting, play whatever is next
+        }, 3000);
       });
       if (!arrived && _queue.length === 0) break;
     }

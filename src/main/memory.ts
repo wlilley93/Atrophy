@@ -224,14 +224,15 @@ export function initDb(dbPath?: string): void {
   const schema = fs.readFileSync(config.SCHEMA_PATH, 'utf-8');
   // Match Python approach: try schema first, then migrate + schema.
   // This handles edge cases where schema references columns not yet migrated.
+  // Migrate runs exactly once in either path - not twice.
   try {
     db.exec(schema);
+    migrate(db);
   } catch {
     // Schema has new columns/indexes the old DB lacks - migrate first
     migrate(db);
     db.exec(schema);
   }
-  migrate(db);
 }
 
 function migrate(db: Database.Database): void {
@@ -1499,6 +1500,18 @@ export function getStateHistory(
 // ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
+
+/**
+ * Close a specific DB connection by path.
+ * Used during agent switches to release the outgoing agent's FD.
+ */
+export function closeForPath(dbPath: string): void {
+  const db = _connections.get(dbPath);
+  if (db) {
+    try { db.close(); } catch { /* noop */ }
+    _connections.delete(dbPath);
+  }
+}
 
 export function closeAll(): void {
   for (const [, db] of _connections) {

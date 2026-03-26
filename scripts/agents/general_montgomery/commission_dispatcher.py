@@ -262,7 +262,6 @@ def run(dry_run: bool = False):
                 print(f"  [{c['id']}] [{c['priority']}] {c['title']} -> {c['assigned_to']}")
             return
 
-        token, chat_id = load_credentials()
         completed = []
 
         for c in commissions:
@@ -287,11 +286,15 @@ def run(dry_run: bool = False):
 
         # Send summary to Telegram
         if completed:
-            lines = [f"*COMMISSIONS DISPATCHED - {len(completed)} completed*\n"]
-            for c in completed:
-                lines.append(f"[{c['priority'].upper()}] {c['title'][:60]}")
-                lines.append(f"  Assigned: {c['assigned_to']}")
-            send_telegram(token, chat_id, "\n".join(lines))
+            try:
+                token, chat_id = load_credentials()
+                lines = [f"*COMMISSIONS DISPATCHED - {len(completed)} completed*\n"]
+                for c in completed:
+                    lines.append(f"[{c['priority'].upper()}] {c['title'][:60]}")
+                    lines.append(f"  Assigned: {c['assigned_to']}")
+                send_telegram(token, chat_id, "\n".join(lines))
+            except (KeyError, Exception) as e:
+                log.warning(f"Telegram summary skipped: {e}")
 
     finally:
         conn.close()

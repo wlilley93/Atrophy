@@ -77,7 +77,7 @@
   <select class="agent-filter-select" bind:value={activityAgentFilter}>
     <option value="all">All agents</option>
     {#each activityAgents() as a}
-      <option value={a}>{a.replace('_', ' ')}</option>
+      <option value={a}>{a.replace(/_/g, ' ')}</option>
     {/each}
   </select>
 </div>
@@ -106,7 +106,7 @@
           <span class="activity-flag">!</span>
         {/if}
         <span class="activity-action">{item.action || ''}</span>
-        <span class="activity-agent">{(item.agent || '').replace('_', ' ')}</span>
+        <span class="activity-agent">{(item.agent || '').replace(/_/g, ' ')}</span>
         <span class="activity-spacer"></span>
         <span class="activity-time">{formatTimestamp(item.timestamp)}</span>
       </div>

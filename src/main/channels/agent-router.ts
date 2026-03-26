@@ -160,6 +160,12 @@ export class AgentRouter {
       return;
     }
 
+    // Wildcard destinations (agent:*) require systemAccess - same as broadcast()
+    if (to.endsWith(':*') && !this.config.systemAccess) {
+      log.warn(`[${this.agentName}] Not permitted to broadcast (no systemAccess, tried: ${to})`);
+      return;
+    }
+
     // Check if this agent can send system messages
     if (to === 'system' && !this.config.systemAccess) {
       log.warn(`[${this.agentName}] Not permitted to send system messages`);

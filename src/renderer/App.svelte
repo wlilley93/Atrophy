@@ -11,11 +11,11 @@
     if (!api) return;
 
     const cfg = await api.getConfig();
-    settings.userName = cfg.userName || 'User';
-    settings.version = cfg.version || '0.0.0';
-    settings.avatarEnabled = cfg.avatarEnabled || false;
-    settings.ttsBackend = cfg.ttsBackend || 'elevenlabs';
-    settings.inputMode = cfg.inputMode || 'dual';
+    settings.userName = cfg.userName ?? 'User';
+    settings.version = cfg.version ?? '0.0.0';
+    settings.avatarEnabled = cfg.avatarEnabled ?? false;
+    settings.ttsBackend = cfg.ttsBackend ?? 'elevenlabs';
+    settings.inputMode = cfg.inputMode ?? 'dual';
     settings.loaded = true;
 
     agents.current = cfg.agentName || 'xan';

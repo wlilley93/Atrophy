@@ -264,13 +264,11 @@ function _captureUtterance(): Promise<Float32Array | null> {
   return new Promise<Float32Array | null>((resolve) => {
     _utteranceResolve = resolve;
 
-    // Safety timeout - cap utterance at MAX_UTTERANCE_SEC
-    const config = getConfig();
+    // Safety timeout - cap utterance at MAX_UTTERANCE_SEC.
+    // _finaliseUtterance is idempotent (guards on !_utteranceResolve).
     const timeoutMs = MAX_UTTERANCE_SEC * 1000 + 500; // small buffer
     const timer = setTimeout(() => {
-      if (_utteranceResolve === resolve) {
-        _finaliseUtterance();
-      }
+      _finaliseUtterance();
     }, timeoutMs);
 
     // Store the timer cleanup on the resolve wrapper

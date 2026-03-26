@@ -36,9 +36,9 @@ export function sendNotification(
     : `display notification "${b}" with title "${t}"`;
 
   try {
-    // Use -e with double quotes and pass the script via stdin to avoid
-    // shell injection from single quotes in notification text
-    execSync('osascript', {
+    // Pass script via stdin using osascript's '-' flag to avoid
+    // shell injection from quotes in notification text
+    execSync('osascript -', {
       input: script,
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],

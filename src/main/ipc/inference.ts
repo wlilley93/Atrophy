@@ -21,16 +21,22 @@ import type { IpcContext } from '../ipc-handlers';
 const log = createLogger('ipc:inference');
 
 export function registerInferenceHandlers(ctx: IpcContext): void {
-  // Register desktop GUI handler with the switchboard.
-  // This handler receives response envelopes from agents (e.g. cross-agent
-  // messages that need to be displayed in the desktop GUI).
+  // Register desktop GUI handler with the switchboard for all discovered agents.
+  // Each agent needs a desktop:<name> address so cross-agent messages display
+  // regardless of which agent is currently active.
   {
-    const agentName = getConfig().AGENT_NAME;
-    switchboard.register(`desktop:${agentName}`, async (envelope: Envelope) => {
+    const desktopHandler = async (envelope: Envelope) => {
       if (!ctx.mainWindow) return;
-      // Display cross-agent or system messages in the GUI
       ctx.mainWindow.webContents.send('inference:done', envelope.text);
-    });
+    };
+    const { discoverAgents } = require('../agent-manager');
+    for (const agent of discoverAgents()) {
+      switchboard.register(`desktop:${agent.name}`, desktopHandler);
+    }
+    // Also expose a re-register function for agent switches / new agent creation
+    ctx.registerDesktopHandler = (agentName: string) => {
+      switchboard.register(`desktop:${agentName}`, desktopHandler);
+    };
   }
 
   ipcMain.handle('inference:send', (_event, text: string) => {

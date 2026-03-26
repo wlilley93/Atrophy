@@ -35,6 +35,8 @@
   onDestroy(() => {
     if (refreshTimer) clearTimeout(refreshTimer);
     cleanups.forEach(fn => fn());
+    // Clear URL so the webview element is removed and its renderer process released
+    url = '';
   });
 
   function debouncedRefresh(newUrl: string) {

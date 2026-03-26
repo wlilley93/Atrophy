@@ -11,9 +11,9 @@ import { initDb } from '../memory';
 import { stopInference, resetMcpConfig } from '../inference';
 import { clearAudioQueue } from '../tts';
 import {
-  discoverAgents, cycleAgent, getAgentState, setAgentState,
+  discoverUiAgents, cycleAgent, getAgentState, setAgentState,
   setLastActiveAgent, suspendAgentSession, resumeAgentSession,
-  resetDeferralCounter, writeAskResponse,
+  writeAskResponse,
 } from '../agent-manager';
 import { endSession as endSessionInDb } from '../memory';
 import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSourcePhoto } from '../jobs/generate-mirror-avatar';
@@ -28,11 +28,11 @@ const log = createLogger('ipc:agents');
 
 export function registerAgentHandlers(ctx: IpcContext): void {
   ipcMain.handle('agent:list', () => {
-    return discoverAgents().map(a => a.name);
+    return discoverUiAgents().map(a => a.name);
   });
 
   ipcMain.handle('agent:listFull', () => {
-    return discoverAgents();
+    return discoverUiAgents();
   });
 
   ipcMain.handle('agent:cycle', (_event, direction: number) => {
@@ -148,8 +148,6 @@ export function registerAgentHandlers(ctx: IpcContext): void {
         ctx.currentSession.inheritCliSessionId();
       }
       ctx.systemPrompt = null; // Force reload for new agent
-
-      resetDeferralCounter();
 
       return {
         agentName: config.AGENT_NAME,

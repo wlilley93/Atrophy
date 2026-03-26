@@ -100,7 +100,7 @@ function parseQuery(url: string): Record<string, string> {
     const [k, v] = pair.split('=');
     if (k) {
       try {
-        params[decodeURIComponent(k)] = decodeURIComponent(v || '');
+        params[decodeURIComponent(k)] = v !== undefined ? decodeURIComponent(v) : '';
       } catch { /* malformed percent-encoding - skip */ }
     }
   }
@@ -166,28 +166,33 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse): 
       const emitter = streamInference(message, systemPrompt, session!.cliSessionId);
 
       // Timeout: if no response after 10 minutes, give up
+      let settled = false;
       const timeout = setTimeout(() => {
-        if (!errored) {
+        if (!settled) {
+          settled = true;
           errored = true;
           log.error('HTTP /chat inference timed out');
-          sendJson(res, { error: 'inference timed out' }, 504);
+          if (!res.headersSent) sendJson(res, { error: 'inference timed out' }, 504);
           stopInference();
         }
         resolve();
       }, 10 * 60 * 1000);
 
       emitter.on('event', (evt: InferenceEvent) => {
+        if (settled) return;
         switch (evt.type) {
           case 'StreamDone':
+            settled = true;
             clearTimeout(timeout);
             fullText = evt.fullText;
             if (evt.sessionId) sessionId = evt.sessionId;
             resolve();
             break;
           case 'StreamError':
+            settled = true;
             clearTimeout(timeout);
             errored = true;
-            sendJson(res, { error: evt.message }, 500);
+            if (!res.headersSent) sendJson(res, { error: evt.message }, 500);
             resolve();
             break;
         }

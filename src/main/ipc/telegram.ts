@@ -7,8 +7,11 @@
 
 import { ipcMain } from 'electron';
 import { getConfig, saveAgentConfig } from '../config';
+import { findManifest } from '../agent-manager';
 import { startDaemon, stopDaemon, isDaemonRunning, discoverChatId } from '../channels/telegram';
 import type { IpcContext } from '../ipc-handlers';
+
+const AGENT_NAME_RE = /^[a-zA-Z0-9_-]+$/;
 
 export function registerTelegramHandlers(_ctx: IpcContext): void {
   ipcMain.handle('telegram:startDaemon', () => {
@@ -37,6 +40,7 @@ export function registerTelegramHandlers(_ctx: IpcContext): void {
   });
 
   ipcMain.handle('telegram:saveAgentBotToken', async (_event, agentName: string, botToken: string) => {
+    if (!AGENT_NAME_RE.test(agentName)) throw new Error('Invalid agent name');
     saveAgentConfig(agentName, { TELEGRAM_BOT_TOKEN: botToken });
     const c = getConfig();
     if (agentName === c.AGENT_NAME) {
@@ -45,6 +49,7 @@ export function registerTelegramHandlers(_ctx: IpcContext): void {
   });
 
   ipcMain.handle('telegram:setBotPhoto', async (_event, agentName: string, botToken: string) => {
+    if (!AGENT_NAME_RE.test(agentName)) throw new Error('Invalid agent name');
     const { getReferenceImages } = await import('../jobs/generate-avatar');
     const { setBotProfilePhoto } = await import('../channels/telegram');
     const refs = getReferenceImages(agentName);
@@ -52,15 +57,19 @@ export function registerTelegramHandlers(_ctx: IpcContext): void {
     return setBotProfilePhoto(refs[0], botToken);
   });
 
+  // Read agent's Telegram config directly from manifest to avoid mutating
+  // the shared config singleton (which races with the Telegram daemon).
   ipcMain.handle('telegram:getAgentConfig', async (_event, agentName: string) => {
-    const c = getConfig();
-    const original = c.AGENT_NAME;
-    c.reloadForAgent(agentName);
-    const result = {
-      botToken: c.TELEGRAM_BOT_TOKEN ? '***' : '',
-      chatId: c.TELEGRAM_CHAT_ID,
+    if (!AGENT_NAME_RE.test(agentName)) throw new Error('Invalid agent name');
+    const manifest = findManifest(agentName) || {};
+    const channels = (manifest.channels as Record<string, Record<string, string>> | undefined) || {};
+    const tg = channels.telegram || {};
+    // Resolve env var references from the manifest
+    const botTokenEnv = tg.bot_token_env;
+    const chatIdEnv = tg.chat_id_env;
+    return {
+      botToken: botTokenEnv && process.env[botTokenEnv] ? '***' : '',
+      chatId: chatIdEnv ? process.env[chatIdEnv] || '' : '',
     };
-    c.reloadForAgent(original);
-    return result;
   });
 }

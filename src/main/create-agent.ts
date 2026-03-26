@@ -807,9 +807,9 @@ function deriveAcceptFrom(tier: number, orgContext?: OrgContext): string[] {
     if (orgContext?.reportsTo) sources.push(`agent:${orgContext.reportsTo}`);
     return sources.length > 0 ? sources : ['*'];
   }
-  // tier 3+: creator only
+  // tier 3+: creator only (fallback to system so the agent isn't unreachable)
   if (orgContext?.reportsTo) return [`agent:${orgContext.reportsTo}`];
-  return [];
+  return ['system'];
 }
 
 /**

@@ -35,6 +35,7 @@
       const start = performance.now();
       const duration = 400;
       const from = offset;
+      let rafId = 0;
 
       function tick(now: number) {
         const elapsed = now - start;
@@ -48,13 +49,16 @@
         }
 
         if (t < 1) {
-          requestAnimationFrame(tick);
+          rafId = requestAnimationFrame(tick);
         } else {
           offset = 0;
           animating = false;
         }
       }
-      requestAnimationFrame(tick);
+      rafId = requestAnimationFrame(tick);
+
+      // Cancel animation on cleanup (component destroy or effect re-run)
+      return () => cancelAnimationFrame(rafId);
     }
   });
 </script>

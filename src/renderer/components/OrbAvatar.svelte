@@ -139,13 +139,18 @@
   }
 
   function onVideoCanPlay() {
+    console.log('[OrbAvatar] video canplay', videoSrc.split('/').slice(-2).join('/'));
     videoReady = true;
     downloading = false;
     stopCanvas();
-    videoEl?.play().catch(() => {});
+    videoEl?.play().catch((e) => console.warn('[OrbAvatar] play() rejected:', e));
   }
 
   function onVideoError() {
+    const el = videoEl;
+    const code = el?.error?.code;
+    const msg = el?.error?.message;
+    console.error('[OrbAvatar] video error', { src: videoSrc.split('/').slice(-2).join('/'), code, msg });
     videoError = true;
     startCanvas();
   }
@@ -156,9 +161,14 @@
 
   function startCanvas() {
     if (canvasRunning || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    // Defer if layout hasn't happened yet (zero-size on first mount)
+    if (rect.width === 0 || rect.height === 0) {
+      requestAnimationFrame(() => startCanvas());
+      return;
+    }
     ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
     ctx?.scale(dpr, dpr);
@@ -269,7 +279,7 @@
     }
 
     time += 0.016;
-    animFrame = requestAnimationFrame(draw);
+    if (canvasRunning) animFrame = requestAnimationFrame(draw);
   }
 
   // ---------------------------------------------------------------------------
@@ -301,14 +311,18 @@
     allLoops = [];
     showingAmbient = false;
 
+    console.log('[OrbAvatar] effect: agent=%s ambient=%s agentChanged=%s modeChanged=%s', agent, wantAmbient, agentChanged, modeChanged);
+
     if (wantAmbient) {
       // Ambient mode: try to load the agent's ambient video
       loadAmbient(gen).then((loaded) => {
         if (gen !== loadGeneration) return;
+        console.log('[OrbAvatar] ambient loaded=%s', loaded);
         if (!loaded) {
           // No ambient video - fall through to loops/canvas
           loadAllLoops(gen).then(() => {
             if (gen !== loadGeneration) return;
+            console.log('[OrbAvatar] fallback loops=%d', allLoops.length);
             if (allLoops.length === 0) loadVideo(gen);
           });
         }
@@ -317,6 +331,7 @@
       // Emotion loop mode: load loops or single clip
       loadAllLoops(gen).then(() => {
         if (gen !== loadGeneration) return;
+        console.log('[OrbAvatar] loops=%d first=%s', allLoops.length, allLoops[0]?.split('/').pop());
         if (allLoops.length === 0) {
           loadVideo(gen);
         }

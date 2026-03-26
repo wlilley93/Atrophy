@@ -98,9 +98,15 @@ export async function ensureAvatarAssets(
     const reader = res.body?.getReader();
     if (!reader) throw new Error('no response body');
 
+    // Attach error listener immediately to catch disk-full / write errors
+    // during the loop (before the closing promise is created).
+    let writeError: Error | null = null;
+    fileStream.on('error', (err) => { writeError = err; });
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (writeError) throw writeError;
       fileStream.write(value);
       transferred += value.byteLength;
 
@@ -111,6 +117,8 @@ export async function ensureAvatarAssets(
         lastEmit = now;
       }
     }
+
+    if (writeError) throw writeError;
 
     await new Promise<void>((resolve, reject) => {
       fileStream.end(() => resolve());

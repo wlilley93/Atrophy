@@ -8,7 +8,7 @@
 
 import * as fs from 'fs';
 import { getConfig } from './config';
-import { writeTrustLog, writeStateLog } from './memory';
+import { writeTrustLog, writeStateLog, getLatestTrustValues } from './memory';
 import {
   type Emotions,
   type Trust,
@@ -395,8 +395,7 @@ export function updateNeeds(
  */
 export function reconcileTrustFromDb(): void {
   try {
-    const { getLatestTrustValues } = require('./memory');
-    const dbTrust = getLatestTrustValues() as Record<string, number>;
+    const dbTrust = getLatestTrustValues();
     if (!Object.keys(dbTrust).length) return;
 
     const state = loadState();

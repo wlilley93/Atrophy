@@ -33,23 +33,29 @@ async function loadPipeline(): Promise<unknown> {
   if (_loading) return _loading;
 
   _loading = (async () => {
-    const config = getConfig();
-    const modelName = config.EMBEDDING_MODEL;
-    const cacheDir = path.join(config.MODELS_DIR, modelName);
+    try {
+      const config = getConfig();
+      const modelName = config.EMBEDDING_MODEL;
+      const cacheDir = path.join(config.MODELS_DIR, modelName);
 
-    log.info(`Loading ${modelName} via Transformers.js...`);
+      log.info(`Loading ${modelName} via Transformers.js...`);
 
-    // Dynamic import - @xenova/transformers is ESM
-    const { pipeline, env } = await import('@xenova/transformers');
-    env.cacheDir = cacheDir;
-    env.allowLocalModels = true;
+      // Dynamic import - @xenova/transformers is ESM
+      const { pipeline, env } = await import('@xenova/transformers');
+      env.cacheDir = cacheDir;
+      env.allowLocalModels = true;
 
-    _pipeline = await pipeline('feature-extraction', modelName, {
-      quantized: true,
-    });
+      _pipeline = await pipeline('feature-extraction', modelName, {
+        quantized: true,
+      });
 
-    log.info(`Model loaded (${EMBEDDING_DIM}-dim, WASM)`);
-    return _pipeline;
+      log.info(`Model loaded (${EMBEDDING_DIM}-dim, WASM)`);
+      return _pipeline;
+    } catch (err) {
+      // Clear _loading so a transient failure doesn't permanently poison future calls
+      _loading = null;
+      throw err;
+    }
   })();
 
   _pipeline = await _loading;

@@ -49,16 +49,25 @@ def _parse_cron(cron_str: str) -> dict:
     minute, hour, dom, month, dow = parts
     interval = {}
 
+    def _parse_field(val: str, name: str) -> int:
+        """Parse a cron field to int. Ranges/steps/lists not supported by launchd."""
+        if any(c in val for c in ('/', '-', ',')):
+            raise ValueError(
+                f"launchd does not support '{val}' in {name} field. "
+                f"Use a simple integer or '*'."
+            )
+        return int(val)
+
     if minute != '*':
-        interval['Minute'] = int(minute)
+        interval['Minute'] = _parse_field(minute, 'minute')
     if hour != '*':
-        interval['Hour'] = int(hour)
+        interval['Hour'] = _parse_field(hour, 'hour')
     if dom != '*':
-        interval['Day'] = int(dom)
+        interval['Day'] = _parse_field(dom, 'day')
     if month != '*':
-        interval['Month'] = int(month)
+        interval['Month'] = _parse_field(month, 'month')
     if dow != '*':
-        interval['Weekday'] = int(dow)
+        interval['Weekday'] = _parse_field(dow, 'weekday')
 
     return interval
 

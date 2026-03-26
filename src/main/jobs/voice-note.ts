@@ -224,7 +224,6 @@ export async function run(): Promise<void> {
   }
 
   // Include current time so the agent knows when it is
-  const now = new Date();
   const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   const dayStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 

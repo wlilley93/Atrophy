@@ -735,12 +735,21 @@ def _handle_gws(tool_args: dict) -> str:
     service = tool_args["service"]
     args_str = tool_args["args"]
 
+    # Security: validate service name against known gws subcommands
+    VALID_SERVICES = {
+        "gmail", "calendar", "drive", "sheets", "docs", "slides", "tasks",
+        "people", "meet", "forms", "keep", "workflow", "schema",
+        "chat", "classroom", "admin-reports", "events",
+    }
+    if service not in VALID_SERVICES:
+        return f"Error: unknown service '{service}'."
+
     # Security: block credential-reading
     lower = args_str.lower()
     if any(w in lower for w in ("token", "credential", "secret", "auth")):
         return "Error: Cannot access credential resources."
 
-    # Build shell command — we use shell=True because args contain quoted JSON
+    # Build shell command - we use shell=True because args contain quoted JSON
     cmd = f"{_GWS_BIN} {service} {args_str} --format json"
 
     try:

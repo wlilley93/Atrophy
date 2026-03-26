@@ -54,7 +54,7 @@
   // ---------------------------------------------------------------------------
 
   async function fetchTopology() {
-    if (!api) return;
+    if (!api) { loading = false; return; }
     loading = true;
     try {
       const topo = await api.getTopology();
@@ -415,9 +415,9 @@
 
 <style>
   .overlay {
-    position: fixed;
+    position: absolute;
     inset: 0;
-    z-index: 1000;
+    z-index: 55; /* Below Settings (60) and ask-overlay (90) */
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(8px);
     display: flex;

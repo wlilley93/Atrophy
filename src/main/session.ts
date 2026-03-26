@@ -79,11 +79,14 @@ export class Session {
     return this.minutesElapsed() >= config.SESSION_SOFT_LIMIT_MINS;
   }
 
-  async end(systemPrompt: string): Promise<void> {
+  async end(_systemPrompt: string): Promise<void> {
     if (this.sessionId === null) return;
+    // Capture and null out immediately to prevent double-end from concurrent callers
+    const sid = this.sessionId!;
+    this.sessionId = null;
 
     if (!this.turnHistory.length || this.turnHistory.length < 4) {
-      memory.endSession(this.sessionId);
+      memory.endSession(sid);
       return;
     }
 
@@ -111,7 +114,7 @@ export class Session {
       summary = `[Summary generation failed: ${e}]`;
     }
 
-    memory.endSession(this.sessionId, summary, this.mood);
-    memory.writeSummary(this.sessionId, summary);
+    memory.endSession(sid, summary, this.mood);
+    memory.writeSummary(sid, summary);
   }
 }

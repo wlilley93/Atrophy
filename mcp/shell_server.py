@@ -318,6 +318,36 @@ def _run_pipeline(segments: list[str], cwd: str, env: dict[str, str], timeout: i
         return {"exit_code": -1, "stdout": "", "stderr": f"Execution error: {e}", "blocked": False}
 
 
+def _split_pipes(command: str) -> list[str]:
+    """Split on pipe operators that are outside quoted strings.
+
+    Plain str.split('|') breaks commands like: grep "foo|bar" file.txt
+    This uses shlex to tokenize and find unquoted pipe characters.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        # Unbalanced quotes - fall back to naive split
+        return command.split("|")
+
+    segments: list[str] = []
+    current: list[str] = []
+    # Walk the original string tracking quote state
+    in_single = False
+    in_double = False
+    seg_start = 0
+    for i, ch in enumerate(command):
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == '|' and not in_single and not in_double:
+            segments.append(command[seg_start:i])
+            seg_start = i + 1
+    segments.append(command[seg_start:])
+    return segments
+
+
 def _handle_redirects(command: str) -> tuple[str, str | None, bool]:
     """Extract output redirect from command string.
 
@@ -396,7 +426,7 @@ def run_command(command: str, working_dir: str | None = None, timeout: int | Non
         result = _run_shell(command, cwd, env, t)
     else:
         command_body, redirect_path, is_append = _handle_redirects(command)
-        segments = command_body.split("|")
+        segments = _split_pipes(command_body)
         result = _run_pipeline(segments, cwd, env, t)
 
     try:

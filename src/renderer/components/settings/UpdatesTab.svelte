@@ -13,6 +13,8 @@
   let updateDownloadPercent = $state(0);
   let updateReadyVersion = $state<string | null>(null);
   let updateStatusText = $state('');
+  let progressCleanup: (() => void) | null = null;
+  let readyCleanup: (() => void) | null = null;
 
   export async function load() {
     if (!api) return;
@@ -27,17 +29,19 @@
       }
     } catch { /* ignore */ }
 
-    // Listen for progress and ready events
-    api.onBundleProgress?.((percent: number) => {
+    // Listen for progress and ready events (clean up previous listeners first)
+    progressCleanup?.();
+    readyCleanup?.();
+    progressCleanup = api.onBundleProgress?.((percent: number) => {
       updateDownloadPercent = percent;
       updateCheckStatus = 'downloading';
       updateStatusText = `Downloading... ${Math.round(percent)}%`;
-    });
-    api.onBundleReady?.((info: { version: string }) => {
+    }) ?? null;
+    readyCleanup = api.onBundleReady?.((info: { version: string }) => {
       updateReadyVersion = info.version;
       updateCheckStatus = 'ready';
       updateStatusText = `v${info.version} downloaded - restart to apply`;
-    });
+    }) ?? null;
   }
 
   async function checkForUpdates() {

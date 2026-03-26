@@ -7,7 +7,7 @@ import { ipcMain, shell } from 'electron';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync, spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import { getConfig, saveEnvVar, BUNDLE_ROOT, USER_DATA } from '../config';
 import { streamInference, type InferenceEvent } from '../inference';
 import { synthesise, playAudio, isMuted } from '../tts';
@@ -61,10 +61,12 @@ export function registerWindowHandlers(ctx: IpcContext): void {
   ipcMain.handle('setup:healthCheck', async () => {
     const config = getConfig();
     const bin = config.CLAUDE_BIN;
+    const execEnv = { ...process.env, PATH: ['/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local', 'bin'), process.env.PATH].join(':') };
     try {
-      const result = execSync(`${bin} --version 2>&1`, {
+      const result = execFileSync(bin, ['--version'], {
         timeout: 10_000,
-        env: { ...process.env, PATH: ['/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local', 'bin'), process.env.PATH].join(':') },
+        env: execEnv,
+        stdio: ['pipe', 'pipe', 'pipe'],
       }).toString().trim();
       return { ok: true, version: result, bin };
     } catch (err: unknown) {
@@ -79,7 +81,7 @@ export function registerWindowHandlers(ctx: IpcContext): void {
       for (const candidate of candidates) {
         try {
           if (!fs.existsSync(candidate)) continue;
-          const ver = execSync(`${candidate} --version 2>&1`, { timeout: 10_000 }).toString().trim();
+          const ver = execFileSync(candidate, ['--version'], { timeout: 10_000, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
           return { ok: true, version: ver, bin: candidate, hint: `Found at ${candidate} - updating config` };
         } catch { continue; }
       }
@@ -330,13 +332,13 @@ Output EXACTLY this format - a single fenced JSON block:
         if (fs.existsSync(p)) { npm = p; break; }
       }
       if (!npm) {
-        try { npm = execSync('which npm', { encoding: 'utf8' }).trim(); } catch { /* */ }
+        try { npm = execFileSync('which', ['npm'], { encoding: 'utf8' }).trim(); } catch { /* */ }
       }
       if (npm) {
         log.info('[google-oauth] Auto-installing gws CLI to', gwsLocalDir);
         fs.mkdirSync(gwsLocalDir, { recursive: true });
         try {
-          execSync(`"${npm}" install --prefix "${gwsLocalDir}" @googleworkspace/cli`, {
+          execFileSync(npm, ['install', '--prefix', gwsLocalDir, '@googleworkspace/cli'], {
             timeout: 60_000,
             stdio: 'pipe',
           });

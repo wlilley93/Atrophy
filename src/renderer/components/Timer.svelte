@@ -251,6 +251,15 @@
       posLeft += dx;
       posTop += dy;
     }
+
+    // Clamp to keep widget on-screen
+    const el = document.querySelector('.timer-overlay') as HTMLElement;
+    if (el) {
+      const tw = el.offsetWidth;
+      const th = el.offsetHeight;
+      posLeft = Math.max(0, Math.min(posLeft, window.innerWidth - tw));
+      posTop = Math.max(0, Math.min(posTop, window.innerHeight - th));
+    }
   }
 
   function onMouseUp() {

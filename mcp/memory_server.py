@@ -3082,9 +3082,9 @@ def handle_read_docs(args):
     path = args["path"]
     if DOCS_DIR is None:
         return "Error: docs directory not found."
-    # Prevent path traversal
-    full = os.path.normpath(os.path.join(DOCS_DIR, path))
-    if not full.startswith(os.path.normpath(DOCS_DIR)):
+    # Prevent path traversal (realpath follows symlinks unlike normpath)
+    full = os.path.realpath(os.path.join(DOCS_DIR, path))
+    if not full.startswith(os.path.realpath(DOCS_DIR) + os.sep):
         return f"Error: path '{path}' escapes the docs boundary."
     if not os.path.isfile(full):
         # Try finding by filename alone
@@ -3400,8 +3400,8 @@ def _discover_mcp_servers():
     return servers
 
 
-def _read_agent_manifest():
-    """Read the current agent's manifest."""
+def _read_current_agent_manifest():
+    """Read the current agent's manifest (returns tuple of manifest dict + path)."""
     atrophy_base = os.path.expanduser("~/.atrophy")
     agent = os.environ.get("AGENT", "xan")
     manifest_path = os.path.join(atrophy_base, "agents", agent, "data", "agent.json")
@@ -3414,8 +3414,8 @@ def _read_agent_manifest():
     return {}, manifest_path
 
 
-def _write_agent_manifest(manifest, manifest_path):
-    """Write the agent manifest back to disk."""
+def _write_current_agent_manifest(manifest, manifest_path):
+    """Write the current agent's manifest back to disk (atomic)."""
     tmp_path = manifest_path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -3426,7 +3426,7 @@ def _write_agent_manifest(manifest, manifest_path):
 def handle_mcp_list_servers(args):
     """List all available MCP servers and which are active for this agent."""
     servers = _discover_mcp_servers()
-    manifest, _ = _read_agent_manifest()
+    manifest, _ = _read_current_agent_manifest()
     mcp_config = manifest.get("mcp", {})
     include_list = mcp_config.get("include", [])
     exclude_list = mcp_config.get("exclude", [])
@@ -3463,11 +3463,11 @@ def _resolve_target_agent(args):
 
     if target_agent == current_agent:
         # Operating on self - no access check needed
-        manifest, manifest_path = _read_agent_manifest()
+        manifest, manifest_path = _read_current_agent_manifest()
         return manifest, manifest_path, current_agent, None
 
     # Cross-agent operation - check system_access on calling agent
-    caller_manifest, _ = _read_agent_manifest()
+    caller_manifest, _ = _read_current_agent_manifest()
     router_config = caller_manifest.get("router", {})
     if not router_config.get("system_access", False):
         return None, None, target_agent, (
@@ -3520,7 +3520,7 @@ def handle_mcp_activate_server(args):
     if server_name in exclude_list:
         exclude_list.remove(server_name)
 
-    _write_agent_manifest(manifest, manifest_path)
+    _write_current_agent_manifest(manifest, manifest_path)
     return (
         f"Activated MCP server '{server_name}' for {target_agent}. "
         f"Active servers: {', '.join(include_list)}. "
@@ -3552,7 +3552,7 @@ def handle_mcp_deactivate_server(args):
     if server_name not in exclude_list:
         exclude_list.append(server_name)
 
-    _write_agent_manifest(manifest, manifest_path)
+    _write_current_agent_manifest(manifest, manifest_path)
     return (
         f"Deactivated MCP server '{server_name}' for {target_agent}. "
         f"Active servers: {', '.join(include_list) if include_list else '(none)'}. "

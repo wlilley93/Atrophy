@@ -155,9 +155,10 @@ export async function runJob(
 
   const outputText = result.stdout.trim();
 
-  // Only route through switchboard if the job produced output.
-  // Silent success (exit 0, no stdout) should stay silent.
-  if (outputText) {
+  // Only route through switchboard if the job succeeded and produced output.
+  // Silent success (exit 0, no stdout) stays silent. Failed jobs (non-zero
+  // exit) are not routed - their tracebacks would confuse the agent.
+  if (outputText && result.exitCode === 0) {
     const envelope = switchboard.createEnvelope(
       `cron:${agentName}.${jobName}`,
       `agent:${agentName}`,

@@ -349,9 +349,10 @@ export async function reindex(table?: string, db?: Database.Database): Promise<v
       const vectors = await embedBatch(chunkTexts);
 
       const update = conn.prepare(`UPDATE ${tbl} SET embedding = ? WHERE id = ?`);
-      for (let j = 0; j < chunkIds.length; j++) {
-        update.run(vectorToBlob(vectors[j]), chunkIds[j]);
-      }
+      const runBatch = conn.transaction((pairs: [Buffer, number][]) => {
+        for (const [blob, id] of pairs) update.run(blob, id);
+      });
+      runBatch(vectors.map((v, j) => [vectorToBlob(v), chunkIds[j]] as [Buffer, number]));
       embedded += chunkTexts.length;
     }
 

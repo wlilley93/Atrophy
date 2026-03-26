@@ -47,6 +47,7 @@ export interface IpcContext {
   isKeepAwakeActive: () => boolean;
   toggleKeepAwake: () => void;
   resetJournalNudgeTimer: () => void;
+  registerDesktopHandler?: (agentName: string) => void;
 }
 
 // ---------------------------------------------------------------------------
