@@ -265,10 +265,28 @@ The following legacy overview documents are preserved in [`archive/`](archive/) 
 
 | File | Status | Purpose |
 |------|--------|---------|
-| `mcp/memory_server.py` | 📝 | Memory and agency tools |
-| `mcp/google_server.py` | 📝 | Google API access |
+| `mcp/memory_server.py` | ✅ | Memory and agency tools |
+| `mcp/google_server.py` | ✅ | Google API access |
 | `mcp/puppeteer_proxy.py` | 📝 | Web browsing proxy |
 | `mcp/puppeteer-inject.py` | 📝 | Content injection scanning |
+
+## Background Jobs
+
+| File | Status | Purpose |
+|------|--------|---------|
+| `src/main/jobs/index.ts` | ✅ | Job runner framework |
+| `src/main/jobs/heartbeat.ts` | ✅ | Periodic check-in evaluation |
+| `src/main/jobs/sleep-cycle.ts` | ✅ | Nightly reconciliation |
+| `src/main/jobs/morning-brief.ts` | ✅ | Morning briefing generation |
+| `src/main/jobs/evolve.ts` | ✅ | Monthly self-evolution |
+| `src/main/jobs/introspect.ts` | 📝 | Self-reflection job |
+| `src/main/jobs/converse.ts` | 📝 | Inter-agent conversation |
+| `src/main/jobs/gift.ts` | 📝 | Unprompted gift notes |
+| `src/main/jobs/voice-note.ts` | 📝 | Spontaneous voice notes |
+| `src/main/jobs/generate-avatar.ts` | 📝 | Avatar generation |
+| `src/main/jobs/run-task.ts` | 📝 | Generic task runner |
+| `src/main/jobs/check-reminders.ts` | 📝 | Reminder checker |
+| `src/main/jobs/observer.ts` | 📝 | Fact extraction |
 
 ---
 
@@ -366,15 +384,16 @@ docs/codebase/
 | Entry Points | 4 | 5 | 80% |
 | Main Process Core | 32 | 32 | 100% |
 | IPC Handlers | 7 | 7 | 100% |
-| Channels | 2 | 3 | 67% |
-| Jobs Framework | 1 | 13 | 8% |
+| Channels | 6 | 6 | 100% |
+| Inner Life | 4 | 4 | 100% |
+| Jobs Framework | 5 | 13 | 38% |
 | Preload | 1 | 1 | 100% |
-| Renderer Stores | 3 | 8 | 38% |
-| Renderer Components | 0 | 12 | 0% |
+| Renderer Stores | 8 | 8 | 100% |
+| Renderer Components | 2 | 12 | 17% |
 | Database | 1 | 1 | 100% |
-| MCP Servers | 0 | 4 | 0% |
+| MCP Servers | 2 | 4 | 50% |
 | Scripts | 1 | 10+ | 10% |
-| **Total** | **52** | **96+** | **54%** |
+| **Total** | **74** | **103+** | **72%** |
 
 ---
 

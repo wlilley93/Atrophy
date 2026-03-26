@@ -8,8 +8,12 @@
 
   interface Props {
     onClose: () => void;
+    /** When true, renders inline without overlay/close button (for Settings tab) */
+    embedded?: boolean;
   }
-  let { onClose }: Props = $props();
+  let { onClose, embedded = false }: Props = $props();
+
+  export function load() { fetchTopology(); }
 
   // ---------------------------------------------------------------------------
   // Types (mirror the IPC response shapes)
@@ -187,15 +191,29 @@
   }
 </script>
 
-<svelte:window on:keydown={onKeydown} />
+{#if !embedded}<svelte:window on:keydown={onKeydown} />{/if}
 
-<!-- Overlay backdrop -->
+{#if embedded}
+<!-- Embedded mode (Settings tab) -->
+<div class="embedded-root">
+  <div class="embedded-header">
+    <input
+      type="text"
+      class="search-input"
+      placeholder="Filter services..."
+      bind:value={searchQuery}
+      onfocus={() => searchFocused = true}
+      onblur={() => searchFocused = false}
+    />
+  </div>
+
+    {#if loading}
+{:else}
+<!-- Overlay mode -->
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div class="overlay" onclick={onClose}>
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div class="panel" onclick={(e) => e.stopPropagation()}>
-
-    <!-- Header -->
     <div class="header">
       <span class="title">System Map</span>
       <div class="header-right">
@@ -410,10 +428,40 @@
       </div>
     {/if}
 
-  </div>
-</div>
+  {#if embedded}
+</div><!-- /embedded-root -->
+  {:else}
+  </div><!-- /panel -->
+</div><!-- /overlay -->
+  {/if}
+{/if}
 
 <style>
+  .embedded-root {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .embedded-root .body {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .embedded-header {
+    padding: 12px 16px;
+    flex-shrink: 0;
+  }
+
+  .embedded-header .search-input {
+    width: 100%;
+  }
+
+  .embedded-root .columns {
+    padding: 0 16px 16px;
+  }
+
   .overlay {
     position: absolute;
     inset: 0;
