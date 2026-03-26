@@ -38,6 +38,7 @@ import { startDaemon, stopDaemon, setMainWindowAccessor } from './channels/teleg
 import { cronScheduler, stopAllJobs } from './channels/cron';
 import { mcpRegistry } from './mcp-registry';
 import { wireAgent, markBootComplete } from './create-agent';
+import { backupAgentData } from './backup';
 import { registerCallHandlers } from './call';
 import { getAppIcon, getTrayIcon, TrayState } from './icon';
 import { initAutoUpdater } from './updater';
@@ -751,6 +752,10 @@ app.whenReady().then(() => {
 
   // 6. Periodically write switchboard state for MCP servers to read.
   mcpStateTimer = setInterval(() => switchboard.writeStateForMCP(), 5000);
+
+  // 7. Daily agent backup - snapshot manifests, prompts, and org configs.
+  // Keeps last 7 days. Memory.db is excluded (too large, has its own WAL).
+  backupAgentData();
 
   // Configure voice agent window reference
   import('./voice-agent').then(({ configureVoiceAgent }) => {
