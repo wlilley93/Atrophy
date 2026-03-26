@@ -472,3 +472,56 @@ export function cleanupAskFiles(): void {
     try { fs.unlinkSync(p); } catch { /* not found */ }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Agent deletion (preserves memory.db)
+// ---------------------------------------------------------------------------
+
+/**
+ * Delete an agent from the user data directory.
+ *
+ * Backs up memory.db to memory.db.preserved, removes all other files
+ * and directories, then restores the memory backup. This preserves the
+ * agent's conversation history even after deletion.
+ *
+ * @throws If agent directory does not exist.
+ */
+export function deleteAgent(name: string): void {
+  const agentDir = path.join(USER_DATA, 'agents', name);
+  if (!fs.existsSync(agentDir)) {
+    throw new Error(`Agent directory for "${name}" not found`);
+  }
+
+  const dbPath = path.join(agentDir, 'memory.db');
+  const backupPath = path.join(agentDir, 'memory.db.preserved');
+
+  // Back up memory.db if it exists
+  let hadDb = false;
+  if (fs.existsSync(dbPath)) {
+    try {
+      fs.copyFileSync(dbPath, backupPath);
+      hadDb = true;
+    } catch (e) {
+      log.warn(`deleteAgent: failed to backup memory.db for "${name}": ${e}`);
+    }
+  }
+
+  // Remove entire agent directory
+  try {
+    fs.rmSync(agentDir, { recursive: true, force: true });
+  } catch (e) {
+    throw new Error(`Failed to remove agent directory for "${name}": ${e}`);
+  }
+
+  // Restore memory backup if we had one
+  if (hadDb) {
+    try {
+      fs.mkdirSync(agentDir, { recursive: true });
+      fs.renameSync(backupPath, path.join(agentDir, 'memory.db.preserved'));
+    } catch (e) {
+      log.warn(`deleteAgent: failed to restore memory backup for "${name}": ${e}`);
+    }
+  }
+
+  log.info(`Deleted agent "${name}" (memory preserved: ${hadDb})`);
+}

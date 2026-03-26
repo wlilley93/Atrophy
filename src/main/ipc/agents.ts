@@ -9,10 +9,11 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { getConfig, saveAgentConfig, saveUserConfig, saveEnvVar, USER_DATA } from '../config';
 import {
-  discoverUiAgents, cycleAgent, getAgentState, setAgentState,
+  discoverUiAgents, discoverAgents, cycleAgent, getAgentState, setAgentState,
   suspendAgentSession, resumeAgentSession,
-  writeAskResponse, findManifest,
+  writeAskResponse, findManifest, deleteAgent,
 } from '../agent-manager';
+import { loadPrompt } from '../prompts';
 import { endSession as endSessionInDb } from '../memory';
 import { saveUserPhoto, generateMirrorAvatar, isMirrorSetupComplete, hasMirrorSourcePhoto } from '../jobs/generate-mirror-avatar';
 import type { MirrorAvatarProgress } from '../jobs/generate-mirror-avatar';
@@ -243,5 +244,73 @@ export function registerAgentHandlers(ctx: IpcContext): void {
     writeAskResponse(requestId, response, destinationFailed);
     ctx.pendingAskId = null;
     ctx.pendingAskDestination = null;
+  });
+
+  // -- Agent CRUD (for org management UI) --
+
+  const AGENT_RE = /^[a-zA-Z0-9_-]+$/;
+
+  ipcMain.handle('agent:listAll', () => {
+    return discoverAgents().map((a) => {
+      const manifest = findManifest(a.name) || {};
+      const org = manifest.org as Record<string, unknown> | undefined;
+      const state = getAgentState(a.name);
+      return {
+        ...a,
+        orgSlug: (org?.slug as string) ?? null,
+        reportsTo: (org?.reports_to as string) ?? null,
+        canAddressUser: (org?.can_address_user as boolean) ?? true,
+        enabled: state.enabled,
+      };
+    });
+  });
+
+  ipcMain.handle('agent:getManifest', (_event, name: string) => {
+    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    const manifest = findManifest(name);
+    if (!manifest) return null;
+    return manifest;
+  });
+
+  ipcMain.handle('agent:updateManifest', (_event, name: string, updates: Record<string, unknown>) => {
+    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    saveAgentConfig(name, updates);
+  });
+
+  ipcMain.handle('agent:getPrompt', (_event, name: string, promptName: string) => {
+    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    // Validate promptName - only allow simple filenames, no path traversal
+    if (!/^[a-zA-Z0-9_-]+$/.test(promptName.replace(/\.md$/, ''))) {
+      throw new Error('Invalid prompt name');
+    }
+    const config = getConfig();
+    const originalAgent = config.AGENT_NAME;
+    config.reloadForAgent(name);
+    const content = loadPrompt(promptName, '');
+    config.reloadForAgent(originalAgent);
+    return content;
+  });
+
+  ipcMain.handle('agent:updatePrompt', (_event, name: string, promptName: string, content: string) => {
+    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    // Validate promptName - only allow simple filenames, no path traversal
+    if (!/^[a-zA-Z0-9_-]+$/.test(promptName.replace(/\.md$/, ''))) {
+      throw new Error('Invalid prompt name');
+    }
+    const filename = promptName.endsWith('.md') ? promptName : `${promptName}.md`;
+    const promptsDir = path.join(USER_DATA, 'agents', name, 'prompts');
+    fs.mkdirSync(promptsDir, { recursive: true });
+    const promptPath = path.join(promptsDir, filename);
+    fs.writeFileSync(promptPath, content, 'utf-8');
+  });
+
+  ipcMain.handle('agent:create', async (_event, opts: Record<string, unknown>) => {
+    const { createAgent } = await import('../create-agent');
+    return createAgent(opts as Parameters<typeof createAgent>[0]);
+  });
+
+  ipcMain.handle('agent:delete', (_event, name: string) => {
+    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    deleteAgent(name);
   });
 }

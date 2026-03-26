@@ -7,11 +7,13 @@
 
 import { app, ipcMain } from 'electron';
 import * as fs from 'fs';
+import * as path from 'path';
 import { execFile, execSync, spawn } from 'child_process';
-import { getConfig } from '../config';
+import { getConfig, USER_DATA } from '../config';
 import { getAllAgentsUsage, getAllActivity, getAgentUsageDetail } from '../usage';
 import { startServer, stopServer } from '../server';
 import { cronScheduler, getJobHistory } from '../channels/cron';
+import type { JobDefinition } from '../channels/cron';
 import { mcpRegistry } from '../mcp-registry';
 import { search as vectorSearch } from '../vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from '../install';
@@ -19,7 +21,7 @@ import { checkForUpdates, downloadUpdate, quitAndInstall } from '../updater';
 import { getActiveBundleVersion, checkForBundleUpdate, getPendingBundleInfo, clearHotBundle } from '../bundle-updater';
 import { createLogger, setLogForwarder, getLogBuffer } from '../logger';
 import { buildTopology, handleToggleConnection } from '../system-topology';
-import { listOrgs, getOrgDetail, createOrg, dissolveOrg, addAgentToOrg, removeAgentFromOrg } from '../org-manager';
+import { listOrgs, getOrgDetail, createOrg, dissolveOrg, addAgentToOrg, removeAgentFromOrg, updateOrg } from '../org-manager';
 import type { OrgType } from '../org-manager';
 import type { IpcContext } from '../ipc-handlers';
 
@@ -302,5 +304,67 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('org:removeAgent', (_event, agentName: string) => {
     removeAgentFromOrg(agentName);
+  });
+
+  ipcMain.handle('org:update', (_event, slug: string, updates: { name?: string; purpose?: string }) => {
+    updateOrg(slug, updates);
+  });
+
+  // -- Cron job CRUD --
+
+  function readAgentManifestRaw(agentName: string): Record<string, unknown> {
+    const manifestPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+    if (!fs.existsSync(manifestPath)) return {};
+    return JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  }
+
+  function writeAgentManifestRaw(agentName: string, manifest: Record<string, unknown>): void {
+    const manifestPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+    const tmp = manifestPath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(manifest, null, 2) + '\n');
+    fs.renameSync(tmp, manifestPath);
+  }
+
+  ipcMain.handle('cron:addJob', (_event, agentName: string, jobName: string, jobDef: JobDefinition) => {
+    if (!NAME_RE.test(agentName) || !NAME_RE.test(jobName)) {
+      throw new Error('Invalid agent or job name');
+    }
+    const manifest = readAgentManifestRaw(agentName);
+    const jobs = (manifest.jobs as Record<string, JobDefinition>) || {};
+    if (jobs[jobName]) throw new Error(`Job "${jobName}" already exists for agent "${agentName}"`);
+    jobs[jobName] = jobDef;
+    manifest.jobs = jobs;
+    writeAgentManifestRaw(agentName, manifest);
+    cronScheduler.registerAgent(agentName, { [jobName]: jobDef });
+  });
+
+  ipcMain.handle('cron:editJob', (_event, agentName: string, jobName: string, updates: Partial<JobDefinition>) => {
+    if (!NAME_RE.test(agentName) || !NAME_RE.test(jobName)) {
+      throw new Error('Invalid agent or job name');
+    }
+    const manifest = readAgentManifestRaw(agentName);
+    const jobs = (manifest.jobs as Record<string, JobDefinition>) || {};
+    if (!jobs[jobName]) throw new Error(`Job "${jobName}" not found for agent "${agentName}"`);
+    jobs[jobName] = { ...jobs[jobName], ...updates };
+    manifest.jobs = jobs;
+    writeAgentManifestRaw(agentName, manifest);
+    // Re-register all jobs for agent so the timer is updated
+    cronScheduler.registerAgent(agentName, jobs as Record<string, JobDefinition>);
+  });
+
+  ipcMain.handle('cron:deleteJob', (_event, agentName: string, jobName: string) => {
+    if (!NAME_RE.test(agentName) || !NAME_RE.test(jobName)) {
+      throw new Error('Invalid agent or job name');
+    }
+    const manifest = readAgentManifestRaw(agentName);
+    const jobs = (manifest.jobs as Record<string, JobDefinition>) || {};
+    if (!jobs[jobName]) return; // Already gone - idempotent
+    delete jobs[jobName];
+    manifest.jobs = jobs;
+    writeAgentManifestRaw(agentName, manifest);
+    cronScheduler.unregisterAgent(agentName);
+    if (Object.keys(jobs).length > 0) {
+      cronScheduler.registerAgent(agentName, jobs as Record<string, JobDefinition>);
+    }
   });
 }

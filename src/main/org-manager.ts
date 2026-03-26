@@ -395,6 +395,24 @@ export function removeAgentFromOrg(agentName: string): void {
 }
 
 /**
+ * Update org metadata (name and/or purpose).
+ *
+ * @throws If org does not exist.
+ */
+export function updateOrg(slug: string, updates: { name?: string; purpose?: string }): void {
+  const manifestPath = orgManifestPath(slug);
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Org '${slug}' not found`);
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as OrgManifest;
+  if (updates.name) manifest.name = updates.name;
+  if (updates.purpose) manifest.purpose = updates.purpose;
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+  clearCache();
+  log.info(`Updated org "${slug}"`);
+}
+
+/**
  * Dissolve an organization.
  *
  * Unassigns all agents from the org, then removes the org directory
