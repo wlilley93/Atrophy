@@ -1399,7 +1399,11 @@ async function _handleGenerateArtefact(params: Record<string, unknown>): Promise
   }
 
   // Send to renderer for display
-  _getWindow?.()?.webContents.send('artefact:load', html);
+  _getWindow?.()?.webContents.send('artefact:updated', {
+    type: 'html',
+    content: html,
+    title: 'Voice Agent Artefact',
+  });
 
   return 'Artefact generated and displayed on screen. Describe what you created to the user.';
 }

@@ -505,7 +505,7 @@ const api: AtrophyAPI = {
       'voice-agent:audio', 'voice-agent:status',
       'voice-agent:userTranscript', 'voice-agent:agentResponse',
       'voice-agent:agentResponseCorrection',
-      'app:shutdownRequested',
+      'app:shutdownRequested', 'app:openSettings',
       'bundle:ready', 'bundle:downloadProgress',
     ]);
     if (!ALLOWED_CHANNELS.has(channel)) {

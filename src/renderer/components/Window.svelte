@@ -208,9 +208,9 @@
         // The hot bundle loads on next normal restart. Restarting here
         // causes an infinite loop because the frozen app version doesn't
         // change, so the update check finds the same "newer" version again.
+      } else {
+        updateStatus = 'up-to-date';
       }
-
-      updateStatus = 'up-to-date';
     } catch {
       updateStatus = 'error';
       if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
@@ -224,20 +224,24 @@
 
     if (!api) return; // Splash will dismiss itself after decay animation
 
-    // Listen for avatar download events
-    api.onAvatarDownloadStart?.(() => {
+    // Listen for avatar download events (capture cleanups for onDestroy)
+    const c1 = api.onAvatarDownloadStart?.(() => {
       avatarDownloading = true;
       avatarDownloadPercent = 0;
     });
-    api.onAvatarDownloadProgress?.((data: { percent: number }) => {
+    const c2 = api.onAvatarDownloadProgress?.((data: { percent: number }) => {
       avatarDownloadPercent = data.percent;
     });
-    api.onAvatarDownloadComplete?.(() => {
+    const c3 = api.onAvatarDownloadComplete?.(() => {
       avatarDownloading = false;
     });
-    api.onAvatarDownloadError?.(() => {
+    const c4 = api.onAvatarDownloadError?.(() => {
       avatarDownloading = false;
     });
+    if (c1) ipcCleanups.push(c1);
+    if (c2) ipcCleanups.push(c2);
+    if (c3) ipcCleanups.push(c3);
+    if (c4) ipcCleanups.push(c4);
 
     // ── Update check phase (blocks before splash) ──
     // If an update is found, the app restarts automatically - boot stops here.
@@ -848,6 +852,11 @@
         hasNewArtefacts = true;
       }));
 
+      // Open settings from tray menu
+      ipcCleanups.push(api.on('app:openSettings', () => {
+        showSettings = true;
+      }));
+
       // Context usage updates from main process
       ipcCleanups.push(api.on('inference:contextUsage', (percent: number) => {
         contextUsagePercent = percent;
@@ -880,6 +889,7 @@
 
   onDestroy(() => {
     if (bootDecayTimer) clearInterval(bootDecayTimer);
+    if (updateBrainTimer) clearInterval(updateBrainTimer);
     if (silenceTimerId) clearTimeout(silenceTimerId);
     if (agentSwitchCleanup) agentSwitchCleanup();
     ipcCleanups.forEach((fn) => fn());
@@ -918,7 +928,14 @@
       agents.switchDirection = direction;
 
       if (api) {
-        const result = await api.switchAgent(next);
+        let result: { agentName: string; agentDisplayName: string; customSetup: string | null };
+        try {
+          result = await api.switchAgent(next);
+        } catch (err) {
+          console.error('[cycleAgent] switchAgent failed:', err);
+          session.inferenceState = 'idle';
+          return;
+        }
 
         // Another switch happened while we were awaiting - abandon
         if (gen !== _switchGeneration) return;
@@ -1085,8 +1102,10 @@
     }
   }
 
+  let _utteranceInFlight = false;
   async function processCallUtterance(chunks: Float32Array[]) {
-    if (!api) return;
+    if (!api || _utteranceInFlight) return;
+    _utteranceInFlight = true;
     // Concatenate chunks into a single buffer and send for STT
     const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
     const merged = new Float32Array(totalLen);
@@ -1106,6 +1125,8 @@
       }
     } catch {
       // Transcription failed - continue listening
+    } finally {
+      _utteranceInFlight = false;
     }
   }
 
@@ -1834,7 +1855,7 @@
   .ask-overlay {
     position: absolute;
     inset: 0;
-    z-index: 70;
+    z-index: 90; /* Must be above SetupWizard (70) and SystemMap so ask is always reachable */
     display: flex;
     align-items: center;
     justify-content: center;
