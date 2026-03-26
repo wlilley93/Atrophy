@@ -18,7 +18,7 @@ _INTEL_DB    = _ATROPHY_DIR / "agents" / "general_montgomery" / "data" / "intell
 _LOG_DIR     = _ATROPHY_DIR / "logs" / "sigint_analyst"
 _STATE_FILE  = _ATROPHY_DIR / "agents" / "sigint_analyst" / "data" / "state.json"
 
-_APP_DIR = Path("/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron")
+_APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_APP_DIR / "mcp"))
 
 _LOG_DIR.mkdir(parents=True, exist_ok=True)

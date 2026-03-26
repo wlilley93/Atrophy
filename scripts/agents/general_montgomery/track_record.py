@@ -22,6 +22,7 @@ import logging
 import sqlite3
 import subprocess
 import sys
+import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -43,7 +44,7 @@ logging.basicConfig(
 log = logging.getLogger("track_record")
 
 REVIEW_WINDOW_DAYS = 30  # predictions older than this are reviewed
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def call_claude(system: str, prompt: str, model: str = "haiku") -> str:

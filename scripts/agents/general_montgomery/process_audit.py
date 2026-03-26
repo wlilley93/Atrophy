@@ -23,6 +23,7 @@ import json
 import logging
 import sqlite3
 import sys
+import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -173,7 +174,7 @@ def get_production_summary(conn: sqlite3.Connection) -> dict:
 
 
 
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:

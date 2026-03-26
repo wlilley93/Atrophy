@@ -22,7 +22,7 @@ _INTEL_DB    = _AGENT_DIR / "data" / "intelligence.db"
 _LOG_DIR     = _ATROPHY_DIR / "logs" / "economic_io"
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-_APP_DIR = Path("/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron")
+_APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _MCP_DIR = _APP_DIR / "mcp"
 sys.path.insert(0, str(_MCP_DIR))
 

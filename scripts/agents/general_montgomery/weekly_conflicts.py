@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import re
 import sqlite3
 import sys
@@ -28,7 +29,7 @@ _LOG_DIR        = _ATROPHY_DIR / "logs" / "general_montgomery"
 _OBSIDIAN_BASE  = Path.home() / "Library/Mobile Documents/iCloud~md~obsidian/Documents/The Atrophied Mind"
 _CONFLICTS_DIR  = _OBSIDIAN_BASE / "Projects/General Montgomery/Conflicts"
 
-_APP_DIR = Path("/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron")
+_APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _MCP_DIR = _APP_DIR / "mcp"
 sys.path.insert(0, str(_MCP_DIR))
 
@@ -139,7 +140,7 @@ def fetch_worldmonitor_context(conflict_slug: str) -> str:
         return ""
 
 
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:

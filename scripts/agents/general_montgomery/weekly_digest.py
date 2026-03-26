@@ -11,6 +11,7 @@ import json
 import logging
 import sqlite3
 import sys
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -20,7 +21,7 @@ _AGENT_JSON   = _AGENT_DIR / "data" / "agent.json"
 _INTEL_DB     = _AGENT_DIR / "data" / "intelligence.db"
 _LOG_DIR      = _ATROPHY_DIR / "logs" / "general_montgomery"
 
-_APP_DIR = Path("/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron")
+_APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _MCP_DIR = _APP_DIR / "mcp"
 sys.path.insert(0, str(_MCP_DIR))
 
@@ -46,7 +47,7 @@ MERIDIAN_TRACKS = [
 
 
 
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:
@@ -116,7 +117,7 @@ def fetch_live_context() -> str:
     return "\n\n".join(parts)
 
 
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:

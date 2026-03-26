@@ -15,6 +15,7 @@ import logging
 import sqlite3
 import subprocess
 import sys
+import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -24,7 +25,7 @@ _AGENT_JSON  = _AGENT_DIR / "data" / "agent.json"
 _INTEL_DB    = _AGENT_DIR / "data" / "intelligence.db"
 _LOG_DIR     = _ATROPHY_DIR / "logs" / "general_montgomery"
 
-_APP_DIR = Path("/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron")
+_APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _MCP_DIR = _APP_DIR / "mcp"
 sys.path.insert(0, str(_MCP_DIR))
 
@@ -39,7 +40,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("three_hour_update")
 
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 SYSTEM_PROMPT = """You are General Montgomery producing a full situational brief.
 

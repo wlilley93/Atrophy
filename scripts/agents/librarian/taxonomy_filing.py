@@ -11,6 +11,7 @@ import json
 import logging
 import sqlite3
 import sys
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,7 +20,7 @@ _INTEL_DB    = _ATROPHY_DIR / "agents" / "general_montgomery" / "data" / "intell
 _LOG_DIR     = _ATROPHY_DIR / "logs" / "librarian"
 _STATE_FILE  = _ATROPHY_DIR / "agents" / "librarian" / "data" / "state.json"
 
-_APP_DIR = Path("/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron")
+_APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_APP_DIR / "mcp"))
 
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -32,7 +33,7 @@ log = logging.getLogger("taxonomy_filing")
 
 
 
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:

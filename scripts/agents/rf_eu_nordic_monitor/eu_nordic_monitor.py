@@ -29,7 +29,7 @@ _AGENT_JSON  = _ATROPHY_DIR / "agents" / "general_montgomery" / "data" / "agent.
 _LOG_DIR     = _ATROPHY_DIR / "logs" / "rf_eu_nordic_monitor"
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-_APP_DIR = Path("/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron")
+_APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_APP_DIR / "mcp"))
 sys.path.insert(0, str(_APP_DIR / "scripts" / "agents" / "shared"))
 

@@ -10,8 +10,9 @@ no API key required. Scripts import this via sys.path manipulation:
 from __future__ import annotations
 
 import subprocess
+import shutil
 
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def call_claude(

@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -31,7 +32,7 @@ _CACHE_DB      = _ATROPHY_DIR / "worldmonitor_cache.db"
 _INTEL_DB      = _AGENT_DIR / "data" / "intelligence.db"
 _SWITCHBOARD   = _ATROPHY_DIR / ".switchboard_directory.json"
 
-_APP_DIR = Path("/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron")
+_APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _MCP_DIR = _APP_DIR / "mcp"
 sys.path.insert(0, str(_MCP_DIR))
 
@@ -220,7 +221,7 @@ def is_breaking(data: dict) -> bool:
     return active > 20 or status == "CRITICAL" or status_changed
 
 
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:

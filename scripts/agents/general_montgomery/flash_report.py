@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,7 +25,7 @@ _AGENT_JSON  = _AGENT_DIR / "data" / "agent.json"
 _LOG_DIR     = _ATROPHY_DIR / "logs" / "general_montgomery"
 _STATE_FILE  = _AGENT_DIR / "data" / "flash_report_state.json"
 
-_APP_DIR = Path("/Users/williamlilley/Projects/Claude Code Projects/Atrophy App Electron")
+_APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _MCP_DIR = _APP_DIR / "mcp"
 sys.path.insert(0, str(_MCP_DIR))
 
@@ -44,7 +45,7 @@ CRITICAL_CONFIDENCE_THRESHOLD = 0.7
 
 
 
-CLAUDE_BIN = "/Users/williamlilley/.local/bin/claude"
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:
