@@ -194,8 +194,12 @@
     });
 
     try {
-      // Check and download hot bundle update (blocks until done or no update)
-      const newVersion = await api.checkBundleUpdate();
+      // Check for hot bundle update with a 15s timeout so boot never hangs.
+      // In dev mode the IPC returns null immediately. In production it may
+      // hit the network - if it hangs, skip and boot normally.
+      const updatePromise = api.checkBundleUpdate();
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000));
+      const newVersion = await Promise.race([updatePromise, timeoutPromise]);
 
       if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
       progressCleanup?.();
@@ -203,10 +207,6 @@
       if (newVersion) {
         updateStatus = 'downloaded';
         updateVersion = newVersion;
-        // Bundle downloaded - continue boot instead of restarting.
-        // The hot bundle loads on next normal restart. Restarting here
-        // causes an infinite loop because the frozen app version doesn't
-        // change, so the update check finds the same "newer" version again.
       } else {
         updateStatus = 'up-to-date';
       }
@@ -367,17 +367,18 @@
       if (i > 0) {
         await new Promise(r => setTimeout(r, PARA_STREAM_DELAY));
       }
+      const prevLength = cumulativeText.length;
       cumulativeText += (cumulativeText ? '\n\n' : '') + SETUP_PARAGRAPHS[i];
-      // Update the single agent message with growing text
+      const msgs = transcript.messages;
       if (i === 0) {
+        // First paragraph - add message (revealed starts at 0, reveal timer animates it)
         addMessage('agent', cumulativeText);
-      } else {
-        // Replace last message content with the growing text
-        const msgs = transcript.messages;
-        if (msgs.length > 0) {
-          msgs[msgs.length - 1].content = cumulativeText;
-          msgs[msgs.length - 1].revealed = cumulativeText.length;
-        }
+      } else if (msgs.length > 0) {
+        const last = msgs[msgs.length - 1];
+        // Complete the previous paragraph's reveal before appending new one
+        last.revealed = prevLength;
+        // Append new paragraph text - the reveal timer will animate from prevLength
+        last.content = cumulativeText;
       }
     }
     completeLast();
@@ -472,10 +473,8 @@
     const nextStep = setupServiceStep + 1;
     const narration = SETUP_NARRATIONS[nextStep];
 
-    setupServiceStep = nextStep;
-
     if (nextStep >= SETUP_SERVICE_TITLES.length) {
-      // All services done
+      // All services done - set step AFTER narration so InputBar stays hidden
       setupShowServiceCard = false;
 
       // Health check - verify Claude CLI is reachable before proceeding
@@ -510,18 +509,29 @@
         await streamNarration('System configured. Now - who do you want to create?', 'service_complete.mp3');
       }
 
+      // Now that narration is done, advance the step counter to show InputBar
+      setupServiceStep = nextStep;
+
       // Trigger InputBar enter animation now that services are done
       setupJustEnteredChat = true;
       setTimeout(() => { setupJustEnteredChat = false; }, 800);
-    } else if (narration) {
-      // Hide card, stream narration with pre-baked audio, then show next card
-      setupShowServiceCard = false;
-      await streamNarration(narration.text, narration.audio);
-      setupShowServiceCard = true;
     } else {
-      setupShowServiceCard = true;
+      // Non-final step - advance counter immediately
+      setupServiceStep = nextStep;
+
+      if (narration) {
+        // Hide card, stream narration with pre-baked audio, then show next card
+        setupShowServiceCard = false;
+        await streamNarration(narration.text, narration.audio);
+        setupShowServiceCard = true;
+      } else {
+        setupShowServiceCard = true;
+      }
     }
   }
+
+  /** Whether the first wizard message needs service context prepended */
+  let setupNeedsServiceContext = true;
 
   /** Submit handler passed to InputBar during setup - routes to wizard inference */
   async function setupSubmit(text: string) {
@@ -530,15 +540,32 @@
     completeLast();
     session.inferenceState = 'thinking';
 
-    try {
-      const response = await api.wizardInference(text);
+    // Prepend service context on first wizard inference so Xan knows
+    // which services were saved/skipped (it can't see the transcript)
+    let inferenceText = text;
+    if (setupNeedsServiceContext) {
+      setupNeedsServiceContext = false;
+      const ctx = [
+        ...setupServicesSaved.map(k => `(SERVICE: ${k} saved)`),
+        ...setupServicesSkipped.map(k => `(SERVICE: ${k} skipped)`),
+      ].join('\n');
+      if (ctx) inferenceText = `${ctx}\n\n${text}`;
+    }
 
-      // Add agent response to the main transcript
-      addMessage('agent', response);
-      completeLast();
+    try {
+      const response = await api.wizardInference(inferenceText);
 
       // Check if the response contains AGENT_CONFIG JSON
       const configMatch = response.match(/```json\s*(\{[\s\S]*?"AGENT_CONFIG"[\s\S]*?\})\s*```/);
+
+      // Add agent response to transcript - strip the JSON block if present
+      // so the user sees the natural language part, not raw config
+      const displayText = configMatch
+        ? response.replace(/```json\s*\{[\s\S]*?"AGENT_CONFIG"[\s\S]*?\}\s*```/, '').trim() || 'Creating it.'
+        : response;
+      addMessage('agent', displayText);
+      completeLast();
+
       if (configMatch) {
         try {
           const parsed = JSON.parse(configMatch[1]);
@@ -559,13 +586,22 @@
                 agents.displayName = agentConfig.display_name;
               }
 
-              // Brief pause on creating screen, then done
+              // Persist setup_complete now so a crash during the 'done' overlay
+              // doesn't cause setup to restart on next launch.
+              api.updateConfig({ setup_complete: true }).catch(() => {});
+
+              // Keep inferenceState as 'thinking' to block InputBar during creating overlay.
+              // It will be reset to 'idle' by finishSetup via onSetupWizardComplete.
               setTimeout(() => {
                 setupWizardPhase = 'done';
               }, 2500);
+              return; // skip the inferenceState = 'idle' below
             } catch (createErr) {
               // Agent creation or switch failed - recover from creating overlay
               setupWizardPhase = 'hidden';
+              // Undo setup_complete if it was written during a partial success
+              // (e.g. createAgent OK but switchAgent failed)
+              api.updateConfig({ setup_complete: false }).catch(() => {});
               addMessage('system', `Failed to create agent: ${createErr instanceof Error ? createErr.message : 'Unknown error'}. Try again.`);
               completeLast();
             }
@@ -583,6 +619,7 @@
   }
 
   function skipAgentCreation() {
+    clearTranscript();
     finishSetup();
   }
 
@@ -590,6 +627,7 @@
     setupActive = false;
     needsSetup = false;
     setupWizardPhase = 'hidden';
+    session.inferenceState = 'idle';
 
     if (api) {
       const updates: Record<string, unknown> = {
@@ -1419,8 +1457,8 @@
     />
   {/if}
 
-  <!-- Input bar - hidden during splash, welcome, and setup service phase -->
-  {#if !(setupWizardPhase === 'welcome' || splashVisible || (setupActive && setupServiceStep < SETUP_SERVICE_TITLES.length))}
+  <!-- Input bar - hidden during splash, welcome, setup service phase, and creating/done overlays -->
+  {#if !(setupWizardPhase === 'welcome' || setupWizardPhase === 'creating' || setupWizardPhase === 'done' || splashVisible || (setupActive && setupServiceStep < SETUP_SERVICE_TITLES.length))}
     <InputBar
       onSubmit={setupActive && setupServiceStep >= SETUP_SERVICE_TITLES.length ? setupSubmit : undefined}
       placeholder={setupActive && setupServiceStep >= SETUP_SERVICE_TITLES.length ? 'Describe who you want to create...' : undefined}
@@ -1429,7 +1467,7 @@
   {/if}
 
   <!-- Skip agent creation (visible during AI creation phase of setup) -->
-  {#if setupActive && !setupShowServiceCard && setupServiceStep >= 4}
+  {#if setupActive && !setupShowServiceCard && setupServiceStep >= SETUP_SERVICE_TITLES.length && setupWizardPhase === 'hidden'}
     <button class="skip-creation-btn" onclick={skipAgentCreation}>
       Skip agent creation
     </button>
