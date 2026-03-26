@@ -11,7 +11,7 @@ import { execFile, execSync, spawn } from 'child_process';
 import { getConfig } from '../config';
 import { getAllAgentsUsage, getAllActivity } from '../usage';
 import { startServer, stopServer } from '../server';
-import { cronScheduler } from '../channels/cron';
+import { cronScheduler, getJobHistory } from '../channels/cron';
 import { mcpRegistry } from '../mcp-registry';
 import { search as vectorSearch } from '../vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from '../install';
@@ -70,6 +70,10 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('cron:schedule', () => {
     return cronScheduler.getSchedule();
+  });
+
+  ipcMain.handle('cron:history', () => {
+    return getJobHistory();
   });
 
   ipcMain.handle('cron:runNow', (_event, agentName: string, jobName: string) => {

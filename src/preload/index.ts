@@ -126,6 +126,7 @@ export interface AtrophyAPI {
 
   // Jobs / Cron (v2 - in-process scheduler)
   getSchedule: () => Promise<unknown[]>;
+  getJobHistory: () => Promise<unknown[]>;
   runJobNow: (agentName: string, jobName: string) => Promise<void>;
   getSchedulerStatus: () => Promise<{ schedule: unknown[] }>;
 
@@ -162,15 +163,15 @@ export interface AtrophyAPI {
   // Voice agent
   voiceAgent: {
     start: () => Promise<boolean>;
-    stop: () => void;
+    stop: () => Promise<void>;
     sendText: (text: string) => Promise<void>;
     status: () => Promise<unknown>;
-    setMic: (muted: boolean) => void;
-    setAudio: (enabled: boolean) => void;
-    onAudio: (cb: (data: ArrayBuffer) => void) => void;
-    onStatus: (cb: (status: string) => void) => void;
-    onTranscript: (cb: (text: string) => void) => void;
-    onResponse: (cb: (text: string) => void) => void;
+    setMic: (muted: boolean) => Promise<void>;
+    setAudio: (enabled: boolean) => Promise<void>;
+    onAudio: (cb: (data: ArrayBuffer) => void) => () => void;
+    onStatus: (cb: (status: string) => void) => () => void;
+    onTranscript: (cb: (text: string) => void) => () => void;
+    onResponse: (cb: (text: string) => void) => () => void;
   };
 
   // Voice call mode
@@ -374,6 +375,7 @@ const api: AtrophyAPI = {
 
   // Jobs / Cron (v2 - in-process scheduler)
   getSchedule: () => ipcRenderer.invoke('cron:schedule'),
+  getJobHistory: () => ipcRenderer.invoke('cron:history'),
   runJobNow: (agentName: string, jobName: string) => ipcRenderer.invoke('cron:runNow', agentName, jobName),
   getSchedulerStatus: () => ipcRenderer.invoke('cron:schedulerStatus'),
 
@@ -423,10 +425,26 @@ const api: AtrophyAPI = {
     status: () => ipcRenderer.invoke('voice-agent:status'),
     setMic: (muted: boolean) => ipcRenderer.invoke('voice-agent:setMic', muted),
     setAudio: (enabled: boolean) => ipcRenderer.invoke('voice-agent:setAudio', enabled),
-    onAudio: (cb: (data: ArrayBuffer) => void) => ipcRenderer.on('voice-agent:audio', (_e, data) => cb(data)),
-    onStatus: (cb: (status: string) => void) => ipcRenderer.on('voice-agent:status', (_e, status) => cb(status)),
-    onTranscript: (cb: (text: string) => void) => ipcRenderer.on('voice-agent:userTranscript', (_e, text) => cb(text)),
-    onResponse: (cb: (text: string) => void) => ipcRenderer.on('voice-agent:agentResponse', (_e, text) => cb(text)),
+    onAudio: (cb: (data: ArrayBuffer) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, data: ArrayBuffer) => cb(data);
+      ipcRenderer.on('voice-agent:audio', handler);
+      return () => ipcRenderer.removeListener('voice-agent:audio', handler);
+    },
+    onStatus: (cb: (status: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, status: string) => cb(status);
+      ipcRenderer.on('voice-agent:status', handler);
+      return () => ipcRenderer.removeListener('voice-agent:status', handler);
+    },
+    onTranscript: (cb: (text: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, text: string) => cb(text);
+      ipcRenderer.on('voice-agent:userTranscript', handler);
+      return () => ipcRenderer.removeListener('voice-agent:userTranscript', handler);
+    },
+    onResponse: (cb: (text: string) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, text: string) => cb(text);
+      ipcRenderer.on('voice-agent:agentResponse', handler);
+      return () => ipcRenderer.removeListener('voice-agent:agentResponse', handler);
+    },
   },
 
   // Voice call mode

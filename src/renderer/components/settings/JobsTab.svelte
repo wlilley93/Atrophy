@@ -1,51 +1,65 @@
 <script lang="ts">
   import { api } from '../../api';
 
-  let jobsList = $state<any[]>([]);
-  let jobHistory = $state<any[]>([]);
+  interface ScheduleEntry {
+    name: string;
+    agent: string;
+    definition: { cron?: string; script: string; description?: string; type?: string; interval_seconds?: number };
+    nextRun: string | null;
+    lastRun: string | null;
+    running: boolean;
+    disabled: boolean;
+  }
+
+  interface HistoryEntry {
+    agent: string;
+    job: string;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    durationMs: number;
+    timestamp: string;
+  }
+
+  let jobsList = $state<ScheduleEntry[]>([]);
+  let jobHistory = $state<HistoryEntry[]>([]);
   let jobsLoading = $state(false);
   let runningJob = $state<string | null>(null);
   let expandedJob = $state<number | null>(null);
-  let jobLogContent = $state('');
-  let jobLogName = $state<string | null>(null);
 
   export async function load() {
     if (!api) return;
     jobsLoading = true;
     try {
-      const [jobs, history] = await Promise.all([
-        api.getJobs(),
+      const [schedule, history] = await Promise.all([
+        api.getSchedule(),
         api.getJobHistory(),
       ]);
-      jobsList = jobs || [];
-      jobHistory = history || [];
+      jobsList = (schedule || []) as ScheduleEntry[];
+      jobHistory = (history || []) as HistoryEntry[];
     } catch { /* ignore */ }
     jobsLoading = false;
   }
 
-  async function triggerJob(name: string) {
+  async function triggerJob(agent: string, jobName: string) {
     if (!api || runningJob) return;
-    runningJob = name;
+    runningJob = jobName;
     try {
-      await api.runJob(name);
+      await api.runJobNow(agent, jobName);
       await load();
     } catch { /* ignore */ }
     runningJob = null;
   }
 
-  async function viewJobLog(name: string) {
-    if (!api) return;
-    if (jobLogName === name) {
-      jobLogName = null;
-      jobLogContent = '';
-      return;
+  function formatSchedule(job: ScheduleEntry): string {
+    if (job.definition.cron) return job.definition.cron;
+    if (job.definition.interval_seconds) {
+      const s = job.definition.interval_seconds;
+      if (s >= 3600) return `every ${(s / 3600).toFixed(s % 3600 ? 1 : 0)}h`;
+      if (s >= 60) return `every ${Math.round(s / 60)}m`;
+      return `every ${s}s`;
     }
-    jobLogName = name;
-    try {
-      jobLogContent = await api.readJobLog(name, 100) || '(empty)';
-    } catch {
-      jobLogContent = '(could not read log)';
-    }
+    return '';
   }
 
   function formatTimestamp(ts: string): string {
@@ -73,29 +87,24 @@
         <div class="job-row">
           <div class="job-info">
             <span class="job-name">{job.name}</span>
-            <span class="job-schedule">{job.schedule || ''}</span>
-            <span class="job-status" class:installed={job.installed}>
-              {job.installed ? 'installed' : 'not installed'}
+            <span class="job-agent">{job.agent}</span>
+            <span class="job-schedule">{formatSchedule(job)}</span>
+            <span class="job-status" class:installed={!job.disabled}>
+              {job.disabled ? 'disabled' : job.running ? 'running' : 'active'}
             </span>
           </div>
           <div class="job-actions">
             <button
               class="job-btn"
               disabled={runningJob !== null}
-              onclick={() => triggerJob(job.name)}
+              onclick={() => triggerJob(job.agent, job.name)}
             >
               {runningJob === job.name ? '...' : 'Run'}
             </button>
-            <button class="job-btn" onclick={() => viewJobLog(job.name)}>
-              {jobLogName === job.name ? 'Hide' : 'Log'}
-            </button>
           </div>
         </div>
-        {#if job.description}
-          <div class="job-desc">{job.description}</div>
-        {/if}
-        {#if jobLogName === job.name}
-          <pre class="job-log">{jobLogContent}</pre>
+        {#if job.definition.description}
+          <div class="job-desc">{job.definition.description}</div>
         {/if}
       {/each}
     {/if}
@@ -119,14 +128,14 @@
             <span class="activity-badge" style="color: {entry.exitCode === 0 ? '#5ce0d6' : '#ff6b6b'}">
               {entry.exitCode === 0 ? 'OK' : 'FAIL'}
             </span>
-            <span class="activity-action">{entry.name}</span>
+            <span class="activity-action">{entry.job}</span>
             <span class="activity-agent">{entry.agent}</span>
             <span class="activity-spacer"></span>
             <span class="job-duration">{entry.durationMs < 1000 ? entry.durationMs + 'ms' : (entry.durationMs / 1000).toFixed(1) + 's'}</span>
             <span class="activity-time">{formatTimestamp(entry.timestamp)}</span>
           </div>
           {#if expandedJob === i}
-            <pre class="activity-detail">{entry.output || '(no output)'}</pre>
+            <pre class="activity-detail">{entry.stdout || '(no output)'}{entry.stderr ? '\n\nSTDERR:\n' + entry.stderr : ''}</pre>
           {/if}
         </button>
       {/each}
@@ -183,6 +192,11 @@
     font-weight: 600;
   }
 
+  .job-agent {
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 11px;
+  }
+
   .job-schedule {
     color: rgba(255, 255, 255, 0.3);
     font-size: 11px;
@@ -234,20 +248,6 @@
     color: rgba(255, 255, 255, 0.3);
     font-size: 11px;
     padding: 0 0 6px 0;
-  }
-
-  .job-log {
-    margin: 4px 0 10px;
-    padding: 8px;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 4px;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 11px;
-    font-family: var(--font-mono);
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 300px;
-    overflow-y: auto;
   }
 
   .job-duration {
