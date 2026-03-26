@@ -27,6 +27,7 @@ export function registerTelegramHandlers(_ctx: IpcContext): void {
   });
 
   ipcMain.handle('telegram:discoverChatId', async (_event, botToken: string, agentName?: string) => {
+    if (agentName && !AGENT_NAME_RE.test(agentName)) throw new Error('Invalid agent name');
     const result = await discoverChatId(botToken);
     if (result) {
       const c = getConfig();

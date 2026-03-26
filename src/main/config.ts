@@ -60,12 +60,12 @@ function loadEnvFile(): void {
       if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
         val = val.slice(1, -1);
       }
-      // Only load whitelisted keys and reject dangerous env overrides
-      const DANGEROUS_KEYS = new Set([
-        'NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE', 'LD_PRELOAD',
-        'DYLD_INSERT_LIBRARIES', 'PATH', 'HOME',
-      ]);
-      if (key && !process.env[key] && !DANGEROUS_KEYS.has(key)) {
+      // Only load keys that are in the whitelist or match the per-agent token pattern.
+      // Reject everything else to prevent arbitrary env var injection.
+      const isAllowed = ALLOWED_ENV_KEYS.has(key)
+        || /^[A-Z][A-Z0-9_]*_TELEGRAM_(BOT_TOKEN|CHAT_ID|DM_CHAT_ID)$/.test(key)
+        || /^[A-Z][A-Z0-9_]*_ELEVENLABS_(API_KEY|VOICE_ID)$/.test(key);
+      if (key && !process.env[key] && isAllowed) {
         process.env[key] = val;
       }
     }

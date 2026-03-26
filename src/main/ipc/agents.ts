@@ -174,6 +174,11 @@ export function registerAgentHandlers(ctx: IpcContext): void {
   // -- Ask-user (MCP ask_user -> GUI dialog) --
 
   ipcMain.handle('ask:respond', (_event, requestId: string, response: string | boolean | null) => {
+    // Verify the requestId matches the active ask dialog to prevent stale/fabricated responses
+    if (!ctx.pendingAskId || ctx.pendingAskId !== requestId) {
+      log.warn(`ask:respond ignored: requestId mismatch (expected ${ctx.pendingAskId}, got ${requestId})`);
+      return;
+    }
     // If a destination was set (secure_input), route the value before writing the response
     let destinationFailed = false;
     if (ctx.pendingAskDestination && typeof response === 'string' && response) {

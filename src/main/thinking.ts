@@ -91,12 +91,16 @@ export function classifyEffort(
   // -- Check LOW signals first (short-circuit for fast responses) --
 
   if (length < 30) {
-    const words = new Set(lower.replace(/[!.,?]+$/, '').split(/\s+/));
-    for (const w of words) {
-      if (GREETINGS.has(w)) return 'low';
+    // Don't fast-path low if vulnerability markers are present
+    // ("hey I'm scared", "hi I'm not okay" need high effort, not low)
+    if (!hasAny(lower, VULNERABILITY_MARKERS)) {
+      const words = new Set(lower.replace(/[!.,?]+$/, '').split(/\s+/));
+      for (const w of words) {
+        if (GREETINGS.has(w)) return 'low';
+      }
+      const stripped = lower.replace(/[!.,?]+$/, '').trim();
+      if (ACKNOWLEDGMENTS.has(stripped)) return 'low';
     }
-    const stripped = lower.replace(/[!.,?]+$/, '').trim();
-    if (ACKNOWLEDGMENTS.has(stripped)) return 'low';
   }
 
   if (length < 60 && hasAny(lower, SIMPLE_QUESTION_PREFIXES)) {

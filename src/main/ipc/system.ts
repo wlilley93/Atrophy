@@ -76,11 +76,15 @@ export function registerSystemHandlers(ctx: IpcContext): void {
     return getJobHistory();
   });
 
+  const NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
   ipcMain.handle('cron:runNow', (_event, agentName: string, jobName: string) => {
+    if (!NAME_RE.test(agentName) || !NAME_RE.test(jobName)) return;
     return cronScheduler.runNow(agentName, jobName);
   });
 
   ipcMain.handle('cron:reset', (_event, agentName: string, jobName: string) => {
+    if (!NAME_RE.test(agentName) || !NAME_RE.test(jobName)) return;
     cronScheduler.resetJob(agentName, jobName);
   });
 

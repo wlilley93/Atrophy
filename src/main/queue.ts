@@ -97,10 +97,10 @@ function releaseLock(lockPath: string): void {
  * Execute an async function while holding an exclusive file lock on the queue file.
  * The lock is always released, even if the function throws.
  */
-async function withLock<T>(queueFile: string, fn: () => T): Promise<T> {
+async function withLock<T>(queueFile: string, fn: () => T | Promise<T>): Promise<T> {
   const lockPath = await acquireLock(queueFile);
   try {
-    return fn();
+    return await fn();
   } finally {
     releaseLock(lockPath);
   }

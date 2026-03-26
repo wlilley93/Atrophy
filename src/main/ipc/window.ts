@@ -202,17 +202,30 @@ Output EXACTLY this format - a single fenced JSON block:
   someone who can create anything you describe.`;
 
     return new Promise<string>((resolve) => {
+      let settled = false;
+      const settle = (text: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(safetyTimeout);
+        resolve(text);
+      };
+
       const emitter = streamInference(text, wizardPrompt, wizardSessionId);
       let fullText = '';
+
+      // Safety timeout - resolve with whatever we have if inference hangs
+      const safetyTimeout = setTimeout(() => {
+        settle(fullText || 'Something went wrong. Try again.');
+      }, 5 * 60 * 1000);
+
       emitter.on('event', (evt: InferenceEvent) => {
         if (evt.type === 'TextDelta') {
           fullText += evt.text;
         } else if (evt.type === 'StreamDone') {
-          // Persist session ID so subsequent wizard turns share context
           wizardSessionId = evt.sessionId || wizardSessionId;
-          resolve(evt.fullText || fullText);
+          settle(evt.fullText || fullText);
         } else if (evt.type === 'StreamError') {
-          resolve('Something went wrong. Try again.');
+          settle('Something went wrong. Try again.');
         }
       });
     });
