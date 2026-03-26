@@ -142,15 +142,6 @@ Produce the full weekly digest across all six tracks. Identify the week's most s
     return call_claude(system, user, "sonnet")
 
 
-def send_telegram(token: str, chat_id: str, text: str):
-    import urllib.request
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}).encode()
-    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
-    if not result.get("ok"):
-        raise RuntimeError(f"Telegram error: {result}")
 
 
 def run():

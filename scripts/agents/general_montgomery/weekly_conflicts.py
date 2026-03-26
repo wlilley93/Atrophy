@@ -240,10 +240,6 @@ def log_brief_to_obsidian(conflict: dict, date: str, title: str, content: str):
     log.info(f"Brief logged to Obsidian: {file_path}")
 
 
-def send_telegram(token: str, chat_id: str, text: str):
-    """Send text message via Telegram."""
-    import urllib.request
-    import urllib.parse
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = json.dumps({

@@ -28,6 +28,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from shared.telegram_utils import send_telegram
+from shared.claude_cli import call_claude
 from shared.credentials import load_telegram_credentials
 
 _ATROPHY_DIR   = Path.home() / ".atrophy"
@@ -96,9 +98,6 @@ def load_cfg():
         return json.load(f)
 
 
-def send_telegram(token: str, chat_id: str, text: str):
-    import urllib.request
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
 
     # Split if over 4000 chars
     chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]

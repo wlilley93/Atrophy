@@ -130,18 +130,6 @@ def load_credentials():
     return load_telegram_credentials("general_montgomery")
 
 
-def send_telegram(token: str, chat_id: str, text: str):
-    import urllib.request
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = json.dumps({
-        "chat_id": chat_id, "text": text, "parse_mode": "Markdown"
-    }).encode()
-    req = urllib.request.Request(url, data=payload,
-                                headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
-    if not result.get("ok"):
-        raise RuntimeError(f"Telegram error: {result}")
 
 
 def get_open_commissions(conn: sqlite3.Connection) -> list[dict]:

@@ -1,13 +1,14 @@
 /**
  * Daily agent data backup.
  *
- * Snapshots agent manifests, prompts, and org configs to
- * ~/.atrophy/backups/YYYY-MM-DD/. Keeps the last 7 days.
- * Memory.db is excluded (too large, has its own WAL journal).
+ * Snapshots agent manifests, prompts, emotional state, memory.db,
+ * and org configs to ~/.atrophy/backups/YYYY-MM-DD/. Keeps the last 7 days.
+ * Handles org-nested directory structure (agents/<org>/<name>/).
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import Database from 'better-sqlite3';
 import { USER_DATA } from './config';
 import { createLogger } from './logger';
 
@@ -18,13 +19,11 @@ const MAX_BACKUPS = 7;
 
 /**
  * Run a daily backup if one hasn't been done today.
- * Copies agent manifests, prompts, emotional state, and org configs.
  */
 export function backupAgentData(): void {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const today = new Date().toISOString().slice(0, 10);
   const todayDir = path.join(BACKUP_DIR, today);
 
-  // Skip if already backed up today
   if (fs.existsSync(todayDir)) {
     log.debug(`Backup already exists for ${today}`);
     return;
@@ -33,60 +32,20 @@ export function backupAgentData(): void {
   try {
     fs.mkdirSync(todayDir, { recursive: true });
 
-    // Backup agent data (manifests, prompts, emotional state - NOT memory.db)
+    // Backup agents (handles flat and org-nested dirs)
     const agentsDir = path.join(USER_DATA, 'agents');
     if (fs.existsSync(agentsDir)) {
-      const agentBackupDir = path.join(todayDir, 'agents');
-      for (const agentName of fs.readdirSync(agentsDir)) {
-        const agentSrc = path.join(agentsDir, agentName);
-        if (!fs.statSync(agentSrc).isDirectory()) continue;
-
-        const agentDst = path.join(agentBackupDir, agentName);
-
-        // Copy manifest
-        const manifestSrc = path.join(agentSrc, 'data', 'agent.json');
-        if (fs.existsSync(manifestSrc)) {
-          const manifestDst = path.join(agentDst, 'data');
-          fs.mkdirSync(manifestDst, { recursive: true });
-          fs.copyFileSync(manifestSrc, path.join(manifestDst, 'agent.json'));
-        }
-
-        // Copy emotional state
-        const emotionSrc = path.join(agentSrc, 'data', '.emotional_state.json');
-        if (fs.existsSync(emotionSrc)) {
-          const emotionDst = path.join(agentDst, 'data');
-          fs.mkdirSync(emotionDst, { recursive: true });
-          fs.copyFileSync(emotionSrc, path.join(emotionDst, '.emotional_state.json'));
-        }
-
-        // Copy prompts directory
-        const promptsSrc = path.join(agentSrc, 'prompts');
-        if (fs.existsSync(promptsSrc)) {
-          const promptsDst = path.join(agentDst, 'prompts');
-          fs.mkdirSync(promptsDst, { recursive: true });
-          for (const file of fs.readdirSync(promptsSrc)) {
-            if (file.endsWith('.md')) {
-              fs.copyFileSync(
-                path.join(promptsSrc, file),
-                path.join(promptsDst, file),
-              );
-            }
-          }
-        }
-      }
+      backupAgentsInDir(agentsDir, path.join(todayDir, 'agents'));
     }
 
     // Backup org configs
     const orgsDir = path.join(USER_DATA, 'orgs');
     if (fs.existsSync(orgsDir)) {
-      const orgBackupDir = path.join(todayDir, 'orgs');
       for (const orgSlug of fs.readdirSync(orgsDir)) {
         const orgSrc = path.join(orgsDir, orgSlug);
         if (!fs.statSync(orgSrc).isDirectory()) continue;
-
-        const orgDst = path.join(orgBackupDir, orgSlug);
+        const orgDst = path.join(todayDir, 'orgs', orgSlug);
         fs.mkdirSync(orgDst, { recursive: true });
-
         const manifestSrc = path.join(orgSrc, 'org.json');
         if (fs.existsSync(manifestSrc)) {
           fs.copyFileSync(manifestSrc, path.join(orgDst, 'org.json'));
@@ -94,36 +53,95 @@ export function backupAgentData(): void {
       }
     }
 
-    // Backup global config
-    const configSrc = path.join(USER_DATA, 'config.json');
-    if (fs.existsSync(configSrc)) {
-      fs.copyFileSync(configSrc, path.join(todayDir, 'config.json'));
-    }
-
-    // Backup agent states
-    const statesSrc = path.join(USER_DATA, 'agent_states.json');
-    if (fs.existsSync(statesSrc)) {
-      fs.copyFileSync(statesSrc, path.join(todayDir, 'agent_states.json'));
+    // Backup global config and agent states
+    for (const file of ['config.json', 'agent_states.json']) {
+      const src = path.join(USER_DATA, file);
+      if (fs.existsSync(src)) fs.copyFileSync(src, path.join(todayDir, file));
     }
 
     log.info(`Daily backup created: ${todayDir}`);
-
-    // Prune old backups
     pruneBackups();
   } catch (e) {
     log.error(`Backup failed: ${e}`);
   }
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursively backup agents. If an entry has data/, it's an agent.
+ * Otherwise it's an org directory - recurse into it.
+ */
+function backupAgentsInDir(srcDir: string, dstDir: string): void {
+  for (const entry of fs.readdirSync(srcDir)) {
+    const entrySrc = path.join(srcDir, entry);
+    try {
+      if (!fs.statSync(entrySrc).isDirectory()) continue;
+    } catch { continue; }
+
+    if (fs.existsSync(path.join(entrySrc, 'data'))) {
+      backupSingleAgent(entrySrc, path.join(dstDir, entry));
+    } else {
+      backupAgentsInDir(entrySrc, path.join(dstDir, entry));
+    }
+  }
+}
+
+function backupSingleAgent(agentSrc: string, agentDst: string): void {
+  const dataDst = path.join(agentDst, 'data');
+
+  // Manifest
+  const manifestSrc = path.join(agentSrc, 'data', 'agent.json');
+  if (fs.existsSync(manifestSrc)) {
+    fs.mkdirSync(dataDst, { recursive: true });
+    fs.copyFileSync(manifestSrc, path.join(dataDst, 'agent.json'));
+  }
+
+  // Emotional state
+  const emotionSrc = path.join(agentSrc, 'data', '.emotional_state.json');
+  if (fs.existsSync(emotionSrc)) {
+    fs.mkdirSync(dataDst, { recursive: true });
+    fs.copyFileSync(emotionSrc, path.join(dataDst, '.emotional_state.json'));
+  }
+
+  // Memory database (safe backup via VACUUM INTO - creates a clean copy
+  // without holding locks or interfering with active connections)
+  const dbSrc = path.join(agentSrc, 'data', 'memory.db');
+  if (fs.existsSync(dbSrc)) {
+    fs.mkdirSync(dataDst, { recursive: true });
+    const dbDst = path.join(dataDst, 'memory.db');
+    try {
+      const db = new Database(dbSrc, { readonly: true });
+      db.pragma('journal_mode = WAL');
+      db.exec(`VACUUM INTO '${dbDst.replace(/'/g, "''")}'`);
+      db.close();
+    } catch (e) {
+      log.debug(`memory.db backup skipped for ${path.basename(agentSrc)}: ${e}`);
+    }
+  }
+
+  // Prompts
+  const promptsSrc = path.join(agentSrc, 'prompts');
+  if (fs.existsSync(promptsSrc)) {
+    const promptsDst = path.join(agentDst, 'prompts');
+    fs.mkdirSync(promptsDst, { recursive: true });
+    for (const file of fs.readdirSync(promptsSrc)) {
+      if (file.endsWith('.md')) {
+        fs.copyFileSync(path.join(promptsSrc, file), path.join(promptsDst, file));
+      }
+    }
+  }
+}
+
 function pruneBackups(): void {
   try {
     if (!fs.existsSync(BACKUP_DIR)) return;
-
     const entries = fs.readdirSync(BACKUP_DIR)
       .filter(e => /^\d{4}-\d{2}-\d{2}$/.test(e))
       .sort()
       .reverse();
-
     for (let i = MAX_BACKUPS; i < entries.length; i++) {
       const old = path.join(BACKUP_DIR, entries[i]);
       fs.rmSync(old, { recursive: true, force: true });

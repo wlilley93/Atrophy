@@ -21,6 +21,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from shared.telegram_utils import send_telegram
 from shared.credentials import load_telegram_credentials
 
 _ATROPHY_DIR = Path.home() / ".atrophy"
@@ -65,15 +66,6 @@ def load_cfg():
         return json.load(f)
 
 
-def send_telegram(token: str, chat_id: str, text: str):
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = json.dumps({
-        "chat_id": chat_id, "text": text, "parse_mode": "Markdown"
-    }).encode()
-    req = urllib.request.Request(url, data=payload,
-                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
 
 
 def fetch_hansard(keyword: str, days_back: int = 2) -> list[dict]:

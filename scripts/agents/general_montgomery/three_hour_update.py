@@ -20,6 +20,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from shared.telegram_utils import send_telegram
+from shared.claude_cli import call_claude
 from shared.credentials import load_telegram_credentials
 
 _ATROPHY_DIR = Path.home() / ".atrophy"
@@ -155,18 +157,6 @@ def get_recent_flash_reports(db: sqlite3.Connection) -> list[str]:
     return [r[0] for r in cur.fetchall()]
 
 
-def send_telegram(token: str, chat_id: str, text: str):
-    import urllib.request
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = json.dumps({
-        "chat_id": chat_id, "text": text, "parse_mode": "Markdown"
-    }).encode()
-    req = urllib.request.Request(url, data=payload,
-                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
-    if not result.get("ok"):
-        raise RuntimeError(f"Telegram error: {result}")
 
 
 def main():
