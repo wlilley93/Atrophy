@@ -44,3 +44,9 @@ release/
 # Python
 __pycache__/
 *.pyc
+
+# Runtime-generated MCP config (contains local paths, regenerated at boot)
+mcp/config.json
+
+# Personal agent documentation (not shipped)
+docs/agents/companion/
