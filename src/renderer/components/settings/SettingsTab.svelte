@@ -165,6 +165,26 @@
     agents.displayName = result.agentDisplayName;
     onClose();
   }
+
+  // Per-agent delivery mode
+  let agentNotifyVia = $state<Record<string, string>>({});
+
+  $effect(() => {
+    if (agentList.length > 0 && api) {
+      for (const agent of agentList) {
+        api.getAgentNotifyVia(agent.name).then((val: string) => {
+          agentNotifyVia[agent.name] = val;
+        }).catch(() => {
+          agentNotifyVia[agent.name] = 'auto';
+        });
+      }
+    }
+  });
+
+  async function updateNotifyVia(agentName: string, value: string) {
+    agentNotifyVia[agentName] = value;
+    await api?.updateAgentConfig(agentName, { NOTIFY_VIA: value });
+  }
 </script>
 
 <!-- AGENTS -->
@@ -184,6 +204,15 @@
             {/if}
           </div>
           <div class="agent-actions">
+            <select
+              class="notify-via-select"
+              value={agentNotifyVia[agent.name] || 'auto'}
+              onchange={(e) => updateNotifyVia(agent.name, e.currentTarget.value)}
+            >
+              <option value="auto">Auto</option>
+              <option value="telegram">Telegram</option>
+              <option value="both">Both</option>
+            </select>
             {#if agent.name === agents.current}
               <span class="agent-active-label">active</span>
             {:else}
@@ -850,6 +879,29 @@
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+
+  .notify-via-select {
+    height: 24px;
+    padding: 0 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .notify-via-select:focus {
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  .notify-via-select option {
+    background: rgb(30, 30, 35);
+    color: rgba(255, 255, 255, 0.85);
   }
 
   .agent-active-label {

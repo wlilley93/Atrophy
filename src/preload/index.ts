@@ -35,6 +35,8 @@ export interface AtrophyAPI {
   getAgents: () => Promise<string[]>;
   getAgentsFull: () => Promise<{ name: string; display_name: string; description: string; role: string }[]>;
   onAgentSwitched: (cb: (data: { agentName: string; agentDisplayName: string; customSetup?: string | null }) => void) => () => void;
+  getAgentNotifyVia: (agentName: string) => Promise<string>;
+  updateAgentConfig: (agentName: string, updates: Record<string, unknown>) => Promise<void>;
 
   // Config
   getConfig: () => Promise<Record<string, unknown>>;
@@ -106,6 +108,7 @@ export interface AtrophyAPI {
 
   // Usage & activity
   getUsage: (days?: number) => Promise<unknown>;
+  getUsageDetail: (agentName: string, days?: number) => Promise<unknown>;
   getActivity: (days?: number, limit?: number) => Promise<unknown>;
 
   // Agent deferral
@@ -284,6 +287,8 @@ const api: AtrophyAPI = {
   getAgents: () => ipcRenderer.invoke('agent:list'),
   getAgentsFull: () => ipcRenderer.invoke('agent:listFull'),
   onAgentSwitched: createListener('agent:switched') as AtrophyAPI['onAgentSwitched'],
+  getAgentNotifyVia: (agentName) => ipcRenderer.invoke('agent:getNotifyVia', agentName),
+  updateAgentConfig: (agentName, updates) => ipcRenderer.invoke('agent:updateConfig', agentName, updates),
 
   // Config
   getConfig: () => ipcRenderer.invoke('config:get'),
@@ -355,6 +360,7 @@ const api: AtrophyAPI = {
 
   // Usage & activity
   getUsage: (days) => ipcRenderer.invoke('usage:all', days),
+  getUsageDetail: (agentName, days) => ipcRenderer.invoke('usage:detail', agentName, days),
   getActivity: (days, limit) => ipcRenderer.invoke('activity:all', days, limit),
 
   // Agent deferral

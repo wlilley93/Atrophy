@@ -6,7 +6,8 @@
 
 import { ipcMain, shell } from 'electron';
 import * as path from 'path';
-import { getConfig, saveAgentConfig, saveUserConfig, saveEnvVar } from '../config';
+import * as fs from 'fs';
+import { getConfig, saveAgentConfig, saveUserConfig, saveEnvVar, USER_DATA } from '../config';
 import {
   discoverUiAgents, cycleAgent, getAgentState, setAgentState,
   suspendAgentSession, resumeAgentSession,
@@ -158,6 +159,27 @@ export function registerAgentHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('queue:drainAll', () => {
     return drainAllAgentQueues();
+  });
+
+  // -- Per-agent config read/write --
+
+  ipcMain.handle('agent:getNotifyVia', (_event, agentName: string) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(agentName)) return 'auto';
+    const agentJsonPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+    try {
+      const manifest = JSON.parse(fs.readFileSync(agentJsonPath, 'utf-8'));
+      return (manifest.notify_via as string) || 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+
+  ipcMain.handle('agent:updateConfig', (_event, agentName: string, updates: Record<string, unknown>) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(agentName)) {
+      log.warn(`agent:updateConfig: invalid agent name "${agentName}"`);
+      return;
+    }
+    saveAgentConfig(agentName, updates);
   });
 
   // -- Ask-user (MCP ask_user -> GUI dialog) --
