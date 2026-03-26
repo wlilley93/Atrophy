@@ -46,6 +46,8 @@
     video: '#9b59b6',
   };
 
+  let cleanups: (() => void)[] = [];
+
   // Fade in on mount
   onMount(() => {
     requestAnimationFrame(() => {
@@ -92,8 +94,6 @@
     // Load gallery on mount
     refreshGallery();
   });
-
-  let cleanups: (() => void)[] = [];
 
   onDestroy(() => {
     window.removeEventListener('resize', handleResize);

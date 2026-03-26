@@ -551,7 +551,11 @@ Output EXACTLY this format - a single fenced JSON block:
   ipcMain.handle('artefact:getContent', (_event, filePath: string) => {
     // Security: only allow reading from artefacts directory
     const config = getConfig();
-    const artefactsBase = fs.realpathSync(path.join(path.dirname(config.DATA_DIR), 'artefacts'));
+    const artefactsDir = path.join(path.dirname(config.DATA_DIR), 'artefacts');
+    if (!fs.existsSync(artefactsDir)) {
+      fs.mkdirSync(artefactsDir, { recursive: true });
+    }
+    const artefactsBase = fs.realpathSync(artefactsDir);
     let resolved: string;
     try {
       resolved = fs.realpathSync(path.resolve(filePath));

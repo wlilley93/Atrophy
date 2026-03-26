@@ -78,7 +78,6 @@
   let avatarVisible = $state(true);
   let isMuted = $state(false);
   let wakeListening = $state(false);
-  let callActive = $state(false);
   let hasNewArtefacts = $state(false);
 
   // Eye mode - hides transcript when active
@@ -912,12 +911,7 @@
     try { wakeAudioCtx?.close(); } catch { /* already closed */ }
     wakeAudioCtx = null;
     if (wakeStream) { wakeStream.getTracks().forEach((t) => t.stop()); wakeStream = null; }
-    // Clean up call audio
-    try { callProcessor?.disconnect(); } catch { /* already disconnected */ }
-    callProcessor = null;
-    try { callAudioCtx?.close(); } catch { /* already closed */ }
-    callAudioCtx = null;
-    if (callStream) { callStream.getTracks().forEach((t) => t.stop()); callStream = null; }
+    // Call audio cleanup handled by InputBar.svelte
   });
 
   // ---------------------------------------------------------------------------
@@ -1041,108 +1035,7 @@
     }
   }
 
-  // Voice call mode - continuous record/transcribe/send/TTS loop
-  let callStream: MediaStream | null = null;
-  let callAudioCtx: AudioContext | null = null;
-  let callProcessor: ScriptProcessorNode | null = null;
-  let callChunks: Float32Array[] = [];
-  let callSilentFrames = 0;
-  let callSpeechStarted = false;
-  const CALL_ENERGY_THRESHOLD = 0.015;
-  const CALL_SILENCE_FRAMES = 15; // ~15 * 4096/16000 = ~3.8s of silence
-  const CALL_MIN_CHUNKS = 4; // minimum chunks before processing
-
-  let callStarting = false;
-  async function toggleCall() {
-    if (callStarting) return;
-
-    if (!callActive && api) {
-      callStarting = true;
-      callActive = true;
-      try {
-        callStream = await navigator.mediaDevices.getUserMedia({
-          audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
-        });
-        callAudioCtx = new AudioContext({ sampleRate: 16000 });
-        const source = callAudioCtx.createMediaStreamSource(callStream);
-        callProcessor = callAudioCtx.createScriptProcessor(4096, 1, 1);
-        callChunks = [];
-        callSilentFrames = 0;
-        callSpeechStarted = false;
-
-        callProcessor.onaudioprocess = (e: AudioProcessingEvent) => {
-          if (!callActive) return;
-          const data = e.inputBuffer.getChannelData(0);
-          const chunk = new Float32Array(data);
-
-          // Calculate RMS energy
-          let sum = 0;
-          for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
-          const energy = Math.sqrt(sum / chunk.length);
-
-          if (energy > CALL_ENERGY_THRESHOLD) {
-            callSpeechStarted = true;
-            callSilentFrames = 0;
-            callChunks.push(chunk);
-          } else if (callSpeechStarted) {
-            callSilentFrames++;
-            callChunks.push(chunk);
-            if (callSilentFrames >= CALL_SILENCE_FRAMES && callChunks.length >= CALL_MIN_CHUNKS) {
-              // Utterance complete - send accumulated audio for transcription
-              const allChunks = callChunks;
-              callChunks = [];
-              callSpeechStarted = false;
-              callSilentFrames = 0;
-              processCallUtterance(allChunks);
-            }
-          }
-        };
-        source.connect(callProcessor);
-        callProcessor.connect(callAudioCtx.destination);
-      } catch (err) {
-        console.error('[call] failed to start:', err);
-        callActive = false;
-      } finally {
-        callStarting = false;
-      }
-    } else {
-      callActive = false;
-      // Tear down call audio
-      if (callProcessor) { callProcessor.disconnect(); callProcessor = null; }
-      if (callAudioCtx) { callAudioCtx.close().catch(() => {}); callAudioCtx = null; }
-      if (callStream) { callStream.getTracks().forEach((t) => t.stop()); callStream = null; }
-      callChunks = [];
-    }
-  }
-
-  let _utteranceInFlight = false;
-  async function processCallUtterance(chunks: Float32Array[]) {
-    if (!api || _utteranceInFlight) return;
-    _utteranceInFlight = true;
-    // Concatenate chunks into a single buffer and send for STT
-    const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
-    const merged = new Float32Array(totalLen);
-    let offset = 0;
-    for (const c of chunks) {
-      merged.set(c, offset);
-      offset += c.length;
-    }
-    // Use the existing audio:chunk -> audio:stop flow for transcription
-    await api.startRecording();
-    api.sendAudioChunk(merged.buffer.slice(0));
-    try {
-      const transcript = await api.stopRecording();
-      if (transcript && transcript.trim().length > 1) {
-        addMessage('user', transcript.trim());
-        completeLast();
-        await api.sendMessage(transcript.trim());
-      }
-    } catch {
-      // Transcription failed - continue listening
-    } finally {
-      _utteranceInFlight = false;
-    }
-  }
+  // Voice call mode is handled entirely by InputBar.svelte
 
   // ---------------------------------------------------------------------------
   // Keyboard shortcuts
@@ -1449,19 +1342,6 @@
           <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
         </svg>
       {/if}
-    </button>
-
-    <!-- Call (voice) -->
-    <button
-      class="mode-btn"
-      class:active={callActive}
-      onclick={toggleCall}
-      title="Voice call"
-      aria-label="Voice call"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-      </svg>
     </button>
 
     <!-- Artefact -->

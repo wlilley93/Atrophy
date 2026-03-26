@@ -575,7 +575,7 @@ export function streamInference(
   userMessage: string,
   system: string,
   cliSessionId?: string | null,
-  options?: { senderName?: string },
+  options?: { senderName?: string; source?: 'desktop' | 'telegram' | 'cron' | 'server' | 'other' },
 ): EventEmitter {
   const emitter = new EventEmitter();
   const config = getConfig();
@@ -594,8 +594,10 @@ export function streamInference(
     effort = 'medium';
   }
 
-  // Reset agency state for new sessions so first-turn content gets injected
-  if (!cliSessionId) {
+  // Reset agency state for new sessions so first-turn content gets injected.
+  // Only reset for desktop sessions - cron/telegram dispatches reload config
+  // per-agent and resetting here would race with concurrent dispatches.
+  if (!cliSessionId && (!options?.source || options.source === 'desktop')) {
     resetAgencyState();
   }
 
@@ -704,9 +706,14 @@ export function streamInference(
     }
   }, 30_000);
 
-  // Collect stderr
+  // Collect stderr (capped at 64KB to prevent unbounded growth)
+  const STDERR_MAX_BYTES = 64 * 1024;
   proc.stderr?.on('data', (chunk: Buffer) => {
-    stderrChunks += chunk.toString();
+    const str = chunk.toString();
+    stderrChunks += str;
+    if (stderrChunks.length > STDERR_MAX_BYTES) {
+      stderrChunks = stderrChunks.slice(stderrChunks.length - STDERR_MAX_BYTES);
+    }
   });
 
   // Parse stdout JSON lines

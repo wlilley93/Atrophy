@@ -2,7 +2,7 @@
   import { transcript, type Message } from '../stores/transcript.svelte';
   import { session } from '../stores/session.svelte';
   import { getArtifact } from '../stores/artifacts.svelte';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
 
   let { onArtifactClick }: { onArtifactClick?: (id: string) => void } = $props();
@@ -35,11 +35,16 @@
     revealTimers.set(msg.id, timer);
   }
 
-  // Auto-scroll to bottom
-  async function scrollToBottom() {
+  // Auto-scroll to bottom (throttled to once per animation frame)
+  let scrollRafPending = false;
+  function scrollToBottom() {
     if (!transcript.autoScroll || !container) return;
-    await tick();
-    container.scrollTop = container.scrollHeight;
+    if (scrollRafPending) return;
+    scrollRafPending = true;
+    requestAnimationFrame(() => {
+      scrollRafPending = false;
+      if (container) container.scrollTop = container.scrollHeight;
+    });
   }
 
   // Watch for new messages
@@ -368,13 +373,13 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
     mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.3) 15%, black 33%);
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.3) 15%, black 33%);
   }
 
   .transcript-inner {
     flex-shrink: 0;
+    margin-top: auto;
   }
 
   .message {

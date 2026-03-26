@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { api } from '../../api';
 
   interface Props {
@@ -69,6 +70,11 @@
     if (!api) return;
     await api.restartForUpdate();
   }
+
+  onDestroy(() => {
+    progressCleanup?.();
+    readyCleanup?.();
+  });
 </script>
 
 <div class="section">

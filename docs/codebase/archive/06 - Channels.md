@@ -368,6 +368,16 @@ The dispatch sequence is:
 8. Restores the original agent config via `withConfigLock` -> `config.reloadForAgent(originalAgent)` and `memory.initDb()`
 9. Returns the response text or `null`
 
+### Per-User Emotional State in Group Chats
+
+When the daemon dispatches a message from a Telegram group (as opposed to a 1:1 chat), it passes sender identity information so the inner life system can maintain separate emotional state per user. This matters when an agent operates in a shared group where multiple people interact with it - the agent's emotional relationship with each person is tracked independently.
+
+The dispatch path extracts the sender's display name from the Telegram `from` field and passes it through to context building. `formatUserStateForContext(userId, agentState)` in `inner-life.ts` is called instead of the global `formatForContext()`, producing a context block labeled `## Internal State (re: <userId>)` that reflects the per-user emotions, trust, and relationship dimensions alongside the agent-global needs.
+
+Per-user state files live alongside the main state file at `<agent_dir>/data/.emotional_state.<userId>.json`, where `userId` is the display name lowercased and sanitized to alphanumeric characters and underscores. On first encounter with a new user, state is initialized from defaults. The primary user (the owner, identified by `USER_NAME` in config) is seeded from the agent's global state file as a migration path from single-user operation.
+
+Session rotation - ending the current Claude CLI session and starting a fresh one - happens per-agent, not per-user. Within a session, the agent maintains separate emotional vectors for each participant but shares a single conversation context window.
+
 ### Dispatch Locks
 
 Two-tier locking system allows parallel dispatch while protecting the shared Config singleton:

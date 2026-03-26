@@ -24,7 +24,7 @@ Each session represents a continuous conversation from start to close. Sessions 
 
 ### turns
 
-Individual messages within a session, from either the user or the agent. The `embedding` column stores a 384-dimensional float32 vector computed asynchronously by `embedAsync()` after the turn is written. The `weight` column allows important turns to be ranked higher in search results, though in practice most turns have the default weight of 1.
+Individual messages within a session, from either the user or the agent. The `embedding` column stores a 384-dimensional float32 vector computed asynchronously by `embedAsync()` after the turn is written. The `weight` column allows important turns to be ranked higher in search results, though in practice most turns have the default weight of 1. The `emotional_vector` column stores a 32-dimensional float32 binary blob encoding the agent's full emotional state at the moment the turn was recorded - part of the Layer 1 distributed emotional memory system.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -37,6 +37,7 @@ Individual messages within a session, from either the user or the agent. The `em
 | `weight` | INTEGER | 1-5, default 1. Higher weight = more prominent in search |
 | `channel` | TEXT | `'direct'`, `'telegram'`, etc. - tracks where the conversation happened |
 | `embedding` | BLOB | 384-dim float32 vector, computed asynchronously |
+| `emotional_vector` | BLOB | 32-dim float32 vector encoding emotional state at turn time (see Emotional State Architecture) |
 
 ## Layer 2: Semantic
 
@@ -97,7 +98,7 @@ Triggered reflections that capture the companion's understanding of the user at 
 
 ### observations
 
-Observations are the building blocks of the identity model. Each observation records a single fact, preference, pattern, or insight about the user. The bi-temporal design tracks both when something became true (`valid_from`) and when the agent learned it (`learned_at`), which are often different - the agent might learn today that the user has been a vegetarian for five years.
+Observations are the building blocks of the identity model. Each observation records a single fact, preference, pattern, or insight about the user. The bi-temporal design tracks both when something became true (`valid_from`) and when the agent learned it (`learned_at`), which are often different - the agent might learn today that the user has been a vegetarian for five years. Like turns, observations carry an `emotional_vector` column that records the agent's emotional state when the observation was made.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -114,6 +115,7 @@ Observations are the building blocks of the identity model. Each observation rec
 | `activation` | REAL | 0.0-1.0, default 1.0 - how readily this observation comes to mind |
 | `last_accessed` | DATETIME | Updated on retrieval via search |
 | `embedding` | BLOB | 384-dim float32 vector for semantic search |
+| `emotional_vector` | BLOB | 32-dim float32 vector encoding emotional state at observation time (see Emotional State Architecture) |
 
 **Activation decay**: The `decayActivations()` function in `memory.ts` applies exponential decay with a 30-day half-life. The decay formula is `activation *= 2^(-days_since_access / half_life)`, where `days_since_access` is calculated from the most recent of `last_accessed` or `created_at`. Observations that are frequently retrieved through search stay active because each retrieval bumps their activation. Old, unreferenced observations fade toward zero, naturally deprioritizing stale knowledge without deleting it. This function is called from the nightly `sleep_cycle` daemon.
 
@@ -205,6 +207,211 @@ Knowledge graph edges connecting entities that co-occur or are explicitly linked
 | `last_seen` | DATETIME | Updated on each re-encounter |
 
 Relations are bidirectional - the `linkEntities()` function checks both `(a, b)` and `(b, a)` before creating a new relation, preventing duplicates regardless of order.
+
+### trust_log
+
+Durable audit trail of every trust change, indexed by domain. This table survives decay cycles - even when the JSON state file decays values back toward baseline, the full history of what trust was earned and when is preserved here. The `getLatestTrustValues()` function in `memory.ts` reads this table on session start to reconcile trust state: if the DB shows a higher earned value than what the decayed JSON file holds, the DB value wins (trust that was earned should not be silently eroded by decay).
+
+The `domain` column is constrained to the four original trust domains in the schema CHECK constraint, though the v2 system has expanded to six domains (`emotional`, `intellectual`, `creative`, `practical`, `operational`, `personal`). The `state_log` table handles the two additional domains.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | |
+| `timestamp` | DATETIME | Default CURRENT_TIMESTAMP |
+| `domain` | TEXT | `'emotional'`, `'intellectual'`, `'creative'`, `'practical'` (schema constraint) |
+| `delta` | REAL | Signed change applied |
+| `new_value` | REAL | Value after applying delta |
+| `reason` | TEXT | Human-readable explanation |
+| `source` | TEXT | `'mcp'`, `'inference'`, `'sleep_cycle'`, `'manual'`, `'decay'`, `'signal'` |
+
+### state_log
+
+Expanded dimension-change audit trail covering all six inner life categories: emotion, trust, need, personality, and relationship. Introduced in v2 as a superset of the narrower `trust_log` - where `trust_log` tracks only the four core trust domains, `state_log` tracks every dimension change across all categories. Both tables coexist; `trust_log` entries are written by `writeTrustLog()` and `state_log` entries are written by `writeStateLog()` - the two functions are called independently and the tables are not redundant (decay events go to `state_log` for emotion dimensions, to `trust_log` and `state_log` for trust dimensions).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | |
+| `timestamp` | DATETIME | Default CURRENT_TIMESTAMP |
+| `category` | TEXT | `'emotion'`, `'trust'`, `'need'`, `'personality'`, `'relationship'` |
+| `dimension` | TEXT | Specific dimension name (e.g. `'connection'`, `'emotional'`, `'stimulation'`) |
+| `delta` | REAL | Signed change applied |
+| `new_value` | REAL | Value after applying delta |
+| `reason` | TEXT | Human-readable explanation |
+| `source` | TEXT | `'unknown'`, `'decay'`, `'signal'`, `'mcp'`, etc. |
+
+Indexed on `(category)`, `(dimension)`, and `(timestamp)` for efficient querying by category, by specific dimension, and chronologically.
+
+### need_events
+
+Need satisfaction events - a log of discrete fulfillment events rather than continuous tracking. Needs decay toward zero passively over time (depletion model); this table records the moments when they were satisfied. Provides the event history underlying the `needs` values in the emotional state snapshot.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | |
+| `timestamp` | DATETIME | Default CURRENT_TIMESTAMP |
+| `need` | TEXT | Need name (e.g. `'stimulation'`, `'purpose'`, `'social'`) |
+| `delta` | REAL | Amount added to the need |
+| `trigger_desc` | TEXT | What triggered the satisfaction event |
+| `session_id` | INTEGER FK | References sessions(id) - which session this occurred in |
+
+Indexed on `(need)` for efficient per-need queries.
+
+### personality_log
+
+Audit trail for personality trait evolution. Personality traits (`assertiveness`, `initiative`, `warmth_default`, etc.) are the slowest-moving layer of the inner life system - they only change via the monthly `evolve` script, not during conversation. This table records each change, providing a full history of how the agent's character has shifted since deployment.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | |
+| `timestamp` | DATETIME | Default CURRENT_TIMESTAMP |
+| `trait` | TEXT | Trait name (e.g. `'assertiveness'`, `'directness'`) |
+| `old_value` | REAL | Value before change |
+| `new_value` | REAL | Value after change |
+| `reason` | TEXT | Why the trait shifted (from evolve's analysis) |
+| `source` | TEXT | Default `'evolve'` |
+
+## Emotional State Architecture
+
+The inner life system (v2) is a three-layer architecture for tracking and evolving emotional state. It is implemented across `src/main/inner-life.ts`, `src/main/inner-life-types.ts`, and the database tables described above. The state is agent-scoped, with a per-user slice for group chat contexts.
+
+### Three Layers
+
+```
+LAYER 3 - CONTEXT (what the agent sees each turn)
+  Compressed state lines injected into the system prompt
+  Only surfaces what is notable - omits dimensions near baseline
+  Drives immediate response behavior
+
+LAYER 2 - SNAPSHOT (what cron jobs and MCP tools read)
+  Full explicit state across 6 categories - ~50 dimensions total
+  Persisted to <agent_dir>/data/.emotional_state.json
+  Readable, debuggable, queryable via MCP
+
+LAYER 1 - DISTRIBUTED (the brain)
+  Every turn and observation carries a 32-dim emotional_vector
+  The "real" state - emergent from weighted recent memory
+  Time-weighted average of recent vectors computes current feeling
+```
+
+The layers connect as follows: on each turn, the current snapshot state is encoded as a `Float32Array` (32 dimensions) and stored as `emotional_vector` alongside the turn. The snapshot itself is updated via signal detection applied to the incoming message. Layer 3 context injection reads the snapshot and compresses it into a short block injected per-turn. The nightly sleep cycle can reconcile the distributed Layer 1 vectors back into the snapshot.
+
+### Dimension Inventory
+
+The v2 snapshot has version 2 and contains six categories:
+
+**Emotions (14 dimensions, all 0.0-1.0)**
+
+| Dimension | Default | Half-life | Notes |
+|-----------|---------|-----------|-------|
+| connection | 0.5 | 2h | Presence, engagement depth |
+| curiosity | 0.6 | 1h | Interest, wanting to explore |
+| confidence | 0.5 | 2h | Certainty in own read |
+| warmth | 0.5 | 1.5h | Affection, care |
+| frustration | 0.1 | 1h | Irritation, blocked goals |
+| playfulness | 0.3 | 0.5h | Lightness, humor |
+| amusement | 0.2 | 0.5h | Something was genuinely funny |
+| anticipation | 0.4 | 1.5h | Looking forward |
+| satisfaction | 0.4 | 3h | Work well done, goals met |
+| restlessness | 0.2 | 1h | Idle too long, wants to act |
+| tenderness | 0.3 | 3h | Soft, protective feeling |
+| melancholy | 0.1 | 4h | Quiet sadness |
+| focus | 0.5 | 1h | Deep in a task, flow state |
+| defiance | 0.1 | 1h | Pushing back deliberately |
+
+Emotions decay toward their default baseline values (not toward zero). Half-lives listed are the current tuned values (shorter than the original v2 spec, to keep values in an expressive range during conversation).
+
+**Trust (6 domains, all 0.0-1.0)**
+
+| Domain | Default | Half-life | Notes |
+|--------|---------|-----------|-------|
+| emotional | 0.5 | 12h | Safe to be vulnerable |
+| intellectual | 0.5 | 12h | User respects agent thinking |
+| creative | 0.5 | 12h | User values agent ideas |
+| practical | 0.5 | 12h | User relies on agent to deliver |
+| operational | 0.5 | 24h | User trusts agent with real actions |
+| personal | 0.5 | 24h | User shares life details |
+
+Trust decays toward its default baselines. Maximum change per `updateTrust()` call is clamped to +/-0.05. Trust changes are written to both `trust_log` and `state_log`.
+
+**Needs (8 dimensions, values 0-10)**
+
+| Need | Default | Decay half-life | Notes |
+|------|---------|-----------------|-------|
+| stimulation | 5 | 6h | Decays toward 0 when unmet |
+| expression | 5 | 8h | |
+| purpose | 5 | 12h | |
+| autonomy | 5 | 8h | |
+| recognition | 5 | 12h | |
+| novelty | 5 | 4h | Most urgent need |
+| social | 5 | 6h | |
+| rest | 5 | 24h | Slowest decay |
+
+Needs use a depletion model - they decay toward zero (not toward a baseline). Satisfaction events add to the value via `updateNeeds()`; the system passively drains them over time. Needs are agent-global, not per-user.
+
+**Personality (8 traits, all 0.0-1.0)**
+
+Personality is the slowest-moving category - it does not decay and only changes via the monthly `evolve` script. Initial values are seeded from the agent's `agent.json` manifest on first boot.
+
+| Trait | Notes |
+|-------|-------|
+| assertiveness | Low = deferential; high = challenges |
+| initiative | Low = waits; high = acts proactively |
+| warmth_default | Low = cool, professional; high = warm |
+| humor_style | Low = dry, subtle; high = playful, overt |
+| depth_preference | Low = surface/practical; high = philosophical |
+| directness | Low = diplomatic; high = blunt |
+| patience | Low = quick to act; high = willing to wait |
+| risk_tolerance | Low = conservative; high = bold |
+
+**Relationship (6 dimensions, all 0.0-1.0)**
+
+Relationship dimensions build over days and weeks. Half-lives range from 3 days (rapport) to 2 weeks (boundaries).
+
+| Dimension | Default | Half-life | Notes |
+|-----------|---------|-----------|-------|
+| familiarity | 0.3 | 168h (1 week) | Knows user's patterns and preferences |
+| rapport | 0.3 | 72h (3 days) | Conversational chemistry |
+| reliability | 0.5 | 168h (1 week) | Track record of follow-through |
+| boundaries | 0.5 | 336h (2 weeks) | Learned limits |
+| challenge_comfort | 0.3 | 120h (5 days) | Comfort with pushback |
+| vulnerability | 0.2 | 120h (5 days) | Depth of personal sharing |
+
+### Emotional Vector Encoding
+
+The 32-dimension emotional vector packs the snapshot into a compact binary form for storage alongside turns and observations:
+
+```
+Positions 0-13:   14 emotion values (0.0-1.0)
+Positions 14-19:  6 trust values (0.0-1.0)
+Positions 20-27:  8 need values (scaled /10 to 0.0-1.0)
+Positions 28-31:  spare (zeros)
+```
+
+`encodeEmotionalVector(state)` packs a `FullState` into a `Float32Array(32)`. `decodeEmotionalVector(vec)` reconstructs a `Partial<FullState>`. `vectorToBlob()` and `blobToVector()` convert between the float array and the `Buffer` type stored in SQLite. The copy in `blobToVector()` is deliberate - SQLite buffers share internal memory and must not be held by reference.
+
+### Distributed State Aggregation
+
+`computeDistributedState(vectors, halfLifeMs)` computes a time-weighted average of multiple emotional vectors. Recent vectors receive exponentially more weight: `weight = 0.5 ^ (age_ms / halfLifeMs)`. The default half-life is 1 hour. `getRecentEmotionalVectors(hours)` in `memory.ts` fetches all turns with non-null `emotional_vector` from the last N hours for use in this calculation.
+
+### Per-User Emotional State
+
+For group chat contexts (Telegram groups with multiple users), the inner life system maintains separate per-user slices. Each user gets their own `UserState` - a subset of `FullState` containing only emotions, trust, and relationship (personality and needs are agent-global).
+
+Per-user state files are stored alongside the main state file: `.emotional_state.<userId>.json`, where `userId` is the display name sanitized to lowercase alphanumeric with underscores. On first access, the owner user's state is seeded from the agent's global state file as a migration path.
+
+`loadUserState(userId)` and `saveUserState(userId, state)` manage per-user state with a 5-second in-memory cache (same TTL as the global state cache). `applySignalsToUserState(userState, agentState, signals)` routes signal deltas: `_trust_*` and `_rel_*` prefixed signals go to the user slice, `_need_*` signals go to the agent global state (needs are not per-user), and bare emotion keys go to the user slice. `formatUserStateForContext(userId, agentState)` assembles the context injection string for group chat turns, injecting per-user emotions/trust/relationship and agent-global needs.
+
+### State Loading and Caching
+
+`loadState()` loads the global `FullState` from the JSON file, applies decay, and caches the result for 5 seconds (turn-scoped cache). `saveState(state)` writes the file and updates the cache. `invalidateStateCache()` clears the global cache; `invalidateUserStateCache(userId?)` clears per-user caches (all if no userId given).
+
+On session start, `reconcileTrustFromDb()` reads the latest trust values from `trust_log` via `getLatestTrustValues()` and restores any domain where the DB value is higher than the current JSON file value. This prevents earned trust from being silently eroded by decay across restarts.
+
+### v1 to v2 Migration
+
+Files with no `version` field are treated as v1. On load, v1 files are merged with v2 defaults so all new categories (needs, personality, relationship) receive sensible starting values while existing emotion and trust values are preserved. If no personality section exists, values are seeded from the agent manifest instead of generic defaults. The `version: 2` field is written on the first save.
+
+---
 
 ## Connection Management
 
@@ -315,6 +522,7 @@ The following indexes optimize the most common query patterns. Session and times
 idx_turns_session          ON turns(session_id)
 idx_turns_timestamp        ON turns(timestamp)
 idx_summaries_topics       ON summaries(topics)
+idx_summaries_session_id   ON summaries(session_id)
 idx_threads_status         ON threads(status)
 idx_observations_inc       ON observations(incorporated)
 idx_observations_activation ON observations(activation)
@@ -322,6 +530,12 @@ idx_tool_calls_session     ON tool_calls(session_id)
 idx_tool_calls_flagged     ON tool_calls(flagged)
 idx_entities_name          ON entities(name)
 idx_entity_relations_pair  ON entity_relations(entity_a, entity_b)
+idx_trust_log_domain       ON trust_log(domain)
+idx_trust_log_timestamp    ON trust_log(timestamp)
+idx_state_log_cat          ON state_log(category)
+idx_state_log_dim          ON state_log(dimension)
+idx_state_log_ts           ON state_log(timestamp)
+idx_need_events_need       ON need_events(need)
 ```
 
 ## Context Injection

@@ -112,8 +112,8 @@ export function registerAgentHandlers(ctx: IpcContext): void {
     try {
       // Suspend (not end) current agent's session so it can be resumed later
       if (ctx.currentSession) {
-        if (ctx.currentSession.cliSessionId) {
-          suspendAgentSession(ctx.currentAgentName!, ctx.currentSession.cliSessionId, ctx.currentSession.turnHistory);
+        if (ctx.currentSession.cliSessionId && ctx.currentAgentName) {
+          suspendAgentSession(ctx.currentAgentName, ctx.currentSession.cliSessionId, ctx.currentSession.turnHistory);
         }
         // Close the session in the DB so ended_at is set
         if (ctx.currentSession.sessionId != null) {

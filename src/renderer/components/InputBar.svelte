@@ -79,7 +79,14 @@
       try {
         await api.sendMessage(text);
       } catch (err) {
-        completeLast();
+        // Remove the empty agent bubble or show an error in it
+        const msgs = transcript.messages;
+        const last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+        if (last && last.role === 'agent' && !last.content) {
+          msgs.pop();
+        } else {
+          completeLast();
+        }
         session.inferenceState = 'idle';
       } finally {
         _submitting = false;
@@ -365,9 +372,11 @@
           if (closeIdx !== -1) {
             const afterClose = streamBuffer.slice(closeIdx + '</artifact>'.length);
             if (syncMode) {
-              rawTextBuffer += streamBuffer; // Keep artifact in raw buffer for stripping
+              // Add the artifact block (for stripping) but NOT afterClose -
+              // afterClose stays in streamBuffer and gets flushed on the next delta
+              rawTextBuffer += streamBuffer.slice(0, closeIdx + '</artifact>'.length);
               streamBuffer = afterClose;
-              // Don't call flushBuffer() - afterClose is already in rawTextBuffer
+              // Don't call flushBuffer() here - it will be flushed on the next delta or at stream end
             } else {
               streamBuffer = afterClose;
               if (streamBuffer) flushBuffer();
@@ -625,64 +634,6 @@
 
   .input-field:disabled {
     opacity: 0.5;
-  }
-
-  .UNUSED-call-btn {
-    display: none;
-    border: none;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.4);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: color 0.15s, background 0.15s;
-  }
-
-  .call-btn:hover {
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  .call-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-  }
-
-  .call-btn.active {
-    color: rgba(80, 200, 120, 0.9);
-    background: rgba(80, 200, 120, 0.15);
-  }
-
-  .call-btn.active:hover {
-    color: rgba(255, 80, 80, 0.9);
-    background: rgba(255, 80, 80, 0.15);
-  }
-
-  .call-btn.listening {
-    animation: pulse-call 2s ease-in-out infinite;
-  }
-
-  .call-btn.thinking {
-    animation: pulse-call-think 1s ease-in-out infinite;
-  }
-
-  .call-btn.speaking {
-    animation: pulse-call-speak 0.8s ease-in-out infinite;
-  }
-
-  @keyframes pulse-call {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  @keyframes pulse-call-think {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-
-  @keyframes pulse-call-speak {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(80, 200, 120, 0.3); }
-    50% { box-shadow: 0 0 8px 2px rgba(80, 200, 120, 0.15); }
   }
 
   .mic-btn {

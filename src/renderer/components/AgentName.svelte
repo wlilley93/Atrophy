@@ -53,6 +53,7 @@
         } else {
           offset = 0;
           animating = false;
+          prevName = name;
         }
       }
       rafId = requestAnimationFrame(tick);

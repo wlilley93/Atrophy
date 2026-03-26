@@ -159,10 +159,14 @@ function embedAsync(table: string, rowId: number, text: string, dbPath?: string)
   const allowed = ['turns', 'summaries', 'observations', 'bookmarks'];
   if (!allowed.includes(table)) return;
 
+  // Capture DB_PATH at call time, not inside the async callback,
+  // because config may have been reloaded for a different agent by then.
+  const resolvedDbPath = dbPath || getConfig().DB_PATH;
+
   embed(text)
     .then((vec) => {
       const blob = embVectorToBlob(vec);
-      const p = dbPath || getConfig().DB_PATH;
+      const p = resolvedDbPath;
       const db = connect(p);
       db.prepare(`UPDATE ${table} SET embedding = ? WHERE id = ?`).run(blob, rowId);
     })

@@ -578,13 +578,15 @@ class CronScheduler {
    * Only saves jobs that have non-zero failure counts or are disabled.
    */
   private persistState(): void {
+    // Load existing state so we can preserve original disabledAt timestamps
+    const existing = loadCronState();
     const state: Record<string, PersistedJobState> = {};
     for (const [key, job] of this.jobs) {
       if (job.disabled || job.consecutiveFailures > 0) {
         state[key] = {
           disabled: job.disabled,
           consecutiveFailures: job.consecutiveFailures,
-          disabledAt: job.disabled ? new Date().toISOString() : undefined,
+          disabledAt: job.disabled ? (existing[key]?.disabledAt || new Date().toISOString()) : undefined,
         };
       }
     }

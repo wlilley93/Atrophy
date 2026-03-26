@@ -247,20 +247,6 @@
     }
   }
 
-  function toggleMcpItem(item: string, currentList: string[], otherList: string[]): void {
-    if (currentList.includes(item)) {
-      // Move to other list
-      mcpInclude = mcpInclude.filter((i) => i !== item);
-      mcpExclude = mcpExclude.filter((i) => i !== item);
-      if (currentList === mcpInclude) {
-        mcpExclude = [...mcpExclude, item];
-      } else {
-        mcpInclude = [...mcpInclude, item];
-      }
-    }
-    dirty = true;
-    void otherList; // suppress unused warning
-  }
 </script>
 
 <div class="agent-detail">

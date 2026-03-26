@@ -6,6 +6,7 @@
   let logFilter = $state('');
   let logAutoScroll = $state(true);
   let logCleanup: (() => void) | null = null;
+  let consoleScrollEl: HTMLDivElement;
 
   export async function load() {
     const buffer = await api?.getLogBuffer();
@@ -30,8 +31,7 @@
   function scrollConsole() {
     if (!logAutoScroll) return;
     requestAnimationFrame(() => {
-      const el = document.getElementById('console-scroll');
-      if (el) el.scrollTop = el.scrollHeight;
+      if (consoleScrollEl) consoleScrollEl.scrollTop = consoleScrollEl.scrollHeight;
     });
   }
 </script>
@@ -52,7 +52,7 @@
 </div>
 <div
   class="console-output"
-  id="console-scroll"
+  bind:this={consoleScrollEl}
 >
   {#each logEntries.filter(e => !logFilter || e.tag.includes(logFilter) || e.message.toLowerCase().includes(logFilter.toLowerCase())) as entry}
     <div class="console-line level-{entry.level}">

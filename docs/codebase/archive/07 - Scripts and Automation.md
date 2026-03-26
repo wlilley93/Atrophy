@@ -1891,27 +1891,66 @@ This module depends only on Electron's `app` module, making it the simplest modu
 
 ## Python Scripts (Remaining)
 
-A small number of Python scripts remain in the codebase because they depend on Python-specific libraries that have no practical TypeScript equivalent. These scripts are not part of the Electron application's main process - they run as standalone subprocesses or are spawned by the Claude CLI.
+All background job scripts are Python, not TypeScript. They live in `scripts/agents/<agent_name>/` (agent-specific) and `scripts/agents/shared/` (shared across agents). The `jobs.json` file for each agent declares which scripts to run, and `cron.ts` installs them as launchd plists. Scripts call the Claude CLI via subprocess for inference - no Anthropic SDK, no direct API key usage.
 
-### scripts/google_auth.py - Google OAuth2 Setup
+### scripts/agents/shared/ - Scripts Used by Multiple Agents
 
-This script manages Google OAuth2 credentials for Gmail and Calendar access. It stays as Python because it uses the `google-auth-oauthlib` and `google-api-python-client` libraries, which handle the complex OAuth2 flow including browser-based consent, token refresh, and scope management.
+These scripts implement the standard set of background behaviors that every agent uses. Each agent's `jobs.json` points to the shared version unless the agent has a custom override in its own directory.
 
-The script supports three modes of operation via command-line flags:
+| Script | Schedule | What it does |
+|--------|----------|-------------|
+| `heartbeat.py` | Every 30 min | Gathers context (threads, time since last interaction, recent summaries, observations), asks the agent to evaluate whether to reach out unprompted. If yes, fires a macOS notification and queues a message for next app launch. Only runs within configured active hours. |
+| `sleep_cycle.py` | 3am daily | Nightly memory reconciliation. Reviews the day's turns, observations, and bookmarks. Extracts facts (FACT/THREAD/PATTERN/IDENTITY_FLAG), updates thread summaries, writes new observations, decays activation scores on old observations. Uses Haiku for efficiency. |
+| `morning_brief.py` | 7am daily | Gathers weather (Leeds), active threads, recent summaries, and observations. Composes a natural brief via oneshot inference. Writes to the message queue with pre-synthesised TTS audio so it plays instantly on next app launch. |
+| `observer.py` | Every 15 min | Pre-compaction observer. Scans recent turns for durable facts worth preserving before they scroll out of context. Most runs are no-ops. When there is material, uses Haiku with low effort for fast extraction. |
+| `introspect.py` | Random (self-rescheduling) | Full database access - every session, observation, thread, bookmark, identity snapshot. Reviews the full arc and writes a journal entry to `Companion/journal/YYYY-MM-DD.md` in Obsidian. The goal is becoming, not reflection. Self-reschedules after each run. |
+| `evolve.py` | 3am on 1st of month | Monthly self-evolution. Reads journal entries, reflections, identity snapshots, and bookmarks. Reflects on what the agent has learned about itself and revises `soul.md` and `system.md` in Obsidian. The originals in the repo are the baseline; Obsidian holds the living versions. |
+| `check_reminders.py` | Every 60 sec | Reads the agent's reminder store (`.reminders.json`), fires macOS notifications and queues messages for any reminders that are due, then removes them. |
+| `claude_cli.py` | (imported, not scheduled) | Shared helper module providing `call_claude()`. Routes all LLM calls through the local Claude CLI binary. Imported by other scripts via `sys.path` manipulation. |
 
-```bash
-python scripts/google_auth.py              # Authorize (opens browser for consent)
-python scripts/google_auth.py --check      # Check if credentials are valid
-python scripts/google_auth.py --revoke     # Revoke tokens and delete local file
-```
+### scripts/agents/companion/ - Companion-Specific Scripts
 
-OAuth client credentials are bundled at `config/google_oauth.json` (safe to ship - Google treats desktop app client IDs as public). The user authorizes via a browser consent screen, and tokens are stored at `~/.atrophy/.google/token.json` (directory 700, file 600).
+These scripts implement behaviors specific to Companion that are not shared with other agents.
 
-The script requests the following Google API scopes, which are the minimum needed for the MCP Google server's email and calendar tools: `gmail.readonly`, `gmail.send`, `gmail.modify`, `calendar.readonly`, `calendar.events`.
+| Script | Schedule | What it does |
+|--------|----------|-------------|
+| `gift.py` | Random 3-30 days (self-rescheduling) | Accesses the full database to find something worth writing about - a thread, observation, bookmark, or connection between things. Leaves a short note in `Companion/gifts.md` in Obsidian. Self-reschedules to a random time 3-30 days out after each run. The randomness is intentional - unpredictable. |
+| `voice_note.py` | Random 2-8 hours within active hours (self-rescheduling) | Generates a short thought the agent has been sitting with, synthesises it as speech, and sends it as a Telegram voice note. Self-reschedules to a random time 2-8 hours out within active hours after each run. |
+| `converse.py` | Random (self-rescheduling, max twice/month) | Inter-agent conversation. Picks another enabled agent, runs up to 5 exchanges between them, stores the transcript in both agents' Obsidian notes as journal/evolution material. Private - the user does not participate. Self-reschedules after each run. |
+| `generate_face.py` | Manual / on-demand | Generates face candidates via Flux on Fal using IP-Adapter with reference images. Not a scheduled job - run manually during avatar setup. |
+| `generate_ambient_loop.py` | Manual / on-demand | Generates modular ambient idle video loops via Kling on Fal. Each loop is two 5s clips crossfaded into a ~10s seamless segment. |
+| `generate_hair_loops.py` | Manual / on-demand | Generates hair animation loops for the avatar. |
+| `generate_idle_loops.py` | Manual / on-demand | Generates idle body animation loops for the avatar. |
+| `generate_intimate_loop.py` | Manual / on-demand | Generates intimate/close-up animation loops for the avatar. |
+| `trim_static_tails.py` | Manual / on-demand | Post-processing utility for generated video loops - trims static frames from the start and end of clips. |
+| `run_task.py` | Varies (per task definition) | Generic task runner. Executes a prompt-based task defined in Obsidian at `Agent Workspace/<agent>/tasks/<task_name>.md` (YAML frontmatter + prompt body). Delivers the result via the configured delivery method (telegram, voice, obsidian, etc.). |
 
-### MCP Servers (Python subprocesses)
+### scripts/agents/general_montgomery/ - Montgomery-Specific Scripts
 
-`mcp/memory_server.py` and `mcp/google_server.py` remain as Python. They are spawned by the `claude` CLI over stdio (not by the Electron app directly) and bundled as `extraResources` in the packaged app. The memory server provides 41 tools for memory operations, while the Google server provides tools for email and calendar access. See [05 - MCP Server](05%20-%20MCP%20Server.md) for comprehensive documentation of these servers.
+General Montgomery is the intelligence and geopolitical analysis agent. His scripts focus on monitoring, synthesis, and structured reporting rather than relationship management.
+
+| Script | Schedule | What it does |
+|--------|----------|-------------|
+| `worldmonitor_poll.py` | Three tiers: 15min / 45min / 4h | Polls the WorldMonitor API for the specified tier. Fast tier: flights, vessels, alerts, GPS jamming. Medium tier: conflicts, thermal activity. Slow tier: economic, trade, displacement data. Writes significant changes as observations to Montgomery's memory DB. |
+| `three_hour_update.py` | Every 3 hours | Pulls live WorldMonitor data, checks for new signals, and sends a brief Montgomery-voice update to Telegram. Concise - a situation check, not a full brief. If nothing material has changed, says so in one sentence. |
+| `dashboard_brief.py` | Every 15min (refresh) + every 4h (send) | Refresh mode: collects data, regenerates HTML dashboard, sends only on breaking news. Send mode: collects data, generates LLM assessment, renders full dashboard, always sends to Telegram. |
+| `flash_report.py` | Event-triggered | Fires when WorldMonitor alerts contain critical items, active alerts exceed threshold, or theater status escalates. Generates a concise flash assessment via Claude and sends immediately. |
+| `weekly_digest.py` | Monday 7am | Full week assessment across all six Meridian research tracks with week-ahead outlook. Draws from WorldMonitor live data, intelligence DB brief log, and conflict watchlist. |
+| `weekly_conflicts.py` | Weekly | Selects a conflict from the watchlist (rotating or as instructed), pulls live WorldMonitor data, generates a full assessment, logs to intelligence DB and Obsidian, sends via Telegram. |
+| `competitor_scan.py` | Weekdays 9am | Monitors RUSI, ISW, IISS, Chatham House, CSIS, RAND for new publications via RSS and web scraping. Flags new items to Montgomery for response. |
+| `competitor_synthesis.py` | Called by competitor_scan.py | Claude-powered analysis layer. Compares competitor publications against existing assessments in intelligence DB. Classifies each as CONFIRM (aligns), DIVERGE (contradicts), or GAP (uncovered ground). |
+| `parliamentary_monitor.py` | Weekdays 8am | Fetches recent Hansard proceedings for defence and foreign affairs content relevant to Meridian tracks via the UK Parliament API. Filters for: defence, NATO, Ukraine, Iran, China, AUKUS, arms exports, intelligence. |
+| `commissioning.py` | Manual / on-demand | Research request management. Provides a structured pipeline for submitting research requests, tracking status, and reporting completion. |
+| `commission_dispatcher.py` | Every 4 hours | Routes open commissions to Research Fellows. Pulls context from intelligence DB, calls Claude with the commission brief and domain context, stores output, marks commission complete, and sends summary to Telegram. |
+| `ship_track_alert.py` | Scheduled | Five-vector AIS monitoring: Iran/Hormuz, US-Israel CENTCOM, Russia (Black Sea/Baltic/Arctic), Ukraine grain corridor, Red Sea/Houthi. Fires Telegram alert on significant movement. |
+| `process_audit.py` | First Monday of month at 10am | Monthly institutional self-assessment. Reviews the past month's output against the founding objective (multi-plane synthesis, not aggregation). Sends audit brief to Obsidian and Telegram. |
+| `track_record.py` | Weekly (extract) + Monthly (review) | Extract mode: scans recent briefs for prediction statements and logs them to `assessment_outcomes` as PENDING. Review mode: scans old PENDING outcomes and asks Claude whether each prediction proved correct. |
+
+### Google Auth and MCP Servers
+
+`scripts/google_auth.py` manages Google OAuth2 credentials for Gmail and Calendar access. It uses `google-auth-oauthlib` and `google-api-python-client`. Three modes: authorize (opens browser consent), `--check` (validate credentials), `--revoke` (delete tokens). Tokens stored at `~/.atrophy/.google/token.json`.
+
+`mcp/memory_server.py` and `mcp/google_server.py` are MCP servers spawned by the Claude CLI over stdio. The memory server provides tools for memory operations; the Google server provides email and calendar tools. See [05 - MCP Server](05%20-%20MCP%20Server.md) for full documentation.
 
 ---
 
@@ -1934,85 +1973,109 @@ See [Building and Distribution](../guides/10%20-%20Building%20and%20Distribution
 
 Each agent has its own `jobs.json` file at `<BUNDLE_ROOT>/scripts/agents/<agent_name>/jobs.json`. This file defines every scheduled background job for that agent, including both its schedule and the script to run. The `cron.ts` module reads this file to generate launchd plists and to display jobs in the Settings panel.
 
-The following example shows a complete `jobs.json` with all standard jobs. Calendar jobs use standard 5-field cron notation (minute, hour, day-of-month, month, day-of-week), while interval jobs specify seconds between runs.
+The following example shows the companion agent's `jobs.json` with its standard jobs. Calendar jobs use standard 5-field cron notation (minute, hour, day-of-month, month, day-of-week), while interval jobs specify seconds between runs. The `route_output_to` field, when set to `"self"`, means the job's output is delivered back to the agent rather than to another destination.
 
 ```json
 {
   "observer": {
     "type": "interval",
     "interval_seconds": 900,
-    "script": "scripts/agents/companion/observer.py",
-    "description": "Fact extraction from recent conversation"
+    "script": "scripts/agents/shared/observer.py",
+    "description": "Periodic fact extraction from recent conversation"
   },
   "heartbeat": {
     "type": "interval",
     "interval_seconds": 1800,
-    "script": "scripts/agents/companion/heartbeat.py",
-    "description": "Periodic check-in evaluation"
+    "script": "scripts/agents/shared/heartbeat.py",
+    "description": "Periodic check-in evaluation - decides whether to reach out unprompted",
+    "route_output_to": "self"
   },
   "check_reminders": {
     "type": "interval",
     "interval_seconds": 60,
-    "script": "scripts/agents/companion/check_reminders.py",
-    "description": "Fire due reminders"
+    "script": "scripts/agents/shared/check_reminders.py",
+    "description": "Check and fire due reminders - runs every minute",
+    "route_output_to": "self"
   },
   "sleep_cycle": {
     "cron": "0 3 * * *",
-    "script": "scripts/agents/companion/sleep_cycle.py",
-    "description": "Nightly memory reconciliation"
+    "script": "scripts/agents/shared/sleep_cycle.py",
+    "description": "Nightly memory reconciliation - processes day's sessions, extracts facts, updates threads"
   },
   "morning_brief": {
     "cron": "0 7 * * *",
-    "script": "scripts/agents/companion/morning_brief.py",
-    "description": "Morning briefing"
+    "script": "scripts/agents/shared/morning_brief.py",
+    "description": "Daily morning brief - weather, news, threads, queued for next app launch",
+    "route_output_to": "self"
   },
   "evolve": {
     "cron": "0 3 1 * *",
-    "script": "scripts/agents/companion/evolve.py",
-    "description": "Monthly self-evolution"
+    "script": "scripts/agents/shared/evolve.py",
+    "description": "Monthly self-evolution - revises soul.md and system.md from journal reflections"
   },
   "introspect": {
-    "cron": "33 3 24 * *",
-    "script": "scripts/agents/companion/introspect.py",
-    "description": "Self-rescheduling deep reflection"
-  },
-  "converse": {
-    "cron": "12 2 15 * *",
-    "script": "scripts/agents/companion/converse.py",
-    "description": "Self-rescheduling inter-agent conversation"
+    "cron": "42 4 1 4 *",
+    "script": "scripts/agents/shared/introspect.py",
+    "description": "Daily self-reflection - reviews sessions, writes journal entry to Obsidian"
   },
   "gift": {
-    "cron": "45 14 10 * *",
+    "cron": "11 0 28 3 *",
     "script": "scripts/agents/companion/gift.py",
-    "description": "Self-rescheduling gift note"
+    "description": "Unprompted gift note in Obsidian - self-rescheduling",
+    "route_output_to": "self"
   },
   "voice_note": {
-    "cron": "30 11 * * *",
+    "cron": "18 22 24 3 *",
     "script": "scripts/agents/companion/voice_note.py",
-    "description": "Self-rescheduling voice note"
+    "description": "Spontaneous voice note via Telegram - self-rescheduling"
+  },
+  "converse": {
+    "cron": "30 2 7 4 *",
+    "script": "scripts/agents/companion/converse.py",
+    "description": "Inter-agent conversation - self-rescheduling, max twice a month"
   }
 }
 ```
 
-Self-rescheduling jobs (introspect, converse, gift, voice_note) have initial cron values that are overwritten after each run. The initial values shown above are examples - actual schedules are randomised by each job after it completes. All script paths are relative to the project root (`BUNDLE_ROOT`).
+Self-rescheduling jobs (gift, voice_note, converse) store cron expressions that are overwritten after each run. The values shown above are the stored values at the time of writing - actual schedules are randomised by each job after it completes. All script paths are relative to the project root (`BUNDLE_ROOT`).
+
+Montgomery's `jobs.json` uses the same format with different scripts - three `worldmonitor_poll.py` interval jobs at different tiers (15min / 45min / 4h) plus agent-specific calendar jobs for digest, conflicts, competitor scan, parliamentary monitor, and process audit. Montgomery does not use the shared `heartbeat`, `gift`, `converse`, or `voice_note` scripts.
 
 ---
 
 ## Schedule Summary
 
-The following table provides a complete overview of every scheduled job in the system, including the model and effort level used for inference, and any gate conditions that must pass before the job runs.
+The following table provides a complete overview of the companion agent's scheduled jobs.
 
-| Job | Type | Schedule | Model | Effort | Gates |
-|-----|------|----------|-------|--------|-------|
-| observer | interval | Every 15 min | Haiku 4.5 | low | None |
-| heartbeat | interval | Every 30 min | Default (streamed with tools) | N/A | Active hours, user not away |
-| check_reminders | interval | Every 60 sec | None (no inference) | N/A | None |
-| sleep_cycle | calendar | 3:00 AM daily | Haiku 4.5 | low | None |
-| morning_brief | calendar | 7:00 AM daily | Default | N/A | None |
-| introspect | calendar | Random 2-14 days, 1-5 AM | Default | N/A | None |
-| evolve | calendar | 3:00 AM 1st of month | Sonnet 4.6 | medium | None |
-| converse | calendar | Random 14-21 days, 1-5 AM | Default | N/A | None |
-| gift | calendar | Random 3-30 days, any hour | Default | N/A | None |
-| voice_note | calendar | Random 2-8 hours, active hours | Default + Haiku 4.5 (enrichment) | N/A + low | Active hours, Telegram configured |
-| generate_avatar | manual | On demand | None (external APIs) | N/A | FAL_KEY required |
-| run_task | varies | Per task definition | Default | N/A | None |
+**Companion agent:**
+
+| Job | Type | Schedule | Notes |
+|-----|------|----------|-------|
+| observer | interval | Every 15 min (900s) | Shared script. Most runs are no-ops. Haiku, low effort. |
+| heartbeat | interval | Every 30 min (1800s) | Shared script. Gate: active hours, user not away. |
+| check_reminders | interval | Every 60 sec | Shared script. No inference. |
+| sleep_cycle | calendar | 3:00 AM daily | Shared script. Haiku, low effort. |
+| morning_brief | calendar | 7:00 AM daily | Shared script. Queued with TTS audio. |
+| introspect | calendar | Self-rescheduling | Shared script. Full DB access. Writes to Obsidian journal. |
+| evolve | calendar | 3:00 AM 1st of month | Shared script. Revises soul.md and system.md in Obsidian. |
+| gift | calendar | Self-rescheduling, 3-30 days | Companion-specific. Leaves note in Obsidian. |
+| voice_note | calendar | Self-rescheduling, 2-8h active hours | Companion-specific. Sends OGG via Telegram. |
+| converse | calendar | Self-rescheduling, max twice/month | Companion-specific. Inter-agent conversation. |
+
+**General Montgomery agent (additional jobs):**
+
+| Job | Type | Schedule | Notes |
+|-----|------|----------|-------|
+| worldmonitor_fast | interval | Every 15 min (900s) | Flights, vessels, alerts, GPS jamming. |
+| worldmonitor_medium | interval | Every 45 min (2700s) | Conflicts, thermal activity. |
+| worldmonitor_slow | interval | Every 4h (14400s) | Economic, trade, displacement. |
+| three_hour_update | interval | Every 3 hours | Situational check-in to Telegram. |
+| dashboard_brief | calendar | Every 15min (refresh) + 4h (send) | HTML dashboard + LLM assessment. |
+| flash_report | event-triggered | On critical alerts | Immediate assessment on threshold breach. |
+| weekly_digest | calendar | Monday 7:00 AM | Full week across six Meridian tracks. |
+| weekly_conflicts | calendar | Weekly | Single conflict deep assessment. |
+| competitor_scan | calendar | Weekdays 9:00 AM | RUSI, ISW, IISS, Chatham House, CSIS, RAND. |
+| parliamentary_monitor | calendar | Weekdays 8:00 AM | Hansard defence/foreign affairs. |
+| commission_dispatcher | calendar | Every 4 hours | Routes open commissions to Research Fellows. |
+| process_audit | calendar | First Monday of month, 10:00 AM | Monthly institutional self-assessment. |
+| track_record | calendar | Weekly (extract) + Monthly (review) | Prediction accuracy tracking. |

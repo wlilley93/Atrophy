@@ -545,6 +545,10 @@ function withAgentDispatchLock<T>(agentName: string, fn: () => Promise<T>): Prom
       _dispatchStartTimes.delete(agentName);
       // Only resolve if the safety timer hasn't already done so
       if (!forceReleased) resolve!();
+      // Prune completed queue entry to prevent unbounded map growth
+      if (_agentDispatchQueues.get(agentName) === next) {
+        _agentDispatchQueues.delete(agentName);
+      }
     }
   });
 }
@@ -566,6 +570,10 @@ function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
       return await fn();
     } finally {
       resolve!();
+      // Reset to a fresh resolved promise to prevent chain growth
+      if (_configQueue === next) {
+        _configQueue = Promise.resolve();
+      }
     }
   });
 }
@@ -666,7 +674,8 @@ async function dispatchToAgent(
       // Mark user as active when a real Telegram message arrives (not cron)
       if (isTelegramOrigin) { try { setActive(); } catch { /* non-critical */ } }
 
-      return streamInference(prompt, system, sessionId, { senderName });
+      const source = isCronDispatch ? 'cron' as const : 'telegram' as const;
+      return streamInference(prompt, system, sessionId, { senderName, source });
     });
 
     let fullText = '';
@@ -856,19 +865,15 @@ async function dispatchToAgent(
       } else {
         await sendMessage(`${header}${finalText}`, chatId, false, botToken);
       }
-    } else if (!finalText && msgId && isTelegramOrigin) {
-      // No response text (error/empty) - delete the thinking message to avoid orphan
-      try { await deleteMessage(msgId, chatId, botToken); } catch { /* best effort */ }
 
       // Auto-upload files mentioned in the response (e.g. generated docs)
       // Match paths like /Users/.../file.docx or ~/.atrophy/.../file.pdf
-      // Use [^\s`"')>\]] to stop at markdown delimiters, backticks, quotes, etc.
-      // and restrict to ~/.atrophy/ paths to prevent AI-generated path traversal.
+      // Restrict to ~/.atrophy/ paths to prevent AI-generated path traversal.
       const fileRe = /(?:\/Users\/\w[\w/._-]+|~\/\.atrophy\/[\w/._-]+)\.(?:docx|pdf|xlsx|csv|txt|md|html|json|png|jpg)(?=[\s`"')\]>,;:]|$)/g;
       const filePaths = finalText.match(fileRe);
       if (filePaths) {
         for (const raw of filePaths) {
-          const fp = raw.startsWith('~') ? raw.replace('~', os.homedir()) : raw;
+          const fp = raw.startsWith('~') ? raw.replace(/^~/, os.homedir()) : raw;
           if (fs.existsSync(fp)) {
             try {
               await sendDocument(fp, path.basename(fp), chatId, false, botToken);
@@ -879,6 +884,9 @@ async function dispatchToAgent(
           }
         }
       }
+    } else if (!finalText && msgId && isTelegramOrigin) {
+      // No response text (error/empty) - delete the thinking message to avoid orphan
+      try { await deleteMessage(msgId, chatId, botToken); } catch { /* best effort */ }
 
       // Auto-send artefacts created during this dispatch
       try {

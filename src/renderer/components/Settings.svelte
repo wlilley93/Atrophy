@@ -143,31 +143,31 @@
       agentList = fullAgents || [];
 
       // Populate form
-      userName = cfg.userName || '';
-      agentDisplayName = cfg.agentDisplayName || '';
-      wakeWords = (cfg.wakeWords || []).join(', ');
-      disabledTools = new Set(cfg.disabledTools || []);
+      userName = cfg.userName ?? '';
+      agentDisplayName = cfg.agentDisplayName ?? '';
+      wakeWords = (cfg.wakeWords ?? []).join(', ');
+      disabledTools = new Set(cfg.disabledTools ?? []);
 
-      windowWidth = cfg.windowWidth || 622;
-      windowHeight = cfg.windowHeight || 830;
-      avatarEnabled = cfg.avatarEnabled || false;
-      avatarResolution = cfg.avatarResolution || 512;
+      windowWidth = cfg.windowWidth ?? 622;
+      windowHeight = cfg.windowHeight ?? 830;
+      avatarEnabled = cfg.avatarEnabled ?? false;
+      avatarResolution = cfg.avatarResolution ?? 512;
 
-      ttsBackend = cfg.ttsBackend || 'elevenlabs';
-      elevenlabsApiKey = cfg.elevenlabsApiKey || '';
-      elevenlabsVoiceId = cfg.elevenlabsVoiceId || '';
-      elevenlabsModel = cfg.elevenlabsModel || 'eleven_v3';
+      ttsBackend = cfg.ttsBackend ?? 'elevenlabs';
+      elevenlabsApiKey = cfg.elevenlabsApiKey ?? '';
+      elevenlabsVoiceId = cfg.elevenlabsVoiceId ?? '';
+      elevenlabsModel = cfg.elevenlabsModel ?? 'eleven_v3';
       elevenlabsStability = cfg.elevenlabsStability ?? 0.5;
       elevenlabsSimilarity = cfg.elevenlabsSimilarity ?? 0.75;
       elevenlabsStyle = cfg.elevenlabsStyle ?? 0.35;
       ttsPlaybackRate = cfg.ttsPlaybackRate ?? 1.12;
-      falApiKey = cfg.falApiKey || '';
-      falVoiceId = cfg.falVoiceId || '';
+      falApiKey = cfg.falApiKey ?? '';
+      falVoiceId = cfg.falVoiceId ?? '';
 
-      inputMode = cfg.inputMode || 'dual';
-      pttKey = cfg.pttKey || 'ctrl';
-      wakeWordEnabled = cfg.wakeWordEnabled || false;
-      wakeChunkSeconds = cfg.wakeChunkSeconds || 2;
+      inputMode = cfg.inputMode ?? 'dual';
+      pttKey = cfg.pttKey ?? 'ctrl';
+      wakeWordEnabled = cfg.wakeWordEnabled ?? false;
+      wakeChunkSeconds = cfg.wakeChunkSeconds ?? 2;
 
       silenceTimerEnabled = cfg.silenceTimerEnabled ?? true;
       silenceTimerMinutes = cfg.silenceTimerMinutes ?? 5;
@@ -177,38 +177,38 @@
       keepAwakeActive = cfg.keepAwakeActive ?? false;
       notificationsEnabled = cfg.notificationsEnabled ?? true;
 
-      sampleRate = cfg.sampleRate || 16000;
-      maxRecordSec = cfg.maxRecordSec || 120;
+      sampleRate = cfg.sampleRate ?? 16000;
+      maxRecordSec = cfg.maxRecordSec ?? 120;
 
-      claudeBin = cfg.claudeBin || 'claude';
-      claudeModel = cfg.claudeModel || 'claude-sonnet-4-6';
-      claudeEffort = cfg.claudeEffort || 'medium';
+      claudeBin = cfg.claudeBin ?? 'claude';
+      claudeModel = cfg.claudeModel ?? 'claude-sonnet-4-6';
+      claudeEffort = cfg.claudeEffort ?? 'medium';
       adaptiveEffort = cfg.adaptiveEffort ?? true;
 
       contextSummaries = cfg.contextSummaries ?? 3;
-      maxContextTokens = cfg.maxContextTokens || 180000;
+      maxContextTokens = cfg.maxContextTokens ?? 180000;
       vectorSearchWeight = cfg.vectorSearchWeight ?? 0.7;
-      embeddingModel = cfg.embeddingModel || 'all-MiniLM-L6-v2';
-      embeddingDim = cfg.embeddingDim || 384;
+      embeddingModel = cfg.embeddingModel ?? 'all-MiniLM-L6-v2';
+      embeddingDim = cfg.embeddingDim ?? 384;
 
-      sessionSoftLimitMins = cfg.sessionSoftLimitMins || 60;
+      sessionSoftLimitMins = cfg.sessionSoftLimitMins ?? 60;
 
       heartbeatActiveStart = cfg.heartbeatActiveStart ?? 9;
       heartbeatActiveEnd = cfg.heartbeatActiveEnd ?? 22;
-      heartbeatIntervalMins = cfg.heartbeatIntervalMins || 30;
+      heartbeatIntervalMins = cfg.heartbeatIntervalMins ?? 30;
 
-      obsidianVault = cfg.obsidianVault || '';
-      dbPath = cfg.dbPath || '';
-      whisperBin = cfg.whisperBin || '';
+      obsidianVault = cfg.obsidianVault ?? '';
+      dbPath = cfg.dbPath ?? '';
+      whisperBin = cfg.whisperBin ?? '';
 
-      googleConfigured = cfg.googleConfigured || false;
+      googleConfigured = cfg.googleConfigured ?? false;
 
-      telegramBotToken = cfg.telegramBotToken || '';
-      telegramChatId = cfg.telegramChatId || '';
-      telegramDaemonRunning = cfg.telegramDaemonRunning || false;
+      telegramBotToken = cfg.telegramBotToken ?? '';
+      telegramChatId = cfg.telegramChatId ?? '';
+      telegramDaemonRunning = cfg.telegramDaemonRunning ?? false;
 
-      version = cfg.version || '0.0.0';
-      bundleRoot = cfg.bundleRoot || '';
+      version = cfg.version ?? '0.0.0';
+      bundleRoot = cfg.bundleRoot ?? '';
     } catch (e) {
       console.error('Failed to load config', e);
     }
