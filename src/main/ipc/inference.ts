@@ -39,11 +39,18 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
     };
   }
 
+  let _inferring = false;
+
   ipcMain.handle('inference:send', (_event, text: string) => {
     if (!ctx.mainWindow) {
       log.warn('inference:send called but mainWindow is null');
       return;
     }
+    if (_inferring) {
+      log.warn('inference:send called while already inferring - ignoring');
+      return;
+    }
+    _inferring = true;
 
     // Mark user active and reset journal nudge timer
     setActive();
@@ -107,7 +114,7 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
       let fullText = '';
 
       emitter.on('event', (evt: InferenceEvent) => {
-        if (!ctx.mainWindow) return;
+        if (!ctx.mainWindow || ctx.mainWindow.isDestroyed()) return;
 
         switch (evt.type) {
           case 'TextDelta':
@@ -150,6 +157,7 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
             break;
 
           case 'StreamDone':
+            _inferring = false;
             fullText = evt.fullText;
             // Store CLI session ID after first inference
             if (ctx.currentSession && !ctx.currentSession.cliSessionId) {
@@ -164,14 +172,16 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
 
             // Parse inline artifacts from response
             const { text: cleanedText, artifacts } = parseArtifacts(fullText);
-            if (artifacts.length > 0) {
-              for (const art of artifacts) {
-                ctx.mainWindow.webContents.send('inference:artifact', art);
+            if (!ctx.mainWindow.isDestroyed()) {
+              if (artifacts.length > 0) {
+                for (const art of artifacts) {
+                  ctx.mainWindow.webContents.send('inference:artifact', art);
+                }
+                // Send cleaned text (artifact blocks replaced with placeholders)
+                ctx.mainWindow.webContents.send('inference:done', cleanedText);
+              } else {
+                ctx.mainWindow.webContents.send('inference:done', fullText);
               }
-              // Send cleaned text (artifact blocks replaced with placeholders)
-              ctx.mainWindow.webContents.send('inference:done', cleanedText);
-            } else {
-              ctx.mainWindow.webContents.send('inference:done', fullText);
             }
             // Cache an opening for next boot if we don't have one yet
             // (proves the CLI is working, so dynamic generation will succeed)
@@ -186,11 +196,15 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
             break;
 
           case 'StreamError':
-            ctx.mainWindow?.webContents.send('inference:error', evt.message);
+            _inferring = false;
+            if (!ctx.mainWindow.isDestroyed()) {
+              ctx.mainWindow.webContents.send('inference:error', evt.message);
+            }
             break;
         }
       });
     } catch (err) {
+      _inferring = false;
       log.error('[inference:send] failed to start inference:', err);
       ctx.mainWindow?.webContents.send('inference:error', `Inference failed: ${err instanceof Error ? err.message : String(err)}`);
     }

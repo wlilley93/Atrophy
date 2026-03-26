@@ -594,6 +594,12 @@ export function isMuted(): boolean {
 
 export function enqueueAudio(audioPath: string, index: number): void {
   if (_muted) return;
+  // Validate file type to prevent non-audio files from being passed to afplay
+  const ext = audioPath.split('.').pop()?.toLowerCase();
+  if (ext && !['mp3', 'aiff', 'wav', 'aac', 'm4a'].includes(ext)) {
+    log.warn(`enqueueAudio: rejecting non-audio file: ${audioPath}`);
+    return;
+  }
   _queue.push({ audioPath, index });
   // Keep queue sorted by sentence index so out-of-order TTS results play correctly
   _queue.sort((a, b) => a.index - b.index);

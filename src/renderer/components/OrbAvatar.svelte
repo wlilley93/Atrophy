@@ -167,6 +167,7 @@
   function stopCanvas() {
     canvasRunning = false;
     cancelAnimationFrame(animFrame);
+    animFrame = 0;
   }
 
   function orbColor(): { h: number; s: number; l: number } {
@@ -292,12 +293,15 @@
     // Bump generation so in-flight loads from previous state are discarded
     const gen = ++loadGeneration;
 
-    // Reset state
-    videoSrc = '';
-    videoReady = false;
-    videoError = false;
-    allLoops = [];
-    showingAmbient = false;
+    // Only reset video state when agent actually changes - mode changes
+    // should transition smoothly without killing the current video
+    if (agentChanged) {
+      videoSrc = '';
+      videoReady = false;
+      videoError = false;
+      allLoops = [];
+      showingAmbient = false;
+    }
 
     console.log('[OrbAvatar] effect: agent=%s ambient=%s agentChanged=%s modeChanged=%s', agent, wantAmbient, agentChanged, modeChanged);
 
