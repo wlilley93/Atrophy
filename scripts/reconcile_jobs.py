@@ -91,11 +91,13 @@ def parse_cron_expr(cron: str):
 
     minute, hour, dom, month, dow = parts
     keys = ["Minute", "Hour", "Day", "Month", "Weekday"]
+    # field_max per cron field: minute=59, hour=23, dom=31, month=12, dow=6
+    field_maxes = [59, 23, 31, 12, 6]
     parsed = {}
 
-    for key, val in zip(keys, [minute, hour, dom, month, dow]):
+    for key, val, fmax in zip(keys, [minute, hour, dom, month, dow], field_maxes):
         if val != "*":
-            parsed[key] = _parse_field(val)
+            parsed[key] = _parse_field(val, fmax)
 
     # If any field has a list, expand into multiple dicts for launchd
     list_keys = [k for k, v in parsed.items() if isinstance(v, list)]

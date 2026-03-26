@@ -3093,7 +3093,7 @@ def handle_read_docs(args):
                 if fname == os.path.basename(path):
                     full = os.path.join(root, fname)
                     break
-            if os.path.isfile(full) and full.startswith(os.path.normpath(DOCS_DIR)):
+            if os.path.isfile(full) and os.path.realpath(full).startswith(os.path.realpath(DOCS_DIR) + os.sep):
                 break
         else:
             return f"Doc not found: {path}\nUse list_docs to see available files."
@@ -3242,6 +3242,8 @@ def handle_edit_tool(args):
     name = args["name"].lower().replace(" ", "_").replace("-", "_")
     # Strip custom_ prefix if provided
     bare_name = name.removeprefix("custom_")
+    if not bare_name.isidentifier():
+        return f"Error: '{bare_name}' is not a valid tool name."
     tool_dir = os.path.join(_CUSTOM_TOOLS_DIR, bare_name)
     if not os.path.isdir(tool_dir):
         return f"Tool '{bare_name}' not found."
@@ -3267,8 +3269,15 @@ def handle_edit_tool(args):
         json.dump(tool_def, f, indent=2)
 
     if "handler_code" in args and args["handler_code"]:
+        handler_code = args["handler_code"]
+        _BLOCKED = ["os.system", "subprocess.call", "eval(", "exec(", "__import__",
+                    "shutil.rmtree", "os.remove", "os.unlink", "open('/etc",
+                    "os.environ[", ".delete(", "DROP TABLE", "DROP DATABASE"]
+        for pattern in _BLOCKED:
+            if pattern in handler_code:
+                return f"Error: handler contains blocked pattern '{pattern}'."
         with open(handler_path, "w") as f:
-            f.write(args["handler_code"])
+            f.write(handler_code)
 
     return f"Tool '{bare_name}' updated. Changes take effect on next session."
 
@@ -3276,6 +3285,8 @@ def handle_edit_tool(args):
 def handle_delete_tool(args):
     name = args["name"].lower().replace(" ", "_").replace("-", "_")
     bare_name = name.removeprefix("custom_")
+    if not bare_name.isidentifier():
+        return f"Error: '{bare_name}' is not a valid tool name."
     tool_dir = os.path.join(_CUSTOM_TOOLS_DIR, bare_name)
     if not os.path.isdir(tool_dir):
         return f"Tool '{bare_name}' not found."
@@ -3595,10 +3606,13 @@ def handle_mcp_scaffold_server(args):
 
     for tool in tools:
         tname = tool.get("name", "").strip()
-        tdesc = tool.get("description", "")
+        tdesc = tool.get("description", "").replace('"""', '---')
         tparams = tool.get("parameters", {})
 
         if not tname:
+            continue
+        # Validate tool name is a safe Python identifier to prevent code injection
+        if not tname.isidentifier():
             continue
 
         # Build inputSchema from parameters

@@ -146,7 +146,7 @@ def leave_gift():
     if gifts_path.is_file():
         # Update the 'updated' field in frontmatter
         existing = gifts_path.read_text()
-        if existing.startswith("---\n"):
+        if existing.startswith("---\n") and "\n---\n" in existing[4:]:
             end = existing.index("\n---\n", 4)
             fm = existing[4:end]
             import re
