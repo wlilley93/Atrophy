@@ -35,7 +35,7 @@ import { runCoherenceCheck } from './sentinel';
 import { drainAllAgentQueues } from './queue';
 import { startServer, stopServer } from './server';
 import { startDaemon, stopDaemon } from './channels/telegram';
-import { cronScheduler } from './channels/cron';
+import { cronScheduler, stopAllJobs } from './channels/cron';
 import { mcpRegistry } from './mcp-registry';
 import { wireAgent, markBootComplete } from './create-agent';
 import { registerCallHandlers } from './call';
@@ -57,9 +57,15 @@ const log = createLogger('main');
 // We still call getHotBundlePaths() to get preload/renderer paths.
 // ---------------------------------------------------------------------------
 
-const _hotBundle: HotBundlePaths | null = process.env.ATROPHY_HOT_BOOT === '1'
-  ? getHotBundlePaths()
-  : null;
+const _hotBundle: HotBundlePaths | null = (() => {
+  if (process.env.ATROPHY_HOT_BOOT !== '1') return null;
+  try {
+    return getHotBundlePaths();
+  } catch (err) {
+    console.error('Hot bundle paths failed, using frozen bundle:', err);
+    return null;
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // State
@@ -633,6 +639,7 @@ app.whenReady().then(() => {
   if (lastAgent && lastAgent !== config.AGENT_NAME) {
     config.reloadForAgent(lastAgent);
     initDb();
+    currentAgentName = config.AGENT_NAME;
     log.info(`resumed agent: ${config.AGENT_NAME}`);
   }
 
@@ -679,6 +686,7 @@ app.whenReady().then(() => {
   if (crashSafe) {
     try {
       cronScheduler.start();
+      cronScheduler.registerWithSwitchboard();
       const schedule = cronScheduler.getSchedule();
       log.info(`Cron scheduler: ${schedule.length} job(s) scheduled`);
     } catch (e) {
@@ -755,20 +763,22 @@ app.whenReady().then(() => {
         if (newId && currentSession) {
           currentSession.setCliSessionId(newId);
         }
-      }).catch(() => { /* non-critical */ });
+      }).catch((err) => { log.debug(`sentinel coherence check failed: ${err}`); });
     }
   }, 5 * 60 * 1000);
 
   // Queue poller - drain ALL agents' queues (not just the active one)
-  queueTimer = setInterval(async () => {
-    const allMessages = await drainAllAgentQueues();
-    for (const [, messages] of Object.entries(allMessages)) {
-      for (const msg of messages) {
-        if (mainWindow) {
-          mainWindow.webContents.send('queue:message', msg);
+  queueTimer = setInterval(() => {
+    (async () => {
+      const allMessages = await drainAllAgentQueues();
+      for (const [, messages] of Object.entries(allMessages)) {
+        for (const msg of messages) {
+          if (mainWindow) {
+            mainWindow.webContents.send('queue:message', msg);
+          }
         }
       }
-    }
+    })().catch(err => log.error('queue poll error:', err));
   }, 10_000);
 
   // Deferral watcher - check for agent handoff requests every 5s
@@ -918,30 +928,34 @@ app.whenReady().then(() => {
   // Session idle rotation - close and summarise desktop sessions after 30 min
   // of inactivity, giving them clean arcs (start, summary, end) rather than
   // accumulating turns indefinitely until shutdown.
-  sessionIdleTimer = setInterval(async () => {
-    if (!currentSession || currentSession.sessionId === null) return;
-    if (currentSession.turnHistory.length === 0) return;
+  sessionIdleTimer = setInterval(() => {
+    (async () => {
+      if (!currentSession || currentSession.sessionId === null) return;
+      if (currentSession.turnHistory.length === 0) return;
 
-    // Use the session's own activity timestamp (updated on every turn from
-    // any channel - GUI, Telegram, cron) rather than GUI-only lastUserInputTime.
-    const lastActivity = currentSession.lastActivityAt ?? lastUserInputTime;
-    const gap = Date.now() - lastActivity;
-    if (gap < SESSION_IDLE_THRESHOLD_MS) return;
+      // Use the session's own activity timestamp (updated on every turn from
+      // any channel - GUI, Telegram, cron) rather than GUI-only lastUserInputTime.
+      const lastActivity = currentSession.lastActivityAt ?? lastUserInputTime;
+      const gap = Date.now() - lastActivity;
+      if (gap < SESSION_IDLE_THRESHOLD_MS) return;
 
-    const oldSession = currentSession;
-    const sys = systemPrompt || loadSystemPrompt();
-    try {
-      await oldSession.end(sys);
-      log.info(`rotated idle session (gap: ${Math.round(gap / 60000)}m, turns: ${oldSession.turnHistory.length})`);
-    } catch (e) {
-      log.error(`failed to end idle session: ${e}`);
-    }
-    currentSession = null;
+      const oldSession = currentSession;
+      const sys = systemPrompt || loadSystemPrompt();
+      try {
+        await oldSession.end(sys);
+        log.info(`rotated idle session (gap: ${Math.round(gap / 60000)}m, turns: ${oldSession.turnHistory.length})`);
+      } catch (e) {
+        log.error(`failed to end idle session: ${e}`);
+      }
+      // Only null if no new session was created during the async end()
+      if (currentSession === oldSession) currentSession = null;
+    })().catch(err => log.error('session idle rotation error:', err));
   }, 60_000); // check every minute
 
   // Server mode - no window
   if (isServerMode) {
-    const port = parseInt(args[args.indexOf('--port') + 1] || '5000', 10);
+    const portIdx = args.indexOf('--port');
+    const port = portIdx !== -1 ? parseInt(args[portIdx + 1], 10) || 5000 : 5000;
     startServer(port);
     return;
   }
@@ -1018,11 +1032,11 @@ app.whenReady().then(() => {
     }
   }
 
-  // Cmd+Shift+] / [ and Shift+Up / Down - cycle agents
+  // Cmd+Shift+] / [ - cycle agents
+  // NOTE: Shift+Up/Down were removed - they are standard text selection
+  // shortcuts and globalShortcut intercepts them system-wide in all apps.
   globalShortcut.register('CommandOrControl+Shift+]', () => { doCycleAgent(1); });
   globalShortcut.register('CommandOrControl+Shift+[', () => { doCycleAgent(-1); });
-  globalShortcut.register('Shift+Up', () => doCycleAgent(-1));
-  globalShortcut.register('Shift+Down', () => doCycleAgent(1));
 });
 
 // Cmd+Q hides the window instead of quitting. Only tray Quit sets _forceQuit.
@@ -1061,6 +1075,7 @@ app.on('will-quit', () => {
   if (sessionIdleTimer) clearInterval(sessionIdleTimer);
   if (journalNudgeTimer) clearTimeout(journalNudgeTimer);
   stopAllInference();
+  stopAllJobs();
   stopWakeWordListener(() => mainWindow);
   disableKeepAwake();
   stopDaemon();
