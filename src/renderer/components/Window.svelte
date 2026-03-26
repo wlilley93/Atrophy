@@ -18,7 +18,7 @@
   import { audio } from '../stores/audio.svelte';
   import { agents } from '../stores/agents.svelte';
 
-  import { addMessage, completeLast, clearTranscript, transcript } from '../stores/transcript.svelte';
+  import { addMessage, addDivider, completeLast, clearTranscript, transcript } from '../stores/transcript.svelte';
   import { getArtifact } from '../stores/artifacts.svelte';
 
   import { api } from '../api';
@@ -868,6 +868,19 @@
           journalNudgeVisible = true;
           journalNudgeShown = true;
         }
+      }));
+
+      // Desktop delivery of cron job output (notify_via auto+active or both)
+      ipcCleanups.push(api.on('cron:desktopDelivery', (data: {
+        agent: string;
+        displayName: string;
+        emoji: string;
+        text: string;
+      }) => {
+        addDivider(`${data.emoji} ${data.displayName} - scheduled update`);
+        const msg = addMessage('agent', data.text);
+        msg.complete = true;
+        msg.revealed = msg.content.length;
       }));
     }
 
