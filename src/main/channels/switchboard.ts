@@ -323,7 +323,7 @@ class Switchboard {
   writeStateForMCP(): void {
     const fs = require('fs');
     const path = require('path');
-    const stateDir = path.join(process.env.HOME || '/tmp', '.atrophy');
+    const stateDir = USER_DATA;
 
     // Write directory
     const dirPath = path.join(stateDir, '.switchboard_directory.json');
