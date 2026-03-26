@@ -267,7 +267,7 @@ The following legacy overview documents are preserved in [`archive/`](archive/) 
 |------|--------|---------|
 | `mcp/memory_server.py` | ✅ | Memory and agency tools |
 | `mcp/google_server.py` | ✅ | Google API access |
-| `mcp/puppeteer_proxy.py` | 📝 | Web browsing proxy |
+| `mcp/puppeteer_proxy.py` | ✅ | Web browsing proxy |
 | `mcp/puppeteer-inject.py` | 📝 | Content injection scanning |
 
 ## Background Jobs
@@ -279,10 +279,10 @@ The following legacy overview documents are preserved in [`archive/`](archive/) 
 | `src/main/jobs/sleep-cycle.ts` | ✅ | Nightly reconciliation |
 | `src/main/jobs/morning-brief.ts` | ✅ | Morning briefing generation |
 | `src/main/jobs/evolve.ts` | ✅ | Monthly self-evolution |
-| `src/main/jobs/introspect.ts` | 📝 | Self-reflection job |
-| `src/main/jobs/converse.ts` | 📝 | Inter-agent conversation |
-| `src/main/jobs/gift.ts` | 📝 | Unprompted gift notes |
-| `src/main/jobs/voice-note.ts` | 📝 | Spontaneous voice notes |
+| `src/main/jobs/gift.ts` | ✅ | Unprompted gift notes |
+| `src/main/jobs/voice-note.ts` | ✅ | Spontaneous voice notes |
+| `src/main/jobs/introspect.ts` | ✅ | Nightly self-reflection |
+| `src/main/jobs/converse.ts` | ✅ | Inter-agent conversation |
 | `src/main/jobs/generate-avatar.ts` | 📝 | Avatar generation |
 | `src/main/jobs/run-task.ts` | 📝 | Generic task runner |
 | `src/main/jobs/check-reminders.ts` | 📝 | Reminder checker |
@@ -386,14 +386,14 @@ docs/codebase/
 | IPC Handlers | 7 | 7 | 100% |
 | Channels | 6 | 6 | 100% |
 | Inner Life | 4 | 4 | 100% |
-| Jobs Framework | 5 | 13 | 38% |
+| Jobs Framework | 9 | 13 | 69% |
 | Preload | 1 | 1 | 100% |
 | Renderer Stores | 8 | 8 | 100% |
 | Renderer Components | 2 | 12 | 17% |
 | Database | 1 | 1 | 100% |
-| MCP Servers | 2 | 4 | 50% |
+| MCP Servers | 3 | 4 | 75% |
 | Scripts | 1 | 10+ | 10% |
-| **Total** | **74** | **103+** | **72%** |
+| **Total** | **79** | **103+** | **77%** |
 
 ---
 
