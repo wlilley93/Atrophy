@@ -30,7 +30,7 @@
   let loadedEmotion: string | null = null;
 
   // Whether we're currently showing the ambient video
-  let showingAmbient = false;
+  let showingAmbient = $state(false);
 
   // Monotonic counter to discard stale async results
   let loadGeneration = 0;

@@ -189,6 +189,20 @@ class CronScheduler {
 
       // Restore circuit breaker state from disk
       const saved = persisted[key];
+
+      // Validate cron expression up front so invalid expressions are caught
+      // at registration time rather than silently never firing.
+      let disabledReason: string | undefined;
+      const jobType = definition.type || 'calendar';
+      if (jobType !== 'interval' && definition.cron) {
+        try {
+          getNextRun(definition.cron);
+        } catch (err) {
+          disabledReason = `invalid cron expression '${definition.cron}': ${err}`;
+          log.warn(`Job '${key}' disabled - ${disabledReason}`);
+        }
+      }
+
       const job: ScheduledJob = {
         name: jobName,
         agent: agentName,
@@ -198,12 +212,14 @@ class CronScheduler {
         lastRun: null,
         running: false,
         consecutiveFailures: saved?.consecutiveFailures || 0,
-        disabled: saved?.disabled || false,
+        disabled: saved?.disabled || !!disabledReason,
       };
 
       this.jobs.set(key, job);
 
-      if (job.disabled) {
+      if (disabledReason) {
+        // Already logged above - skip normal registration log
+      } else if (job.disabled) {
         log.warn(`Job '${key}' restored as disabled (circuit breaker, since ${saved?.disabledAt || 'unknown'})`);
       } else {
         log.info(`Registered job: ${key} - ${definition.description || definition.script}`);
@@ -299,7 +315,22 @@ class CronScheduler {
       this.scheduleJob(job);
     }
 
-    // Persist to jobs.json on disk
+    // Persist to agent manifest (source of truth) and jobs.json (fallback)
+    const manifestPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+    try {
+      if (fs.existsSync(manifestPath)) {
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        if (manifest.jobs?.[jobName]) {
+          manifest.jobs[jobName].cron = cronStr;
+          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+          log.info(`editJobSchedule: updated manifest '${key}' cron to '${cronStr}'`);
+        }
+      }
+    } catch (err) {
+      log.error(`editJobSchedule: failed to update manifest for '${key}': ${err}`);
+    }
+
+    // Also update jobs.json for backward compatibility
     const jobsPath = path.join(BUNDLE_ROOT, 'scripts', 'agents', agentName, 'jobs.json');
     try {
       let allJobs: Record<string, Record<string, unknown>> = {};
@@ -309,9 +340,6 @@ class CronScheduler {
       if (allJobs[jobName]) {
         allJobs[jobName].cron = cronStr;
         fs.writeFileSync(jobsPath, JSON.stringify(allJobs, null, 2));
-        log.info(`editJobSchedule: updated '${key}' cron to '${cronStr}'`);
-      } else {
-        log.warn(`editJobSchedule: job '${jobName}' not found in jobs.json for agent '${agentName}'`);
       }
     } catch (err) {
       log.error(`editJobSchedule: failed to update jobs.json for '${key}': ${err}`);
@@ -424,29 +452,37 @@ class CronScheduler {
    * the cron expression, sets a setTimeout, and reschedules after firing.
    */
   private scheduleCalendarJob(job: ScheduledJob): void {
+    // Don't reschedule disabled jobs (circuit breaker tripped)
+    if (job.disabled) return;
+
     const key = `${job.agent}.${job.name}`;
 
     try {
       const nextRun = getNextRun(job.definition.cron!);
-      const delayMs = nextRun.getTime() - Date.now();
-
       job.nextRun = nextRun;
 
       // Cap delay at 24 hours - for jobs further out, we re-check daily
       // (setTimeout has a max safe delay of ~24.8 days but shorter
       //  intervals let us handle clock drift and DST changes)
       const MAX_DELAY_MS = 24 * 60 * 60 * 1000;
+      const delayMs = nextRun.getTime() - Date.now();
       const actualDelay = Math.min(delayMs, MAX_DELAY_MS);
 
       job.timer = setTimeout(() => {
-        if (delayMs <= MAX_DELAY_MS) {
-          // Time to fire
+        // Re-evaluate delay from current time instead of using the
+        // closed-over delayMs. The original value is stale after the
+        // timer fires and using it caused jobs near the 24h boundary
+        // to be skipped entirely.
+        const now = Date.now();
+        const remainingMs = job.nextRun ? job.nextRun.getTime() - now : 0;
+
+        if (remainingMs <= 5000) {
+          // Within 5s of intended fire time (or past it) - execute
           this.executeJob(job)
             .catch((err) => {
               log.error(`Calendar job '${key}' failed: ${err}`);
             })
             .finally(() => {
-              // Reschedule for next occurrence
               if (this.started) {
                 this.scheduleCalendarJob(job);
               }

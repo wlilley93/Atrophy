@@ -6,7 +6,7 @@
  * the last 100 job runs for inspection.
  */
 
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import { getConfig, BUNDLE_ROOT, USER_DATA } from '../../config';
 import { switchboard } from '../switchboard';
@@ -14,6 +14,23 @@ import { createLogger } from '../../logger';
 import type { JobDefinition } from './scheduler';
 
 const log = createLogger('cron-runner');
+
+// ---------------------------------------------------------------------------
+// Running process tracking - ensures child processes are killed on shutdown
+// ---------------------------------------------------------------------------
+
+const _runningProcesses = new Set<ChildProcess>();
+
+/**
+ * Kill all tracked child processes. Called during app shutdown to prevent
+ * zombie processes from lingering after the app exits.
+ */
+export function stopAllJobs(): void {
+  for (const child of _runningProcesses) {
+    try { child.kill(); } catch { /* already dead */ }
+  }
+  _runningProcesses.clear();
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,6 +119,8 @@ export async function runJob(
       timeout: timeoutMs,
     });
 
+    _runningProcesses.add(child);
+
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString('utf-8');
     });
@@ -113,6 +132,7 @@ export async function runJob(
     const finish = (exitCode: number) => {
       if (finished) return;
       finished = true;
+      _runningProcesses.delete(child);
 
       const jobResult: JobResult = {
         agent: agentName,

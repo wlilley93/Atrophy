@@ -10,6 +10,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { USER_DATA } from '../config';
 import { createLogger } from '../logger';
 
 const log = createLogger('switchboard');
@@ -259,8 +260,7 @@ class Switchboard {
     const fs = require('fs');
     const path = require('path');
     const queuePath = path.join(
-      process.env.HOME || '/tmp',
-      '.atrophy',
+      USER_DATA,
       '.switchboard_queue.json',
     );
 
@@ -268,13 +268,25 @@ class Switchboard {
       try {
         if (!fs.existsSync(queuePath)) return;
 
-        const raw = fs.readFileSync(queuePath, 'utf8');
-        const envelopes: Envelope[] = JSON.parse(raw);
-
-        if (envelopes.length === 0) return;
-
-        // Clear the queue file
+        // Atomic read-and-clear: rename the queue file to a temp path,
+        // then restore an empty queue. This prevents a TOCTOU race where
+        // the Python MCP server appends envelopes between our read and
+        // our clear, which would silently drop those messages.
+        const tmpPath = queuePath + `.poll-${process.pid}-${Date.now()}`;
+        try {
+          fs.renameSync(queuePath, tmpPath);
+        } catch {
+          // File may have been removed between existsSync and rename
+          return;
+        }
+        // Restore empty queue immediately so MCP servers can keep writing
         fs.writeFileSync(queuePath, '[]');
+
+        const raw = fs.readFileSync(tmpPath, 'utf8');
+        try { fs.unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
+
+        const envelopes: Envelope[] = JSON.parse(raw);
+        if (envelopes.length === 0) return;
 
         // Process each envelope
         for (const env of envelopes) {

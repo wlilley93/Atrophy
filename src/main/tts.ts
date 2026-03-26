@@ -626,7 +626,13 @@ async function processQueue(): Promise<void> {
   if (_playing) return;
   _playing = true;
 
+  // Capture the generation so we can detect if clearAudioQueue was called
+  // (which bumps _ttsGeneration), and self-terminate this loop.
+  const gen = _ttsGeneration;
+
   while (_queue.length > 0) {
+    if (_ttsGeneration !== gen) break;
+
     // Wait for the next expected sentence index to avoid out-of-order playback.
     // If sentence 2 arrives before sentence 1, wait up to 3s for sentence 1.
     if (_queue[0].index > _nextExpectedIndex) {
@@ -641,6 +647,11 @@ async function processQueue(): Promise<void> {
         // won't re-enter because _playing is true, but we poll briefly)
         // Also check periodically in case enqueue happened between checks
         const interval = setInterval(() => {
+          if (_ttsGeneration !== gen) {
+            clearInterval(interval);
+            resolve(false);
+            return;
+          }
           if (_queue.length > 0 && _queue[0].index === _nextExpectedIndex) {
             clearInterval(interval);
             if (_waitTimer) { clearTimeout(_waitTimer); _waitTimer = null; }
@@ -653,8 +664,11 @@ async function processQueue(): Promise<void> {
           resolve(false); // Give up waiting, play whatever is next
         }, 3000);
       });
+      if (_ttsGeneration !== gen) break;
       if (!arrived && _queue.length === 0) break;
     }
+
+    if (_ttsGeneration !== gen) break;
 
     const item = _queue.shift()!;
     _nextExpectedIndex = item.index + 1;
@@ -666,11 +680,18 @@ async function processQueue(): Promise<void> {
       log.error(`Playback error: ${e}`);
     }
 
+    if (_ttsGeneration !== gen) break;
+
     _onDone?.(item.index);
   }
 
-  _playing = false;
-  _onQueueEmpty?.();
+  // Only clear _playing if this loop still owns the current generation.
+  // If clearAudioQueue already reset _playing and a new loop may have
+  // started, we must not clobber it.
+  if (_ttsGeneration === gen) {
+    _playing = false;
+    _onQueueEmpty?.();
+  }
 }
 
 // ---------------------------------------------------------------------------

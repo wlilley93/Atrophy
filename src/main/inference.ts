@@ -679,12 +679,14 @@ export function streamInference(
   let sentenceIndex = 0;
   let gotAnyOutput = false;
   const toolCalls: string[] = [];
+  const blockIndexToToolId = new Map<number, string>(); // maps content block index to tool call ID
   let stderrChunks = '';
 
   // Inference timeout - kill process if it hangs for 20 minutes with no output.
   // Uses SIGKILL escalation: SIGTERM first, then SIGKILL after 10s if still alive.
   const INFERENCE_TIMEOUT_MS = 20 * 60 * 1000;
   let lastActivity = Date.now();
+  let sigkillTimer: ReturnType<typeof setTimeout> | null = null;
   const timeoutTimer = setInterval(() => {
     if (Date.now() - lastActivity > INFERENCE_TIMEOUT_MS) {
       clearInterval(timeoutTimer);
@@ -692,7 +694,7 @@ export function streamInference(
       log.error(`inference timed out after ${elapsed}s of inactivity - sending SIGTERM`);
       try { proc.kill('SIGTERM'); } catch { /* already dead */ }
       // Escalate to SIGKILL if SIGTERM doesn't work within 10s
-      setTimeout(() => {
+      sigkillTimer = setTimeout(() => {
         try {
           process.kill(proc.pid!, 0); // check if still alive
           log.error(`inference still alive after SIGTERM - sending SIGKILL`);
@@ -797,7 +799,7 @@ export function streamInference(
             if (partial) {
               emitter.emit('event', {
                 type: 'ToolInputDelta',
-                toolId: String(inner.index ?? ''),
+                toolId: blockIndexToToolId.get(inner.index as number) || String(inner.index ?? ''),
                 delta: partial,
               } as ToolInputDeltaEvent);
             }
@@ -819,6 +821,10 @@ export function streamInference(
           if (block.type === 'tool_use') {
             const toolName = (block.name as string) || '?';
             toolCalls.push(toolName);
+            // Track block index -> tool ID for ToolInputDelta events
+            if (typeof inner.index === 'number' && block.id) {
+              blockIndexToToolId.set(inner.index, block.id as string);
+            }
             emitter.emit('event', {
               type: 'ToolUse',
               name: toolName,
@@ -879,6 +885,7 @@ export function streamInference(
   // Handle process exit
   proc.on('close', (code, signal) => {
     clearInterval(timeoutTimer);
+    if (sigkillTimer) clearTimeout(sigkillTimer);
     if (_activeProcesses.get(agentName) === proc) _activeProcesses.delete(agentName);
     _allProcesses.delete(proc);
     const elapsed = (Date.now() - t0) / 1000;

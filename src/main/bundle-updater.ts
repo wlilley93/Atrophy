@@ -248,17 +248,27 @@ export async function checkForBundleUpdate(
       return null;
     }
 
-    // Atomic swap: move staging -> live
-    // Remove old hot bundle
+    // Two-step rename swap: keeps old bundle available if crash occurs mid-swap
+    const backupDir = path.join(BUNDLE_DIR, '_old');
+
+    // Step 1: Move old live bundle to _old backup (instead of deleting)
+    if (fs.existsSync(backupDir)) {
+      fs.rmSync(backupDir, { recursive: true, force: true });
+    }
     if (fs.existsSync(HOT_OUT_DIR)) {
-      fs.rmSync(HOT_OUT_DIR, { recursive: true, force: true });
+      fs.renameSync(HOT_OUT_DIR, backupDir);
     }
 
-    // Move staging/out to bundle/out
+    // Step 2: Move staging/out to bundle/out
     fs.renameSync(stagingOut, HOT_OUT_DIR);
 
-    // Write manifest
+    // Step 3: Write manifest
     fs.writeFileSync(MANIFEST_PATH, JSON.stringify(remoteManifest, null, 2));
+
+    // Step 4: Remove the _old backup now that swap is complete
+    if (fs.existsSync(backupDir)) {
+      fs.rmSync(backupDir, { recursive: true, force: true });
+    }
 
     // Cleanup staging
     cleanupStaging();
@@ -276,7 +286,6 @@ export async function checkForBundleUpdate(
  * Get the currently active bundle version (hot or frozen).
  */
 export function getActiveBundleVersion(): string {
-  const manifest = readLocalManifest();
   const frozenVersion = app.getVersion();
 
   // If hot bundle is active (would be selected on boot), return its version

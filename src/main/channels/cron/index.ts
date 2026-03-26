@@ -5,4 +5,4 @@
  */
 
 export { cronScheduler, loadJobsFile, getNextRun, editJobSchedule, type JobDefinition, type ScheduledJob } from './scheduler';
-export { runJob, getJobHistory, type JobResult } from './runner';
+export { runJob, getJobHistory, stopAllJobs, type JobResult } from './runner';

@@ -20,7 +20,7 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { getConfig, USER_DATA, BUNDLE_ROOT, saveAgentConfig } from '../../config';
 import { setActive } from '../../status';
-import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument, sendPhoto } from './api';
+import { sendMessage, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument, sendPhoto } from './api';
 import { buildStatusDisplay, formatElapsed, type StreamState, type ToolCallState } from './formatter';
 import { discoverAgents, getAgentState } from '../../agent-manager';
 import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from '../../inference';
@@ -507,22 +507,33 @@ function withAgentDispatchLock<T>(agentName: string, fn: () => Promise<T>): Prom
   _agentDispatchQueues.set(agentName, next);
   return prev.then(async () => {
     _dispatchStartTimes.set(agentName, Date.now());
+    let forceReleased = false;
     // Safety timer: force-release the lock if fn never completes.
     // This prevents permanently stuck dispatch queues from hung inference.
     // Also kills the inference process so fn() stops promptly rather than
     // running concurrently with the next dispatch.
     const safety = setTimeout(() => {
       log.error(`[${agentName}] dispatch lock force-released after ${DISPATCH_LOCK_TIMEOUT_MS / 1000}s`);
+      forceReleased = true;
       stopInference(agentName);
       _dispatchStartTimes.delete(agentName);
       resolve!();
     }, DISPATCH_LOCK_TIMEOUT_MS);
     try {
       return await fn();
+    } catch (err) {
+      // If the safety timer already force-released the lock, fn() may reject
+      // after resolve() was called. Swallow to avoid an unhandled rejection.
+      if (forceReleased) {
+        log.warn(`[${agentName}] swallowing post-force-release error: ${err}`);
+        return undefined as T;
+      }
+      throw err;
     } finally {
       clearTimeout(safety);
       _dispatchStartTimes.delete(agentName);
-      resolve!();
+      // Only resolve if the safety timer hasn't already done so
+      if (!forceReleased) resolve!();
     }
   });
 }
@@ -825,7 +836,7 @@ async function dispatchToAgent(
           const fp = raw.startsWith('~') ? raw.replace('~', os.homedir()) : raw;
           if (fs.existsSync(fp)) {
             try {
-              await sendDocument(fp, path.basename(fp), chatId, '', botToken);
+              await sendDocument(fp, path.basename(fp), chatId, false, botToken);
               log.info(`[${agentName}] uploaded file: ${path.basename(fp)}`);
             } catch (e) {
               log.warn(`[${agentName}] file upload failed: ${e}`);
@@ -850,15 +861,15 @@ async function dispatchToAgent(
             const ext = path.extname(artefactPath).toLowerCase();
             if (['.html', '.htm'].includes(ext)) {
               // Send HTML artefacts as documents
-              await sendDocument(artefactPath, artefact.name || 'artefact', chatId, '', botToken);
+              await sendDocument(artefactPath, artefact.name || 'artefact', chatId, false, botToken);
               log.info(`[${agentName}] sent artefact: ${artefact.name}`);
             } else if (['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) {
               // Send images inline
-              await sendPhoto(artefactPath, artefact.name || '', chatId, '', botToken);
+              await sendPhoto(artefactPath, artefact.name || '', chatId, false, botToken);
               log.info(`[${agentName}] sent artefact image: ${artefact.name}`);
             } else {
               // Send everything else as a document
-              await sendDocument(artefactPath, artefact.name || 'artefact', chatId, '', botToken);
+              await sendDocument(artefactPath, artefact.name || 'artefact', chatId, false, botToken);
               log.info(`[${agentName}] sent artefact: ${artefact.name}`);
             }
             // Clean up display signal so it doesn't re-send next dispatch
@@ -1003,6 +1014,10 @@ async function handleMembershipChange(
 let _state: DaemonState = { agents: {} };
 let _running = false;
 let _pollerTimers: ReturnType<typeof setTimeout>[] = [];
+// Track which agents have had gap-replay checked this boot (in-memory only,
+// NOT persisted - the old approach of setting a flag on the state object
+// was accidentally serialized to disk, permanently disabling replay).
+const _replayedAgents = new Set<string>();
 
 /**
  * One poll cycle for a single agent's bot. Fetches updates, processes
@@ -1031,7 +1046,7 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
     message?: {
       text?: string;
       caption?: string;
-      from?: { id: number; is_bot?: boolean };
+      from?: { id: number; is_bot?: boolean; first_name?: string; last_name?: string };
       chat?: { id: number; type?: string };
       photo?: { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }[];
       voice?: { file_id: string; duration: number; mime_type?: string; file_size?: number };
@@ -1186,7 +1201,7 @@ async function runAgentPoller(agent: TelegramAgent): Promise<void> {
   // (e.g. daemon crashed mid-dispatch). Rewind offset to replay them.
   // Guard: only replay once per boot to prevent crash-loop duplicates.
   const agentState = _state.agents[agent.name];
-  if (agentState && !agentState._replayedThisBoot) {
+  if (agentState && !_replayedAgents.has(agent.name)) {
     const dispatched = agentState.last_dispatched_id || 0;
     const received = agentState.last_update_id || 0;
     if (dispatched > 0 && received > dispatched) {
@@ -1195,7 +1210,7 @@ async function runAgentPoller(agent: TelegramAgent): Promise<void> {
       agentState.last_update_id = dispatched;
       saveState(_state);
     }
-    (agentState as any)._replayedThisBoot = true;
+    _replayedAgents.add(agent.name);
   }
 
   while (_running) {
