@@ -100,7 +100,7 @@ export function intersectScope(
   const base = getScopeForTier(targetTier);
   return {
     hasTelegram: base.hasTelegram && (requested.hasTelegram ?? false) && leaderScope.hasTelegram,
-    hasDesktop: base.hasDesktop && (requested.hasDesktop ?? base.hasDesktop),
+    hasDesktop: base.hasDesktop && (requested.hasDesktop ?? base.hasDesktop) && leaderScope.hasDesktop,
     hasVoice: base.hasVoice && (requested.hasVoice ?? false) && leaderScope.hasVoice,
     hasAvatar: base.hasAvatar && (requested.hasAvatar ?? false) && leaderScope.hasAvatar,
     allowedMcpServers: base.allowedMcpServers.filter(s =>
@@ -111,10 +111,10 @@ export function intersectScope(
       leaderScope.allowedJobTypes.includes(j) &&
       (requested.allowedJobTypes ?? base.allowedJobTypes).includes(j),
     ),
-    canAddressUser: base.canAddressUser,
-    canAddressAgents: base.canAddressAgents,
-    canProvision: base.canProvision,
+    canAddressUser: base.canAddressUser && leaderScope.canAddressUser,
+    canAddressAgents: base.canAddressAgents && leaderScope.canAddressAgents,
+    canProvision: base.canProvision && leaderScope.canProvision,
     systemAccess: false, // never delegated
-    maxQueueDepth: base.maxQueueDepth,
+    maxQueueDepth: Math.min(base.maxQueueDepth, leaderScope.maxQueueDepth),
   };
 }

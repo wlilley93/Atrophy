@@ -259,7 +259,7 @@ export function registerAgentHandlers(ctx: IpcContext): void {
         ...a,
         orgSlug: (org?.slug as string) ?? null,
         reportsTo: (org?.reports_to as string) ?? null,
-        canAddressUser: (org?.can_address_user as boolean) ?? true,
+        canAddressUser: (org?.can_address_user as boolean) ?? ((org?.tier as number) ?? 1) <= 1,
         enabled: state.enabled,
       };
     });

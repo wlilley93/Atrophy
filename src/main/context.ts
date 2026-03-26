@@ -61,6 +61,10 @@ function getAgentRoster(exclude?: string): RosterEntry[] {
         const data = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
         if (!data) continue;
 
+        // Skip tier 2+ agents (headless workers not addressable by other principals)
+        const orgSection = data.org as Record<string, unknown> | undefined;
+        if (orgSection?.tier && (orgSection.tier as number) > 1) continue;
+
         // Check enabled state
         const statesFile = getConfig().AGENT_STATES_FILE;
         if (fs.existsSync(statesFile)) {

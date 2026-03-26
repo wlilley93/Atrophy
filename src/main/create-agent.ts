@@ -822,9 +822,9 @@ export function wireAgent(name: string, manifest: AgentManifest): void {
 function deriveAcceptFrom(tier: number, orgContext?: OrgContext): string[] {
   if (tier <= 1) return ['*'];
   if (tier === 2) {
-    const sources: string[] = [];
+    const sources: string[] = ['cron:*', 'system'];
     if (orgContext?.reportsTo) sources.push(`agent:${orgContext.reportsTo}`);
-    return sources.length > 0 ? sources : ['*'];
+    return sources;
   }
   // tier 3+: creator only (fallback to system so the agent isn't unreachable)
   if (orgContext?.reportsTo) return [`agent:${orgContext.reportsTo}`];
