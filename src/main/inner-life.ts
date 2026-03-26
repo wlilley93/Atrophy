@@ -308,7 +308,9 @@ export function saveState(state: FullState): void {
   const config = getConfig();
   state.last_updated = new Date().toISOString();
   try {
-    fs.writeFileSync(config.EMOTIONAL_STATE_FILE, JSON.stringify(state, null, 2));
+    const tmpPath = config.EMOTIONAL_STATE_FILE + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2));
+    fs.renameSync(tmpPath, config.EMOTIONAL_STATE_FILE);
   } catch { /* silent */ }
   // Update cache so next loadState() gets the freshly saved state
   _stateCache = { state, ts: Date.now() };
@@ -494,7 +496,9 @@ export function saveUserState(userId: string, state: UserState): void {
   const userPath = config.EMOTIONAL_STATE_FILE.replace('.json', `.${userId}.json`);
   state.last_updated = new Date().toISOString();
   try {
-    fs.writeFileSync(userPath, JSON.stringify(state, null, 2));
+    const tmpPath = userPath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2));
+    fs.renameSync(tmpPath, userPath);
   } catch { /* silent */ }
   _userStateCache.set(userId, { state, ts: Date.now() });
 }

@@ -178,13 +178,13 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
             break;
 
           case 'StreamError':
-            ctx.mainWindow.webContents.send('inference:error', evt.message);
+            ctx.mainWindow?.webContents.send('inference:error', evt.message);
             break;
         }
       });
     } catch (err) {
       log.error('[inference:send] failed to start inference:', err);
-      ctx.mainWindow.webContents.send('inference:error', `Inference failed: ${err instanceof Error ? err.message : String(err)}`);
+      ctx.mainWindow?.webContents.send('inference:error', `Inference failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
 

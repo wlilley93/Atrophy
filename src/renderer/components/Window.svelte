@@ -1109,7 +1109,7 @@
       callActive = false;
       // Tear down call audio
       if (callProcessor) { callProcessor.disconnect(); callProcessor = null; }
-      if (callAudioCtx) { callAudioCtx.close(); callAudioCtx = null; }
+      if (callAudioCtx) { callAudioCtx.close().catch(() => {}); callAudioCtx = null; }
       if (callStream) { callStream.getTracks().forEach((t) => t.stop()); callStream = null; }
       callChunks = [];
     }
@@ -1128,6 +1128,7 @@
       offset += c.length;
     }
     // Use the existing audio:chunk -> audio:stop flow for transcription
+    await api.startRecording();
     api.sendAudioChunk(merged.buffer.slice(0));
     try {
       const transcript = await api.stopRecording();

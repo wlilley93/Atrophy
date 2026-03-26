@@ -23,6 +23,7 @@
     if (msg.complete || revealTimers.has(msg.id)) return;
 
     const timer = setInterval(() => {
+      if (!revealTimers.has(msg.id)) return;
       if (msg.revealed < msg.content.length) {
         msg.revealed = Math.min(msg.revealed + REVEAL_RATE, msg.content.length);
       }
@@ -250,7 +251,7 @@
 
     renderCache.set(msg.id, { key: cacheKey, html });
     // Evict old entries to prevent unbounded growth
-    if (renderCache.size > 200) {
+    if (renderCache.size >= 200) {
       const first = renderCache.keys().next().value;
       if (first) renderCache.delete(first);
     }
