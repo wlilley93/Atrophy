@@ -153,8 +153,10 @@
 
 </script>
 
+<div class="settings-form">
+
 <!-- YOU -->
-<div class="section">
+<div class="section full-width">
   <div class="section-header">You</div>
   <div class="section-line"></div>
   <label class="field">
@@ -242,7 +244,7 @@
 </div>
 
 <!-- VOICE & TTS -->
-<div class="section">
+<div class="section full-width">
   <div class="section-header">Voice & TTS</div>
   <div class="section-line"></div>
   <label class="checkbox-row">
@@ -432,7 +434,7 @@
 </div>
 
 <!-- MEMORY & CONTEXT -->
-<div class="section">
+<div class="section full-width">
   <div class="section-header">Memory & Context</div>
   <div class="section-line"></div>
   <label class="field">
@@ -491,7 +493,7 @@
 </div>
 
 <!-- PATHS -->
-<div class="section">
+<div class="section full-width">
   <div class="section-header">Paths</div>
   <div class="section-line"></div>
   <label class="field">
@@ -527,7 +529,7 @@
 </div>
 
 <!-- TELEGRAM -->
-<div class="section">
+<div class="section full-width">
   <div class="section-header">Telegram</div>
   <div class="section-line"></div>
   <div class="field">
@@ -598,7 +600,7 @@
 </div>
 
 <!-- ABOUT -->
-<div class="section">
+<div class="section full-width">
   <div class="section-header">About</div>
   <div class="section-line"></div>
   <div class="field">
@@ -625,7 +627,7 @@
 </div>
 
 <!-- ACTIONS -->
-<div class="actions">
+<div class="actions full-width">
   {#if saveStatus}
     <span class="save-status">{saveStatus}</span>
   {/if}
@@ -633,9 +635,23 @@
   <button class="action-btn primary" onclick={onSave}>Save</button>
 </div>
 
+</div><!-- end settings-form -->
+
 <style>
+  .settings-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 24px;
+    align-items: start;
+  }
+
   .section {
     margin-bottom: 20px;
+  }
+
+  .section.full-width,
+  .actions.full-width {
+    grid-column: 1 / -1;
   }
 
   .section-header {

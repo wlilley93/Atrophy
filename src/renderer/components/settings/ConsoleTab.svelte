@@ -36,6 +36,7 @@
   }
 </script>
 
+<div class="console-wrap">
 <div class="console-controls">
   <input
     type="text"
@@ -62,8 +63,15 @@
     </div>
   {/each}
 </div>
+</div><!-- end console-wrap -->
 
 <style>
+  .console-wrap {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
   .console-controls {
     display: flex;
     align-items: center;
@@ -99,7 +107,6 @@
     font-size: 11px;
     line-height: 1.5;
     min-height: 300px;
-    max-height: 500px;
   }
   .console-line {
     white-space: pre-wrap;

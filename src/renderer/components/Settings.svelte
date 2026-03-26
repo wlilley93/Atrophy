@@ -336,199 +336,213 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="settings-overlay" data-no-drag>
-  <div class="settings-panel">
-    <!-- Header -->
-    <div class="settings-header">
-      <div class="tabs">
-        <button class="tab" class:active={activeTab === 'settings'} onclick={() => switchTab('settings')}>Settings</button>
-        <button class="tab" class:active={activeTab === 'agents'} onclick={() => switchTab('agents')}>Agents</button>
-        <button class="tab" class:active={activeTab === 'usage'} onclick={() => switchTab('usage')}>Usage</button>
-        <button class="tab" class:active={activeTab === 'activity'} onclick={() => switchTab('activity')}>Activity</button>
-        <button class="tab" class:active={activeTab === 'jobs'} onclick={() => switchTab('jobs')}>Jobs</button>
-        <button class="tab" class:active={activeTab === 'updates'} onclick={() => switchTab('updates')}>Updates</button>
-        <button class="tab" class:active={activeTab === 'console'} onclick={() => switchTab('console')}>Console</button>
-        {#if onOpenSystemMap}
-          <button class="tab" onclick={() => { onClose(); onOpenSystemMap?.(); }}>System</button>
-        {/if}
-      </div>
-      <button class="close-btn" onclick={close} aria-label="Close settings">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
+<div class="settings-fullscreen" data-no-drag>
+  <nav class="settings-sidebar">
+    <button class="sidebar-back" onclick={close}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      Back
+    </button>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">General</div>
+      <button class="sidebar-item" class:active={activeTab === 'settings'} onclick={() => switchTab('settings')}>Settings</button>
+      <button class="sidebar-item" class:active={activeTab === 'agents'} onclick={() => switchTab('agents')}>Agents</button>
     </div>
 
-    <!-- Content -->
-    <div class="settings-content" class:no-pad={activeTab === 'agents'}>
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Data</div>
+      <button class="sidebar-item" class:active={activeTab === 'usage'} onclick={() => switchTab('usage')}>Usage</button>
+      <button class="sidebar-item" class:active={activeTab === 'activity'} onclick={() => switchTab('activity')}>Activity</button>
+    </div>
 
-      {#if activeTab === 'settings'}
-        <SettingsTab
-          bind:agentList
-          bind:userName
-          bind:agentDisplayName
-          bind:wakeWords
-          bind:disabledTools
-          bind:windowWidth
-          bind:windowHeight
-          bind:avatarEnabled
-          bind:avatarResolution
-          bind:ttsBackend
-          bind:elevenlabsApiKey
-          bind:elevenlabsVoiceId
-          bind:elevenlabsModel
-          bind:elevenlabsStability
-          bind:elevenlabsSimilarity
-          bind:elevenlabsStyle
-          bind:ttsPlaybackRate
-          bind:falApiKey
-          bind:falVoiceId
-          bind:inputMode
-          bind:pttKey
-          bind:wakeWordEnabled
-          bind:wakeChunkSeconds
-          bind:silenceTimerEnabled
-          bind:silenceTimerMinutes
-          bind:eyeModeDefault
-          bind:muteByDefault
-          bind:keepAwakeActive
-          bind:notificationsEnabled
-          bind:sampleRate
-          bind:maxRecordSec
-          bind:claudeBin
-          bind:claudeModel
-          bind:claudeEffort
-          bind:adaptiveEffort
-          bind:contextSummaries
-          bind:maxContextTokens
-          bind:vectorSearchWeight
-          bind:embeddingModel
-          bind:embeddingDim
-          bind:sessionSoftLimitMins
-          bind:heartbeatActiveStart
-          bind:heartbeatActiveEnd
-          bind:heartbeatIntervalMins
-          bind:obsidianVault
-          {dbPath}
-          {whisperBin}
-          {googleConfigured}
-          {googleAuthStatus}
-          bind:telegramBotToken
-          bind:telegramChatId
-          bind:telegramDaemonRunning
-          {version}
-          {bundleRoot}
-          {saveStatus}
-          {onClose}
-          onApply={apply}
-          onSave={save}
-          onResetSetup={resetSetup}
-        />
-
-      {:else if activeTab === 'agents'}
-        <AgentsTab bind:this={agentsTab} />
-
-      {:else if activeTab === 'usage'}
-        <UsageTab bind:this={usageTab} />
-
-      {:else if activeTab === 'activity'}
-        <ActivityTab bind:this={activityTab} />
-
-      {:else if activeTab === 'jobs'}
-        <JobsTab bind:this={jobsTab} />
-
-      {:else if activeTab === 'updates'}
-        <UpdatesTab bind:this={updatesTab} {version} />
-
-      {:else if activeTab === 'console'}
-        <ConsoleTab bind:this={consoleTab} />
-
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">System</div>
+      <button class="sidebar-item" class:active={activeTab === 'jobs'} onclick={() => switchTab('jobs')}>Jobs</button>
+      <button class="sidebar-item" class:active={activeTab === 'updates'} onclick={() => switchTab('updates')}>Updates</button>
+      <button class="sidebar-item" class:active={activeTab === 'console'} onclick={() => switchTab('console')}>Console</button>
+      {#if onOpenSystemMap}
+        <button class="sidebar-item" onclick={() => { close(); onOpenSystemMap?.(); }}>System Map</button>
       {/if}
     </div>
-  </div>
+  </nav>
+
+  <main class="settings-content" class:no-pad={activeTab === 'agents'}>
+
+    {#if activeTab === 'settings'}
+      <SettingsTab
+        bind:agentList
+        bind:userName
+        bind:agentDisplayName
+        bind:wakeWords
+        bind:disabledTools
+        bind:windowWidth
+        bind:windowHeight
+        bind:avatarEnabled
+        bind:avatarResolution
+        bind:ttsBackend
+        bind:elevenlabsApiKey
+        bind:elevenlabsVoiceId
+        bind:elevenlabsModel
+        bind:elevenlabsStability
+        bind:elevenlabsSimilarity
+        bind:elevenlabsStyle
+        bind:ttsPlaybackRate
+        bind:falApiKey
+        bind:falVoiceId
+        bind:inputMode
+        bind:pttKey
+        bind:wakeWordEnabled
+        bind:wakeChunkSeconds
+        bind:silenceTimerEnabled
+        bind:silenceTimerMinutes
+        bind:eyeModeDefault
+        bind:muteByDefault
+        bind:keepAwakeActive
+        bind:notificationsEnabled
+        bind:sampleRate
+        bind:maxRecordSec
+        bind:claudeBin
+        bind:claudeModel
+        bind:claudeEffort
+        bind:adaptiveEffort
+        bind:contextSummaries
+        bind:maxContextTokens
+        bind:vectorSearchWeight
+        bind:embeddingModel
+        bind:embeddingDim
+        bind:sessionSoftLimitMins
+        bind:heartbeatActiveStart
+        bind:heartbeatActiveEnd
+        bind:heartbeatIntervalMins
+        bind:obsidianVault
+        {dbPath}
+        {whisperBin}
+        {googleConfigured}
+        {googleAuthStatus}
+        bind:telegramBotToken
+        bind:telegramChatId
+        bind:telegramDaemonRunning
+        {version}
+        {bundleRoot}
+        {saveStatus}
+        {onClose}
+        onApply={apply}
+        onSave={save}
+        onResetSetup={resetSetup}
+      />
+
+    {:else if activeTab === 'agents'}
+      <AgentsTab bind:this={agentsTab} />
+
+    {:else if activeTab === 'usage'}
+      <UsageTab bind:this={usageTab} />
+
+    {:else if activeTab === 'activity'}
+      <ActivityTab bind:this={activityTab} />
+
+    {:else if activeTab === 'jobs'}
+      <JobsTab bind:this={jobsTab} />
+
+    {:else if activeTab === 'updates'}
+      <UpdatesTab bind:this={updatesTab} {version} />
+
+    {:else if activeTab === 'console'}
+      <ConsoleTab bind:this={consoleTab} />
+
+    {/if}
+  </main>
 </div>
 
 <style>
-  .settings-overlay {
+  .settings-fullscreen {
     position: absolute;
     inset: 0;
-    z-index: 60;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
+    background: var(--bg, #0C0C0E);
+    z-index: 60;
+    -webkit-app-region: no-drag;
   }
 
-  .settings-panel {
-    width: 92%;
-    max-width: 540px;
-    max-height: 85%;
-    background: rgba(20, 20, 24, 0.98);
-    border: 1px solid var(--border);
-    border-radius: 16px;
+  .settings-sidebar {
+    width: 180px;
+    flex-shrink: 0;
+    background: rgba(8, 8, 10, 0.98);
+    border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    padding: 12px 0;
+    overflow-y: auto;
+    -webkit-app-region: drag;
   }
 
-  .settings-header {
+  .sidebar-back {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .tabs {
-    display: flex;
-    gap: 4px;
-  }
-
-  .tab {
-    padding: 6px 16px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--text-dim);
+    gap: 8px;
+    padding: 8px 16px;
+    margin: 0 8px 12px;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 13px;
     font-family: var(--font-sans);
-    font-size: 12px;
     cursor: pointer;
-    border-radius: 15px;
+    border-radius: 6px;
+    -webkit-app-region: no-drag;
     transition: color 0.15s, background 0.15s;
   }
 
-  .tab:hover {
-    color: var(--text-secondary);
-    background: rgba(255, 255, 255, 0.08);
+  .sidebar-back:hover {
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.04);
   }
 
-  .tab.active {
-    color: rgba(255, 255, 255, 0.95);
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.2);
-    font-weight: bold;
+  .sidebar-group {
+    margin-bottom: 16px;
   }
 
-  .close-btn {
+  .sidebar-group-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.25);
+    padding: 0 20px 4px;
+  }
+
+  .sidebar-item {
+    display: block;
+    width: 100%;
+    padding: 7px 20px;
     background: none;
     border: none;
-    color: var(--text-dim);
+    border-left: 2px solid transparent;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 13px;
+    font-family: var(--font-sans);
+    text-align: left;
     cursor: pointer;
-    padding: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    -webkit-app-region: no-drag;
+    transition: color 0.15s, background 0.15s;
   }
 
-  .close-btn:hover {
-    color: var(--text-secondary);
+  .sidebar-item:hover {
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .sidebar-item.active {
+    color: rgba(255, 255, 255, 0.9);
+    border-left-color: rgba(100, 140, 255, 0.6);
+    background: rgba(100, 140, 255, 0.06);
   }
 
   .settings-content {
     flex: 1;
     overflow-y: auto;
-    padding: 16px 20px;
+    padding: 24px 28px;
   }
 
   .settings-content.no-pad {
