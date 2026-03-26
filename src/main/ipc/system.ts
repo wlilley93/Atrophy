@@ -9,7 +9,7 @@ import { app, ipcMain } from 'electron';
 import * as fs from 'fs';
 import { execFile, execSync, spawn } from 'child_process';
 import { getConfig } from '../config';
-import { getAllAgentsUsage, getAllActivity } from '../usage';
+import { getAllAgentsUsage, getAllActivity, getAgentUsageDetail } from '../usage';
 import { startServer, stopServer } from '../server';
 import { cronScheduler, getJobHistory } from '../channels/cron';
 import { mcpRegistry } from '../mcp-registry';
@@ -64,6 +64,10 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('activity:all', (_event, days?: number, limit?: number) => {
     return getAllActivity(days, limit);
+  });
+
+  ipcMain.handle('usage:detail', (_event, agentName: string, days?: number) => {
+    return getAgentUsageDetail(agentName, days);
   });
 
   // -- Cron (in-process scheduler via switchboard) --

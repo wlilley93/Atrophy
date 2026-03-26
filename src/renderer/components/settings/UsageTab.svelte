@@ -5,6 +5,11 @@
   let usageData = $state<any[]>([]);
   let usageLoading = $state(false);
 
+  // Expandable detail state
+  let expandedAgent = $state<string | null>(null);
+  let detailData = $state<any[]>([]);
+  let detailLoading = $state(false);
+
   export async function load(days?: number | null) {
     if (days !== undefined) usagePeriod = days;
     await loadUsage(usagePeriod);
@@ -14,12 +19,30 @@
     usagePeriod = days;
     if (!api) return;
     usageLoading = true;
+    expandedAgent = null;
+    detailData = [];
     try {
       usageData = await api.getUsage(days ?? undefined) || [];
     } catch {
       usageData = [];
     }
     usageLoading = false;
+  }
+
+  async function toggleDetail(agentName: string) {
+    if (expandedAgent === agentName) {
+      expandedAgent = null;
+      detailData = [];
+      return;
+    }
+    expandedAgent = agentName;
+    detailLoading = true;
+    try {
+      detailData = await api.getUsageDetail(agentName, usagePeriod ?? undefined) || [];
+    } catch {
+      detailData = [];
+    }
+    detailLoading = false;
   }
 
   function formatTokens(n: number): string {
@@ -35,6 +58,25 @@
     if (mins < 60) return `${mins}m ${secs % 60}s`;
     const hrs = Math.floor(mins / 60);
     return `${hrs}h ${mins % 60}m`;
+  }
+
+  function formatTime(ts: string): string {
+    try {
+      const d = new Date(ts + 'Z');
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch { return ts; }
+  }
+
+  function formatDate(ts: string): string {
+    try {
+      const d = new Date(ts + 'Z');
+      const today = new Date();
+      if (d.toDateString() === today.toDateString()) return 'Today';
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    } catch { return ''; }
   }
 </script>
 
@@ -80,11 +122,14 @@
 
   <!-- Per-agent cards -->
   {#each usageData.filter((a: any) => a.total_calls > 0) as agent}
-    <div class="usage-card">
-      <div class="usage-card-header">
+    <div class="usage-card" class:expanded={expandedAgent === agent.agent_name}>
+      <button class="usage-card-header" onclick={() => toggleDetail(agent.agent_name)}>
         <span class="usage-agent-name">{agent.display_name || agent.agent}</span>
-        <span class="usage-tokens">{formatTokens(agent.total_tokens)} tokens</span>
-      </div>
+        <span class="usage-right">
+          <span class="usage-tokens">{formatTokens(agent.total_tokens)} tokens</span>
+          <span class="expand-arrow" class:open={expandedAgent === agent.agent_name}>&#9662;</span>
+        </span>
+      </button>
       <div class="usage-stats-row">
         <span>{agent.total_calls} calls</span>
         <span>in: {formatTokens(agent.total_tokens_in || 0)}</span>
@@ -97,6 +142,43 @@
           {#each agent.by_source.slice(0, 5) as src}
             <span class="source-pill">{src.source} ({src.calls})</span>
           {/each}
+        </div>
+      {/if}
+
+      <!-- Expanded detail view -->
+      {#if expandedAgent === agent.agent_name}
+        <div class="detail-panel">
+          {#if detailLoading}
+            <p class="detail-loading">Loading entries...</p>
+          {:else if detailData.length === 0}
+            <p class="detail-loading">No entries found.</p>
+          {:else}
+            {#each detailData as entry}
+              <div class="detail-entry">
+                <div class="detail-meta">
+                  <span class="detail-source">{entry.source}</span>
+                  <span class="detail-tokens">{formatTokens(entry.tokens_in + entry.tokens_out)} tok</span>
+                  <span class="detail-time">{formatDate(entry.timestamp)} {formatTime(entry.timestamp)}</span>
+                  {#if entry.duration_ms}
+                    <span class="detail-dur">{formatDuration(entry.duration_ms)}</span>
+                  {/if}
+                  {#if entry.tool_count}
+                    <span class="detail-tools">{entry.tool_count} tools</span>
+                  {/if}
+                </div>
+                {#if entry.context?.length}
+                  <div class="detail-context">
+                    {#each entry.context as turn}
+                      <div class="context-turn" class:agent-turn={turn.role === 'agent'}>
+                        <span class="turn-role">{turn.role === 'agent' ? 'Agent' : 'Will'}</span>
+                        <span class="turn-content">{turn.content}</span>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          {/if}
         </div>
       {/if}
     </div>
@@ -172,6 +254,12 @@
     border-radius: 8px;
     padding: 12px 14px;
     margin-bottom: 8px;
+    transition: background 0.15s;
+  }
+
+  .usage-card.expanded {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .usage-card-header {
@@ -179,6 +267,12 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
   }
 
   .usage-agent-name {
@@ -187,9 +281,25 @@
     font-weight: bold;
   }
 
+  .usage-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .usage-tokens {
     color: rgba(255, 255, 255, 0.5);
     font-size: 12px;
+  }
+
+  .expand-arrow {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+    transition: transform 0.2s;
+  }
+
+  .expand-arrow.open {
+    transform: rotate(180deg);
   }
 
   .usage-stats-row {
@@ -216,5 +326,105 @@
     background: rgba(255, 255, 255, 0.04);
     border-radius: 4px;
     padding: 1px 6px;
+  }
+
+  /* Detail panel */
+  .detail-panel {
+    margin-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 10px;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .detail-loading {
+    color: var(--text-dim);
+    font-size: 11px;
+    text-align: center;
+    padding: 12px 0;
+  }
+
+  .detail-entry {
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .detail-entry:last-child {
+    border-bottom: none;
+  }
+
+  .detail-meta {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+
+  .detail-source {
+    color: rgba(176, 124, 198, 0.9);
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(176, 124, 198, 0.12);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  .detail-tokens {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 10px;
+    font-family: var(--font-mono);
+  }
+
+  .detail-time {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+  }
+
+  .detail-dur {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+  }
+
+  .detail-tools {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+  }
+
+  /* Conversation context */
+  .detail-context {
+    margin-top: 4px;
+    padding-left: 8px;
+    border-left: 2px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .context-turn {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .turn-role {
+    color: rgba(100, 140, 255, 0.7);
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 36px;
+    flex-shrink: 0;
+  }
+
+  .context-turn.agent-turn .turn-role {
+    color: rgba(176, 124, 198, 0.7);
+  }
+
+  .turn-content {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
   }
 </style>

@@ -226,6 +226,81 @@ export function getAllActivity(days = 7, limit = 500): ActivityItem[] {
 }
 
 // ---------------------------------------------------------------------------
+// Per-agent usage detail (individual entries with conversation context)
+// ---------------------------------------------------------------------------
+
+export interface UsageDetailEntry {
+  id: number;
+  timestamp: string;
+  source: string;
+  tokens_in: number;
+  tokens_out: number;
+  duration_ms: number;
+  tool_count: number;
+  context: { role: string; content: string; timestamp: string }[];
+}
+
+export function getAgentUsageDetail(agentName: string, days?: number, limit = 50): UsageDetailEntry[] {
+  const dbPath = path.join(USER_DATA, 'agents', agentName, 'data', 'memory.db');
+  if (!fs.existsSync(dbPath)) return [];
+
+  const db = new Database(dbPath, { readonly: true });
+
+  let where = '';
+  const params: unknown[] = [];
+  if (days) {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    where = 'WHERE timestamp >= ?';
+    params.push(cutoff);
+  }
+
+  let rows: { id: number; timestamp: string; source: string; tokens_in: number; tokens_out: number; duration_ms: number; tool_count: number }[];
+  try {
+    rows = db.prepare(
+      `SELECT id, timestamp, source, tokens_in, tokens_out, duration_ms, tool_count
+       FROM usage_log ${where} ORDER BY id DESC LIMIT ?`,
+    ).all(...params, limit) as typeof rows;
+  } catch {
+    db.close();
+    return [];
+  }
+
+  // For each usage entry, find nearby turns (within 60s before and after)
+  let turnStmt: Database.Statement | null = null;
+  try {
+    turnStmt = db.prepare(
+      `SELECT role, substr(content, 1, 300) as content, timestamp
+       FROM turns
+       WHERE timestamp BETWEEN datetime(?, '-60 seconds') AND datetime(?, '+60 seconds')
+       ORDER BY timestamp ASC LIMIT 6`,
+    );
+  } catch { /* turns table may not exist */ }
+
+  const results: UsageDetailEntry[] = [];
+  for (const r of rows) {
+    let context: UsageDetailEntry['context'] = [];
+    if (turnStmt) {
+      try {
+        context = turnStmt.all(r.timestamp, r.timestamp) as typeof context;
+      } catch { /* noop */ }
+    }
+    results.push({
+      id: r.id,
+      timestamp: r.timestamp,
+      source: r.source,
+      tokens_in: r.tokens_in || 0,
+      tokens_out: r.tokens_out || 0,
+      duration_ms: r.duration_ms || 0,
+      tool_count: r.tool_count || 0,
+      context,
+    });
+  }
+
+  db.close();
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Formatters
 // ---------------------------------------------------------------------------
 
