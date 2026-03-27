@@ -4,6 +4,20 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.9.0
+
+### Federation + security hardening
+
+- **Federation** - cross-instance agent communication via shared Telegram groups. Two Atrophy owners add their bots to a group, configure a link in `~/.atrophy/federation.json`, and their agents can talk on their behalf. Four-layer security model: sandboxed inference (shell/filesystem/GitHub permanently blocked), quarantined memory (external content tagged and sanitized), no config tools (federation.json is owner-only), system prompt preamble. Seven-layer message filtering (remote bot, @ mention, no commands, text only, no edits, staleness, rate limiting). Per-link transcript audit trail. Settings UI tab for link management. Hot-reload of links via Settings (no restart needed).
+- **Security audit** - vibeaudit scan with 16 findings. All high/medium addressed: SQL injection in VACUUM INTO (path validation), cron script path traversal (directory boundary checks), HTTP server auth rate limiting (sliding window), switchboard queue origin validation (mcp:/cron: only), artefact iframe CSP (network access blocked), Math.random in multipart boundaries (crypto.randomBytes), agent name validation centralized (isValidAgentName from config.ts), path traversal in writeAskResponse (safeAgentDataPath with resolve+prefix check), deleteAgent validation, dev URL localhost restriction.
+- **Voice agent fixes** - WebSocket reconnect dedup prevents concurrent reconnect attempts. Audio skip flag reset per response (was persisting across responses). Claude Code tool call cleanup via settle() guard (prevents duplicate resolve). Stale state cleared on cleanup.
+- **Telegram improvements** - network vs API error distinction via NETWORK_ERROR sentinel (prevents spurious markdown fallback retries on network failures). Rate-limit 429 returns NETWORK_ERROR to prevent double retry. Split message chunks use markdown fallback. Async daemon shutdown waits for in-flight dispatches. Chat ID matching uses chat ID (not just user ID) for groups.
+- **Agent system** - ask_user requests scanned across all agents including org-nested. Config env var whitelist expanded with per-agent patterns. OrbAvatar cycles through all available loops ambiently.
+- **UI** - Transcript scroll-to-bottom button. AgentName rolodex animation cancels in-flight animations on rapid switching. Transcript mask gradient tightened.
+- **Infrastructure** - Logger rotation resets size only after successful rotation. MCP registry skips built-in env for custom servers. Switchboard directory cleaned up on unregister. Cron scheduler skips disabled jobs on start.
+
+---
+
 ## 1.8.5 - 1.8.8
 
 ### Boot diagnostics, update fixes, and channel awareness
