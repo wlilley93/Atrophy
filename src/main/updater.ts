@@ -50,10 +50,8 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
     win?.webContents.send('updater:error', err.message);
   });
 
-  // Auto-check for full app updates shortly after boot (gives network time to settle)
-  setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => {});
-  }, 30_000);
+  // Update checks are triggered by the renderer boot sequence.
+  // No auto-check here - avoids double-check races.
 }
 
 /** Manually trigger an update check. */

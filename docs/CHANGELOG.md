@@ -4,6 +4,47 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.8.0
+
+### Stability and reliability fixes
+
+- **Updater restart loop** - the boot sequence was auto-calling `quitAndInstall()` 1.5 seconds after detecting a downloaded update, causing an infinite restart loop. Now shows the update banner instead, letting you restart when ready.
+- **Duplicate update check removed** - the 30-second auto-check timer in `updater.ts` was redundant with the boot sequence check and could cause download races. Removed.
+- **Agent cycling skips disabled agents** - `Cmd+Up`/`Cmd+Down` was cycling through all agents including disabled ones. The renderer was doing its own index math instead of using the main-process `cycleAgent()` which correctly skips disabled agents. Now delegates to main process via `agent:cycle` IPC.
+- **Competitor scan synthesis retry** - when Claude returns empty output during competitor analysis, the synthesis layer now retries once before failing. Previously, empty responses caused a silent `json.loads("")` crash.
+- **Synthesis failures surfaced** - failed synthesis items now appear in the Telegram report as "SYNTHESIS FAILURES" with a count in the header. Previously these were silently dropped from the report.
+- **Cron double-execution guard** - added a 60-second minimum refire window for calendar jobs. Prevents the same job executing twice when the app restarts near a scheduled fire time.
+
+---
+
+## 1.7.0 - 1.7.5
+
+### Auto-update and distribution
+
+- **electron-updater integration** - full app updates via GitHub Releases. Checks for updates during boot sequence, auto-downloads in background, shows banner when ready.
+- **Boot update check** - update check runs as part of the splash screen sequence with a 20-second timeout. Bundle updates checked first (fast), then full app updates.
+- **Icon fix** - generated icons were being written into the signed app bundle, breaking code signatures and causing crash loops. Icons now write to `~/.atrophy/` instead.
+- **Notarization** - DMG is signed and notarized with Apple Developer credentials. Keychain profile `atrophy` for `xcrun notarytool`.
+
+---
+
+## 1.6.0 - 1.6.10
+
+### Organisation management and Settings overhaul
+
+- **Full-window Settings** - Settings redesigned from modal to full-window with sidebar navigation. Six tabs: Settings, Usage, Activity, Jobs, Updates, Console.
+- **Org management UI** - `OrgTree`, `OrgDetail`, `AgentDetail`, `AgentCreateForm`, `JobEditor` components for managing agent hierarchies, MCP servers, jobs, and channels from the UI.
+- **System Map as Settings tab** - the `Cmd+Shift+M` overlay is now also accessible as an inline Settings tab with editable MCP toggles.
+- **Entity auto-filing** - entity extraction hook files people, places, and organisations from conversations automatically.
+- **Telegram username mapping** - maps Telegram usernames to real names for context injection.
+- **15 setup wizard fixes** - key verification, state management, service card UX, concurrent submit guard.
+- **Dynamic require fix** - `require()` with relative paths breaks in Vite bundles. Converted to static imports.
+- **Boot update timeout** - 15-second timeout on boot update check to prevent endless hang.
+- **Per-agent delivery mode** - `NOTIFY_VIA` field for routing cron output to telegram, desktop, or both.
+- **Defence Bureau** - 10 tier-2 sub-agents activated with 16 registered jobs and shared utilities.
+
+---
+
 ## 1.5.37
 
 ### Crash loop prevention and stability

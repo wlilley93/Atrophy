@@ -525,6 +525,17 @@ class CronScheduler {
       return;
     }
 
+    // Time-based dedup for calendar jobs - prevent re-fire within 60s of last run
+    // (covers app restarts near fire time and timer drift races)
+    const MIN_REFIRE_MS = 60_000;
+    if (job.lastRun) {
+      const sinceLast = Date.now() - job.lastRun.getTime();
+      if (sinceLast < MIN_REFIRE_MS) {
+        log.warn(`Job '${key}' ran ${Math.round(sinceLast / 1000)}s ago - skipping (min refire: ${MIN_REFIRE_MS / 1000}s)`);
+        return;
+      }
+    }
+
     this.runningKeys.add(key);
     job.running = true;
     log.info(`Executing job: ${key}`);

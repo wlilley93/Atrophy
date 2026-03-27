@@ -266,7 +266,11 @@
       if (appUpdateResult) {
         updateStatus = 'downloaded';
         updateVersion = appUpdateResult;
-        setTimeout(() => api?.quitAndInstall(), 1500);
+        // Show the update banner instead of auto-restarting.
+        // Auto quitAndInstall causes a restart loop when the version
+        // check keeps finding the same update after relaunch.
+        pendingUpdateVersion = appUpdateResult;
+        pendingUpdateType = 'app';
       } else {
         updateStatus = 'up-to-date';
       }
@@ -1037,8 +1041,9 @@
     const gen = ++_switchGeneration;
 
     try {
-      const idx = list.indexOf(agents.current);
-      const next = list[(idx + direction + list.length) % list.length];
+      // Ask main process which agent to switch to (skips disabled agents)
+      const next = await api?.cycleAgent(direction);
+      if (!next) { _switching = false; return; }
       agents.switchDirection = direction;
 
       if (api) {

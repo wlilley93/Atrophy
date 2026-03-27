@@ -68,20 +68,26 @@ MERIDIAN_KEYWORDS = [
 CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
-def call_claude(system: str, prompt: str, model: str = "haiku") -> str:
-    """One-shot Claude call via CLI. Returns response text."""
+def call_claude(system: str, prompt: str, model: str = "haiku", retries: int = 1) -> str:
+    """One-shot Claude call via CLI. Returns response text. Retries on empty output."""
     import subprocess
-    result = subprocess.run(
-        [CLAUDE_BIN, "-p", "--model", model, "--system-prompt", system,
-         "--no-session-persistence", "--output-format", "text"],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:200]}")
-    return result.stdout.strip()
+    for attempt in range(retries + 1):
+        result = subprocess.run(
+            [CLAUDE_BIN, "-p", "--model", model, "--system-prompt", system,
+             "--no-session-persistence", "--output-format", "text"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:200]}")
+        output = result.stdout.strip()
+        if output:
+            return output
+        if attempt < retries:
+            log.warning(f"Claude returned empty output (attempt {attempt + 1}/{retries + 1}), retrying...")
+    raise RuntimeError("Claude returned empty output after all retries")
 
 
 
@@ -188,12 +194,20 @@ def format_synthesis_report(verdicts: list[dict]) -> str:
     confirms = [v for v in verdicts if v.get("verdict") == "CONFIRM"]
     diverges = [v for v in verdicts if v.get("verdict") == "DIVERGE"]
     gaps = [v for v in verdicts if v.get("verdict") == "GAP"]
+    failures = [v for v in verdicts if v.get("verdict") == "UNKNOWN"]
 
     now_str = datetime.now().strftime("%d %b %Y")
+    status_parts = [
+        f"{len(confirms)} confirm",
+        f"{len(diverges)} diverge",
+        f"{len(gaps)} gaps",
+    ]
+    if failures:
+        status_parts.append(f"{len(failures)} failed")
+
     lines = [
         f"*COMPETITOR SYNTHESIS - {now_str}*",
-        f"_{len(verdicts)} publications analysed | "
-        f"{len(confirms)} confirm | {len(diverges)} diverge | {len(gaps)} gaps_",
+        f"_{len(verdicts)} publications analysed | {' | '.join(status_parts)}_",
         "",
     ]
 
@@ -213,6 +227,12 @@ def format_synthesis_report(verdicts: list[dict]) -> str:
     if confirms:
         lines.append("*CONFIRMED POSITIONS*")
         for v in confirms:
+            lines.append(f"- [{v.get('source','')}] {v.get('title','')[:60]}")
+        lines.append("")
+
+    if failures:
+        lines.append("*SYNTHESIS FAILURES*")
+        for v in failures:
             lines.append(f"- [{v.get('source','')}] {v.get('title','')[:60]}")
         lines.append("")
 
