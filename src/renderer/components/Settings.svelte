@@ -10,6 +10,7 @@
   import ConsoleTab from './settings/ConsoleTab.svelte';
   import AgentsTab from './settings/AgentsTab.svelte';
   import SystemTab from './settings/SystemTab.svelte';
+  import FederationTab from './settings/FederationTab.svelte';
 
   interface Props {
     onClose: () => void;
@@ -18,7 +19,7 @@
 
   let { onClose, onOpenSystemMap }: Props = $props();
 
-  type Tab = 'settings' | 'agents' | 'system' | 'usage' | 'activity' | 'jobs' | 'updates' | 'console';
+  type Tab = 'settings' | 'agents' | 'system' | 'usage' | 'activity' | 'jobs' | 'updates' | 'console' | 'federation';
   let activeTab = $state<Tab>('settings');
 
   // ---------------------------------------------------------------------------
@@ -131,6 +132,7 @@
   let jobsTab: JobsTab;
   let updatesTab: UpdatesTab;
   let consoleTab: ConsoleTab;
+  let federationTab: FederationTab;
 
   // ---------------------------------------------------------------------------
   // Load config on mount
@@ -328,6 +330,7 @@
     if (tab === 'jobs') jobsTab?.load();
     if (tab === 'updates') updatesTab?.load();
     if (tab === 'console') consoleTab?.load();
+    if (tab === 'federation') federationTab?.load();
   }
 
   function close() {
@@ -369,6 +372,7 @@
       <button class="sidebar-item" class:active={activeTab === 'jobs'} onclick={() => switchTab('jobs')}>Jobs</button>
       <button class="sidebar-item" class:active={activeTab === 'updates'} onclick={() => switchTab('updates')}>Updates</button>
       <button class="sidebar-item" class:active={activeTab === 'console'} onclick={() => switchTab('console')}>Console</button>
+      <button class="sidebar-item" class:active={activeTab === 'federation'} onclick={() => switchTab('federation')}>Federation</button>
     </div>
   </nav>
 
@@ -458,6 +462,9 @@
 
     {:else if activeTab === 'console'}
       <ConsoleTab bind:this={consoleTab} />
+
+    {:else if activeTab === 'federation'}
+      <FederationTab bind:this={federationTab} />
 
     {/if}
   </main>
