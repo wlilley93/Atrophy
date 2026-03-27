@@ -36,9 +36,13 @@ PROJECT_NAME = BUNDLE_ROOT.name
 
 
 def _discover_other_agents() -> list[dict]:
-    """Find all other enabled agents with manifests."""
+    """Find all other enabled agents with manifests.
+
+    Scans both ~/.atrophy/agents/ (runtime, primary) and BUNDLE_ROOT/agents/
+    (repo fallback). Runtime agents take precedence.
+    """
     agents = []
-    agents_dir = BUNDLE_ROOT / "agents"
+    seen = set()
     states_file = Path.home() / ".atrophy" / "agent_states.json"
     states = {}
     if states_file.exists():
@@ -47,38 +51,52 @@ def _discover_other_agents() -> list[dict]:
         except (json.JSONDecodeError, OSError):
             pass
 
-    if not agents_dir.is_dir():
-        return agents
+    # Scan directories: runtime first (has Montgomery etc.), then bundle fallback
+    scan_dirs = [
+        Path.home() / ".atrophy" / "agents",
+        BUNDLE_ROOT / "agents",
+    ]
 
-    for d in sorted(agents_dir.iterdir()):
-        if not d.is_dir() or d.name == AGENT_NAME:
+    for agents_dir in scan_dirs:
+        if not agents_dir.is_dir():
             continue
-        manifest_path = d / "data" / "agent.json"
-        if not manifest_path.exists():
-            continue
-        try:
-            manifest = json.loads(manifest_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
-        # Skip disabled agents
-        agent_state = states.get(d.name, {})
-        if not agent_state.get("enabled", True):
-            continue
-        agents.append({
-            "name": d.name,
-            "display_name": manifest.get("display_name", d.name.title()),
-            "description": manifest.get("description", ""),
-        })
+        for d in sorted(agents_dir.iterdir()):
+            if not d.is_dir() or d.name == AGENT_NAME or d.name in seen:
+                continue
+            manifest_path = d / "data" / "agent.json"
+            if not manifest_path.exists():
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            # Skip disabled agents
+            agent_state = states.get(d.name, {})
+            if not agent_state.get("enabled", True):
+                continue
+            seen.add(d.name)
+            agents.append({
+                "name": d.name,
+                "display_name": manifest.get("display_name", d.name.title()),
+                "description": manifest.get("description", ""),
+            })
     return agents
 
 
 def _load_agent_soul(agent_name: str) -> str:
-    """Load an agent's soul.md from Obsidian (canonical) or repo fallback."""
+    """Load an agent's soul.md - runtime first, then Obsidian, then bundle."""
+    # Runtime (primary - where evolve writes)
+    runtime_path = Path.home() / ".atrophy" / "agents" / agent_name / "prompts" / "soul.md"
+    if runtime_path.exists():
+        return runtime_path.read_text().strip()
+
+    # Obsidian
     obsidian_path = (OBSIDIAN_BASE / "Projects" / PROJECT_NAME
                      / "Agent Workspace" / agent_name / "skills" / "soul.md")
     if obsidian_path.exists():
         return obsidian_path.read_text().strip()
 
+    # Bundle fallback
     repo_path = BUNDLE_ROOT / "agents" / agent_name / "prompts" / "soul.md"
     if repo_path.exists():
         return repo_path.read_text().strip()
@@ -86,10 +104,13 @@ def _load_agent_soul(agent_name: str) -> str:
 
 
 def _load_agent_manifest(agent_name: str) -> dict:
-    """Load an agent's manifest."""
-    path = BUNDLE_ROOT / "agents" / agent_name / "data" / "agent.json"
-    if path.exists():
-        return json.loads(path.read_text())
+    """Load an agent's manifest - runtime first, then bundle."""
+    runtime_path = Path.home() / ".atrophy" / "agents" / agent_name / "data" / "agent.json"
+    if runtime_path.exists():
+        return json.loads(runtime_path.read_text())
+    bundle_path = BUNDLE_ROOT / "agents" / agent_name / "data" / "agent.json"
+    if bundle_path.exists():
+        return json.loads(bundle_path.read_text())
     return {}
 
 

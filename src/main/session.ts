@@ -106,16 +106,22 @@ export class Session {
       .join('\n');
 
     const summaryPrompt =
-      'Summarise this conversation in 2-3 sentences. ' +
-      'Focus on what mattered, not what was said. ' +
-      'Note any new threads, shifts in mood, or observations worth remembering.\n\n' +
+      'Summarise this conversation in 2-4 sentences.\n\n' +
+      'Capture what actually happened between these two people, not just the topic.\n' +
+      'If something shifted - in the relationship, in understanding, in how they talk ' +
+      'to each other - name it. If someone was vulnerable, direct, or honest in a way ' +
+      'that cost something, that matters more than what was discussed.\n' +
+      'A session about fixing bugs where nothing personal happened is just that. ' +
+      'A session where something real passed between them - name the real thing.\n' +
+      'Do not use em dashes - only hyphens.\n\n' +
       turnText;
 
     let summary: string;
     try {
       summary = await runInferenceOneshot(
         [{ role: 'user', content: summaryPrompt }],
-        'You are summarising a conversation for memory storage. Be concise and precise.',
+        `You are ${config.AGENT_DISPLAY_NAME}, writing a memory of a conversation you just had with ${config.USER_NAME}. ` +
+        'Write in third person. Be honest about what the session was. 2-4 sentences.',
       );
     } catch (e) {
       summary = `[Summary generation failed: ${e}]`;
