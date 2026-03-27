@@ -271,11 +271,11 @@
         // electron-updater compares against the frozen DMG version, but
         // we may already be running a newer hot bundle. Compare the
         // downloaded version against the effective running version.
-        let effectiveVersion = appUpdateResult; // assume newer by default
+        let effectiveVersion = '0.0.0'; // conservative: show banner unless we confirm we're already newer
         try {
           const status = await api.getBundleStatus();
-          effectiveVersion = status?.activeVersion || appUpdateResult;
-        } catch { /* use downloaded version */ }
+          if (status?.activeVersion) effectiveVersion = status.activeVersion;
+        } catch { /* fallback to 0.0.0 - banner will show */ }
 
         if (isNewer(appUpdateResult, effectiveVersion)) {
           bootLog(`app update ${appUpdateResult} is newer than effective ${effectiveVersion}`);
@@ -1049,10 +1049,12 @@
     // fallback for when the user quit before the auto-restart could fire.
     if (updateStatus !== 'downloaded') {
       api?.getBundleStatus?.().then((status) => {
-        if (status?.pending?.pendingRestart && status.pending.version) {
+        const pendingVer = status?.pending?.version;
+        const activeVer = status?.activeVersion;
+        if (status?.pending?.pendingRestart && pendingVer && activeVer) {
           // Only show banner if the pending version is actually newer than what's running
-          if (isNewer(status.pending.version, status.activeVersion)) {
-            pendingUpdateVersion = status.pending.version;
+          if (isNewer(pendingVer, activeVer)) {
+            pendingUpdateVersion = pendingVer;
             pendingUpdateType = 'bundle';
           }
         }
