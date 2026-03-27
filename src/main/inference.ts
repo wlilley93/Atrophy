@@ -594,7 +594,7 @@ export function streamInference(
   userMessage: string,
   system: string,
   cliSessionId?: string | null,
-  options?: { senderName?: string; source?: 'desktop' | 'telegram' | 'cron' | 'server' | 'other' },
+  options?: { senderName?: string; source?: 'desktop' | 'telegram' | 'cron' | 'server' | 'other'; processKey?: string },
 ): EventEmitter {
   const emitter = new EventEmitter();
   const config = getConfig();
@@ -667,14 +667,15 @@ export function streamInference(
   const t0 = Date.now();
 
   const agentName = config.AGENT_NAME;
-  log.info(`[${agentName}] spawn mode=${mode} effort=${effort}`);
+  const procKey = options?.processKey || agentName;
+  log.info(`[${agentName}] spawn mode=${mode} effort=${effort}${procKey !== agentName ? ` key=${procKey}` : ''}`);
   const spawnEnv = cleanEnv();
 
-  // Kill any previous active process for THIS agent only (not other agents)
-  const prevProc = _activeProcesses.get(agentName);
+  // Kill any previous active process for THIS key only (not other agents/federation)
+  const prevProc = _activeProcesses.get(procKey);
   if (prevProc) {
     try { prevProc.kill(); } catch { /* already dead */ }
-    _activeProcesses.delete(agentName);
+    _activeProcesses.delete(procKey);
   }
 
   // Spawn process
@@ -687,7 +688,7 @@ export function streamInference(
       detached: false,
     });
     log.debug(`[${agentName}] pid=${proc.pid}`);
-    _activeProcesses.set(agentName, proc);
+    _activeProcesses.set(procKey, proc);
     _allProcesses.add(proc);
   } catch (e) {
     log.error(`failed to start: ${e}`);
@@ -912,7 +913,7 @@ export function streamInference(
   proc.on('close', (code, signal) => {
     clearInterval(timeoutTimer);
     if (sigkillTimer) clearTimeout(sigkillTimer);
-    if (_activeProcesses.get(agentName) === proc) _activeProcesses.delete(agentName);
+    if (_activeProcesses.get(procKey) === proc) _activeProcesses.delete(procKey);
     _allProcesses.delete(proc);
     const elapsed = (Date.now() - t0) / 1000;
 
@@ -994,7 +995,7 @@ export function streamInference(
     clearInterval(timeoutTimer);
     try { proc.kill(); } catch { /* already dead */ }
     _allProcesses.delete(proc);
-    if (_activeProcesses.get(agentName) === proc) _activeProcesses.delete(agentName);
+    if (_activeProcesses.get(procKey) === proc) _activeProcesses.delete(procKey);
     const elapsed = (Date.now() - t0) / 1000;
     log.error(`crashed after ${elapsed.toFixed(1)}s: ${err}`);
     emitter.emit('event', { type: 'StreamError', message: String(err) } as StreamErrorEvent);

@@ -179,10 +179,16 @@ function withFederationConfigLock<T>(fn: () => Promise<T>): Promise<T> {
  * Run sandboxed inference for a federation message and return the response text.
  * Returns null if inference produced no output or timed out.
  */
+interface FederationDispatchResult {
+  responseText: string | null;
+  ownerChatId: string | null;
+  ownerBotToken: string | null;
+}
+
 async function dispatchFederationInference(
   state: PollerState,
   cleanText: string,
-): Promise<string | null> {
+): Promise<FederationDispatchResult> {
   const { linkName, link } = state;
   const config = getConfig();
   const originalAgent = config.AGENT_NAME;
@@ -192,10 +198,15 @@ async function dispatchFederationInference(
   const sanitized = sanitizeFederationContent(cleanText);
   const preamble = buildFederationPreamble(linkName, link.remote_bot_username, link.trust_tier);
 
-  // Narrow config lock - hold only while reloading and spawning the subprocess
-  const emitter = await withFederationConfigLock(async () => {
+  // Narrow config lock - hold only while reloading and spawning the subprocess.
+  // Also capture notification credentials while config is loaded for the right agent.
+  const { emitter, ownerChatId, ownerBotToken } = await withFederationConfigLock(async () => {
     config.reloadForAgent(link.local_agent);
     memory.initDb();
+
+    // Capture notification credentials while config is loaded
+    const chatId = config.TELEGRAM_DM_CHAT_ID || config.TELEGRAM_CHAT_ID;
+    const botToken = config.TELEGRAM_BOT_TOKEN;
 
     const sandboxedMcpPath = buildSandboxedMcpConfig(link.local_agent, link.trust_tier);
     setMcpConfigPath(sandboxedMcpPath);
@@ -205,12 +216,12 @@ async function dispatchFederationInference(
 
     // Restore original agent immediately after spawning so the config
     // singleton is not left pointing at the federation agent.
-    const emitterInner = streamInference(sanitized, system, sessionId, { source: 'other' });
+    const emitterInner = streamInference(sanitized, system, sessionId, { source: 'other', processKey: `federation-${linkName}` });
 
     resetMcpConfig();
     config.reloadForAgent(originalAgent);
 
-    return emitterInner;
+    return { emitter: emitterInner, ownerChatId: chatId, ownerBotToken: botToken };
   });
 
   return new Promise<string | null>((resolve) => {
