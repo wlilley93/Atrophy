@@ -828,8 +828,14 @@
   // Agent switch animation
   // ---------------------------------------------------------------------------
 
+  let agentSwitchLabel = $state('');
+
   function playAgentSwitchAnimation() {
-    // No-op - clip-path eye blink removed per user preference
+    agentSwitchLabel = agents.displayName;
+    agentSwitchActive = true;
+    // Fade out after the name has been visible long enough for the
+    // orb/video to reload in the background
+    setTimeout(() => { agentSwitchActive = false; }, 800);
   }
 
   // ---------------------------------------------------------------------------
@@ -1377,12 +1383,11 @@
     <ShutdownScreen onComplete={onShutdownComplete} />
   {/if}
 
-  <!-- Agent switch clip-path reveal animation -->
+  <!-- Agent switch loading overlay -->
   {#if agentSwitchActive}
-    <div
-      class="agent-switch-overlay"
-      style="clip-path: {agentSwitchClip}"
-    ></div>
+    <div class="agent-switch-overlay">
+      <span class="agent-switch-label">{agentSwitchLabel}</span>
+    </div>
   {/if}
 
   <!-- Agent deferral iris wipe (codec-style handoff) -->
@@ -1755,7 +1760,26 @@
     z-index: 75;
     background: var(--bg);
     pointer-events: none;
-    transition: clip-path 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: agentSwitchFade 0.8s ease forwards;
+  }
+
+  @keyframes agentSwitchFade {
+    0% { opacity: 0; }
+    20% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  .agent-switch-label {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
   }
 
   /* -- Agent deferral iris wipe (codec-style handoff) -- */
