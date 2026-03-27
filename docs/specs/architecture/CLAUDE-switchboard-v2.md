@@ -153,6 +153,7 @@ Desktop inference is handled inline rather than routed through the switchboard. 
 - Outbound user messages are recorded via `switchboard.record()` for observability
 - The desktop registers a handler for `desktop:<agent>` to receive cross-agent messages
 - Inference streaming (TextDelta, SentenceReady, ToolUse, etc.) goes directly to the renderer via IPC
+- Desktop passes `{ source: 'desktop' }` to `streamInference()` so the agent's context includes "This message is from the desktop app (GUI)". Telegram passes `source: 'telegram'`, cron passes `source: 'cron'`. This channel awareness is injected by `buildAgencyContext()` so agents can adapt their responses to the channel.
 
 **Why not full routing**: Desktop inference needs to:
 - Stream text deltas to the renderer for live display

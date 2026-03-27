@@ -96,11 +96,12 @@ ipcMain.handle('inference:send', (_event, text: string) => {
       },
     ));
 
-    // Stream inference
+    // Stream inference (source tells the agent which channel this is from)
     const emitter = streamInference(
       text,
       ctx.systemPrompt,
       ctx.currentSession.cliSessionId,
+      { source: 'desktop' },
     );
 
     let fullText = '';

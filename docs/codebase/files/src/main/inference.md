@@ -285,7 +285,7 @@ export function resetAgencyState(agent?: string): void {
 ### buildAgencyContext
 
 ```typescript
-function buildAgencyContext(userMessage: string, senderName?: string): string {
+function buildAgencyContext(userMessage: string, senderName?: string, source?: string): string {
   // Auto-detect emotional signals and apply them
   const signals = detectEmotionalSignals(userMessage);
   if (Object.keys(signals).length > 0) {
@@ -294,6 +294,17 @@ function buildAgencyContext(userMessage: string, senderName?: string): string {
   }
 
   const parts: string[] = [timeOfDayContext().context];
+
+  // Channel awareness - tells the agent where this message came from.
+  // Values: 'desktop' (GUI), 'telegram', 'cron'. Without this, agents
+  // had no way to distinguish channels and would guess incorrectly.
+  if (source === 'telegram') {
+    parts.push(`This message arrived via Telegram.`);
+  } else if (source === 'cron') {
+    parts.push('This is output from a scheduled job (cron).');
+  } else {
+    parts.push('This message is from the desktop app (GUI).');
+  }
 
   // Inner life - emotional state (compressed for token efficiency)
   if (senderName && senderName !== getConfig().USER_NAME) {

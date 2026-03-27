@@ -641,22 +641,33 @@ function resetJournalNudgeTimer(): void {
 
 The nudge only fires once per session (`journalNudgeSent = true`). User input resets the timer.
 
-## Boot Log (Debugging)
+## Boot Logging (Debugging)
 
-A boot log file is written for diagnosing packaged app issues:
+Boot-phase logging uses the unified logger (`createLogger('boot')`) which writes to `~/.atrophy/logs/app.log`. The old separate `boot.log` file has been replaced.
 
 ```typescript
-const BOOT_LOG = path.join(process.env.HOME || '/tmp', '.atrophy', 'logs', 'boot.log');
-
-function bootLog(msg: string): void {
-  try {
-    const line = `${new Date().toISOString()} ${msg}\n`;
-    fs.appendFileSync(BOOT_LOG, line);
-  } catch { /* best effort */ }
-}
+const bootLogger = createLogger('boot');
 ```
 
-Electron suppresses console output when launched from Finder on macOS. The boot log provides a persistent record for debugging startup issues.
+The logger writes to a persistent file (2MB rotation with one `app.prev.log` backup). Each boot writes a `===` banner with timestamp and PID. Key boot phases are logged:
+
+- `app.whenReady()` fired
+- `ensureUserData` + config + db init
+- IPC handler registration
+- Window creation and renderer load
+- Renderer lifecycle events (`did-finish-load`, `did-fail-load`, `render-process-gone`, `unresponsive`)
+- Renderer `console.error` messages forwarded via `console-message` event
+- `crashSafe` check result
+- Cron scheduler and Telegram daemon startup
+
+The renderer also logs its boot sequence via `api.log()` which forwards to the main process logger:
+- Svelte mount success/failure
+- Update check phases (bundle check, app check)
+- Config and agent list load
+- Brain frame loading and opening line fetch
+- Uncaught errors and unhandled rejections
+
+Logs can be viewed in the Settings Console tab (Live / Log file / Prev boot tabs) or directly at `~/.atrophy/logs/app.log`.
 
 ## V8 Performance Tuning
 

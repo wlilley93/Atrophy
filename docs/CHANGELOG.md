@@ -4,9 +4,9 @@ All notable changes to Atrophy.
 
 ---
 
-## 1.8.5
+## 1.8.5 - 1.8.8
 
-### Boot diagnostics and update fixes
+### Boot diagnostics, update fixes, and channel awareness
 
 - **Persistent file logging** - all log entries now write to `~/.atrophy/logs/app.log` (2MB rotation with one prev file). Replaces the old `boot.log` with a unified logger. Diagnostics survive crashes.
 - **Renderer boot instrumentation** - every boot phase (update check, config load, brain frames, opening line) logs to the main process file. Uncaught errors and unhandled rejections in the renderer are forwarded to the log file.
@@ -14,6 +14,7 @@ All notable changes to Atrophy.
 - **Renderer load diagnostics** - main process now captures `did-fail-load`, `render-process-gone`, `unresponsive`, and renderer `console.error` events to the log file.
 - **Update banner fix** - the "Restart to update" banner no longer appears when already running the latest version via hot bundle. electron-updater was comparing against the frozen DMG version, ignoring the active hot bundle.
 - **CI version sync** - CI no longer auto-bumps the version on every push. Only `pnpm release` bumps versions. CI and local releases now use the same `bundle-v` tag prefix.
+- **Channel source injection** - agents now know which channel each message came from (desktop GUI, Telegram, or cron). Previously, the agent had no way to tell and would guess based on manifest context.
 
 ---
 
