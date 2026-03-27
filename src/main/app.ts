@@ -106,17 +106,23 @@ const SESSION_IDLE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 function createWindow(): BrowserWindow {
   const config = getConfig();
 
+  const winWidth = config.WINDOW_WIDTH || 622;
+  const winHeight = config.WINDOW_HEIGHT || 830;
+
   const win = new BrowserWindow({
-    width: config.WINDOW_WIDTH,
-    height: config.WINDOW_HEIGHT,
+    width: winWidth,
+    height: winHeight,
     minWidth: 360,
     minHeight: 480,
+    maxWidth: 900,
+    maxHeight: 1200,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
     vibrancy: 'under-window',
     visualEffectState: 'active',
     backgroundColor: '#00000000',
     show: false,
+    fullscreenable: false,
     webPreferences: {
       preload: _hotBundle?.preload ?? path.join(__dirname, '..', 'preload', 'index.js'),
       sandbox: true,
@@ -124,6 +130,9 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
     },
   });
+
+  // Lock aspect ratio so the window scales proportionally like a phone
+  win.setAspectRatio(winWidth / winHeight);
 
   // Content Security Policy
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
