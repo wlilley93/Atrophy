@@ -34,6 +34,13 @@ _APP_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _MCP_DIR = _APP_DIR / "mcp"
 sys.path.insert(0, str(_MCP_DIR))
 
+# Shared scripts path for ontology access
+_SHARED_DIR = Path(__file__).resolve().parent.parent / "shared"
+_PERSONAL_SHARED = _ATROPHY_DIR / "scripts" / "agents" / "shared"
+for _p in [str(_PERSONAL_SHARED), str(_SHARED_DIR)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
@@ -61,6 +68,8 @@ WATCH - Two or three specific developments to monitor. Frame as questions about 
 
 If economic data is material (energy prices spiking, new sanctions), weave it into the relevant theatre rather than a separate section. Economics is motive, not a category.
 
+When ONTOLOGY data is provided (known entities, recent events, active platforms), use it to identify and name specific actors, units, and assets. This is your institutional memory - reference it to connect current sensor readings to known force structures and ongoing situations.
+
 Voice: clipped, precise, no hedging, hyphens only. Under 400 words. This should read like a cabinet brief, not a sensor readout."""
 
 
@@ -76,6 +85,79 @@ def call_claude(system: str, prompt: str, model: str = "sonnet") -> str:
     if result.returncode != 0:
         raise RuntimeError(f"claude exited {result.returncode}: {result.stderr[:200]}")
     return result.stdout.strip()
+
+
+def get_ontology_context() -> str:
+    """Pull relevant ontology data to enrich the situational brief."""
+    if not _INTEL_DB.exists():
+        return ""
+    parts = []
+    try:
+        db = sqlite3.connect(str(_INTEL_DB), timeout=10)
+        db.execute("PRAGMA busy_timeout=10000")
+
+        # Recent events from the ontology (last 6 hours to match 3h cycle + overlap)
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+        events = db.execute(
+            """SELECT o.name, o.subtype, o.description, o.country_code
+               FROM objects o
+               WHERE o.type = 'event'
+                 AND o.last_seen >= ?
+               ORDER BY o.last_seen DESC
+               LIMIT 20""",
+            (cutoff,),
+        ).fetchall()
+
+        if events:
+            parts.append("ONTOLOGY EVENTS (last 6 hours):")
+            for name, subtype, desc, cc in events:
+                country_tag = f" [{cc}]" if cc else ""
+                desc_text = f" - {desc[:120]}" if desc else ""
+                parts.append(f"  {name}{country_tag} ({subtype or 'event'}){desc_text}")
+
+        # Active platforms (aircraft, vessels) seen recently
+        platform_cutoff = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        platforms = db.execute(
+            """SELECT o.name, o.subtype, o.country_code,
+                      (SELECT p.value FROM properties p
+                       WHERE p.object_id = o.id AND p.key = 'operator' LIMIT 1) as operator
+               FROM objects o
+               WHERE o.type = 'platform'
+                 AND o.last_seen >= ?
+               ORDER BY o.last_seen DESC
+               LIMIT 15""",
+            (platform_cutoff,),
+        ).fetchall()
+
+        if platforms:
+            parts.append("ACTIVE PLATFORMS (last 3 hours):")
+            for name, subtype, cc, operator in platforms:
+                op_tag = f" ({operator})" if operator else ""
+                cc_tag = f" [{cc}]" if cc else ""
+                parts.append(f"  {name}{cc_tag}{op_tag} - {subtype or 'platform'}")
+
+        # Key country alert levels from recent properties
+        alert_countries = db.execute(
+            """SELECT o.name, p.value, p.source
+               FROM objects o
+               JOIN properties p ON p.object_id = o.id
+               WHERE o.type = 'country'
+                 AND p.key = 'alert_level'
+                 AND p.value != 'normal'
+               ORDER BY p.source DESC
+               LIMIT 10""",
+        ).fetchall()
+
+        if alert_countries:
+            parts.append("ELEVATED COUNTRIES:")
+            for name, level, source in alert_countries:
+                parts.append(f"  {name}: {level} (source: {source or 'unknown'})")
+
+        db.close()
+    except Exception as e:
+        log.warning("Ontology context query failed: %s", e)
+
+    return "\n".join(parts) if parts else ""
 
 
 def fetch_live_data() -> dict:
@@ -211,6 +293,12 @@ def main():
 
         if live.get("wm_error"):
             context_parts.append(f"WORLDMONITOR UNAVAILABLE: {live['wm_error']}")
+
+        # Pull ontology context to ground the brief in known entities
+        ont_ctx = get_ontology_context()
+        if ont_ctx:
+            context_parts.append(ont_ctx)
+            log.info("Added ontology context (%d chars)", len(ont_ctx))
 
         context = "\n\n".join(context_parts)
 
