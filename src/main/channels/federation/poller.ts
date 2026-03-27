@@ -224,7 +224,7 @@ async function dispatchFederationInference(
     return { emitter: emitterInner, ownerChatId: chatId, ownerBotToken: botToken };
   });
 
-  return new Promise<string | null>((resolve) => {
+  const responseText = await new Promise<string | null>((resolve) => {
     let fullText = '';
     let settled = false;
 
@@ -237,7 +237,7 @@ async function dispatchFederationInference(
 
     const timer = setTimeout(() => {
       log.warn(`[${linkName}] federation inference timed out`);
-      stopInference(link.local_agent);
+      stopInference(`federation-${linkName}`);
       settle(null);
     }, FEDERATION_TIMEOUT_MS);
 
@@ -258,6 +258,8 @@ async function dispatchFederationInference(
       }
     });
   });
+
+  return { responseText, ownerChatId, ownerBotToken };
 }
 
 /**
@@ -353,19 +355,7 @@ async function pollOnce(state: PollerState, botToken: string): Promise<void> {
       continue;
     }
 
-    // Inbound rate limiting
-    const now = Date.now();
-    if (now - state.inboundWindowStart > 3600_000) {
-      state.inboundCount = 0;
-      state.inboundWindowStart = now;
-    }
-    state.inboundCount++;
-    if (state.inboundCount > INBOUND_RATE_LIMIT) {
-      log.warn(`[${state.linkName}] Inbound rate limit exceeded (${state.inboundCount}/${INBOUND_RATE_LIMIT}/hr)`);
-      continue;
-    }
-
-    // Muted - log but don't process
+    // Muted - log but don't process (checked before rate limit so muted messages don't consume quota)
     if (state.link.muted) {
       appendTranscript(state.linkName, {
         timestamp: new Date().toISOString(),
@@ -378,6 +368,18 @@ async function pollOnce(state: PollerState, botToken: string): Promise<void> {
         trust_tier: state.link.trust_tier,
         skipped_reason: 'muted',
       });
+      continue;
+    }
+
+    // Inbound rate limiting
+    const now = Date.now();
+    if (now - state.inboundWindowStart > 3600_000) {
+      state.inboundCount = 0;
+      state.inboundWindowStart = now;
+    }
+    state.inboundCount++;
+    if (state.inboundCount > INBOUND_RATE_LIMIT) {
+      log.warn(`[${state.linkName}] Inbound rate limit exceeded (${state.inboundCount}/${INBOUND_RATE_LIMIT}/hr)`);
       continue;
     }
 
@@ -400,22 +402,15 @@ async function pollOnce(state: PollerState, botToken: string): Promise<void> {
     });
 
     // Dispatch sandboxed inference directly
-    const responseText = await dispatchFederationInference(state, cleanText);
+    const { responseText, ownerChatId, ownerBotToken } = await dispatchFederationInference(state, cleanText);
 
     // Send the response back to the federation group if we got one
     if (responseText) {
       await sendFederationResponse(state.linkName, responseText, msg.message_id);
     }
 
-    // Notify the owner about the federation message (Task 10)
+    // Notify the owner about the federation message
     try {
-      const notifConfig = getConfig();
-      const origAgent = notifConfig.AGENT_NAME;
-      notifConfig.reloadForAgent(state.link.local_agent);
-      const ownerChatId = notifConfig.TELEGRAM_DM_CHAT_ID || notifConfig.TELEGRAM_CHAT_ID;
-      const ownerBotToken = notifConfig.TELEGRAM_BOT_TOKEN;
-      notifConfig.reloadForAgent(origAgent);
-
       if (ownerChatId && ownerBotToken) {
         const notif = `[Federation] @${state.link.remote_bot_username} sent a message to ${state.link.local_agent}:\n"${cleanText.slice(0, 200)}"`;
         await telegramSend(notif, ownerChatId, false, ownerBotToken);

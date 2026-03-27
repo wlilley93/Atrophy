@@ -616,7 +616,7 @@ export class McpRegistry {
       for (const server of allServers) {
         if (BLOCKED_SERVERS.has(server.name)) continue;
         if (trustTier === 'query' && server.name !== 'memory') continue;
-        if (trustTier === 'delegate' && server.name !== 'memory' && server.name !== 'google') continue;
+        if (trustTier === 'delegate' && server.name !== 'memory') continue;
 
         let command = server.command;
         if (server.args.length > 0 && server.args[0].endsWith('.py')) {
