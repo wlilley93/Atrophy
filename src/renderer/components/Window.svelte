@@ -223,11 +223,13 @@
 
     try {
       // 1. Check for hot bundle update first (fast, no full app restart needed)
+      bootLog('checking for bundle update');
       const bundlePromise = api.checkBundleUpdate();
       const bundleTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000));
       const bundleVersion = await Promise.race([bundlePromise, bundleTimeout]);
 
       if (bundleVersion) {
+        bootLog(`bundle update found: v${bundleVersion}`);
         cleanupListeners();
         updateStatus = 'downloaded';
         updateVersion = bundleVersion;
@@ -235,6 +237,7 @@
         pendingUpdateType = 'bundle';
         return;
       }
+      bootLog('no bundle update, checking app update');
 
       // 2. No bundle update - check for full app update via electron-updater.
       //    This auto-downloads if available (autoDownload = true in updater.ts).
@@ -275,17 +278,29 @@
       } else {
         updateStatus = 'up-to-date';
       }
-    } catch {
+    } catch (e) {
+      bootError(`update check error: ${e}`);
       updateStatus = 'error';
       cleanupListeners();
     }
   }
 
+  function bootLog(msg: string): void {
+    try { api?.log('info', 'boot:renderer', msg); } catch { /* best effort */ }
+  }
+  function bootError(msg: string): void {
+    try { api?.log('error', 'boot:renderer', msg); } catch { /* best effort */ }
+  }
+
   async function runBootSequence() {
     if (bootRan) return;
     bootRan = true;
+    bootLog('runBootSequence started');
 
-    if (!api) return; // Splash will dismiss itself after decay animation
+    if (!api) {
+      bootError('api not available - preload bridge missing');
+      return;
+    }
 
     // Listen for avatar download events (capture cleanups for onDestroy)
     const c1 = api.onAvatarDownloadStart?.(() => {
@@ -309,10 +324,13 @@
     // ── Update check phase (blocks before splash) ──
     // Downloads any available update. Boot continues regardless - the update
     // banner will prompt the user to restart when they're ready.
+    bootLog('starting update check');
     await runUpdateCheck();
+    bootLog(`update check complete, status=${updateStatus}`);
     updateCheckVisible = false;
 
     // Load config and agent list
+    bootLog('loading config and agent list');
     try {
       const [cfg, agentList] = await Promise.all([
         api.getConfig(),
@@ -321,30 +339,35 @@
       agents.current = cfg.agentName || '';
       agents.displayName = cfg.agentDisplayName || '';
       agents.list = agentList || [];
+      bootLog(`config loaded, agent=${agents.current}, ${agents.list.length} agent(s)`);
 
       // Apply config-driven defaults
       if (cfg.eyeModeDefault) eyeMode = true;
       if (cfg.muteByDefault) { isMuted = true; api?.setMuted?.(true); }
       if (cfg.silenceTimerEnabled === false) silenceTimerEnabled = false;
       if (cfg.silenceTimerMinutes) silenceTimeoutMs = cfg.silenceTimerMinutes * 60 * 1000;
-    } catch {
-      // continue with defaults
+    } catch (e) {
+      bootError(`config load failed: ${e}`);
     }
 
     // Check if setup needed
     try {
       needsSetup = await api.needsSetup();
+      bootLog(`needsSetup=${needsSetup}`);
     } catch {
       needsSetup = false;
     }
 
     if (needsSetup) {
       // First launch - show cinematic splash then welcome overlay
+      bootLog('first launch - showing setup wizard');
       splashVisible = true;
       setupWizardPhase = 'welcome';
     } else {
       // Normal boot - play brain decay animation while fetching opening line
+      bootLog('normal boot - loading brain frames');
       await ensureBrainFrames();
+      bootLog(`brain frames loaded: ${brainFramePaths.length} frame(s)`);
       bootDecayVisible = true;
       bootDecayFrame = 0;
       bootDecayOpacity = 1;
@@ -393,10 +416,12 @@
       }, 200);
 
       // Fetch opening line
+      bootLog('fetching opening line');
       try {
         opening = await api.getOpeningLine();
-      } catch {
-        // use default - treat as ready with no opening
+        bootLog(`opening line received (${opening ? opening.length : 0} chars)`);
+      } catch (e) {
+        bootError(`opening line failed: ${e}`);
       }
       openingReady = true;
 
@@ -406,9 +431,10 @@
         bootDecayTimer = null;
       }
 
+      bootLog('dismissing boot screen');
       dismissBoot();
     }
-    // Splash dismisses itself via onComplete when decay finishes + download done
+    bootLog('runBootSequence complete');
   }
 
   // ---------------------------------------------------------------------------
@@ -890,6 +916,7 @@
   const ipcCleanups: (() => void)[] = [];
 
   onMount(() => {
+    bootLog('Window.svelte onMount');
     runBootSequence().then(() => resetSilenceTimer());
 
     // Listen for agent switches triggered by global shortcuts or tray menu

@@ -268,7 +268,6 @@ The following legacy overview documents are preserved in [`archive/`](archive/) 
 | `mcp/memory_server.py` | ✅ | Memory and agency tools |
 | `mcp/google_server.py` | ✅ | Google API access |
 | `mcp/puppeteer_proxy.py` | ✅ | Web browsing proxy |
-| `mcp/puppeteer-inject.py` | 📝 | Content injection scanning |
 
 ## Background Jobs
 
@@ -283,10 +282,10 @@ The following legacy overview documents are preserved in [`archive/`](archive/) 
 | `src/main/jobs/voice-note.ts` | ✅ | Spontaneous voice notes |
 | `src/main/jobs/introspect.ts` | ✅ | Nightly self-reflection |
 | `src/main/jobs/converse.ts` | ✅ | Inter-agent conversation |
-| `src/main/jobs/generate-avatar.ts` | 📝 | Avatar generation |
-| `src/main/jobs/run-task.ts` | 📝 | Generic task runner |
-| `src/main/jobs/check-reminders.ts` | 📝 | Reminder checker |
-| `src/main/jobs/observer.ts` | 📝 | Fact extraction |
+| `src/main/jobs/generate-avatar.ts` | ✅ | Avatar generation |
+| `src/main/jobs/observer.ts` | ✅ | Pre-compaction fact extraction |
+| `src/main/jobs/run-task.ts` | ✅ | Generic task runner |
+| `src/main/jobs/check-reminders.ts` | ✅ | Reminder checker |
 
 ---
 
@@ -381,19 +380,21 @@ docs/codebase/
 
 | Category | Documented | Total | Coverage |
 |----------|------------|-------|----------|
-| Entry Points | 4 | 5 | 80% |
+| Entry Points | 5 | 5 | 100% |
 | Main Process Core | 32 | 32 | 100% |
 | IPC Handlers | 7 | 7 | 100% |
 | Channels | 6 | 6 | 100% |
 | Inner Life | 4 | 4 | 100% |
-| Jobs Framework | 9 | 13 | 69% |
+| Jobs Framework | 13 | 13 | 100% |
 | Preload | 1 | 1 | 100% |
+| Renderer Entry | 1 | 1 | 100% |
 | Renderer Stores | 8 | 8 | 100% |
-| Renderer Components | 2 | 12 | 17% |
+| Renderer Components | 5 | 12 | 42% |
 | Database | 1 | 1 | 100% |
-| MCP Servers | 3 | 4 | 75% |
+| MCP Servers | 3 | 3 | 100% |
+| Utilities | 3 | 3 | 100% |
 | Scripts | 1 | 10+ | 10% |
-| **Total** | **79** | **103+** | **77%** |
+| **Total** | **90** | **106+** | **85%** |
 
 ---
 

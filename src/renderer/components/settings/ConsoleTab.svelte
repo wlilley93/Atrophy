@@ -8,7 +8,18 @@
   let logCleanup: (() => void) | null = null;
   let consoleScrollEl: HTMLDivElement;
 
+  // Source toggle: 'live' = ring buffer + streaming, 'file' = current log file, 'prev' = previous boot
+  let logSource = $state<'live' | 'file' | 'prev'>('live');
+  let fileEntries = $state<LogEntry[]>([]);
+  let loadingFile = $state(false);
+
   export async function load() {
+    await loadLive();
+  }
+
+  async function loadLive() {
+    logSource = 'live';
+    fileEntries = [];
     const buffer = await api?.getLogBuffer();
     if (buffer) logEntries = buffer;
     scrollConsole();
@@ -19,6 +30,28 @@
       if (logEntries.length > 500) logEntries = logEntries.slice(-500);
       scrollConsole();
     }) || null;
+  }
+
+  async function loadFromFile(which: 'file' | 'prev') {
+    logSource = which;
+    loadingFile = true;
+    // Pause live streaming while viewing file
+    if (logCleanup) { logCleanup(); logCleanup = null; }
+    try {
+      const contents = which === 'file'
+        ? await api?.readLogFile()
+        : await api?.readPrevLogFile();
+      if (contents) {
+        const parsed = await api?.parseLogFile(contents);
+        fileEntries = parsed || [];
+      } else {
+        fileEntries = [];
+      }
+    } catch {
+      fileEntries = [];
+    }
+    loadingFile = false;
+    scrollConsole();
   }
 
   export function cleanup() {
@@ -34,10 +67,36 @@
       if (consoleScrollEl) consoleScrollEl.scrollTop = consoleScrollEl.scrollHeight;
     });
   }
+
+  let displayEntries = $derived(logSource === 'live' ? logEntries : fileEntries);
+  let filteredEntries = $derived(
+    displayEntries.filter(e =>
+      !logFilter
+      || e.tag.includes(logFilter)
+      || e.message.toLowerCase().includes(logFilter.toLowerCase())
+    )
+  );
 </script>
 
 <div class="console-wrap">
 <div class="console-controls">
+  <div class="source-tabs">
+    <button
+      class="source-tab"
+      class:active={logSource === 'live'}
+      onclick={() => loadLive()}
+    >Live</button>
+    <button
+      class="source-tab"
+      class:active={logSource === 'file'}
+      onclick={() => loadFromFile('file')}
+    >Log file</button>
+    <button
+      class="source-tab"
+      class:active={logSource === 'prev'}
+      onclick={() => loadFromFile('prev')}
+    >Prev boot</button>
+  </div>
   <input
     type="text"
     class="console-filter"
@@ -48,20 +107,30 @@
     <input type="checkbox" bind:checked={logAutoScroll} />
     Auto-scroll
   </label>
-  <button class="daemon-btn" onclick={() => { logEntries = []; }}>Clear</button>
+  <button class="daemon-btn" onclick={() => { logEntries = []; fileEntries = []; }}>Clear</button>
 </div>
 <div
   class="console-output"
   bind:this={consoleScrollEl}
 >
-  {#each logEntries.filter(e => !logFilter || e.tag.includes(logFilter) || e.message.toLowerCase().includes(logFilter.toLowerCase())) as entry}
-    <div class="console-line level-{entry.level}">
-      <span class="console-time">{new Date(entry.timestamp).toLocaleTimeString('en-GB', { hour12: false })}</span>
-      <span class="console-level">{entry.level.slice(0, 4).toUpperCase()}</span>
-      <span class="console-tag">[{entry.tag}]</span>
-      <span class="console-msg">{entry.message}</span>
+  {#if loadingFile}
+    <div class="console-line level-info">
+      <span class="console-msg">Loading log file...</span>
     </div>
-  {/each}
+  {:else if filteredEntries.length === 0}
+    <div class="console-line level-info">
+      <span class="console-msg">{logSource === 'prev' ? 'No previous boot log found.' : 'No log entries.'}</span>
+    </div>
+  {:else}
+    {#each filteredEntries as entry}
+      <div class="console-line level-{entry.level}">
+        <span class="console-time">{new Date(entry.timestamp).toLocaleTimeString('en-GB', { hour12: false })}</span>
+        <span class="console-level">{entry.level.slice(0, 4).toUpperCase()}</span>
+        <span class="console-tag">[{entry.tag}]</span>
+        <span class="console-msg">{entry.message}</span>
+      </div>
+    {/each}
+  {/if}
 </div>
 </div><!-- end console-wrap -->
 
@@ -77,9 +146,39 @@
     align-items: center;
     gap: 8px;
     padding: 0 0 8px;
+    flex-wrap: wrap;
   }
+
+  .source-tabs {
+    display: flex;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    padding: 2px;
+  }
+  .source-tab {
+    padding: 3px 10px;
+    font-size: 10px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .source-tab:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .source-tab.active {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.1);
+  }
+
   .console-filter {
     flex: 1;
+    min-width: 100px;
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid var(--border);
     border-radius: 4px;

@@ -19,7 +19,8 @@ import { search as vectorSearch } from '../vector-search';
 import { isLoginItemEnabled, toggleLoginItem } from '../install';
 import { checkForUpdates, downloadUpdate, quitAndInstall } from '../updater';
 import { getActiveBundleVersion, checkForBundleUpdate, getPendingBundleInfo, clearHotBundle } from '../bundle-updater';
-import { createLogger, setLogForwarder, getLogBuffer } from '../logger';
+import { createLogger, setLogForwarder, getLogBuffer, readLogFile, readPrevLogFile, parseLogFile } from '../logger';
+import type { LogLevel } from '../logger';
 import { buildTopology, handleToggleConnection } from '../system-topology';
 import { listOrgs, getOrgDetail, createOrg, dissolveOrg, addAgentToOrg, removeAgentFromOrg, updateOrg } from '../org-manager';
 import type { OrgType } from '../org-manager';
@@ -49,6 +50,24 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('logs:getBuffer', () => {
     return getLogBuffer();
+  });
+
+  // Renderer-to-main log forwarding: renderer calls api.log() which arrives here
+  const rendererLogger = createLogger('renderer');
+  ipcMain.handle('logs:write', (_event, level: string, tag: string, message: string) => {
+    const lvl = (['debug', 'info', 'warn', 'error'].includes(level) ? level : 'info') as LogLevel;
+    rendererLogger[lvl](`[${tag}] ${message}`);
+  });
+
+  // Read persisted log file (for viewing previous boot logs)
+  ipcMain.handle('logs:readFile', () => {
+    return readLogFile();
+  });
+  ipcMain.handle('logs:readPrevFile', () => {
+    return readPrevLogFile();
+  });
+  ipcMain.handle('logs:parseFile', (_event, contents: string) => {
+    return parseLogFile(contents);
   });
 
   // Forward live log entries to renderer

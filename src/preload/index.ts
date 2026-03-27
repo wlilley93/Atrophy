@@ -165,6 +165,10 @@ export interface AtrophyAPI {
   // Logs
   getLogBuffer: () => Promise<{ timestamp: number; level: string; tag: string; message: string }[]>;
   onLogEntry: (cb: (entry: { timestamp: number; level: string; tag: string; message: string }) => void) => () => void;
+  log: (level: string, tag: string, message: string) => void;
+  readLogFile: () => Promise<string>;
+  readPrevLogFile: () => Promise<string>;
+  parseLogFile: (contents: string) => Promise<{ timestamp: number; level: string; tag: string; message: string }[]>;
 
   // Mirror setup
   mirrorUploadPhoto: (photoData: ArrayBuffer, filename: string) => Promise<string>;
@@ -440,6 +444,12 @@ const api: AtrophyAPI = {
     ipcRenderer.on('logs:entry', handler);
     return () => ipcRenderer.removeListener('logs:entry', handler);
   },
+  log: (level, tag, message) => {
+    ipcRenderer.invoke('logs:write', level, tag, message);
+  },
+  readLogFile: () => ipcRenderer.invoke('logs:readFile'),
+  readPrevLogFile: () => ipcRenderer.invoke('logs:readPrevFile'),
+  parseLogFile: (contents) => ipcRenderer.invoke('logs:parseFile', contents),
 
   // Mirror setup
   mirrorUploadPhoto: (photoData, filename) => ipcRenderer.invoke('mirror:uploadPhoto', photoData, filename),

@@ -8,15 +8,9 @@ import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, p
 import * as path from 'path';
 import * as fs from 'fs';
 
-// File-based boot log for diagnosing packaged app issues (Electron suppresses
-// console output when launched from Finder/open on macOS).
-const BOOT_LOG = path.join(process.env.HOME || '/tmp', '.atrophy', 'logs', 'boot.log');
-function bootLog(msg: string): void {
-  try {
-    const line = `${new Date().toISOString()} ${msg}\n`;
-    fs.appendFileSync(BOOT_LOG, line);
-  } catch { /* best effort */ }
-}
+// Boot-phase logging uses the main logger (writes to ~/.atrophy/logs/app.log).
+// The old separate boot.log is replaced by a 'boot' tag in the unified log.
+const bootLogger = createLogger('boot');
 
 // Performance: increase V8 heap limit and enable concurrent GC
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
@@ -145,11 +139,34 @@ function createWindow(): BrowserWindow {
 
   // Load renderer
   if (process.env.ELECTRON_RENDERER_URL) {
+    bootLogger.info(`loadURL: ${process.env.ELECTRON_RENDERER_URL}`);
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
     const rendererPath = _hotBundle?.renderer ?? path.join(__dirname, '..', 'renderer', 'index.html');
+    bootLogger.info(`loadFile: ${rendererPath}`);
     win.loadFile(rendererPath);
   }
+
+  // Log renderer load lifecycle events for diagnostics
+  win.webContents.on('did-finish-load', () => {
+    bootLogger.info('renderer did-finish-load');
+  });
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    bootLogger.error(`renderer did-fail-load: ${errorCode} ${errorDescription}`);
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    bootLogger.error(`renderer process gone: ${details.reason} exitCode=${details.exitCode}`);
+  });
+  win.webContents.on('unresponsive', () => {
+    bootLogger.warn('renderer unresponsive');
+  });
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    // Forward renderer console.error to the main log file for crash diagnostics
+    if (level >= 2) { // 2 = warning, 3 = error
+      const lvl = level >= 3 ? 'error' : 'warn';
+      bootLogger.info(`renderer:console[${lvl}] ${message} (${sourceId}:${line})`);
+    }
+  });
 
   // Open external links in the system browser instead of in-app
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -562,6 +579,8 @@ if (!gotTheLock) {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(() => {
+  bootLogger.info('app.whenReady() fired');
+
   // Parse args
   const args = process.argv.slice(2);
   isMenuBarMode = args.includes('--app');
@@ -577,6 +596,7 @@ app.whenReady().then(() => {
   }
 
   // Initialize
+  bootLogger.info('ensureUserData + config + db init');
   ensureUserData();
   syncBundledPrompts();
   const config = getConfig();
@@ -607,6 +627,7 @@ app.whenReady().then(() => {
   log.info(`v${config.VERSION} | agent: ${config.AGENT_NAME} | db: ${config.DB_PATH}`);
 
   // Register IPC
+  bootLogger.info('registering IPC handlers');
   initIpcHandlers();
   registerAudioHandlers(() => mainWindow);
   registerWakeWordHandlers();
@@ -686,7 +707,7 @@ app.whenReady().then(() => {
   // 3. Crash rate check - if too many recent crashes, skip cron and daemon
   // to break crash loops. The subsystems can be re-enabled from the UI.
   const crashSafe = isCrashRateSafe();
-  bootLog(`crashSafe=${crashSafe}`);
+  bootLogger.info(`crashSafe=${crashSafe}`);
   if (!crashSafe) {
     log.error('CRASH LOOP DETECTED - skipping cron scheduler and Telegram daemon. Fix the issue, then restart.');
   }
@@ -733,9 +754,9 @@ app.whenReady().then(() => {
   // 5. Auto-start Telegram daemon. It discovers all agents with telegram
   // credentials and launches a poller per agent.
   if (crashSafe) {
-    bootLog('calling startDaemon()');
+    bootLogger.info('calling startDaemon()');
     const started = startDaemon();
-    bootLog(`startDaemon returned ${started}`);
+    bootLogger.info(`startDaemon returned ${started}`);
     if (started) {
       log.info('Telegram daemon auto-started');
     } else {
@@ -1001,7 +1022,9 @@ app.whenReady().then(() => {
   }
 
   // GUI mode - create window immediately
+  bootLogger.info('creating main window');
   mainWindow = createWindow();
+  bootLogger.info('main window created, loading renderer');
 
   // Start journal nudge timer (silence-based, once per session)
   resetJournalNudgeTimer();
