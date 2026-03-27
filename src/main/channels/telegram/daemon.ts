@@ -33,6 +33,7 @@ import { switchboard, type Envelope } from '../switchboard';
 import { AgentRouter, defaultConfigForAgent } from '../agent-router';
 import { Session } from '../../session';
 import { fileEntities } from '../../entity-extract';
+import { getFederationGroupIds } from '../federation/config';
 
 // ---------------------------------------------------------------------------
 // Per-agent session persistence with idle rotation
@@ -1122,6 +1123,10 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
 
     const msg = update.message;
     if (!msg) continue;
+
+    // Skip messages from federation groups - those are handled by the federation poller
+    const federationGroups = getFederationGroupIds();
+    if (msg.chat?.id && federationGroups.has(String(msg.chat.id))) continue;
 
     // Ignore messages from other bots (prevents cross-talk with CCBot etc.)
     if (msg.from?.is_bot) continue;
