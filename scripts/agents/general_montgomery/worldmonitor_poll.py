@@ -5,7 +5,8 @@ Usage:
     python worldmonitor_poll.py --tier fast|medium|slow
 
 Polls the WorldMonitor API for the specified tier, detects significant changes,
-and writes observations to Montgomery's memory database.
+writes observations to Montgomery's memory database, and ingests structured
+data into the ontology knowledge graph.
 """
 from __future__ import annotations
 
@@ -20,6 +21,13 @@ from pathlib import Path
 # Add the mcp directory to the path so we can import WorldMonitorClient
 _MCP_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "mcp")
 sys.path.insert(0, os.path.abspath(_MCP_DIR))
+
+# Add shared scripts to path for ontology_ingest
+_SHARED_DIR = Path(__file__).resolve().parent.parent / "shared"
+_PERSONAL_SHARED = Path.home() / ".atrophy" / "scripts" / "agents" / "shared"
+for _p in [str(_PERSONAL_SHARED), str(_SHARED_DIR)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from worldmonitor_server import WorldMonitorClient  # noqa: E402
 
@@ -119,6 +127,34 @@ def main() -> None:
             )
 
     logger.info("Done. Filed %d/%d observation(s)", filed, len(changes))
+
+    # Ingest structured data into the ontology knowledge graph.
+    # Each change carries the raw API response and endpoint - the ingestor
+    # routes to typed handlers (flights, ACLED, AIS, jamming, etc.).
+    try:
+        from ontology_ingest import ingest_worldmonitor_response
+        ingested = 0
+        for change in changes:
+            endpoint = change.get("endpoint", "")
+            raw_data = change.get("raw_data")
+            if not endpoint or raw_data is None:
+                continue
+            try:
+                result = ingest_worldmonitor_response(
+                    endpoint,
+                    raw_data,
+                    source=f"worldmonitor:{change.get('domain', 'unknown')}",
+                )
+                if result and result.get("objects_upserted", 0) > 0:
+                    ingested += result["objects_upserted"]
+            except Exception as exc:
+                logger.warning("Ontology ingest failed for %s: %s", endpoint, exc)
+        if ingested:
+            logger.info("Ontology: ingested %d objects from WorldMonitor data", ingested)
+    except ImportError:
+        logger.debug("ontology_ingest not available - skipping knowledge graph update")
+    except Exception as exc:
+        logger.warning("Ontology ingestion failed (non-fatal): %s", exc)
 
 
 if __name__ == "__main__":

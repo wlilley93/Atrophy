@@ -283,6 +283,33 @@ def run():
         log_brief_to_db(db, conflict["id"], today, title, content)
         log_brief_to_obsidian(conflict, today, title, content)
 
+        # 5b. Post-process the brief: verify, link to ontology, extract relationships, push to platform
+        try:
+            brief_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+            _personal_shared = Path.home() / ".atrophy" / "scripts" / "agents" / "shared"
+            _bundle_shared = Path(__file__).resolve().parent.parent / "shared"
+            for _p in [str(_personal_shared), str(_bundle_shared)]:
+                if _p not in sys.path:
+                    sys.path.insert(0, _p)
+            from brief_postprocess import postprocess_brief
+            pp = postprocess_brief(brief_id, push_channel="general_montgomery")
+            log.info("Brief post-processed: %s", pp)
+        except Exception as e:
+            log.warning("Brief post-processing failed (non-fatal): %s", e)
+
+        # 5c. Push channel state to Meridian platform
+        try:
+            from channel_push import push_briefing
+            push_briefing(
+                "general_montgomery",
+                title=title,
+                summary=content.split("\n")[0][:300] if content else "",
+                body_md=content,
+                sources=["Meridian Eye", "WorldMonitor", "intelligence.db"],
+            )
+        except Exception:
+            pass  # channel push is best-effort
+
         # 6. Format and send via Telegram
         token, chat_id = load_credentials()
         header = f"*WEEKLY ASSESSMENT - {today}*\n*{conflict['name'].upper()}*\n\n"

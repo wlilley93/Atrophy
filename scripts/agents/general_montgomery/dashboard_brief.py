@@ -444,6 +444,45 @@ def main():
     else:
         log.info("Refresh complete. No send (no breaking news threshold).")
 
+    # 6. Push channel state to Meridian platform (on send mode)
+    if args.mode == "send":
+        try:
+            _personal_shared = Path.home() / ".atrophy" / "scripts" / "agents" / "shared"
+            _bundle_shared = Path(__file__).resolve().parent.parent / "shared"
+            for _p in [str(_personal_shared), str(_bundle_shared)]:
+                if _p not in sys.path:
+                    sys.path.insert(0, _p)
+            from channel_push import push_channel
+
+            status = data.get("overall_status", "NORMAL").lower()
+            alert_level = "critical" if status == "critical" else ("elevated" if status == "elevated" else "normal")
+            assessment_text = data.get("assessment", "")
+            summary_line = assessment_text.split("\n")[0][:300] if assessment_text else ""
+
+            layers = ["military-flights", "ais-vessels", "oref-alerts"]
+            if data.get("gps_jamming", {}).get("active_zones", 0) > 0:
+                layers.append("gps-jamming")
+
+            push_channel("general_montgomery", {
+                "agent": "general_montgomery",
+                "display_name": "Gen. Montgomery",
+                "alert_level": alert_level,
+                "briefing": {
+                    "title": f"Dashboard Brief - {data.get('brief_id', '')}",
+                    "summary": summary_line,
+                    "body_md": assessment_text,
+                    "sources": ["WorldMonitor", "OREF", "USNI", "ADS-B"],
+                },
+                "map": {
+                    "center": [30, 30],
+                    "zoom": 2,
+                    "layers": layers,
+                },
+            })
+            log.info("Channel state pushed to Meridian platform")
+        except Exception as e:
+            log.warning("Channel push failed (non-fatal): %s", e)
+
 
 if __name__ == "__main__":
     main()

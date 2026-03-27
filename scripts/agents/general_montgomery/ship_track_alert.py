@@ -229,6 +229,25 @@ def run():
                 log.info(f"Alert sent: {alert[:80]}")
             except Exception as e:
                 log.error(f"Failed to send alert: {e}")
+
+        # Push alert summary to Meridian platform channel
+        try:
+            _personal_shared = Path.home() / ".atrophy" / "scripts" / "agents" / "shared"
+            _bundle_shared = Path(__file__).resolve().parent.parent / "shared"
+            for _p in [str(_personal_shared), str(_bundle_shared)]:
+                if _p not in sys.path:
+                    sys.path.insert(0, _p)
+            from channel_push import push_briefing
+            alert_summary = "\n\n".join(all_alerts)
+            push_briefing(
+                "general_montgomery",
+                title=f"Maritime Alert - {timestamp}",
+                summary=all_alerts[0][:300] if all_alerts else "",
+                body_md=alert_summary,
+                sources=["AIS", "WorldMonitor"],
+            )
+        except Exception:
+            pass  # channel push is best-effort
     else:
         log.info("No new alerts this cycle")
 

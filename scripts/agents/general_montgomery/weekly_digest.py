@@ -171,6 +171,28 @@ def run():
         """, (date_str, f"Weekly Digest - {date_str}", digest))
         db.commit()
 
+        # Post-process the brief: verify, link to ontology, extract relationships, push to platform
+        try:
+            brief_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+            from shared.brief_postprocess import postprocess_brief
+            pp = postprocess_brief(brief_id, push_channel="general_montgomery")
+            log.info("Brief post-processed: %s", pp)
+        except Exception as e:
+            log.warning("Brief post-processing failed (non-fatal): %s", e)
+
+        # Push channel state to Meridian platform
+        try:
+            from shared.channel_push import push_briefing
+            push_briefing(
+                "general_montgomery",
+                title=f"Weekly Digest - {date_str}",
+                summary=digest.split("\n")[0][:300] if digest else "",
+                body_md=digest,
+                sources=["Meridian Eye", "WorldMonitor", "intelligence.db"],
+            )
+        except Exception:
+            pass  # channel push is best-effort
+
     finally:
         db.close()
 
