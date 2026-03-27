@@ -15,6 +15,7 @@ export interface AtrophyAPI {
   onDone: (cb: (fullText: string) => void) => () => void;
   onCompacting: (cb: () => void) => () => void;
   onError: (cb: (message: string) => void) => () => void;
+  onEmotionUpdated: (cb: (data: { emotions: Record<string, number>; trust: Record<string, number> }) => void) => () => void;
   stopInference: () => Promise<void>;
 
   // Audio capture
@@ -288,6 +289,7 @@ const api: AtrophyAPI = {
   onDone: createListener('inference:done') as AtrophyAPI['onDone'],
   onCompacting: createListener('inference:compacting') as AtrophyAPI['onCompacting'],
   onError: createListener('inference:error') as AtrophyAPI['onError'],
+  onEmotionUpdated: createListener('emotion:updated') as AtrophyAPI['onEmotionUpdated'],
   stopInference: () => ipcRenderer.invoke('inference:stop'),
 
   // Audio capture

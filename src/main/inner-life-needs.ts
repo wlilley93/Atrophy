@@ -12,6 +12,7 @@
 
 import { type FullState, type Needs, type Drive } from './inner-life-types';
 import { saveState } from './inner-life';
+import { writeNeedEvent } from './memory';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,6 +38,7 @@ export function satisfyNeed(
   needs[need] = clampNeeds(needs[need] + amount);
   const updated = { ...state, needs };
   saveState(updated);
+  try { writeNeedEvent(need, amount, 'signal'); } catch { /* non-fatal */ }
   return updated;
 }
 
@@ -56,6 +58,7 @@ export function depleteNeed(
   needs[need] = clampNeeds(needs[need] - amount);
   const updated = { ...state, needs };
   saveState(updated);
+  try { writeNeedEvent(need, -amount, 'decay'); } catch { /* non-fatal */ }
   return updated;
 }
 

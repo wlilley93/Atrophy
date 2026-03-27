@@ -14,6 +14,7 @@ import { detectMoodShift } from '../agency';
 import { synthesise, enqueueAudio, playAudio, isMuted, ttsGeneration } from '../tts';
 import { parseArtifacts } from '../artifact-parser';
 import { loadCachedOpening, generateOpening, cacheNextOpening, getStaticFallback } from '../opening';
+import { loadState as loadEmotionalState } from '../inner-life';
 import { createLogger } from '../logger';
 import { switchboard, type Envelope } from '../channels/switchboard';
 import { discoverAgents } from '../agent-manager';
@@ -193,6 +194,14 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
                 cacheNextOpening(ctx.systemPrompt, ctx.currentSession?.cliSessionId ?? undefined);
               }
             }
+            // Broadcast emotional state to renderer after each turn
+            try {
+              const es = loadEmotionalState();
+              ctx.mainWindow.webContents.send('emotion:updated', {
+                emotions: es.emotions,
+                trust: es.trust,
+              });
+            } catch { /* non-fatal */ }
             // Prefetch context for the next message during idle
             setImmediate(() => prefetchContext());
             break;

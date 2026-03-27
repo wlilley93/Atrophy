@@ -78,7 +78,7 @@ async function _post(method: string, payload: Record<string, unknown>, timeoutMs
         const wait = data.parameters.retry_after;
         if (wait > 30) {
           log.warn(`Rate limited for ${wait}s - dropping ${method}`);
-          return null;
+          return NETWORK_ERROR; // Prevent markdown-fallback retry
         }
         log.debug(`Rate limited - waiting ${wait}s before retry`);
         await new Promise((r) => setTimeout(r, wait * 1000));
@@ -212,7 +212,7 @@ export async function sendMessage(
       text: chunk,
       parse_mode: 'Markdown',
     };
-    const result = await post('sendMessage', payload, 15_000, botToken);
+    const result = await postWithMarkdownFallback(payload, botToken);
     if (!result) allSent = false;
   }
   log.debug(`Sent message (${text.length} chars, split)`);

@@ -4,6 +4,7 @@
   import { audio } from '../stores/audio.svelte';
   import { storeArtifact } from '../stores/artifacts.svelte';
   import { setEmotion, setEmotionFromText, revertToDefault } from '../stores/emotion-colours.svelte';
+  import { applyEmotionUpdate } from '../stores/emotional-state.svelte';
   import { agents } from '../stores/agents.svelte';
   import { api } from '../api';
 
@@ -486,6 +487,10 @@
           completeLast();
           resetSyncState();
         }
+      }),
+      // Emotional state updates from main process (after each inference turn)
+      api.onEmotionUpdated((data: { emotions: Record<string, number>; trust: Record<string, number> }) => {
+        applyEmotionUpdate(data);
       }),
       // Voice call status updates from main process
       api.onCallStatusChanged((status: string) => {

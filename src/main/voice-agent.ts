@@ -1372,16 +1372,11 @@ async function _handleClaudeCode(params: Record<string, unknown>): Promise<strin
 
           // Truncate very long responses for the tool result
           // (the ElevenLabs LLM only needs a summary to narrate)
-          const truncated =
+          settle(
             fullText.length > 4000
               ? fullText.slice(0, 3800) + '\n\n[Response truncated - full result displayed on screen]'
-              : fullText;
-
-          // Don't kill the process on normal completion - it finished naturally
-          resolved = true;
-          clearTimeout(timeout);
-          emitter.removeAllListeners('event');
-          resolve(truncated);
+              : fullText,
+          );
           break;
 
         case 'StreamError':

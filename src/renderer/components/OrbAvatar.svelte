@@ -189,14 +189,43 @@
     const warm = emotionalState.warmth;
     const play = emotionalState.playfulness;
     const frust = emotionalState.frustration;
+    const mel = emotionalState.melancholy;
+    const tend = emotionalState.tenderness;
+    const def = emotionalState.defiance;
+    const foc = emotionalState.focus;
 
+    // Base: cool blue (h=220), warmth shifts toward amber, playfulness toward cyan
     let h = 220 + (warm - 0.5) * -40 + (play - 0.3) * 20;
     let s = 55 + conn * 25;
     let l = 25 + warm * 15;
 
+    // Frustration/defiance: shift toward red-orange, boost saturation
     if (frust > 0.3) {
       h = h + (frust - 0.3) * 100;
       s = s + frust * 20;
+    }
+    if (def > 0.3) {
+      h = h + (def - 0.3) * 60;
+      s = s + def * 10;
+    }
+
+    // Melancholy: desaturate and shift toward indigo
+    if (mel > 0.2) {
+      h = h + (mel - 0.2) * -30;
+      s = s - mel * 15;
+      l = l - mel * 8;
+    }
+
+    // Tenderness: shift toward rose-pink, soften
+    if (tend > 0.3) {
+      h = h + (tend - 0.3) * -50;
+      l = l + tend * 5;
+    }
+
+    // Focus: slightly brighter, more saturated
+    if (foc > 0.6) {
+      s = s + (foc - 0.6) * 15;
+      l = l + (foc - 0.6) * 5;
     }
 
     // Blend toward active emotion colour when one is set

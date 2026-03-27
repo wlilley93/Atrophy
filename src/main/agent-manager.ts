@@ -473,12 +473,15 @@ export interface AskResponse {
   destination_failed?: boolean;
 }
 
-/** Resolve a path under an agent's data dir, rejecting traversal attempts. */
+/** Resolve a path under an agent's data dir, rejecting traversal attempts. Works for org-nested agents. */
 function safeAgentDataPath(agentName: string, filename: string): string {
-  const base = path.resolve(USER_DATA, 'agents');
-  const resolved = path.resolve(base, agentName, 'data', filename);
-  if (!resolved.startsWith(base + path.sep)) {
-    throw new Error(`Path traversal detected in agentName: ${agentName}`);
+  if (!isValidAgentName(agentName)) {
+    throw new Error(`Invalid agent name: ${agentName}`);
+  }
+  const agentDataDir = path.resolve(getAgentDir(agentName), 'data') + path.sep;
+  const resolved = path.resolve(agentDataDir, filename);
+  if (!resolved.startsWith(agentDataDir)) {
+    throw new Error(`Path traversal detected: ${agentName}/${filename}`);
   }
   return resolved;
 }
@@ -499,16 +502,32 @@ export function checkAskRequest(): (AskRequest & { _agent?: string }) | null {
   const activeResult = _checkAskFile(askRequestPath());
   if (activeResult) return activeResult;
 
-  // Scan all other agents for background ask requests (cron, telegram)
+  // Scan all other agents for background ask requests (cron, telegram).
+  // Checks both flat agents (agents/<name>/) and org-nested (agents/<org>/<name>/).
   const agentsDir = path.join(USER_DATA, 'agents');
   if (!fs.existsSync(agentsDir)) return null;
   const currentAgent = getConfig().AGENT_NAME;
   try {
     for (const entry of fs.readdirSync(agentsDir)) {
+      if (!isValidAgentName(entry)) continue;
       if (entry === currentAgent) continue;
-      const reqPath = path.join(agentsDir, entry, 'data', '.ask_request.json');
+      const entryPath = path.join(agentsDir, entry);
+      if (!fs.statSync(entryPath).isDirectory()) continue;
+
+      // Check flat agent
+      const reqPath = path.join(entryPath, 'data', '.ask_request.json');
       const result = _checkAskFile(reqPath);
       if (result) return { ...result, _agent: entry };
+
+      // Check org-nested agents inside this directory
+      try {
+        for (const sub of fs.readdirSync(entryPath)) {
+          if (!isValidAgentName(sub) || sub === currentAgent) continue;
+          const subReqPath = path.join(entryPath, sub, 'data', '.ask_request.json');
+          const subResult = _checkAskFile(subReqPath);
+          if (subResult) return { ...subResult, _agent: sub };
+        }
+      } catch { /* non-fatal */ }
     }
   } catch { /* non-fatal */ }
   return null;
