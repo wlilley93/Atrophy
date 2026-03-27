@@ -37,17 +37,21 @@
     loadingFile = true;
     // Pause live streaming while viewing file
     if (logCleanup) { logCleanup(); logCleanup = null; }
+    const mySource = which; // capture before awaits to detect superseded calls
     try {
       const contents = which === 'file'
         ? await api?.readLogFile()
         : await api?.readPrevLogFile();
+      if (logSource !== mySource) return; // superseded by another tab click
       if (contents) {
         const parsed = await api?.parseLogFile(contents);
+        if (logSource !== mySource) return; // superseded
         fileEntries = parsed || [];
       } else {
         fileEntries = [];
       }
     } catch {
+      if (logSource !== mySource) return;
       fileEntries = [];
     }
     loadingFile = false;
