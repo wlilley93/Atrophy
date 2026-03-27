@@ -61,7 +61,7 @@ mac:
         - "menubar_brain*.png"
 
 dmg:
-  title: "Atrophy"
+  title: "Atrophy Install"
   artifactName: "${productName}-${version}-${arch}.${ext}"
   background: build/dmg-background.png
   icon: resources/icons/TheAtrophiedMind.icns

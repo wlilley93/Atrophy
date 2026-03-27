@@ -7,8 +7,9 @@
  */
 
 import { app, nativeImage, NativeImage } from 'electron';
-import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -373,10 +374,21 @@ export function clearTrayIconCache(): void {
 // Icon file generation
 // ---------------------------------------------------------------------------
 
-function getIconsDir(): string {
+/** Bundled icon assets (read-only in packaged app - do NOT write here). */
+function getBundledIconsDir(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'icons')
     : path.join(__dirname, '..', '..', 'resources', 'icons');
+}
+
+/** Writable directory for generated icon PNGs (outside the signed bundle). */
+function getIconsDir(): string {
+  if (app.isPackaged) {
+    const dir = path.join(os.homedir(), '.atrophy', 'icons');
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+  return path.join(__dirname, '..', '..', 'resources', 'icons');
 }
 
 /**
@@ -428,8 +440,9 @@ export function getAppIcon(): NativeImage {
 
   const iconsDir = getIconsDir();
 
-  // Prefer .icns (the brain icon) if it exists
-  const icnsPath = path.join(iconsDir, 'TheAtrophiedMind.icns');
+  // Prefer .icns (the brain icon) from the bundled assets (read-only)
+  const bundledDir = getBundledIconsDir();
+  const icnsPath = path.join(bundledDir, 'TheAtrophiedMind.icns');
   if (fs.existsSync(icnsPath)) {
     const icon = nativeImage.createFromPath(icnsPath);
     if (!icon.isEmpty()) {
