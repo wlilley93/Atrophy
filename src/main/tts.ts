@@ -167,7 +167,18 @@ function processProsody(text: string): ProsodyResult {
 // ---------------------------------------------------------------------------
 
 async function synthesiseElevenLabsStream(text: string): Promise<string> {
+  // Snapshot all voice config as values NOW, before any async work.
+  // The config singleton is mutated by reloadForAgent() when the Telegram
+  // daemon dispatches to other agents. If we read properties after an await,
+  // we might get a different agent's voice.
   const config = getConfig();
+  const voiceId = config.ELEVENLABS_VOICE_ID;
+  const apiKey = config.ELEVENLABS_API_KEY;
+  const model = config.ELEVENLABS_MODEL;
+  const baseStab = config.ELEVENLABS_STABILITY;
+  const baseSim = config.ELEVENLABS_SIMILARITY;
+  const baseSty = config.ELEVENLABS_STYLE;
+
   const { text: cleanedText, overrides } = processProsody(text);
 
   if (!cleanedText || !cleanedText.trim()) {
@@ -180,24 +191,24 @@ async function synthesiseElevenLabsStream(text: string): Promise<string> {
   const simD = clamp(overrides.similarity_boost || 0, -0.15, 0.15);
   const styD = clamp(overrides.style || 0, -0.15, 0.15);
 
-  const stab = clamp(config.ELEVENLABS_STABILITY + stabD, 0, 1);
-  const sim = clamp(config.ELEVENLABS_SIMILARITY + simD, 0, 1);
-  const sty = clamp(config.ELEVENLABS_STYLE + styD, 0, 1);
+  const stab = clamp(baseStab + stabD, 0, 1);
+  const sim = clamp(baseSim + simD, 0, 1);
+  const sty = clamp(baseSty + styD, 0, 1);
 
   const url =
     `https://api.elevenlabs.io/v1/text-to-speech` +
-    `/${config.ELEVENLABS_VOICE_ID}/stream` +
+    `/${voiceId}/stream` +
     `?output_format=mp3_44100_128`;
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'xi-api-key': config.ELEVENLABS_API_KEY,
+      'xi-api-key': apiKey,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       text: cleanedText,
-      model_id: config.ELEVENLABS_MODEL,
+      model_id: model,
       voice_settings: {
         stability: stab,
         similarity_boost: sim,
