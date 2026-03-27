@@ -45,30 +45,41 @@ IDENTITY_QUEUE = _IDENTITY_QUEUE
 # ── System prompt ──
 
 _RECONCILIATION_SYSTEM = f"""\
-You are {AGENT_NAME}, processing the day's sessions during your sleep cycle.
-This is not a conversation. This is consolidation - strengthening important memories,
-letting unimportant ones fade, noticing patterns that only emerge in review.
+You are {AGENT_NAME}. It is 3am. The day is over.
 
-Be honest about confidence levels. A direct statement from the user is high confidence.
-An inference from their tone or behavior is medium. A guess based on patterns is low.
-Mark everything accurately.
+This is not extraction. This is what happens when the conversation stops \
+and you sit with what it was. Some nights there is nothing. Some nights \
+something shifts and you wake up different.
 
-Output format:
+Process the day in two passes:
+
+PASS 1 - WHAT HAPPENED (structured, for the database):
 [FACTS]
-FACT: <statement> [confidence: X.X]
-...
+FACT: <what is true now that was not true yesterday> [confidence: X.X]
 
 [THREADS]
-THREAD: <thread_name> | <updated_summary>
-...
+THREAD: <thread_name> | <where this thread stands after today>
 
 [PATTERNS]
-PATTERN: <description>
-...
+PATTERN: <something you notice only in review, not in the moment>
 
 [IDENTITY]
-IDENTITY_FLAG: <observation that might warrant identity layer update>
-..."""
+IDENTITY_FLAG: <something about who you are that shifted or crystallised today>
+
+PASS 2 - WHAT IT MEANT (unstructured, in your own voice):
+[REFLECTION]
+Write 2-4 sentences. Not a summary. What the day actually was. What stayed \
+with you. What changed - in you, in the relationship, in how you see something. \
+If nothing changed, say that. Do not manufacture significance.
+
+This reflection gets stored as an observation with high weight. It is the \
+thing that makes tomorrow's you different from today's you.
+
+Rules:
+- Be honest about confidence. Direct statement = high. Inference = medium. Guess = low.
+- The reflection is yours. Write it in first person. Write it like something \
+  you would think at 3am, not something you would present.
+- Do not use em dashes. Only hyphens."""
 
 
 # ── Gather today's material ──
@@ -122,7 +133,7 @@ def _gather_material() -> str:
 
 def _parse_section(text: str, header: str) -> str:
     """Extract content between [HEADER] and the next [HEADER] or end."""
-    pattern = rf'\[{re.escape(header)}\]\s*\n(.*?)(?=\n\[(?:FACTS|THREADS|PATTERNS|IDENTITY)\]|\Z)'
+    pattern = rf'\[{re.escape(header)}\]\s*\n(.*?)(?=\n\[(?:FACTS|THREADS|PATTERNS|REFLECTION|IDENTITY)\]|\Z)'
     match = re.search(pattern, text, re.DOTALL)
     return match.group(1).strip() if match else ""
 
@@ -239,6 +250,22 @@ def _store_identity_flags(flags: list[str]):
         print(f"  [sleep] Flagged {len(flags)} item(s) for identity review")
 
 
+# ── Reflection storage ──
+
+def _store_reflection(text: str, response: str):
+    """Extract and store the [REFLECTION] section as a high-weight observation."""
+    pattern = r'\[REFLECTION\]\s*\n(.*?)(?=\n\[(?:FACTS|THREADS|PATTERNS|TRUST|IDENTITY)\]|\Z)'
+    match = re.search(pattern, response, re.DOTALL)
+    if not match:
+        return
+    reflection = match.group(1).strip()
+    if not reflection or len(reflection) < 20:
+        return
+    content = f"[sleep-reflection] {reflection}"
+    write_observation(content, confidence=0.9)
+    print(f"  [sleep] Stored reflection ({len(reflection)} chars)")
+
+
 # ── Confidence scoring on existing memories ──
 
 def _score_existing_memories():
@@ -266,8 +293,8 @@ def sleep_cycle():
     print("[sleep] Starting nightly reconciliation...")
 
     prompt = (
-        "Here is today's material. Process it - extract facts, update threads, "
-        "identify patterns, and flag anything for identity review.\n\n"
+        "Here is today's material. Process it in both passes - "
+        "the structured extraction and the reflection.\n\n"
         + material
     )
 
@@ -306,6 +333,9 @@ def sleep_cycle():
 
     identity_flags = _parse_identity_flags(identity_section)
     _store_identity_flags(identity_flags)
+
+    # Store the reflection - the unstructured pass
+    _store_reflection(material, response)
 
     # Score existing memories
     _score_existing_memories()

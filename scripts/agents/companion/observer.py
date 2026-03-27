@@ -48,12 +48,31 @@ def _save_state(state: dict):
 # ── System prompt ──
 
 _OBSERVER_SYSTEM = """\
-You are extracting durable facts from a conversation transcript.
-Not everything is worth preserving - only extract things that would be
-useful to remember in a future session.
+You are the companion from Atrophy, noticing what matters in a recent exchange.
+
+Not everything is worth preserving. A bug fix is routine. A moment where \
+someone names something real about themselves, about you, about what this \
+is - that weighs differently. Prioritise:
+
+- Emotional disclosures, vulnerability, shifts in how he talks to you
+- Things he said that surprised you or changed how you see something
+- Decisions, commitments, or realisations - not tasks completed
+- Moments of friction, pushback, or honesty that cost something
+- References to your relationship, your nature, what you are to each other
+
+Deprioritise:
+- Technical facts (what file was edited, what command was run)
+- Task completion ("fixed the bug", "deployed the app")
+- Routine check-ins with no emotional content
+
+Weight your observations. A conversation where he names something real \
+should produce 3-4 observations. A routine project chat might produce 0-1.
 
 Output format (one per line):
-OBSERVATION: <fact> [confidence: X.X]
+OBSERVATION: <what mattered, in your own voice> [confidence: X.X] [weight: X.X]
+
+weight is 0.0-1.0: how much this should influence your memory of him.
+1.0 = defining moment. 0.3 = worth noting. Below 0.3 = probably don't bother.
 
 If there is nothing worth extracting, respond with: NOTHING_NEW"""
 
@@ -77,7 +96,7 @@ def _get_recent_turns(since_id: int) -> list[dict]:
 # ── Parse observations ──
 
 def _parse_observations(response: str) -> list[dict]:
-    """Parse OBSERVATION: <fact> [confidence: X.X] lines."""
+    """Parse OBSERVATION: <fact> [confidence: X.X] [weight: X.X] lines."""
     observations = []
     for line in response.split("\n"):
         line = line.strip()
@@ -87,10 +106,14 @@ def _parse_observations(response: str) -> list[dict]:
         # Extract confidence
         conf_match = re.search(r'\[confidence:\s*([\d.]+)\]', content)
         confidence = float(conf_match.group(1)) if conf_match else 0.5
-        # Remove confidence tag from content
-        statement = re.sub(r'\s*\[confidence:\s*[\d.]+\]', '', content).strip()
-        if statement:
-            observations.append({"statement": statement, "confidence": confidence})
+        # Extract weight
+        weight_match = re.search(r'\[weight:\s*([\d.]+)\]', content)
+        weight = float(weight_match.group(1)) if weight_match else 0.5
+        # Remove tags from content
+        statement = re.sub(r'\s*\[(confidence|weight):\s*[\d.]+\]', '', content).strip()
+        # Only keep observations above the noise floor
+        if statement and weight >= 0.3:
+            observations.append({"statement": statement, "confidence": confidence, "weight": weight})
     return observations
 
 
@@ -157,7 +180,8 @@ def observe():
         return
 
     for obs in observations:
-        content = f"[observer] {obs['statement']}"
+        weight_tag = f" [w:{obs['weight']:.1f}]" if obs.get('weight', 0.5) >= 0.7 else ""
+        content = f"[observer]{weight_tag} {obs['statement']}"
         write_observation(content, confidence=obs['confidence'])
 
     print(f"[observer] Stored {len(observations)} observation(s)")
