@@ -231,7 +231,8 @@
         cleanupListeners();
         updateStatus = 'downloaded';
         updateVersion = bundleVersion;
-        setTimeout(() => api?.restartForUpdate(), 1500);
+        pendingUpdateVersion = bundleVersion;
+        pendingUpdateType = 'bundle';
         return;
       }
 
