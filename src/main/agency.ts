@@ -645,29 +645,36 @@ export function detectEmotionalSignals(text: string): SignalDelta {
   // Relationship signals
   // -----------------------------------------------------------------------
 
-  // Familiarity - referencing shared history
+  // Baseline familiarity growth - every real conversation (>50 chars) builds familiarity.
+  // This is the "just showing up" signal - independent of keywords.
+  if (length > 50) {
+    add('_rel_familiarity', 0.01);
+    add('_rel_reliability', 0.005);
+  }
+
+  // Familiarity - referencing shared history (stronger signal)
   if (FAMILIARITY_PHRASES.some((p) => lower.includes(p))) {
-    add('_rel_familiarity', 0.015);
+    add('_rel_familiarity', 0.03);
   }
 
   // Rapport - humor landing
   if (RAPPORT_PHRASES.some((p) => lower.includes(p))) {
-    add('_rel_rapport', 0.02);
+    add('_rel_rapport', 0.03);
   }
 
   // Boundaries - setting a limit
   if (BOUNDARY_PHRASES.some((p) => lower.includes(p))) {
-    add('_rel_boundaries', 0.01);
+    add('_rel_boundaries', 0.015);
   }
 
   // Challenge comfort - accepting pushback
   if (CHALLENGE_COMFORT_PHRASES.some((p) => lower.includes(p))) {
-    add('_rel_challenge_comfort', 0.015);
+    add('_rel_challenge_comfort', 0.025);
   }
 
   // Vulnerability - sharing personal info beyond work
   if (VULNERABILITY_PERSONAL_PHRASES.some((p) => lower.includes(p))) {
-    add('_rel_vulnerability', 0.02);
+    add('_rel_vulnerability', 0.03);
   }
 
   return deltas;
