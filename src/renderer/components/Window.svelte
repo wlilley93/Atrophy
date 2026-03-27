@@ -268,13 +268,25 @@
       cleanupListeners();
 
       if (appUpdateResult) {
-        updateStatus = 'downloaded';
-        updateVersion = appUpdateResult;
-        // Show the update banner instead of auto-restarting.
-        // Auto quitAndInstall causes a restart loop when the version
-        // check keeps finding the same update after relaunch.
-        pendingUpdateVersion = appUpdateResult;
-        pendingUpdateType = 'app';
+        // electron-updater compares against the frozen DMG version, but
+        // we may already be running a newer hot bundle. Compare the
+        // downloaded version against the effective running version.
+        let effectiveVersion = appUpdateResult; // assume newer by default
+        try {
+          const status = await api.getBundleStatus();
+          effectiveVersion = status?.activeVersion || appUpdateResult;
+        } catch { /* use downloaded version */ }
+
+        if (isNewer(appUpdateResult, effectiveVersion)) {
+          bootLog(`app update ${appUpdateResult} is newer than effective ${effectiveVersion}`);
+          updateStatus = 'downloaded';
+          updateVersion = appUpdateResult;
+          pendingUpdateVersion = appUpdateResult;
+          pendingUpdateType = 'app';
+        } else {
+          bootLog(`app update ${appUpdateResult} not newer than effective ${effectiveVersion}, skipping`);
+          updateStatus = 'up-to-date';
+        }
       } else {
         updateStatus = 'up-to-date';
       }
@@ -290,6 +302,19 @@
   }
   function bootError(msg: string): void {
     try { api?.log('error', 'boot:renderer', msg); } catch { /* best effort */ }
+  }
+
+  /** Simple semver comparison: is a > b? */
+  function isNewer(a: string, b: string): boolean {
+    const pa = a.split('.').map(Number);
+    const pb = b.split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const va = pa[i] || 0;
+      const vb = pb[i] || 0;
+      if (va > vb) return true;
+      if (va < vb) return false;
+    }
+    return false;
   }
 
   async function runBootSequence() {
@@ -1025,8 +1050,11 @@
     if (updateStatus !== 'downloaded') {
       api?.getBundleStatus?.().then((status) => {
         if (status?.pending?.pendingRestart && status.pending.version) {
-          pendingUpdateVersion = status.pending.version;
-          pendingUpdateType = 'bundle';
+          // Only show banner if the pending version is actually newer than what's running
+          if (isNewer(status.pending.version, status.activeVersion)) {
+            pendingUpdateVersion = status.pending.version;
+            pendingUpdateType = 'bundle';
+          }
         }
       }).catch(() => { /* non-critical */ });
     }

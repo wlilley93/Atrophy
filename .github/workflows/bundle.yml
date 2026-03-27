@@ -1,8 +1,11 @@
 name: Build and Release Hot Bundle
 
-# Triggers on every push to main.
-# Bumps the patch version, builds the hot bundle, and attaches it to a
-# GitHub Release. Existing installs pick it up automatically on next boot.
+# Triggers on every push to main (except docs-only changes).
+# Builds the hot bundle from the version already in package.json and
+# attaches it to a GitHub Release. Does NOT bump the version - that's
+# done locally via `pnpm release`.
+#
+# For manual version bumps, use workflow_dispatch with a bump type.
 
 on:
   push:
@@ -11,15 +14,16 @@ on:
       - 'docs/**'
       - '*.md'
 
-  # Allow manual trigger from the Actions tab
+  # Allow manual trigger with optional version bump
   workflow_dispatch:
     inputs:
       bump:
-        description: 'Version bump type'
+        description: 'Version bump (none = use current version)'
         required: false
-        default: 'patch'
+        default: 'none'
         type: choice
         options:
+          - none
           - patch
           - minor
           - major
@@ -30,6 +34,9 @@ permissions:
 jobs:
   bundle:
     runs-on: ubuntu-latest
+
+    # Skip version-bump commits from pnpm release to avoid infinite loops
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
     steps:
       - name: Checkout
@@ -50,33 +57,37 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Bump version
+      - name: Resolve version
         id: version
         run: |
-          BUMP="${{ github.event.inputs.bump || 'patch' }}"
+          BUMP="${INPUT_BUMP:-none}"
+          CURRENT=$(node -p "require('./package.json').version")
 
-          OLD_VERSION=$(node -p "require('./package.json').version")
-
-          NEW_VERSION=$(node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
-            const [major, minor, patch] = pkg.version.split('.').map(Number);
-            const bump = '${BUMP}';
-            if (bump === 'major') pkg.version = (major + 1) + '.0.0';
-            else if (bump === 'minor') pkg.version = major + '.' + (minor + 1) + '.0';
-            else pkg.version = major + '.' + minor + '.' + (patch + 1);
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-            process.stdout.write(pkg.version);
-          ")
-
-          echo "old=${OLD_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "new=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Bumped ${OLD_VERSION} -> ${NEW_VERSION} (${BUMP})"
+          if [ "${BUMP}" = "none" ]; then
+            echo "version=${CURRENT}" >> "$GITHUB_OUTPUT"
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            echo "Using existing version: ${CURRENT}"
+          else
+            NEW_VERSION=$(node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
+              const [major, minor, patch] = pkg.version.split('.').map(Number);
+              const bump = process.env.INPUT_BUMP;
+              if (bump === 'major') pkg.version = (major + 1) + '.0.0';
+              else if (bump === 'minor') pkg.version = major + '.' + (minor + 1) + '.0';
+              else pkg.version = major + '.' + minor + '.' + (patch + 1);
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+              process.stdout.write(pkg.version);
+            ")
+            echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+            echo "Bumped ${CURRENT} -> ${NEW_VERSION} (${BUMP})"
+          fi
+        env:
+          INPUT_BUMP: ${{ github.event.inputs.bump }}
 
       - name: Build hot bundle
         run: |
-          VERSION="${{ steps.version.outputs.new }}"
-
           # Build TypeScript + renderer
           pnpm build
 
@@ -90,40 +101,41 @@ jobs:
             main/ preload/ renderer/
           cd ..
 
-          # SHA-256
+          # SHA-256 + manifest
           SHA256=$(sha256sum dist/bundle.tar.gz | cut -d' ' -f1)
 
-          # Write manifest
           node -e "
             const fs = require('fs');
             fs.writeFileSync('dist/bundle-manifest.json', JSON.stringify({
-              version: '${VERSION}',
-              sha256: '${SHA256}',
+              version: process.env.BUNDLE_VERSION,
+              sha256: process.argv[1],
               timestamp: new Date().toISOString().replace(/\.\d+Z/, 'Z'),
             }, null, 2) + '\n');
-          "
+          " "${SHA256}"
 
-          echo "Bundle built: v${VERSION} (${SHA256})"
+          echo "Bundle built: v${BUNDLE_VERSION} (${SHA256})"
+        env:
+          BUNDLE_VERSION: ${{ steps.version.outputs.version }}
 
       - name: Commit version bump
+        if: steps.version.outputs.bumped == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json
-          git commit -m "Bump version to ${{ steps.version.outputs.new }} [skip ci]"
+          git commit -m "Bump version to ${BUNDLE_VERSION} [skip ci]"
           git push
+        env:
+          BUNDLE_VERSION: ${{ steps.version.outputs.version }}
 
       - name: Create or update GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${{ steps.version.outputs.new }}"
-          TAG="v${VERSION}"
+          TAG="bundle-v${BUNDLE_VERSION}"
 
           # Extract release notes from changelog
           NOTES=$(node -e '
             const fs = require("fs");
-            const ver = process.argv[1];
+            const ver = process.env.BUNDLE_VERSION;
             try {
               const text = fs.readFileSync("docs/CHANGELOG.md", "utf-8");
               const re = new RegExp("## " + ver.replace(/\./g, "\\.") + "[^\\n]*\\n");
@@ -134,17 +146,18 @@ jobs:
               const section = (end >= 0 ? rest.slice(0, end) : rest).trim();
               if (section) process.stdout.write(section);
             } catch {}
-          ' "${VERSION}" 2>/dev/null || true)
+          ' 2>/dev/null || true)
 
           if [ -z "${NOTES}" ]; then
-            NOTES="Hot bundle v${VERSION}."
+            NOTES="Hot bundle v${BUNDLE_VERSION}."
           fi
 
           NOTES=$(printf '%s\n\n---\nDownloaded automatically by the app on next restart.' "${NOTES}")
 
-          # Create or update release
+          # Create or update release (using bundle-v prefix, matching local release script)
           if gh release view "${TAG}" &>/dev/null; then
             echo "Updating existing release ${TAG}..."
+            gh release edit "${TAG}" --title "v${BUNDLE_VERSION}" --notes "${NOTES}"
             gh release delete-asset "${TAG}" bundle.tar.gz --yes 2>/dev/null || true
             gh release delete-asset "${TAG}" bundle-manifest.json --yes 2>/dev/null || true
             gh release upload "${TAG}" \
@@ -153,10 +166,13 @@ jobs:
           else
             echo "Creating release ${TAG}..."
             gh release create "${TAG}" \
-              --title "v${VERSION}" \
+              --title "v${BUNDLE_VERSION}" \
               --notes "${NOTES}" \
               dist/bundle.tar.gz \
               dist/bundle-manifest.json
           fi
 
           echo "Release ${TAG} published."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUNDLE_VERSION: ${{ steps.version.outputs.version }}
