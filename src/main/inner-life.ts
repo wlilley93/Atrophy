@@ -33,7 +33,7 @@ import {
 } from './inner-life-types';
 
 // Re-export types so existing imports from './inner-life' keep working
-export type { Emotions, Trust, Needs, Personality, Relationship, FullState, Drive, UserState } from './inner-life-types';
+export type { Emotions, Trust, Needs, Personality, Relationship, FullState, Drive, UserState, EmotionVelocity } from './inner-life-types';
 // Backward compatibility alias
 export type EmotionalState = FullState;
 
@@ -328,13 +328,28 @@ export function updateEmotions(
   state: FullState,
   deltas: Partial<Emotions>,
 ): FullState {
-  const emotions = { ...state.emotions };
+  const oldEmotions = state.emotions;
+  const emotions = { ...oldEmotions };
   for (const [key, delta] of Object.entries(deltas) as [keyof Emotions, number][]) {
     if (key in emotions) {
       emotions[key] = Math.round(clamp(emotions[key] + delta) * 1000) / 1000;
     }
   }
-  const updated = { ...state, emotions };
+  // Compute velocity: direction and magnitude of change per dimension.
+  // Positive = rising, negative = falling. Smoothed with previous velocity
+  // to avoid noise from single-turn spikes.
+  const prevVelocity = state.velocity || {};
+  const velocity: Record<string, number> = {};
+  for (const key of Object.keys(emotions) as (keyof Emotions)[]) {
+    const delta = emotions[key] - oldEmotions[key];
+    const prev = prevVelocity[key] || 0;
+    // Exponential smoothing: 60% new signal, 40% previous momentum
+    const smoothed = delta * 0.6 + prev * 0.4;
+    if (Math.abs(smoothed) > 0.005) {
+      velocity[key] = Math.round(smoothed * 1000) / 1000;
+    }
+  }
+  const updated = { ...state, emotions, velocity };
   saveState(updated);
   return updated;
 }

@@ -87,6 +87,9 @@ export interface Drive {
   strength: number;
 }
 
+/** Emotional velocity - direction and speed of change per dimension. */
+export type EmotionVelocity = Partial<Record<keyof Emotions, number>>;
+
 /** Full inner life state v2. */
 export interface FullState {
   version: 2;
@@ -95,6 +98,7 @@ export interface FullState {
   needs: Needs;
   personality: Personality;
   relationship: Relationship;
+  velocity?: EmotionVelocity;
   session_tone: string | null;
   last_updated: string;
 }

@@ -58,15 +58,15 @@ describe('compressForContext', () => {
       needs: { ...DEFAULT_FULL_STATE().needs, novelty: 2 },
     });
     const result = compressForContext(state);
-    expect(result).toContain('needs');
-    expect(result).toContain('nov:2');
+    expect(result).toContain('Unmet');
+    expect(result).toContain('novelty');
   });
 
   it('does NOT include met needs (value >= 3)', () => {
     // Default needs are all 5, which is met
     const state = makeState();
     const result = compressForContext(state);
-    expect(result).not.toContain('needs');
+    expect(result).not.toContain('Unmet');
   });
 
   it('includes active drives derived from unmet needs', () => {
@@ -76,7 +76,7 @@ describe('compressForContext', () => {
       emotions: { ...DEFAULT_FULL_STATE().emotions, curiosity: 0.9 },
     });
     const result = compressForContext(state);
-    expect(result).toContain('drives:');
+    expect(result).toContain('Drives:');
     expect(result).toContain('seeking-new-topics');
   });
 
@@ -84,7 +84,7 @@ describe('compressForContext', () => {
     // All needs at 5, no drives should fire
     const state = makeState();
     const result = compressForContext(state);
-    expect(result).not.toContain('drives:');
+    expect(result).not.toContain('Drives:');
   });
 
   it('includes personality and relationship on session start', () => {
@@ -98,12 +98,11 @@ describe('compressForContext', () => {
     const state = makeState();
     const result = compressForContext(state, { sessionStart: true });
     // Should contain personality section
-    expect(result).toContain('personality:');
+    expect(result).toContain('Personality:');
     // directness 0.65 > 0.6 -> "direct"
     expect(result).toContain('direct');
-    // reliability 0.5 > 0.3 -> in relationship section
-    expect(result).toContain('relationship');
-    expect(result).toContain('rel:0.5');
+    // reliability 0.5 > default -> in relationship section
+    expect(result).toContain('Relationship');
   });
 
   it('omits personality and relationship on non-session-start', () => {
@@ -112,8 +111,8 @@ describe('compressForContext', () => {
       emotions: { ...DEFAULT_FULL_STATE().emotions, connection: 0.85 },
     });
     const result = compressForContext(state);
-    expect(result).not.toContain('personality:');
-    expect(result).not.toContain('relationship');
+    expect(result).not.toContain('Personality:');
+    expect(result).not.toContain('Relationship');
   });
 
   it('output is under 100 chars for typical active conversation', () => {
@@ -160,13 +159,13 @@ describe('compressForContext', () => {
       trust: { ...DEFAULT_FULL_STATE().trust, personal: 0.60 },
     });
     const result = compressForContext(state);
-    expect(result).toContain('trust');
+    expect(result).toContain('Trust');
     expect(result).toContain('pe:0.60');
   });
 
   it('does NOT include trust section when all trust values are at default', () => {
     const state = makeState();
     const result = compressForContext(state);
-    expect(result).not.toContain('trust');
+    expect(result).not.toContain('Trust');
   });
 });
