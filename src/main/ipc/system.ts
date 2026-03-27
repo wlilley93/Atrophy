@@ -52,11 +52,12 @@ export function registerSystemHandlers(ctx: IpcContext): void {
     return getLogBuffer();
   });
 
-  // Renderer-to-main log forwarding: renderer calls api.log() which arrives here
-  const rendererLogger = createLogger('renderer');
+  // Renderer-to-main log forwarding: renderer calls api.log() which arrives here.
+  // Use the caller's tag directly to avoid double-tagging (e.g. [renderer] [boot:renderer]).
   ipcMain.handle('logs:write', (_event, level: string, tag: string, message: string) => {
     const lvl = (['debug', 'info', 'warn', 'error'].includes(level) ? level : 'info') as LogLevel;
-    rendererLogger[lvl](`[${tag}] ${message}`);
+    const logger = createLogger(tag);
+    logger[lvl](message);
   });
 
   // Read persisted log file (for viewing previous boot logs)

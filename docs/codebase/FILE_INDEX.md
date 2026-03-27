@@ -389,12 +389,12 @@ docs/codebase/
 | Preload | 1 | 1 | 100% |
 | Renderer Entry | 1 | 1 | 100% |
 | Renderer Stores | 8 | 8 | 100% |
-| Renderer Components | 10 | 12 | 83% |
+| Renderer Components | 13 | 13 | 100% |
 | Database | 1 | 1 | 100% |
 | MCP Servers | 3 | 3 | 100% |
 | Utilities | 3 | 3 | 100% |
 | Scripts | 1 | 10+ | 10% |
-| **Total** | **95** | **106+** | **89%** |
+| **Total** | **98** | **109+** | **90%** |
 
 ---
 
