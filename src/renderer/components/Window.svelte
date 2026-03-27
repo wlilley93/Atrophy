@@ -307,9 +307,9 @@
     if (c4) ipcCleanups.push(c4);
 
     // ── Update check phase (blocks before splash) ──
-    // If an update is found, the app restarts automatically - boot stops here.
+    // Downloads any available update. Boot continues regardless - the update
+    // banner will prompt the user to restart when they're ready.
     await runUpdateCheck();
-    if (updateStatus === 'downloaded') return; // Restarting for update
     updateCheckVisible = false;
 
     // Load config and agent list
