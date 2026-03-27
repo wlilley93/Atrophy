@@ -387,4 +387,41 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       cronScheduler.registerAgent(agentName, jobs as Record<string, JobDefinition>);
     }
   });
+
+  // -- Federation --
+
+  ipcMain.handle('federation:getConfig', async () => {
+    const { loadFederationConfig } = await import('../channels/federation');
+    return loadFederationConfig();
+  });
+
+  ipcMain.handle('federation:updateLink', async (_event, name: string, updates: Record<string, unknown>) => {
+    const { updateLink } = await import('../channels/federation');
+    updateLink(name, updates);
+  });
+
+  ipcMain.handle('federation:addLink', async (_event, name: string, link: Record<string, unknown>) => {
+    const { addLink } = await import('../channels/federation');
+    addLink(name, link as any);
+  });
+
+  ipcMain.handle('federation:removeLink', async (_event, name: string) => {
+    const { removeLink } = await import('../channels/federation');
+    removeLink(name);
+  });
+
+  ipcMain.handle('federation:getTranscript', async (_event, linkName: string, limit?: number, offset?: number) => {
+    const { readTranscript } = await import('../channels/federation');
+    return readTranscript(linkName, limit, offset);
+  });
+
+  ipcMain.handle('federation:getStats', async (_event, linkName: string) => {
+    const { getTranscriptStats } = await import('../channels/federation');
+    return getTranscriptStats(linkName);
+  });
+
+  ipcMain.handle('federation:getActivePollers', async () => {
+    const { getActivePollers } = await import('../channels/federation');
+    return getActivePollers();
+  });
 }

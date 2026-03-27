@@ -266,6 +266,15 @@ export interface AtrophyAPI {
     active?: string[];
   }>;
 
+  // Federation
+  federationGetConfig: () => Promise<unknown>;
+  federationUpdateLink: (name: string, updates: Record<string, unknown>) => Promise<void>;
+  federationAddLink: (name: string, link: Record<string, unknown>) => Promise<void>;
+  federationRemoveLink: (name: string) => Promise<void>;
+  federationGetTranscript: (linkName: string, limit?: number, offset?: number) => Promise<unknown[]>;
+  federationGetStats: (linkName: string) => Promise<unknown>;
+  federationGetActivePollers: () => Promise<string[]>;
+
   // Generic listener
   on: (channel: string, cb: (...args: unknown[]) => void) => () => void;
 }
@@ -533,6 +542,15 @@ const api: AtrophyAPI = {
   getTopology: () => ipcRenderer.invoke('system:getTopology'),
   toggleConnection: (agent, server, enabled) =>
     ipcRenderer.invoke('system:toggleConnection', agent, server, enabled),
+
+  // Federation
+  federationGetConfig: () => ipcRenderer.invoke('federation:getConfig'),
+  federationUpdateLink: (name: string, updates: Record<string, unknown>) => ipcRenderer.invoke('federation:updateLink', name, updates),
+  federationAddLink: (name: string, link: Record<string, unknown>) => ipcRenderer.invoke('federation:addLink', name, link),
+  federationRemoveLink: (name: string) => ipcRenderer.invoke('federation:removeLink', name),
+  federationGetTranscript: (linkName: string, limit?: number, offset?: number) => ipcRenderer.invoke('federation:getTranscript', linkName, limit, offset),
+  federationGetStats: (linkName: string) => ipcRenderer.invoke('federation:getStats', linkName),
+  federationGetActivePollers: () => ipcRenderer.invoke('federation:getActivePollers'),
 
   // Channel listener with allowlist
   on: (channel, cb) => {
