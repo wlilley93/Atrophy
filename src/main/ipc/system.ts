@@ -427,4 +427,22 @@ export function registerSystemHandlers(ctx: IpcContext): void {
     const { getActivePollers } = await import('../channels/federation');
     return getActivePollers();
   });
+
+  ipcMain.handle('federation:generateInvite', async (_event, localBotUsername: string, telegramGroupId: string, localAgent: string, description: string, botToken: string) => {
+    const { generateInviteToken } = await import('../channels/federation/config');
+    return generateInviteToken(localBotUsername, telegramGroupId, localAgent, description, botToken);
+  });
+
+  ipcMain.handle('federation:acceptInvite', async (_event, token: string, localAgent: string) => {
+    const { acceptInviteToken } = await import('../channels/federation/config');
+    const { restartLink } = await import('../channels/federation');
+    const linkName = acceptInviteToken(token, localAgent);
+    await restartLink(linkName);
+    return linkName;
+  });
+
+  ipcMain.handle('federation:parseInvite', async (_event, token: string) => {
+    const { parseInviteToken } = await import('../channels/federation/config');
+    return parseInviteToken(token);
+  });
 }

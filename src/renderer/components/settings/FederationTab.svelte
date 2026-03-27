@@ -39,6 +39,13 @@
   let newLocalAgent = $state('');
   let newDescription = $state('');
 
+  // Invite token
+  let showInviteForm = $state(false);
+  let inviteToken = $state('');
+  let inviteLocalAgent = $state('');
+  let inviteError = $state('');
+  let invitePreview = $state<{ remoteBotUsername: string; telegramGroupId: string; description: string } | null>(null);
+
   export async function load() {
     await loadConfig();
   }
@@ -97,16 +104,67 @@
     await loadConfig();
   }
 
+  async function previewInvite() {
+    inviteError = '';
+    invitePreview = null;
+    if (!inviteToken.trim()) return;
+    try {
+      const parsed = await api.federationParseInvite(inviteToken.trim());
+      invitePreview = parsed;
+    } catch (e: any) {
+      inviteError = e?.message || 'Invalid token';
+    }
+  }
+
+  async function acceptInvite() {
+    if (!inviteToken.trim() || !inviteLocalAgent.trim()) return;
+    inviteError = '';
+    try {
+      await api.federationAcceptInvite(inviteToken.trim(), inviteLocalAgent.trim());
+      showInviteForm = false;
+      inviteToken = '';
+      inviteLocalAgent = '';
+      invitePreview = null;
+      await loadConfig();
+    } catch (e: any) {
+      inviteError = e?.message || 'Failed to accept invite';
+    }
+  }
+
   $effect(() => { loadConfig(); });
 </script>
 
 <div class="federation-tab">
   <div class="section-header">
     <h3>Federation Links</h3>
-    <button class="btn-small" onclick={() => showAddForm = !showAddForm}>
-      {showAddForm ? 'Cancel' : '+ Add Link'}
-    </button>
+    <div class="header-actions">
+      <button class="btn-small" onclick={() => { showInviteForm = !showInviteForm; showAddForm = false; }}>
+        {showInviteForm ? 'Cancel' : 'Paste Invite'}
+      </button>
+      <button class="btn-small" onclick={() => { showAddForm = !showAddForm; showInviteForm = false; }}>
+        {showAddForm ? 'Cancel' : '+ Manual'}
+      </button>
+    </div>
   </div>
+
+  {#if showInviteForm}
+    <div class="add-form">
+      <p class="form-hint">Paste a federation invite token from another Atrophy user</p>
+      <input type="text" bind:value={inviteToken} placeholder="atrophy-fed-..." oninput={previewInvite} />
+      {#if invitePreview}
+        <div class="invite-preview">
+          <span>Remote bot: @{invitePreview.remoteBotUsername}</span>
+          <span>Group: {invitePreview.telegramGroupId}</span>
+          {#if invitePreview.description}<span>{invitePreview.description}</span>{/if}
+        </div>
+      {/if}
+      {#if inviteError}
+        <p class="form-error">{inviteError}</p>
+      {/if}
+      <input type="text" bind:value={inviteLocalAgent} placeholder="Your agent to handle this link (e.g. xan)" />
+      <button class="btn-small" onclick={acceptInvite} disabled={!invitePreview || !inviteLocalAgent}>Accept Invite</button>
+    </div>
+  {/if}
 
   {#if showAddForm}
     <div class="add-form">
@@ -169,6 +227,10 @@
   .federation-tab { padding: 12px 0; }
   .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .section-header h3 { margin: 0; font-size: 14px; color: var(--text-primary); }
+  .header-actions { display: flex; gap: 6px; }
+  .form-hint { font-size: 12px; color: var(--text-secondary); margin: 0; }
+  .form-error { font-size: 12px; color: #ef4444; margin: 0; }
+  .invite-preview { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-secondary); padding: 8px; background: rgba(100,140,255,0.05); border-radius: 4px; }
   .add-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; }
   .add-form input { padding: 6px 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-size: 13px; }
   .links-list { display: flex; flex-direction: column; gap: 4px; }

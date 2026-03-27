@@ -274,6 +274,9 @@ export interface AtrophyAPI {
   federationGetTranscript: (linkName: string, limit?: number, offset?: number) => Promise<unknown[]>;
   federationGetStats: (linkName: string) => Promise<unknown>;
   federationGetActivePollers: () => Promise<string[]>;
+  federationGenerateInvite: (localBotUsername: string, telegramGroupId: string, localAgent: string, description: string, botToken: string) => Promise<string>;
+  federationAcceptInvite: (token: string, localAgent: string) => Promise<string>;
+  federationParseInvite: (token: string) => Promise<{ remoteBotUsername: string; telegramGroupId: string; remoteAgent: string; description: string; expiresAt: number }>;
 
   // Generic listener
   on: (channel: string, cb: (...args: unknown[]) => void) => () => void;
@@ -551,6 +554,9 @@ const api: AtrophyAPI = {
   federationGetTranscript: (linkName: string, limit?: number, offset?: number) => ipcRenderer.invoke('federation:getTranscript', linkName, limit, offset),
   federationGetStats: (linkName: string) => ipcRenderer.invoke('federation:getStats', linkName),
   federationGetActivePollers: () => ipcRenderer.invoke('federation:getActivePollers'),
+  federationGenerateInvite: (localBotUsername: string, telegramGroupId: string, localAgent: string, description: string, botToken: string) => ipcRenderer.invoke('federation:generateInvite', localBotUsername, telegramGroupId, localAgent, description, botToken),
+  federationAcceptInvite: (token: string, localAgent: string) => ipcRenderer.invoke('federation:acceptInvite', token, localAgent),
+  federationParseInvite: (token: string) => ipcRenderer.invoke('federation:parseInvite', token),
 
   // Channel listener with allowlist
   on: (channel, cb) => {
