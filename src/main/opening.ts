@@ -9,11 +9,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig } from './config';
+import { getConfig, USER_DATA } from './config';
 import { runInferenceOneshot } from './inference';
 import { timeOfDayContext, timeGapNote } from './agency';
-import { getActiveThreads, getLastSessionTime, getRecentSummaries } from './memory';
+import { getActiveThreads, getLastSessionTime, getRecentSummaries, initDb } from './memory';
 import { synthesise } from './tts';
+import { loadSystemPrompt } from './context';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -251,6 +252,87 @@ export function cacheNextOpening(
       console.log('[opening] Cached next opening');
     } catch (err) {
       console.log(`[opening] Failed to cache opening: ${err}`);
+    }
+  })();
+}
+
+// ---------------------------------------------------------------------------
+// Pre-cache openings for ALL agents (called during boot idle time)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pre-generate opening lines for all agents that don't have a valid cache.
+ * Runs sequentially to avoid hammering the Claude CLI.
+ * Called once during boot in the background.
+ */
+export function precacheAllOpenings(): void {
+  (async () => {
+    const config = getConfig();
+    const originalAgent = config.AGENT_NAME;
+    const agentsDir = path.join(USER_DATA, 'agents');
+    if (!fs.existsSync(agentsDir)) return;
+
+    let agents: string[];
+    try {
+      agents = fs.readdirSync(agentsDir).filter((name) => {
+        const dataDir = path.join(agentsDir, name, 'data');
+        return fs.existsSync(dataDir) && fs.statSync(dataDir).isDirectory();
+      });
+    } catch { return; }
+
+    let cached = 0;
+    for (const agentName of agents) {
+      // Check if this agent already has a valid cached opening
+      const cachePath = path.join(agentsDir, agentName, 'data', '.opening_cache.json');
+      if (fs.existsSync(cachePath)) {
+        try {
+          const data: CachedOpening = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+          const cachedBracket = getTimeBracket(data.hour);
+          const nowBracket = getTimeBracket(new Date().getHours());
+          if (data.text && cachedBracket === nowBracket) continue; // still valid
+        } catch { /* re-generate */ }
+      }
+
+      // Switch config to this agent, generate, switch back
+      try {
+        config.reloadForAgent(agentName);
+        initDb();
+        const system = loadSystemPrompt();
+        const result = await generateOpening(system);
+        if (!result.text) continue;
+
+        // Pre-synthesise TTS audio too
+        let audioPath = '';
+        try {
+          const synthesised = await synthesise(result.text);
+          if (synthesised) audioPath = synthesised;
+        } catch { /* TTS optional */ }
+
+        const data: CachedOpening = {
+          text: result.text,
+          audioPath: audioPath || undefined,
+          hour: new Date().getHours(),
+          generatedAt: new Date().toISOString(),
+        };
+
+        const dir = path.dirname(cachePath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(cachePath, JSON.stringify(data, null, 2));
+        cached++;
+        console.log(`[opening] Pre-cached opening for ${agentName}`);
+      } catch (err) {
+        console.log(`[opening] Failed to pre-cache for ${agentName}: ${err}`);
+      }
+    }
+
+    // Restore original agent
+    try {
+      config.reloadForAgent(originalAgent);
+      initDb();
+    } catch { /* best effort */ }
+
+    if (cached > 0) {
+      console.log(`[opening] Pre-cached ${cached} opening(s) for inactive agents`);
     }
   })();
 }

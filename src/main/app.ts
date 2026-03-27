@@ -689,6 +689,15 @@ app.whenReady().then(() => {
   // Prefetch context data during startup idle time
   setImmediate(() => prefetchContext());
 
+  // Pre-cache opening lines for all agents in background.
+  // Runs after a 10s delay to let boot settle, then generates openings
+  // sequentially for any agent that doesn't have a valid cached one.
+  setTimeout(() => {
+    import('./opening').then(({ precacheAllOpenings }) => {
+      precacheAllOpenings();
+    }).catch(() => { /* non-fatal */ });
+  }, 10_000);
+
   // ── Switchboard v2 boot sequence ──
   // 1. Initialize MCP registry - discover available servers
   try {
