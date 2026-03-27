@@ -5,7 +5,7 @@ import { createLogger } from '../../logger';
 import type { FederationLink } from './config';
 import { appendTranscript } from './transcript';
 import { buildSandboxedMcpConfig, buildFederationPreamble, sanitizeFederationContent } from './sandbox';
-import { streamInference, stopInference, setMcpConfigPath, resetMcpConfig, type InferenceEvent } from '../../inference';
+import { streamInference, stopInference, type InferenceEvent } from '../../inference';
 import { loadSystemPrompt } from '../../context';
 import * as memory from '../../memory';
 
@@ -211,16 +211,18 @@ async function dispatchFederationInference(
     const botToken = config.TELEGRAM_BOT_TOKEN;
 
     const sandboxedMcpPath = buildSandboxedMcpConfig(link.local_agent, link.trust_tier);
-    setMcpConfigPath(sandboxedMcpPath);
 
     const baseSystem = loadSystemPrompt();
     const system = preamble + baseSystem;
 
-    // Restore original agent immediately after spawning so the config
-    // singleton is not left pointing at the federation agent.
-    const emitterInner = streamInference(sanitized, system, sessionId, { source: 'other', processKey: `federation-${linkName}` });
+    // Pass MCP config path directly to avoid mutating the module-level singleton.
+    // Restore original agent immediately after spawning.
+    const emitterInner = streamInference(sanitized, system, sessionId, {
+      source: 'other',
+      processKey: `federation-${linkName}`,
+      mcpConfigPath: sandboxedMcpPath,
+    });
 
-    resetMcpConfig();
     config.reloadForAgent(originalAgent);
 
     return { emitter: emitterInner, ownerChatId: chatId, ownerBotToken: botToken };

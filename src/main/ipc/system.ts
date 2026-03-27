@@ -396,18 +396,21 @@ export function registerSystemHandlers(ctx: IpcContext): void {
   });
 
   ipcMain.handle('federation:updateLink', async (_event, name: string, updates: Record<string, unknown>) => {
-    const { updateLink } = await import('../channels/federation');
+    const { updateLink, restartLink } = await import('../channels/federation');
     updateLink(name, updates);
+    await restartLink(name);
   });
 
   ipcMain.handle('federation:addLink', async (_event, name: string, link: Record<string, unknown>) => {
-    const { addLink } = await import('../channels/federation');
+    const { addLink, restartLink } = await import('../channels/federation');
     addLink(name, link as any);
+    await restartLink(name);
   });
 
   ipcMain.handle('federation:removeLink', async (_event, name: string) => {
-    const { removeLink } = await import('../channels/federation');
+    const { removeLink, restartLink } = await import('../channels/federation');
     removeLink(name);
+    await restartLink(name); // Stops the poller since link no longer exists
   });
 
   ipcMain.handle('federation:getTranscript', async (_event, linkName: string, limit?: number, offset?: number) => {

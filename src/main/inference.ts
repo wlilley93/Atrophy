@@ -594,11 +594,11 @@ export function streamInference(
   userMessage: string,
   system: string,
   cliSessionId?: string | null,
-  options?: { senderName?: string; source?: 'desktop' | 'telegram' | 'cron' | 'server' | 'other'; processKey?: string },
+  options?: { senderName?: string; source?: 'desktop' | 'telegram' | 'cron' | 'server' | 'other'; processKey?: string; mcpConfigPath?: string },
 ): EventEmitter {
   const emitter = new EventEmitter();
   const config = getConfig();
-  const mcpConfig = getMcpConfigPath();
+  const mcpConfig = options?.mcpConfigPath || getMcpConfigPath();
 
   // Adaptive effort
   let effort: EffortLevel = config.CLAUDE_EFFORT as EffortLevel;

@@ -80,6 +80,12 @@ src/
         scheduler.ts         # Timer management, cron expression parsing
         runner.ts            # Job execution, output capture, envelope creation
         index.ts             # Barrel re-exports
+      federation/            # Cross-instance agent communication via Telegram
+        config.ts            # Load/validate ~/.atrophy/federation.json, CRUD
+        poller.ts            # Per-link Telegram polling, filtering, sandboxed inference dispatch
+        sandbox.ts           # Restricted MCP config builder, content sanitization
+        transcript.ts        # Append-only JSONL audit trail per link
+        index.ts             # Boot/shutdown, switchboard registration
     mcp-registry.ts          # MCP server registry, per-agent config builder
     server.ts                # HTTP API server (port of server.py)
     install.ts               # Login item installer
@@ -498,6 +504,9 @@ Auto-update via `electron-updater` + GitHub Releases.
     agents/librarian/              # Librarian agent scripts
   services/
     worldmonitor/                  # Meridian platform fork (Vercel-deployed)
+  federation/                      # Federation transcripts and state
+    <link-name>/transcript.jsonl   # Per-link audit trail (append-only JSONL)
+  federation.json                  # Federation link config (owner-level)
   .google/extra_token.json
 ```
 
@@ -669,6 +678,54 @@ Agents can message each other via switchboard MCP tools:
 2. In `daemon.ts`: create Envelopes from inbound messages, route via `switchboard.route()`
 3. Register outbound handler: `switchboard.register('<name>:<agent>', handler)`
 4. The agent-router handles filtering and response routing automatically
+
+### Federation - cross-instance agent communication
+
+Agents from different Atrophy instances can communicate on behalf of their owners via shared Telegram groups. See `docs/superpowers/specs/2026-03-27-federation-design.md` for the full spec.
+
+**How it works:** Two owners each add their agent's bot to a shared Telegram group. The federation poller polls the group, filters messages by remote bot username and @ mention, and dispatches sandboxed inference with restricted MCP tools. Responses are sent back to the group with @-mention addressing.
+
+**Address space:** `federation:<link-name>` (e.g. `federation:sarah-companion`)
+
+**Config:** `~/.atrophy/federation.json` - owner-level, not agent-level. Agents cannot create or modify federation links.
+
+```json
+{
+  "version": 1,
+  "links": {
+    "sarah-companion": {
+      "remote_bot_username": "sarah_companion_bot",
+      "telegram_group_id": "-1001234567890",
+      "local_agent": "xan",
+      "trust_tier": "chat",
+      "enabled": true,
+      "muted": false,
+      "description": "Sarah's companion agent",
+      "rate_limit_per_hour": 20
+    }
+  }
+}
+```
+
+**Trust tiers:**
+- `chat` - no MCP servers, text response only
+- `query` - memory (read-only)
+- `delegate` - memory (read/write). Calendar/action differentiation is future work.
+
+**Security model (4 layers):**
+1. Sandboxed inference - shell, filesystem, GitHub, puppeteer permanently blocked
+2. Quarantined memory - federation messages tagged `source: federation:<link>`, sanitized, prefixed `[EXTERNAL]` on recall
+3. No federation config tools - no MCP tool can read/write federation.json
+4. System prompt preamble - soft boundary instructing the agent to be cautious
+
+**Message filtering (7 layers):** Remote bot only, @ mention required, no commands, text only, ignore edits, staleness window (1hr), rate limiting (60/hr inbound)
+
+**Transcript:** Append-only JSONL at `~/.atrophy/federation/<link>/transcript.jsonl`. Viewable in Settings > Federation tab.
+
+**Session isolation:** Each link gets its own CLI session ID (`federation-<link>`) and process key.
+
+**Known v1 limitations:**
+- `delegate` and `query` tiers have identical MCP access (memory only). Per-tool read/write differentiation requires MCP-level filtering not yet implemented.
 
 ---
 

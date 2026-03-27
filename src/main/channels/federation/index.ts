@@ -2,7 +2,8 @@
 import { switchboard } from '../switchboard';
 import { createLogger } from '../../logger';
 import { getEnabledLinks, getFederationGroupIds, type FederationLink } from './config';
-import { startPoller, stopAllPollers, sendFederationResponse, getActivePollers } from './poller';
+import { startPoller, stopPoller, stopAllPollers, sendFederationResponse, getActivePollers } from './poller';
+import { loadFederationConfig } from './config';
 
 const log = createLogger('federation');
 
@@ -77,6 +78,33 @@ function registerFederationHandler(linkName: string, link: FederationLink): void
     description: `Federation link: ${link.description || linkName}`,
     capabilities: ['federation', 'outbound'],
   });
+}
+
+/**
+ * Start or restart a single federation link. Used by IPC handlers when
+ * links are added or modified via the Settings UI (avoids full app restart).
+ */
+export async function restartLink(linkName: string): Promise<void> {
+  // Stop existing poller if running
+  stopPoller(linkName);
+  switchboard.unregister(`federation:${linkName}`);
+
+  // Reload config and start if enabled
+  const config = loadFederationConfig();
+  const link = config.links[linkName];
+  if (!link || !link.enabled) {
+    log.info(`[${linkName}] Link not found or disabled - not starting poller`);
+    return;
+  }
+
+  try {
+    registerFederationHandler(linkName, link);
+    await startPoller(linkName, link);
+    _started = true; // Ensure the started flag is set
+    log.info(`[${linkName}] Link restarted`);
+  } catch (e) {
+    log.error(`[${linkName}] Failed to restart link: ${e}`);
+  }
 }
 
 /**
