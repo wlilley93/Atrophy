@@ -148,6 +148,8 @@
   let pendingUpdateVersion = $state<string | null>(null);
   let pendingUpdateType = $state<'bundle' | 'app'>('bundle');
   let pendingUpdateApplying = $state(false);
+  let updateDownloadPercent = $state(0);
+  let updateDownloading = $state(false);
 
   // Status bar metrics
   let lastResponseMs = $state<number | null>(null);
@@ -1061,6 +1063,20 @@
       }).catch(() => { /* non-critical */ });
     }
 
+    // Listen for app update progress (shown in update banner)
+    const updateProgressCleanup = api?.onUpdateProgress?.((info: { percent: number }) => {
+      updateDownloadPercent = info.percent;
+      updateDownloading = true;
+    });
+    if (updateProgressCleanup) ipcCleanups.push(updateProgressCleanup);
+
+    const updateDownloadedCleanup = api?.onUpdateDownloaded?.((info: { version: string }) => {
+      updateDownloading = false;
+      pendingUpdateVersion = info.version;
+      pendingUpdateType = 'app';
+    });
+    if (updateDownloadedCleanup) ipcCleanups.push(updateDownloadedCleanup);
+
     // Listen for shutdown signal from main process
     const shutdownCleanup = api?.onShutdownRequested?.(() => {
       startShutdown();
@@ -1580,7 +1596,15 @@
   </div>
 
   <!-- Update banner - shown for stale pending updates that weren't auto-applied -->
-  {#if pendingUpdateVersion}
+  {#if updateDownloading}
+    <div class="update-banner">
+      <span class="update-banner-text">Downloading update...</span>
+      <div class="update-banner-progress">
+        <div class="update-banner-progress-fill" style="width: {updateDownloadPercent}%"></div>
+      </div>
+      <span class="update-banner-percent">{Math.round(updateDownloadPercent)}%</span>
+    </div>
+  {:else if pendingUpdateVersion}
     <div class="update-banner">
       <span class="update-banner-text">v{pendingUpdateVersion} ready</span>
       <button
@@ -1591,11 +1615,13 @@
           if (pendingUpdateType === 'bundle') {
             api?.restartForUpdate();
           } else {
-            api?.quitAndInstall();
+            // Show shutdown screen before quitting for app update
+            startShutdown();
+            setTimeout(() => api?.quitAndInstall(), 1500);
           }
         }}
       >
-        {pendingUpdateApplying ? 'Restarting...' : 'Restart to update'}
+        {pendingUpdateApplying ? 'Installing...' : 'Restart to update'}
       </button>
       <button class="update-banner-dismiss" onclick={() => pendingUpdateVersion = null} aria-label="Dismiss">&times;</button>
     </div>
@@ -1856,6 +1882,28 @@
 
   .update-banner-dismiss:hover {
     color: var(--text-secondary);
+  }
+
+  .update-banner-progress {
+    width: 80px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .update-banner-progress-fill {
+    height: 100%;
+    background: rgba(100, 140, 255, 0.6);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  .update-banner-percent {
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    min-width: 30px;
   }
 
   /* -- Mode buttons -- */
