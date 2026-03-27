@@ -83,6 +83,9 @@ const ALLOWED_ENV_KEYS = new Set([
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
   'WORLDMONITOR_API_KEY',
+  'CHANNEL_API_KEY',
+  'UPSTASH_REDIS_REST_URL',
+  'UPSTASH_REDIS_REST_TOKEN',
 ]);
 
 /** Check if a key is in the allowed env keys whitelist. */
