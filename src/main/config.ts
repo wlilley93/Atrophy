@@ -282,6 +282,53 @@ export function ensureUserData(): void {
   }
 
   migrateAgentData();
+  cleanupStaleFiles();
+}
+
+/** Remove stale temp files, old logs, and orphaned artifacts on boot. */
+function cleanupStaleFiles(): void {
+  try {
+    // TTS temp files older than 24 hours
+    const ttsDir = path.join(USER_DATA, 'tts_output');
+    if (fs.existsSync(ttsDir)) {
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      for (const f of fs.readdirSync(ttsDir)) {
+        const fp = path.join(ttsDir, f);
+        try {
+          if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
+        } catch { /* skip locked files */ }
+      }
+    }
+
+    // Log files older than 7 days
+    const logsDir = path.join(USER_DATA, 'logs');
+    if (fs.existsSync(logsDir)) {
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      for (const f of fs.readdirSync(logsDir)) {
+        if (!f.endsWith('.log')) continue;
+        const fp = path.join(logsDir, f);
+        try {
+          if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
+        } catch { /* skip */ }
+      }
+    }
+
+    // Remove known orphan files (shell redirect artifacts, empty dirs)
+    const orphans = ['&1', 'signing'];
+    for (const name of orphans) {
+      const fp = path.join(USER_DATA, name);
+      try {
+        if (fs.existsSync(fp)) {
+          const stat = fs.statSync(fp);
+          if (stat.isFile() && stat.size === 0) fs.unlinkSync(fp);
+          else if (stat.isDirectory()) {
+            const entries = fs.readdirSync(fp);
+            if (entries.length === 0) fs.rmdirSync(fp);
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+  } catch { /* cleanup is best-effort */ }
 }
 
 function migrateAgentData(): void {
