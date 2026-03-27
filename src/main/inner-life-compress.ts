@@ -6,8 +6,10 @@
  * keeping typical output to ~50-80 tokens.
  */
 
-import { type FullState, EMOTION_BASELINES, DEFAULT_TRUST } from './inner-life-types';
+import { type FullState, type Emotions, type Trust, EMOTION_BASELINES, DEFAULT_TRUST } from './inner-life-types';
 import { computeDrives } from './inner-life-needs';
+import { getRecentEmotionalVectors } from './memory';
+import { computeDistributedState } from './inner-life';
 
 // ---------------------------------------------------------------------------
 // Abbreviation maps
@@ -81,6 +83,44 @@ export function compressForContext(
   opts?: { sessionStart?: boolean },
 ): string {
   const parts: string[] = [];
+
+  // --- Distributed emotional memory: blend recent turn vectors with live state ---
+  // This gives the agent a sense of accumulated weight from recent conversations,
+  // not just the current session's live state.
+  if (opts?.sessionStart) {
+    try {
+      const vectors = getRecentEmotionalVectors(48); // last 48 hours
+      if (vectors.length > 0) {
+        const distributed = computeDistributedState(vectors);
+        // Blend: 70% live state, 30% distributed history
+        if (distributed.emotions) {
+          for (const key of Object.keys(distributed.emotions) as (keyof Emotions)[]) {
+            const live = state.emotions[key];
+            const hist = distributed.emotions[key];
+            if (hist !== undefined && live !== undefined) {
+              state = {
+                ...state,
+                emotions: { ...state.emotions, [key]: live * 0.7 + hist * 0.3 },
+              };
+            }
+          }
+        }
+        if (distributed.trust) {
+          for (const key of Object.keys(distributed.trust) as (keyof Trust)[]) {
+            const live = state.trust[key];
+            const hist = distributed.trust[key];
+            if (hist !== undefined && live !== undefined) {
+              state = {
+                ...state,
+                trust: { ...state.trust, [key]: live * 0.7 + hist * 0.3 },
+              };
+            }
+          }
+        }
+        parts.push(`[${vectors.length} recent emotional traces blended]`);
+      }
+    } catch { /* DB not available or no vectors yet */ }
+  }
 
   // --- Emotions: only dimensions that deviate > 0.1 from their baseline ---
   const emotionTokens: string[] = [];

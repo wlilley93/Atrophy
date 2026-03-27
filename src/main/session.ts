@@ -6,7 +6,7 @@
 import { getConfig } from './config';
 import * as memory from './memory';
 import { runInferenceOneshot } from './inference';
-import { reconcileTrustFromDb } from './inner-life';
+import { reconcileTrustFromDb, loadState, encodeEmotionalVector, vectorToBlob } from './inner-life';
 
 // ---------------------------------------------------------------------------
 // Session class
@@ -56,7 +56,14 @@ export class Session {
     if (this.sessionId === null) {
       throw new Error('Session not started');
     }
-    const turnId = memory.writeTurn(this.sessionId, role, content, topicTags, weight);
+    // Snapshot the current emotional state as a 32-dim vector so the
+    // distributed emotional memory layer accumulates per-turn traces.
+    let emotionalVector: Buffer | undefined;
+    try {
+      const state = loadState();
+      emotionalVector = vectorToBlob(encodeEmotionalVector(state));
+    } catch { /* non-fatal - write turn without vector */ }
+    const turnId = memory.writeTurn(this.sessionId, role, content, topicTags, weight, 'direct', emotionalVector);
     this.turnHistory.push({ role, content, turnId });
     this.lastActivityAt = Date.now();
     return turnId;
