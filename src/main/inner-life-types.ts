@@ -90,6 +90,18 @@ export interface Drive {
 /** Emotional velocity - direction and speed of change per dimension. */
 export type EmotionVelocity = Partial<Record<keyof Emotions, number>>;
 
+/** Disclosure depth map - what topics have been shared and how deeply. */
+export interface DisclosureMap {
+  career: number;
+  relationship: number;
+  anxiety: number;
+  physical: number;
+  spiritual: number;
+  creative: number;
+  identity: number;
+  vulnerability: number;
+}
+
 /** Full inner life state v2. */
 export interface FullState {
   version: 2;
@@ -99,6 +111,7 @@ export interface FullState {
   personality: Personality;
   relationship: Relationship;
   velocity?: EmotionVelocity;
+  disclosure?: DisclosureMap;
   session_tone: string | null;
   last_updated: string;
 }

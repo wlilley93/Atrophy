@@ -214,6 +214,17 @@ export function compressForContext(
     if (relParts.length > 0) {
       lines.push(`Relationship: ${relParts.join(' ')}`);
     }
+
+    // Disclosure map - what territory has been covered
+    if (state.disclosure) {
+      const disclosed = Object.entries(state.disclosure)
+        .filter(([, v]) => v > 0.2)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k}:${v.toFixed(1)}`);
+      if (disclosed.length > 0) {
+        lines.push(`Disclosure: ${disclosed.join(' ')}`);
+      }
+    }
   }
 
   // --- Baseline fallback ---

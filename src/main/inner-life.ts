@@ -33,7 +33,7 @@ import {
 } from './inner-life-types';
 
 // Re-export types so existing imports from './inner-life' keep working
-export type { Emotions, Trust, Needs, Personality, Relationship, FullState, Drive, UserState, EmotionVelocity } from './inner-life-types';
+export type { Emotions, Trust, Needs, Personality, Relationship, FullState, Drive, UserState, EmotionVelocity, DisclosureMap } from './inner-life-types';
 // Backward compatibility alias
 export type EmotionalState = FullState;
 
@@ -361,8 +361,12 @@ export function updateTrust(
   reason = '',
   source = 'unknown',
 ): FullState {
-  // Max +/-0.05 per call
-  const clamped = clamp(delta, -0.05, 0.05);
+  // Betrayal asymmetry: negative trust changes hit 2x harder than positive.
+  // Trust builds slowly and breaks sharply - a single misalignment should
+  // decrease trust faster than an equivalent positive moment increases it.
+  const asymmetricDelta = delta < 0 ? delta * 2 : delta;
+  // Max +/-0.05 per call (after asymmetry)
+  const clamped = clamp(asymmetricDelta, -0.1, 0.05);
   const trust = { ...state.trust };
   trust[domain] = Math.round(clamp(trust[domain] + clamped) * 1000) / 1000;
   const updated = { ...state, trust };
@@ -370,7 +374,6 @@ export function updateTrust(
   try {
     writeTrustLog(domain, clamped, trust[domain], reason, source);
   } catch (err) {
-    // Log rather than silently swallow - trust history matters
     if (typeof console !== 'undefined') {
       console.warn(`[inner-life] trust_log write failed for ${domain}: ${err}`);
     }

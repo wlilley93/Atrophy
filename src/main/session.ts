@@ -6,7 +6,8 @@
 import { getConfig } from './config';
 import * as memory from './memory';
 import { runInferenceOneshot } from './inference';
-import { reconcileTrustFromDb, loadState, encodeEmotionalVector, vectorToBlob } from './inner-life';
+import { reconcileTrustFromDb, loadState, saveState, encodeEmotionalVector, vectorToBlob, type FullState } from './inner-life';
+import { scoreSalience, detectDisclosures, mergeDisclosures, emptyDisclosureMap } from './inner-life-salience';
 
 // ---------------------------------------------------------------------------
 // Session class
@@ -19,6 +20,7 @@ export class Session {
   turnHistory: { role: string; content: string; turnId: number }[] = [];
   cliSessionId: string | null = null;
   mood: string | null = null;
+  private _prevState: FullState | null = null;
 
   start(): number {
     this.sessionId = memory.startSession();
@@ -59,11 +61,37 @@ export class Session {
     // Snapshot the current emotional state as a 32-dim vector so the
     // distributed emotional memory layer accumulates per-turn traces.
     let emotionalVector: Buffer | undefined;
+    let currentState: FullState | undefined;
     try {
-      const state = loadState();
-      emotionalVector = vectorToBlob(encodeEmotionalVector(state));
+      currentState = loadState();
+      emotionalVector = vectorToBlob(encodeEmotionalVector(currentState));
     } catch { /* non-fatal - write turn without vector */ }
-    const turnId = memory.writeTurn(this.sessionId, role, content, topicTags, weight, 'direct', emotionalVector);
+
+    // Salience scoring - how much should this turn weigh in future aggregation?
+    // High salience: emotional displacement, vulnerability, relational depth.
+    // Low salience: routine task chat, one-liners.
+    let salience = weight; // default to caller's weight
+    if (currentState) {
+      try {
+        salience = scoreSalience(content, role, this._prevState, currentState);
+        this._prevState = currentState;
+      } catch { /* non-fatal */ }
+    }
+
+    // Disclosure mapping - track what topics have been shared and at what depth.
+    // Only applies to user messages (the agent doesn't disclose).
+    if (role === 'will' && currentState) {
+      try {
+        const detected = detectDisclosures(content);
+        if (Object.keys(detected).length > 0) {
+          const existing = currentState.disclosure || emptyDisclosureMap();
+          const merged = mergeDisclosures(existing, detected);
+          saveState({ ...currentState, disclosure: merged });
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    const turnId = memory.writeTurn(this.sessionId, role, content, topicTags, salience, 'direct', emotionalVector);
     this.turnHistory.push({ role, content, turnId });
     this.lastActivityAt = Date.now();
     return turnId;
