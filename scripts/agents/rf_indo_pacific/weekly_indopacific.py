@@ -54,10 +54,10 @@ def fetch_context() -> str:
     try:
         from worldmonitor_server import WorldMonitorClient
         client = WorldMonitorClient(cache_db=str(Path.home() / '.atrophy' / 'worldmonitor_cache.db'))
-        news = client.get_news_summary()
+        news, _ = client.fetch_cached("api/news/v1/list-feed-digest")
         if news:
             parts.append(f"NEWS:\n{json.dumps(news)[:2000]}")
-        econ = client.get_economic()
+        econ, _ = client.fetch_cached("api/economic/v1/get-energy-prices")
         if econ:
             parts.append(f"ECONOMIC:\n{json.dumps(econ)[:1500]}")
     except Exception as e:

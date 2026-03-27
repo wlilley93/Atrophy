@@ -92,10 +92,10 @@ def collect_data() -> dict:
 
     client = WorldMonitorClient(cache_db=str(_CACHE_DB))
 
-    fleet_raw  = _safe_call(client.get_fleet_report,  "fleet")
+    fleet_raw  = _safe_call(lambda: client.fetch_cached("api/military/v1/get-usni-fleet-report")[0], "fleet")
     alerts_raw = _safe_call(lambda: client.fetch_cached("api/oref-alerts")[0], "alerts")
     jam_raw    = _safe_call(lambda: client.fetch_cached("api/gpsjam")[0], "gps_jamming")
-    news_raw   = _safe_call(client.get_news_digest,    "news")
+    news_raw   = _safe_call(lambda: client.fetch_cached("api/news/v1/list-feed-digest")[0], "news")
 
     fleet   = _parse_fleet(fleet_raw)
     alerts  = _parse_alerts(alerts_raw)

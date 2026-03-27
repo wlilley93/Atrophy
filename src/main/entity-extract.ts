@@ -194,8 +194,12 @@ export function fileEntities(agentName: string, text: string): number {
        VALUES (?, ?, 'auto-extracted', datetime('now'))`,
     );
 
+    // Guard against template/placeholder values leaking in as entity names
+    const INVALID_NAMES = new Set(['entity name', 'string', 'name', 'example', 'null', 'undefined', 'test']);
+
     const insertMany = db.transaction((items: ExtractedEntity[]) => {
       for (const e of items) {
+        if (INVALID_NAMES.has(e.name.toLowerCase())) continue;
         const result = insert.run(e.name, e.type);
         if (result.changes > 0) filed++;
       }

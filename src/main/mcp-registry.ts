@@ -644,6 +644,7 @@ export class McpRegistry {
       case 'worldmonitor':
         env.WORLDMONITOR_CACHE_DB = path.join(os.homedir(), '.atrophy', 'worldmonitor_cache.db');
         env.WORLDMONITOR_BASE_URL = 'https://api.worldmonitor.app';
+        env.WORLDMONITOR_API_KEY = process.env.WORLDMONITOR_API_KEY || '';
         break;
 
       case 'elevenlabs':

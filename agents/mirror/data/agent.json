@@ -32,6 +32,33 @@
   },
   "custom_setup": "mirror",
   "default_enabled": false,
+  "channels": {
+    "desktop": {
+      "enabled": true
+    }
+  },
+  "mcp": {
+    "include": ["memory"],
+    "exclude": [],
+    "custom": {}
+  },
+  "jobs": {},
+  "router": {
+    "accept_from": ["*"],
+    "reject_from": [],
+    "max_queue_depth": 10,
+    "system_access": false,
+    "can_address_agents": true
+  },
+  "org": {
+    "slug": "personal",
+    "tier": 1,
+    "role": "Personal",
+    "reports_to": null,
+    "direct_reports": [],
+    "can_address_user": true,
+    "can_provision": false
+  },
   "personality": {
     "assertiveness": 0.3,
     "initiative": 0.3,

@@ -82,6 +82,7 @@ const ALLOWED_ENV_KEYS = new Set([
   'TELEGRAM_CHAT_ID',
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
+  'WORLDMONITOR_API_KEY',
 ]);
 
 /** Check if a key is in the allowed env keys whitelist. */

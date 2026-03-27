@@ -129,7 +129,7 @@ def fetch_country_data(country_profile: dict) -> str:
         from worldmonitor_server import WorldMonitorClient
         client = WorldMonitorClient(cache_db=str(Path.home() / '.atrophy' / 'worldmonitor_cache.db'))
 
-        news = client.get_news_summary()
+        news, _ = client.fetch_cached("api/news/v1/list-feed-digest")
         if news:
             news_str = json.dumps(news)
             # Filter for country keywords

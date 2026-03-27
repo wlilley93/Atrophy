@@ -43,18 +43,20 @@ _TTL_PROCURE = timedelta(hours=12)
 
 FEED_CATALOG: dict[str, dict] = {
     # Official government / intergovernmental bodies
-    "nato": {
-        "name": "NATO Newsroom",
-        "region": "NATO",
-        "type": "official",
-        "url": "https://www.nato.int/cps/en/natolive/news.rss",
-    },
-    "eda": {
-        "name": "European Defence Agency",
-        "region": "EU",
-        "type": "official",
-        "url": "https://eda.europa.eu/news-and-events/news/rss",
-    },
+    # nato: RSS feed removed, all paths redirect to HTML (404/301 as of 2026-03)
+    # "nato": {
+    #     "name": "NATO Newsroom",
+    #     "region": "NATO",
+    #     "type": "official",
+    #     "url": "https://www.nato.int/cps/en/natolive/news.rss",
+    # },
+    # eda: RSS feed removed by eda.europa.eu (404 as of 2026-03)
+    # "eda": {
+    #     "name": "European Defence Agency",
+    #     "region": "EU",
+    #     "type": "official",
+    #     "url": "https://eda.europa.eu/news-and-events/news/rss",
+    # },
     "uk_mod": {
         "name": "UK Ministry of Defence",
         "region": "UK",
@@ -68,17 +70,18 @@ FEED_CATALOG: dict[str, dict] = {
     #     "type": "official",
     #     "url": "https://www.defense.gouv.fr/actualites/rss.xml",
     # },
-    "german_bmvg": {
-        "name": "German Federal Ministry of Defence (BMVg)",
-        "region": "Germany",
-        "type": "official",
-        "url": "https://www.bundeswehr.de/en/news/press-releases/rss",
-    },
+    # german_bmvg: RSS feed removed by bundeswehr.de (404 as of 2026-03)
+    # "german_bmvg": {
+    #     "name": "German Federal Ministry of Defence (BMVg)",
+    #     "region": "Germany",
+    #     "type": "official",
+    #     "url": "https://www.bundeswehr.de/en/news/press-releases/rss",
+    # },
     "us_pentagon": {
         "name": "US Department of Defense",
         "region": "US",
         "type": "official",
-        "url": "https://www.defense.gov/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=945&max=10",
+        "url": "https://www.war.gov/DesktopModules/ArticleCS/RSS.ashx?ContentType=1&Site=945&max=10",
     },
     "un_news": {
         "name": "UN News - Peace and Security",
@@ -87,30 +90,33 @@ FEED_CATALOG: dict[str, dict] = {
         "url": "https://news.un.org/feed/subscribe/en/news/topic/peace-and-security/feed/rss.xml",
     },
     # Specialist defence analysis
-    "rusi": {
-        "name": "RUSI - Royal United Services Institute",
-        "region": "UK",
-        "type": "analysis",
-        "url": "https://rusi.org/feed/",
-    },
-    "iiss": {
-        "name": "IISS - International Institute for Strategic Studies",
-        "region": "UK",
-        "type": "analysis",
-        "url": "https://www.iiss.org/rss/publications",
-    },
+    # rusi: RSS feed removed, redirects to 404 (as of 2026-03)
+    # "rusi": {
+    #     "name": "RUSI - Royal United Services Institute",
+    #     "region": "UK",
+    #     "type": "analysis",
+    #     "url": "https://rusi.org/feed/",
+    # },
+    # iiss: RSS blocked with 403 (as of 2026-03)
+    # "iiss": {
+    #     "name": "IISS - International Institute for Strategic Studies",
+    #     "region": "UK",
+    #     "type": "analysis",
+    #     "url": "https://www.iiss.org/rss/publications",
+    # },
     "breaking_defense": {
         "name": "Breaking Defense",
         "region": "US/Global",
         "type": "analysis",
         "url": "https://breakingdefense.com/feed/",
     },
-    "sipri": {
-        "name": "SIPRI - Stockholm International Peace Research Institute",
-        "region": "Sweden",
-        "type": "analysis",
-        "url": "https://www.sipri.org/rss.xml",
-    },
+    # sipri: RSS feed removed by sipri.org (404 as of 2026-03)
+    # "sipri": {
+    #     "name": "SIPRI - Stockholm International Peace Research Institute",
+    #     "region": "Sweden",
+    #     "type": "analysis",
+    #     "url": "https://www.sipri.org/rss.xml",
+    # },
     "iss_africa": {
         "name": "Institute for Security Studies (Africa)",
         "region": "Africa",
@@ -118,17 +124,18 @@ FEED_CATALOG: dict[str, dict] = {
         "url": "https://issafrica.org/rss",
     },
     # Nordic security institutes
-    "foi_sweden": {
-        "name": "Swedish Defence Research Agency (FOI)",
-        "region": "Sweden",
-        "type": "nordic",
-        "url": "https://www.foi.se/en/rss",  # updated 2026-03 - old path was 404
-    },
+    # foi_sweden: connection errors on all RSS paths (as of 2026-03)
+    # "foi_sweden": {
+    #     "name": "Swedish Defence Research Agency (FOI)",
+    #     "region": "Sweden",
+    #     "type": "nordic",
+    #     "url": "https://www.foi.se/en/rss",
+    # },
     "fiia_finland": {
         "name": "Finnish Institute of International Affairs (FIIA)",
         "region": "Finland",
         "type": "nordic",
-        "url": "https://www.fiia.fi/feed/",
+        "url": "https://fiia.fi/feed",  # updated 2026-03 - www subdomain redirects
     },
     # nupi_norway: RSS feed removed by nupi.no (404 as of 2026-03)
     # "nupi_norway": {
@@ -145,18 +152,20 @@ FEED_CATALOG: dict[str, dict] = {
     #     "url": "https://www.diis.dk/en/rss",
     # },
     # Regional / thematic
-    "chatham_house": {
-        "name": "Chatham House (RIIIA)",
-        "region": "UK",
-        "type": "analysis",
-        "url": "https://www.chathamhouse.org/rss.xml",
-    },
-    "iiss_military_balance": {
-        "name": "IISS Military Balance Blog",
-        "region": "UK",
-        "type": "analysis",
-        "url": "https://www.iiss.org/rss/blogs",
-    },
+    # chatham_house: RSS blocked with 403 (as of 2026-03)
+    # "chatham_house": {
+    #     "name": "Chatham House (RIIIA)",
+    #     "region": "UK",
+    #     "type": "analysis",
+    #     "url": "https://www.chathamhouse.org/rss.xml",
+    # },
+    # iiss_military_balance: RSS blocked with 403 (as of 2026-03)
+    # "iiss_military_balance": {
+    #     "name": "IISS Military Balance Blog",
+    #     "region": "UK",
+    #     "type": "analysis",
+    #     "url": "https://www.iiss.org/rss/blogs",
+    # },
     "acled": {
         "name": "ACLED Research & Analysis",
         "region": "Global",
@@ -487,9 +496,8 @@ TOOLS = [
             "Fetch items from one or more primary source feeds. "
             "Pass a list of source IDs (from defence_sources_feeds_list) or omit for all. "
             "Optionally filter by keywords. Returns titles, links, summaries, and per-feed status. "
-            "Available sources include: NATO, EDA, UK/French/German MoD, RUSI, IISS, "
-            "Breaking Defense, SIPRI, FOI (Sweden), FIIA (Finland), NUPI (Norway), DIIS (Denmark), "
-            "Chatham House, ACLED, UN News, US Pentagon, and more."
+            "Available sources include: UK MoD, US Pentagon, UN News, "
+            "Breaking Defense, ISS Africa, FIIA (Finland), ACLED."
         ),
         "inputSchema": {
             "type": "object",

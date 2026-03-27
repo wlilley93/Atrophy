@@ -167,6 +167,8 @@ export function getNextRun(cronStr: string, after?: Date): Date {
 class CronScheduler {
   private jobs: Map<string, ScheduledJob> = new Map();
   private started = false;
+  /** Scheduler-level lock - prevents concurrent execution even across re-registration */
+  private runningKeys: Set<string> = new Set();
 
   /**
    * Register all jobs for an agent. Reads the jobs from the provided
@@ -517,11 +519,13 @@ class CronScheduler {
       return;
     }
 
-    if (job.running) {
-      log.warn(`Job '${key}' is already running - skipping`);
+    // Scheduler-level dedup - survives re-registration races
+    if (this.runningKeys.has(key)) {
+      log.warn(`Job '${key}' is already running - skipping duplicate`);
       return;
     }
 
+    this.runningKeys.add(key);
     job.running = true;
     log.info(`Executing job: ${key}`);
 
@@ -554,6 +558,7 @@ class CronScheduler {
       }
       this.persistState();
     } finally {
+      this.runningKeys.delete(key);
       job.running = false;
     }
   }

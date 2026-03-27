@@ -119,7 +119,7 @@ def fetch_worldmonitor_context(conflict_slug: str) -> str:
 
         # Pull conflicts and news digest
         conflicts_data, _wm_delta = client.fetch_cached("api/conflict/v1/list-acled-events")
-        news_data = client.get_news_digest()
+        news_data, _ = client.fetch_cached("api/news/v1/list-feed-digest")
 
         # Extract relevant snippets - truncate to avoid token overload
         context_parts = []

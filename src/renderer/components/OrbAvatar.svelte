@@ -320,9 +320,11 @@
         }
       });
     } else {
-      // Emotion-driven mode: start with calm blue idle clip.
-      // The emotion $effect handles switching to other colours/clips.
-      loadVideo(gen, 'blue', 'idle_hover');
+      // Try flat loops first (companion-style). If none, fall back to colour/clip path.
+      loadAllLoops(gen).then(() => {
+        if (gen !== loadGeneration) return;
+        if (allLoops.length === 0) loadVideo(gen, 'blue', 'idle_hover');
+      });
     }
   });
 
@@ -336,8 +338,8 @@
     if (emotion === loadedEmotion) return;
     loadedEmotion = emotion;
 
-    // Don't switch clips for mirror-style agents (flat ambient loops)
-    if (allLoops.length > 0 && allLoops.some((l) => l.includes('ambient_loop'))) return;
+    // Don't switch clips for agents using flat loops (no colour subdirs)
+    if (allLoops.length > 0) return;
 
     if (emotion) {
       const spec = EMOTIONS[emotion];

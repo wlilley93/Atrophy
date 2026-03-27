@@ -146,7 +146,7 @@ class WorldMonitorClient:
             "Accept": "application/json",
         }
         if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
+            headers["X-WorldMonitor-Key"] = self._api_key
 
         data: bytes | None = None
         if method.upper() == "POST" and body is not None:
