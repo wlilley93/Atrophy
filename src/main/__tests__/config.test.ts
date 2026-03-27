@@ -23,6 +23,9 @@ const TEST_USER_DATA = path.join(TEST_DIR, 'user');
 // Mocks - must be before imports of the module under test
 // ---------------------------------------------------------------------------
 
+// Redirect ATROPHY_DATA before config.ts resolves USER_DATA at import time
+process.env.ATROPHY_DATA = TEST_USER_DATA;
+
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,

@@ -56,7 +56,11 @@ export function initAutoUpdater(mainWindow: BrowserWindow): void {
 
 /** Manually trigger an update check. */
 export function checkForUpdates(): void {
-  if (process.env.ELECTRON_RENDERER_URL) return;
+  if (process.env.ELECTRON_RENDERER_URL) {
+    // Dev mode - emit not-available so renderer boot doesn't wait for a 20s timeout
+    win?.webContents.send('updater:not-available');
+    return;
+  }
   autoUpdater.checkForUpdates().catch(() => {});
 }
 

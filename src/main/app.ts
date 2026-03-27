@@ -130,6 +130,9 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // Dev mode loads renderer from http://localhost which blocks file:// video/image sources.
+      // Disable web security in dev so file:// avatar videos load correctly.
+      ...(process.env.ELECTRON_RENDERER_URL ? { webSecurity: false } : {}),
     },
   });
 
