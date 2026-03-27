@@ -1,6 +1,5 @@
 # src/main/channels/telegram/api.ts - Telegram Bot API Client
 
-**Line count:** ~909 lines  
 **Dependencies:** `fs`, `os`, `path`, `../../config`, `../../logger`  
 **Purpose:** Pure HTTP Telegram Bot API client with inline keyboards and polling
 

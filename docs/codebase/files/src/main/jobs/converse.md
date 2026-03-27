@@ -1,6 +1,5 @@
 # src/main/jobs/converse.ts - Inter-Agent Conversation
 
-**Line count:** ~444 lines  
 **Dependencies:** `fs`, `path`, `../config`, `../inference`, `../channels/cron`, `../logger`  
 **Purpose:** Agents talk to each other - private conversations stored in Obsidian
 
@@ -8,7 +7,6 @@
 
 This module enables private conversations between agents. It runs at most twice a month, picks another enabled agent, runs up to 5 exchanges between them, and stores the transcript in both agents' Obsidian notes.
 
-**Port of:** `scripts/agents/companion/converse.py`
 
 **Schedule:** At most twice monthly (auto-reschedules)
 

@@ -1,6 +1,5 @@
 # src/main/app.ts - Main Process Implementation
 
-**Line count:** ~1139 lines  
 **Dependencies:** Electron, Node.js built-ins, internal modules  
 **Purpose:** Complete Electron main process implementation - window management, IPC, lifecycle, agent switching, background services
 
@@ -306,7 +305,7 @@ function disableKeepAwake(): void {
 }
 ```
 
-The blocker uses `'prevent-display-sleep'` which also prevents system sleep on macOS. This is simpler than the Python version's launchd-based approach.
+The blocker uses `'prevent-display-sleep'` which also prevents system sleep on macOS. 
 
 ## Agent Switching
 

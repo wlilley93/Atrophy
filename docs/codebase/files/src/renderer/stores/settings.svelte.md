@@ -1,6 +1,5 @@
 # src/renderer/stores/settings.svelte.ts - Settings Store
 
-**Line count:** ~10 lines  
 **Dependencies:** None (Svelte 5 built-in runes)  
 **Purpose:** Mirrored config values from main process
 

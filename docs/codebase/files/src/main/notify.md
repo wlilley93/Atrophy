@@ -1,6 +1,5 @@
 # src/main/notify.ts - macOS Native Notifications
 
-**Line count:** ~50 lines  
 **Dependencies:** `child_process`, `./config`, `./logger`  
 **Purpose:** Send macOS native notifications via AppleScript
 
@@ -8,7 +7,6 @@
 
 This module provides a simple wrapper for sending macOS native notifications using `osascript` (AppleScript). It's gated by the `NOTIFICATIONS_ENABLED` config flag.
 
-**Port of:** `core/notify.py`
 
 ## sendNotification
 

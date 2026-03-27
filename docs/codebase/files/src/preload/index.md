@@ -1,6 +1,5 @@
 # src/preload/index.ts - Preload Script
 
-**Line count:** ~555 lines  
 **Dependencies:** `electron` (`contextBridge`, `ipcRenderer`)  
 **Purpose:** Exposes typed API to renderer via contextBridge
 

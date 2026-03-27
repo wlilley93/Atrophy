@@ -1,6 +1,5 @@
 # src/main/jobs/gift.ts - Companion Gift-Leaving
 
-**Line count:** ~268 lines  
 **Dependencies:** `fs`, `path`, `better-sqlite3`, `../config`, `../inference`, `../prompts`, `../queue`, `../notify`, `../channels/cron`, `../logger`  
 **Purpose:** Unprompted notes in Obsidian - random schedule, 3-30 days
 
@@ -8,7 +7,6 @@
 
 This module implements the companion's gift-leaving behavior - unprompted notes left in Obsidian for the user to discover. The schedule is randomized (3-30 days) so the user never knows when to expect it.
 
-**Port of:** `scripts/agents/companion/gift.py`
 
 **Schedule:** Random, 3-30 days (reschedules after each run)
 

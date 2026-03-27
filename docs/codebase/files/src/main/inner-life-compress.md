@@ -1,6 +1,5 @@
 # src/main/inner-life-compress.ts - Compressed Context Formatter
 
-**Line count:** ~150 lines  
 **Dependencies:** `./inner-life-types`, `./inner-life-needs`  
 **Purpose:** Produce compact state lines for system prompt injection (~50-80 tokens)
 

@@ -1,6 +1,5 @@
 # src/main/usage.ts - Usage and Activity Tracking
 
-**Line count:** ~319 lines  
 **Dependencies:** `better-sqlite3`, `fs`, `path`, `./config`  
 **Purpose:** Query usage and activity across all agent databases for Settings modal
 

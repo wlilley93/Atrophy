@@ -1,6 +1,5 @@
 # src/main/updater.ts - Auto-Updater (DMG)
 
-**Line count:** ~70 lines  
 **Dependencies:** `electron-updater`, `electron`  
 **Purpose:** Check GitHub Releases for new DMG versions using electron-updater
 

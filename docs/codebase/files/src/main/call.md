@@ -1,6 +1,5 @@
 # src/main/call.ts - Voice Call Mode
 
-**Line count:** ~350 lines  
 **Dependencies:** Node.js built-ins, Electron, `./stt`, `./tts`, `./inference`, `./config`, `./logger`  
 **Purpose:** Hands-free continuous conversation loop with VAD-based utterance detection
 

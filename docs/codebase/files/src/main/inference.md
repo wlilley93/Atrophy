@@ -1,6 +1,5 @@
 # src/main/inference.ts - Claude CLI Streaming
 
-**Line count:** ~1139 lines  
 **Dependencies:** Node.js built-ins, `uuid`, `./config`, `./thinking`, `./agency`, `./inner-life`, `./inner-life-needs`, `./inner-life-compress`, `./status`, `./memory`, `./mcp-registry`, `./logger`  
 **Purpose:** Claude Code subprocess wrapper for streaming inference with context injection
 

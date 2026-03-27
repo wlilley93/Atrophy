@@ -1,6 +1,5 @@
 # src/main/server.ts - HTTP API Server
 
-**Line count:** ~709 lines  
 **Dependencies:** `http`, `fs`, `path`, `crypto`, `./config`, `./memory`, `./session`, `./context`, `./inference`, `./vector-search`, `./logger`  
 **Purpose:** Minimal HTTP API for headless access to chat, memory, and status
 

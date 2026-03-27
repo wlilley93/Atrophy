@@ -1,6 +1,5 @@
 # src/renderer/stores/transcript.svelte.ts - Message History Store
 
-**Line count:** ~50 lines  
 **Dependencies:** None (Svelte 5 built-in runes)  
 **Purpose:** Reactive message history for transcript display with typewriter animation
 

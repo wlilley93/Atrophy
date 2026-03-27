@@ -1,6 +1,5 @@
 # src/main/ipc/system.ts - System IPC Handlers
 
-**Line count:** ~235 lines  
 **Dependencies:** `electron`, `fs`, `child_process`, `../config`, `../usage`, `../server`, `../channels/cron`, `../mcp-registry`, `../vector-search`, `../install`, `../updater`, `../bundle-updater`, `../logger`, `../system-topology`, `../org-manager`, `../ipc-handlers`  
 **Purpose:** IPC handlers for system operations, usage analytics, cron, MCP, server, updates, logs, GitHub auth, organizations
 

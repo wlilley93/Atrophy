@@ -1,6 +1,5 @@
 # src/main/inner-life-needs.ts - Needs System
 
-**Line count:** ~120 lines  
 **Dependencies:** `./inner-life-types`, `./inner-life`  
 **Purpose:** Need satisfaction, depletion, and drive computation from unmet needs
 

@@ -1,6 +1,5 @@
 # src/main/channels/switchboard.ts - Central Message Switchboard
 
-**Line count:** ~354 lines  
 **Dependencies:** `uuid`, `../config`, `../logger`  
 **Purpose:** Central message routing - all messages flow through here as Envelopes with source/destination addresses
 

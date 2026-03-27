@@ -1,6 +1,5 @@
 # src/main/queue.ts - Thread-Safe Message Queue
 
-**Line count:** ~180 lines  
 **Dependencies:** `fs`, `path`, `./config`  
 **Purpose:** Thread-safe message queue for inter-process communication with cron scripts and background jobs
 

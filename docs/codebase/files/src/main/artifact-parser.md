@@ -1,6 +1,5 @@
 # src/main/artifact-parser.ts - Inline Artifact Extraction
 
-**Line count:** ~100 lines  
 **Dependencies:** None  
 **Purpose:** Parse `<artifact>` blocks from Claude responses for rich content display
 

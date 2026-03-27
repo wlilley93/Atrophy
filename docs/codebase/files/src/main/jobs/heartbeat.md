@@ -1,6 +1,5 @@
 # src/main/jobs/heartbeat.ts - Heartbeat Background Job
 
-**Line count:** ~627 lines  
 **Dependencies:** `fs`, `os`, `path`, `events`, `../config`, `../memory`, `../inference`, `../context`, `../status`, `../notify`, `../queue`, `../channels/telegram`, `./index`, `../logger`, `../tts`, `../audio-convert`, `./generate-avatar`  
 **Purpose:** Periodic check-in evaluation - decides whether to reach out to user unprompted
 

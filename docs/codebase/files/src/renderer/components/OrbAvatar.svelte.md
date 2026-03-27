@@ -1,6 +1,5 @@
 # src/renderer/components/OrbAvatar.svelte - Procedural Orb Avatar
 
-**Line count:** ~572 lines  
 **Dependencies:** `../stores/session.svelte`, `../stores/emotional-state.svelte`, `../stores/emotion-colours.svelte`, `../stores/agents.svelte`, `../api`  
 **Purpose:** Render procedural orb avatar with video loops and canvas fallback
 

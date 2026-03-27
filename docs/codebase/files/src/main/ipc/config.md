@@ -1,6 +1,5 @@
 # src/main/ipc/config.ts - Configuration IPC Handlers
 
-**Line count:** ~140 lines  
 **Dependencies:** `electron`, `../config`, `../memory`, `../channels/telegram`, `../ipc-handlers`  
 **Purpose:** IPC handlers for configuration management (read, update, apply)
 

@@ -1,6 +1,5 @@
 # src/main/agency.ts - Behavioral Agency Module
 
-**Line count:** ~675 lines  
 **Dependencies:** None (pure functions)  
 **Purpose:** Time awareness, mood detection, follow-ups, emotional signal detection for context injection
 

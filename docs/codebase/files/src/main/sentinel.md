@@ -1,6 +1,5 @@
 # src/main/sentinel.ts - SENTINEL Coherence Monitor
 
-**Line count:** ~286 lines  
 **Dependencies:** `./memory`, `./inference`, `./logger`  
 **Purpose:** Mid-session coherence monitoring with automatic re-anchoring
 

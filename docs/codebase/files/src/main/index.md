@@ -1,6 +1,5 @@
 # src/main/index.ts - Main Process Entry Point
 
-**Line count:** ~60 lines  
 **Dependencies:** None (re-exports `./app.ts`)  
 **Purpose:** Thin entry point wrapper for electron-vite build compatibility
 

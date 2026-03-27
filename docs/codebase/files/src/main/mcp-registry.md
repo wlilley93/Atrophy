@@ -1,6 +1,5 @@
 # src/main/mcp-registry.ts - MCP Server Registry
 
-**Line count:** ~947 lines  
 **Dependencies:** `fs`, `os`, `path`, `child_process`, `./config`, `./logger`  
 **Purpose:** Manage MCP server discovery, registration, and per-agent configuration for Claude CLI
 

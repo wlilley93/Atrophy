@@ -1,6 +1,5 @@
 # src/main/jobs/evolve.ts - Monthly Self-Evolution
 
-**Line count:** ~332 lines  
 **Dependencies:** `fs`, `path`, `../config`, `../memory`, `../inference`, `./index`, `../logger`  
 **Purpose:** Monthly self-evolution - rewriting the agent's own soul and system prompt
 

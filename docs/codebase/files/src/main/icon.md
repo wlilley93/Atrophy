@@ -1,6 +1,5 @@
 # src/main/icon.ts - Procedural Orb Icon Generator
 
-**Line count:** ~350 lines  
 **Dependencies:** `electron`, `path`, `fs`  
 **Purpose:** Generate luminous consciousness orb icons using layered radial gradients
 
@@ -8,7 +7,6 @@
 
 This module generates the app's orb icons programmatically using SVG with layered radial gradients. It manages tray icon state (active, muted, idle, away) and provides both runtime NativeImage generation and static PNG file generation.
 
-**Port of:** `display/icon.py`
 
 ## Types
 

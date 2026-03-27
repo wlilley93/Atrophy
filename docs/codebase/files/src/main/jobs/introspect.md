@@ -1,6 +1,5 @@
 # src/main/jobs/introspect.ts - Nightly Self-Reflection
 
-**Line count:** ~642 lines  
 **Dependencies:** `better-sqlite3`, `fs`, `path`, `../config`, `../inference`, `../prompts`, `../channels/cron`, `../logger`  
 **Purpose:** Nightly self-reflection via inference - reviews full database arc, writes journal entry
 
@@ -8,7 +7,6 @@
 
 This module implements the companion's nightly introspection - a comprehensive review of the entire database (all sessions, observations, threads, bookmarks, identity snapshots) that produces a journal entry in Obsidian.
 
-**Port of:** `scripts/agents/companion/introspect.py` (and general_montgomery variant)
 
 **Schedule:** Nightly (typically 2am)
 

@@ -1,6 +1,5 @@
 # src/main/channels/agent-router.ts - Per-Agent Message Router
 
-**Line count:** ~250 lines  
 **Dependencies:** `./switchboard`, `../logger`  
 **Purpose:** Per-agent message filtering, queue depth limits, and outbound permission checks
 

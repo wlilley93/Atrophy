@@ -1,6 +1,5 @@
 # src/renderer/stores/agents.svelte.ts - Agent List Store
 
-**Line count:** ~10 lines  
 **Dependencies:** None (Svelte 5 built-in runes)  
 **Purpose:** Reactive agent list and switching state
 

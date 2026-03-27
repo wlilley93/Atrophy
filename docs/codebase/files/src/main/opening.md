@@ -1,6 +1,5 @@
 # src/main/opening.ts - Dynamic Opening Line Generation
 
-**Line count:** ~200 lines  
 **Dependencies:** `fs`, `path`, `./config`, `./inference`, `./agency`, `./memory`, `./tts`  
 **Purpose:** Generate varied, context-aware opening lines with caching and TTS
 

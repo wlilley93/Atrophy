@@ -1,6 +1,5 @@
 # src/main/channels/telegram/daemon.ts - Telegram Polling Daemon
 
-**Line count:** ~1564 lines  
 **Dependencies:** `fs`, `os`, `path`, `child_process`, `electron`, `../../config`, `../../status`, `./api`, `./formatter`, `../../agent-manager`, `../../inference`, `../../context`, `../../jobs/generate-avatar`, `../../memory`, `../../logger`, `../switchboard`, `../agent-router`, `../../session`  
 **Purpose:** Parallel per-agent Telegram pollers with session management
 

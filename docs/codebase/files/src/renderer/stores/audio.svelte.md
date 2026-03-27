@@ -1,6 +1,5 @@
 # src/renderer/stores/audio.svelte.ts - TTS Playback State Store
 
-**Line count:** ~10 lines  
 **Dependencies:** None (Svelte 5 built-in runes)  
 **Purpose:** Reactive TTS playback queue state
 

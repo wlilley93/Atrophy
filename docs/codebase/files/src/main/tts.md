@@ -1,6 +1,5 @@
 # src/main/tts.ts - Text-to-Speech
 
-**Line count:** ~683 lines  
 **Dependencies:** Node.js built-ins (`child_process`, `fs`, `path`, `os`, `crypto`), `./config`, `./logger`  
 **Purpose:** Three-tier TTS synthesis (ElevenLabs → Fal → macOS say) with sequential playback queue
 

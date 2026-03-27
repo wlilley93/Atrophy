@@ -1,6 +1,5 @@
 # src/renderer/stores/emotion-colours.svelte.ts - Emotion-to-Colour Mapping
 
-**Line count:** ~180 lines  
 **Dependencies:** None (Svelte 5 built-in runes)  
 **Purpose:** Classify response text into emotions and map to HSL colours for orb avatar
 

@@ -1,6 +1,5 @@
 # src/main/jobs/voice-note.ts - Spontaneous Voice Notes
 
-**Line count:** ~320 lines  
 **Dependencies:** `fs`, `../config`, `../logger`, `../audio-convert`, `../memory`, `../inference`, `../prompts`, `../tts`, `../channels/telegram`, `../channels/cron`  
 **Purpose:** Send spontaneous voice notes via Telegram - random schedule, 2-8 hours
 
@@ -8,7 +7,6 @@
 
 This module implements spontaneous voice note generation and delivery via Telegram. The agent generates a short thought based on recent context, synthesizes it as speech, and sends it as a Telegram voice note.
 
-**Port of:** `scripts/agents/companion/voice_note.py`
 
 **Schedule:** Random, 2-8 hours within active hours
 

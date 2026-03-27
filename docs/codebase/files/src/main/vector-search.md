@@ -1,6 +1,5 @@
 # src/main/vector-search.ts - Hybrid Vector + Keyword Search
 
-**Line count:** ~280 lines  
 **Dependencies:** `better-sqlite3`, `./config`, `./embeddings`, `./memory`, `./logger`  
 **Purpose:** Hybrid search combining cosine similarity (semantic) with BM25 (keyword) for memory retrieval
 

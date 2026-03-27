@@ -1,6 +1,5 @@
 # src/main/ipc/agents.ts - Agent Management IPC Handlers
 
-**Line count:** ~317 lines  
 **Dependencies:** `electron`, `path`, `fs`, `../config`, `../agent-manager`, `../prompts`, `../memory`, `../jobs/generate-mirror-avatar`, `../avatar-downloader`, `../queue`, `../session`, `../logger`, `../ipc-handlers`  
 **Purpose:** IPC handlers for agent management, deferral, message queues, mirror setup, ask-user responses, and org management
 

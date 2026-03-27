@@ -1,6 +1,5 @@
 # src/renderer/stores/emotional-state.svelte.ts - Inner Life Store
 
-**Line count:** ~35 lines  
 **Dependencies:** None (Svelte 5 built-in runes)  
 **Purpose:** Reactive emotional state store mirroring the agent's inner life
 

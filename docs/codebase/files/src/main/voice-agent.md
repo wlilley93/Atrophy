@@ -1,6 +1,5 @@
 # src/main/voice-agent.ts - Hybrid Voice Agent System
 
-**Line count:** ~1563 lines  
 **Dependencies:** `events`, `electron`, `fs`, `path`, `./inference`, `./context`, `./prompts`, `./memory`, `./config`, `./channels/telegram`, `./logger`  
 **Purpose:** Hybrid ElevenLabs + Claude Code voice agent with cost-optimized routing
 

@@ -1,6 +1,5 @@
 # db/schema.sql - Database Schema
 
-**Line count:** ~278 lines  
 **Purpose:** SQLite schema for three-layer memory architecture
 
 ## Overview

@@ -1,6 +1,5 @@
 # scripts/agents/shared/credentials.py - Shared Credential Loading
 
-**Line count:** ~50 lines  
 **Dependencies:** `os`, `json`, `pathlib`  
 **Purpose:** Load Telegram credentials from environment with agent-specific fallbacks
 

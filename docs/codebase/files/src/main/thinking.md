@@ -1,6 +1,5 @@
 # src/main/thinking.ts - Adaptive Thinking Classifier
 
-**Line count:** ~130 lines  
 **Dependencies:** None (pure functions)  
 **Purpose:** Classify message complexity to set Claude CLI inference effort level
 

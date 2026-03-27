@@ -1,6 +1,5 @@
 # src/main/memory.ts - SQLite Memory Layer
 
-**Line count:** ~1524 lines  
 **Dependencies:** `better-sqlite3`, `./config`, `./embeddings`, `./logger`  
 **Purpose:** Three-layer memory architecture (Episodic → Semantic → Identity) with vector embeddings
 

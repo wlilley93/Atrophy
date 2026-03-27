@@ -1,6 +1,5 @@
 # mcp/puppeteer_proxy.py - Puppeteer Content Proxy
 
-**Line count:** ~180 lines  
 **Dependencies:** `json`, `re`, `subprocess`, `sys`, `threading`, `os`  
 **Purpose:** Proxy for @modelcontextprotocol/server-puppeteer with content wrapping and injection detection
 

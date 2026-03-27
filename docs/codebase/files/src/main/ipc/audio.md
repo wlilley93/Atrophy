@@ -1,6 +1,5 @@
 # src/main/ipc/audio.ts - Audio IPC Handlers
 
-**Line count:** ~80 lines  
 **Dependencies:** `electron`, `path`, `fs`, `../config`, `../tts`, `../voice-agent`, `../ipc-handlers`  
 **Purpose:** IPC handlers for audio playback, muting, and voice agent control
 

@@ -1,6 +1,5 @@
 # src/main/wake-word.ts - Wake Word Detection
 
-**Line count:** ~120 lines  
 **Dependencies:** Electron (`ipcMain`, `BrowserWindow`), `./stt`, `./config`, `./logger`  
 **Purpose:** Ambient wake word detection using local whisper.cpp transcription
 

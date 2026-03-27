@@ -1,6 +1,5 @@
 # src/main/ipc/telegram.ts - Telegram IPC Handlers
 
-**Line count:** ~70 lines  
 **Dependencies:** `electron`, `../config`, `../agent-manager`, `../channels/telegram`, `../ipc-handlers`  
 **Purpose:** IPC handlers for Telegram daemon and bot management
 

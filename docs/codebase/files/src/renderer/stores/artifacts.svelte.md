@@ -1,6 +1,5 @@
 # src/renderer/stores/artifacts.svelte.ts - Inline Artifact Store
 
-**Line count:** ~25 lines  
 **Dependencies:** None (Svelte 5 built-in runes)  
 **Purpose:** Store inline artifacts extracted from agent responses
 

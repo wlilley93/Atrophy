@@ -1,6 +1,5 @@
 # src/main/inner-life.ts - Emotional State Engine
 
-**Line count:** ~756 lines  
 **Dependencies:** `./config`, `./memory`, `./inner-life-types`  
 **Purpose:** Multi-dimensional emotional state with decay, trust, needs, personality, and relationship tracking
 

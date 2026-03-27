@@ -1,6 +1,5 @@
 # src/renderer/components/InputBar.svelte - Text/Voice Input Bar
 
-**Line count:** ~742 lines  
 **Dependencies:** `../stores/session.svelte`, `../stores/transcript.svelte`, `../stores/audio.svelte`, `../stores/artifacts.svelte`, `../stores/emotion-colours.svelte`, `../stores/agents.svelte`, `../api`  
 **Purpose:** Text and voice input with push-to-talk and voice call mode
 

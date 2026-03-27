@@ -1,6 +1,5 @@
 # src/main/jobs/sleep-cycle.ts - Nightly Memory Reconciliation
 
-**Line count:** ~429 lines  
 **Dependencies:** `fs`, `../config`, `../logger`, `../inference`, `../memory`, `../inner-life`  
 **Purpose:** Nightly sleep cycle - review day's sessions and consolidate learnings
 

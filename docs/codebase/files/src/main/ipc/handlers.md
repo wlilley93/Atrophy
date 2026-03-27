@@ -1,6 +1,5 @@
 # src/main/ipc-handlers.ts - IPC Handler Registration
 
-**Line count:** ~60 lines  
 **Dependencies:** `electron`, `./session`, `./bundle-updater`, `./icon`, `./ipc/*`  
 **Purpose:** Thin orchestrator that defines shared `IpcContext` interface and delegates registration to domain modules
 

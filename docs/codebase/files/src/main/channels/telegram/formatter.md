@@ -1,6 +1,5 @@
 # src/main/channels/telegram/formatter.ts - Telegram Message Formatter
 
-**Line count:** ~200 lines  
 **Dependencies:** `path`  
 **Purpose:** Streaming inference status display formatting for Telegram
 

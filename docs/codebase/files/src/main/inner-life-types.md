@@ -1,6 +1,5 @@
 # src/main/inner-life-types.ts - Inner Life Type Definitions
 
-**Line count:** ~280 lines  
 **Dependencies:** None (pure type definitions)  
 **Purpose:** Type definitions, defaults, baselines, and half-lives for inner life v2 system
 

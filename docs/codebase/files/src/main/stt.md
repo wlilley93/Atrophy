@@ -1,6 +1,5 @@
 # src/main/stt.ts - Speech-to-Text
 
-**Line count:** ~150 lines  
 **Dependencies:** Node.js built-ins (`child_process`, `fs`, `path`, `os`, `crypto`), `./config`  
 **Purpose:** Speech transcription via whisper.cpp with Metal acceleration
 

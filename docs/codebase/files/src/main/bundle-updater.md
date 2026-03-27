@@ -1,6 +1,5 @@
 # src/main/bundle-updater.ts - Hot Bundle Updater
 
-**Line count:** ~433 lines  
 **Dependencies:** `fs`, `path`, `os`, `crypto`, `electron`, `./logger`  
 **Purpose:** Download pre-built bundles from GitHub Releases for over-the-air updates
 

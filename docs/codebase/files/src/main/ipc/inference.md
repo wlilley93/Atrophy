@@ -1,6 +1,5 @@
 # src/main/ipc/inference.ts - Inference IPC Handlers
 
-**Line count:** ~224 lines  
 **Dependencies:** `electron`, `fs`, `../config`, `../inference`, `../context`, `../session`, `../status`, `../agency`, `../tts`, `../artifact-parser`, `../opening`, `../logger`, `../channels/switchboard`, `../ipc-handlers`  
 **Purpose:** IPC handlers for inference, status management, and opening lines
 

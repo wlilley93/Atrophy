@@ -1,6 +1,5 @@
 # src/main/agent-manager.ts - Agent Discovery and Management
 
-**Line count:** ~475 lines  
 **Dependencies:** `fs`, `path`, `child_process`, `./config`, `./logger`  
 **Purpose:** Multi-agent discovery, switching, state management, and bundled prompt synchronization
 

@@ -1,6 +1,5 @@
 # src/renderer/stores/session.svelte.ts - Session State Store
 
-**Line count:** ~15 lines  
 **Dependencies:** None (Svelte 5 built-in runes)  
 **Purpose:** Reactive session state for app lifecycle and inference status
 

@@ -1,6 +1,5 @@
 # src/main/bootstrap.ts - Hot Bundle Loader
 
-**Line count:** ~130 lines  
 **Dependencies:** Node.js built-ins only (`electron`, `path`, `fs`, `os`, `url`)  
 **Purpose:** Production entry point that detects and loads hot bundles from `~/.atrophy/bundle/`
 

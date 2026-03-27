@@ -1,6 +1,5 @@
 # src/main/channels/cron/scheduler.ts - In-Process Cron Scheduler
 
-**Line count:** ~627 lines  
 **Dependencies:** `fs`, `path`, `../../config`, `../switchboard`, `./runner`, `../../logger`  
 **Purpose:** Native JavaScript job scheduler replacing launchd for job timing
 

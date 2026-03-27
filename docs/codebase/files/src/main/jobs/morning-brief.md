@@ -1,6 +1,5 @@
 # src/main/jobs/morning-brief.ts - Morning Brief Job
 
-**Line count:** ~250 lines  
 **Dependencies:** `fs`, `path`, `../config`, `../logger`, `../inference`, `../prompts`, `../queue`, `../notify`, `../tts`, `../channels/telegram`, `../memory`  
 **Purpose:** Daily morning brief with weather, headlines, threads, and observations
 

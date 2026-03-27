@@ -1,6 +1,5 @@
 # src/main/avatar-downloader.ts - Avatar Asset Downloader
 
-**Line count:** ~200 lines  
 **Dependencies:** `fs`, `path`, `child_process`, `electron`, `./config`, `./logger`  
 **Purpose:** Download avatar assets from GitHub Releases on first launch
 

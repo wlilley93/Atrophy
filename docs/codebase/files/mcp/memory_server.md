@@ -1,6 +1,5 @@
 # mcp/memory_server.py - MCP Memory Server
 
-**Line count:** ~4817 lines  
 **Dependencies:** `sqlite3`, `json`, `os`, `sys`, `pathlib`, `datetime`, `re`, `fcntl`  
 **Purpose:** Expose companion memory as MCP tools for Claude to call during conversation
 

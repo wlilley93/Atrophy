@@ -1,12 +1,11 @@
 # src/main/install.ts - Login Item Management
 
-**Line count:** ~40 lines  
 **Dependencies:** `electron`  
 **Purpose:** Manage macOS login item (launch at login) using Electron's built-in API
 
 ## Overview
 
-This module manages whether the app launches automatically at user login. It uses Electron's built-in `app.setLoginItemSettings()` instead of manual launchd plist generation (which the Python version used).
+This module manages whether the app launches automatically at user login. It uses Electron's built-in `app.setLoginItemSettings()`.
 
 The app can be set to launch at login in menu bar mode (`--app` flag).
 

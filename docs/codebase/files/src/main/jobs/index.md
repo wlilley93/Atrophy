@@ -1,6 +1,5 @@
 # src/main/jobs/index.ts - Background Job Runner
 
-**Line count:** ~184 lines  
 **Dependencies:** `../config`, `../inference`, `../logger`  
 **Purpose:** Common harness for all background jobs (heartbeat, evolve, etc.)
 

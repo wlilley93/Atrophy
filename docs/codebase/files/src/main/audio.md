@@ -1,6 +1,5 @@
 # src/main/audio.ts - Audio Bridge (Push-to-Talk)
 
-**Line count:** ~100 lines  
 **Dependencies:** Electron (`ipcMain`, `BrowserWindow`), `./stt`, `./config`, `./logger`  
 **Purpose:** Bridges renderer audio capture with main process for push-to-talk voice input
 

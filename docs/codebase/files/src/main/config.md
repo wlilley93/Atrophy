@@ -1,6 +1,5 @@
 # src/main/config.ts - Configuration System
 
-**Line count:** ~943 lines  
 **Dependencies:** Electron, Node.js built-ins (`fs`, `path`, `os`, `child_process`, `crypto`)  
 **Purpose:** Three-tier configuration resolution, path management, agent manifest loading, secrets management
 

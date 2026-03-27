@@ -1,6 +1,5 @@
 # src/main/create-agent.ts - Agent Scaffolding
 
-**Line count:** ~829 lines  
 **Dependencies:** `fs`, `path`, `better-sqlite3`, `./config`, `./channels/switchboard`, `./channels/cron`, `./channels/agent-router`, `./mcp-registry`, `./provisioning-scope`, `./logger`  
 **Purpose:** Create all directories, files, and database for a new agent
 

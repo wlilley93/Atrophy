@@ -1,6 +1,5 @@
 # src/main/ipc/window.ts - Window Management IPC Handlers
 
-**Line count:** ~583 lines  
 **Dependencies:** `electron`, `os`, `path`, `fs`, `child_process`, `../config`, `../inference`, `../tts`, `../create-agent`, `../avatar-downloader`, `../logger`, `../ipc-handlers`  
 **Purpose:** IPC handlers for window management, setup wizard, avatars, and artefacts
 

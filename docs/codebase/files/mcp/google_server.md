@@ -1,6 +1,5 @@
 # mcp/google_server.py - Google MCP Server
 
-**Line count:** ~877 lines  
 **Dependencies:** `json`, `os`, `re`, `shutil`, `subprocess`, `sys`, `urllib`  
 **Purpose:** Google Workspace API access via gws CLI + direct HTTP for YouTube
 
