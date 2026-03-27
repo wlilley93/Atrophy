@@ -125,9 +125,12 @@ mcp/                         # PYTHON -- bundled, not rewritten
   memory_server.py
   google_server.py
 
-scripts/                     # PYTHON -- standalone scripts
+scripts/                     # PYTHON -- standalone scripts (repo-bundled subset)
   google_auth.py
-  agents/companion/
+  agents/companion/            # Companion agent scripts + jobs.json
+  agents/general_montgomery/   # Montgomery agent scripts + jobs.json
+  agents/shared/               # Shared scripts (heartbeat, evolve, observer, etc.)
+  # NOTE: Personal/intelligence scripts live in ~/.atrophy/scripts/ (gitignored)
 
 db/
   schema.sql                 # IDENTICAL to source repo
@@ -485,10 +488,16 @@ Auto-update via `electron-updater` + GitHub Releases.
   agent_states.json
   agents/<name>/
     data/agent.json, memory.db, .emotional_state.json, ...
+    data/intelligence.db          # Montgomery's ontology database
     avatar/
     prompts/
   models/
   logs/
+  scripts/                        # Personal scripts (not in git)
+    agents/shared/                 # Shared intelligence scripts (channel_push, ontology, etc.)
+    agents/librarian/              # Librarian agent scripts
+  services/
+    worldmonitor/                  # Meridian platform fork (Vercel-deployed)
   .google/extra_token.json
 ```
 
@@ -660,3 +669,118 @@ Agents can message each other via switchboard MCP tools:
 2. In `daemon.ts`: create Envelopes from inbound messages, route via `switchboard.route()`
 3. Register outbound handler: `switchboard.register('<name>:<agent>', handler)`
 4. The agent-router handles filtering and response routing automatically
+
+---
+
+## 13. Meridian Intelligence Platform
+
+Meridian is the defence org's intelligence platform, deployed at `worldmonitor.atrophy.app`. It is a fork of the open-source WorldMonitor project, rebranded as MERIDIAN - Defence Intelligence, with a channel system, briefing panel, and knowledge graph integration.
+
+### Architecture
+
+- **Platform:** Vercel-deployed fork of WorldMonitor (vanilla TypeScript + Preact, deck.gl/MapLibre maps, 60+ Edge Functions)
+- **State:** Upstash Redis for channel state and briefing content
+- **Fork repo:** `~/.atrophy/services/worldmonitor/` (GitHub: `wlilley93/worldmonitor`)
+- **Auth:** `X-Channel-Key` header with `CHANNEL_API_KEY` from `~/.atrophy/.env`
+- **Domain:** `worldmonitor.atrophy.app` (CNAME via GoDaddy -> Vercel)
+
+### Channel system
+
+Each defence org agent gets a channel - a curated view of the intelligence picture. The site opens on Montgomery's channel by default. Channels hold:
+- Map state (center, zoom, bearing, pitch, active layers, markers, highlighted regions)
+- Briefing (title, summary, body markdown, sources)
+- Alert level (normal/elevated/critical)
+- Feed filters (categories, keywords)
+
+Agent scripts push channel state via `channel_push.py` after producing intelligence. The cron runner passes `CHANNEL_API_KEY` as an environment variable to all scripts.
+
+### API routes (added to the fork)
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `api/channels/list` | GET | List all channels with metadata |
+| `api/channels/[name]` | GET/PUT | Get or update channel state |
+| `api/channels/[name]/briefing` | PUT | Update briefing only |
+| `api/channels/[name]/map` | PUT | Update map state only |
+| `api/commissions` | GET/POST | Commission portal |
+| `api/commissions/[id]` | PUT | Update commission status |
+
+### Live data layer
+
+70+ channel layer names are mapped to WorldMonitor's internal data layer IDs. When a channel activates layers like `military-flights` or `acled-events`, the platform toggles the corresponding WorldMonitor data layer. This gives agents control over which data appears on their view.
+
+### Ontology (intelligence.db)
+
+The knowledge graph lives in `~/.atrophy/agents/general_montgomery/data/intelligence.db`. It uses a rich ontology schema that replaced the original flat entity table.
+
+#### Core tables
+
+**`objects`** - Everything is an object with a type. 543+ objects seeded.
+- Types: person, organization, faction, country, location, platform, unit, event, document
+- Fields: type, subtype, name, aliases (JSON), status, lat/lon, country_code, first_seen, last_seen
+
+**`properties`** - Key-value with provenance. 2285+ properties.
+- Fields: object_id, key, value, value_type, confidence, source, valid_from, valid_to
+- Source format: `worldmonitor:acled`, `brief:34`, `seed:restcountries`, etc.
+
+**`links`** - Typed relationships with provenance. 254+ links.
+- Types: leads, commands, member_of, located_at, operates, deployed_to, allied_with, opposes, funds, arms, sanctions, participated_in, targets, mediates, trades_with, subsidiary_of, borders, controls, hosts, produced_by
+- Fields: from_id, to_id, type, subtype, description, confidence, source, valid_from, valid_to
+
+**`changelog`** - Full audit trail of all ontology changes.
+- Fields: object_id, table_name, record_id, action, field, old_value, new_value, source, agent
+
+**`brief_objects`** - Brief-to-object linking with relevance scoring.
+
+#### Auto-ingestion pipeline
+
+8 typed ingestors in `ontology_ingest.py` extract objects and links from WorldMonitor API responses:
+- Military flights -> platform objects (aircraft) with position properties
+- ACLED events -> event objects with actor factions and locations
+- AIS maritime -> platform objects (vessels) with position properties
+- GPS jamming -> event objects (jamming zones)
+- OREF alerts -> event objects (missile/rocket alerts)
+- Thermal escalations -> event objects (thermal anomalies)
+- News digest -> entity extraction via LLM
+- Bootstrap/economic -> country property updates
+
+Called from `worldmonitor_poll.py` after each tier poll, and from the brief publication pipeline.
+
+#### Seeding
+
+Objects are seeded from multiple sources:
+- REST Countries API + World Bank (all countries with population, GDP, government type, capital)
+- Leaders extracted from country data
+- Military units, weapons systems, bases, chokepoints, infrastructure from structured seed scripts
+- Full government org charts for key countries
+
+### Intelligence capabilities (14 systems)
+
+| # | System | Description |
+|---|--------|-------------|
+| 1 | Prediction Ledger | 40 predictions extracted from briefs, 30-day auto-review cycle |
+| 2 | Cross-Agent Synthesis | Nightly convergence report across all domains |
+| 3 | Source Health Dashboard | 39 sources monitored every 6 hours |
+| 4 | Entity Resolution | Deduplicated 134->88 entities, 204 brief-entity links |
+| 5 | Temporal Situation Tracking | 50 timeline entries across 6 conflicts |
+| 6 | Automated Relationship Extraction | 80+ relationships, hourly cron |
+| 7 | Commission Portal | Two-way sync between intelligence.db and platform |
+| 8 | Systematic Red Team Review | Adversarial challenge on high-priority briefs |
+| 9 | Live Data Layer | Channel-driven layer activation (70 layer mappings) |
+| 10 | Briefing Audio | ElevenLabs TTS with Montgomery's voice |
+| 11 | Agent Performance Metrics | Monthly review across 7 categories |
+| 12 | Geofencing | 8 watch zones with haversine alerting |
+| 13 | Structured Intelligence Products | 8 templates (SITREP, FLASH, WARNING, INTSUM, etc.) |
+| 14 | Multi-Source Verification | Corroboration scoring for key claims |
+
+### Personal scripts
+
+Intelligence scripts that contain operational data (watch zones, source lists, seed data) live in `~/.atrophy/scripts/` rather than the repo. The cron runner checks this directory first, falling back to the bundle. 18 scripts are gitignored. The `PYTHONPATH` env passed to cron jobs includes `~/.atrophy/scripts/` so personal scripts can import shared modules.
+
+### Related docs
+
+- `docs/agents/general_montgomery/MERIDIAN-HANDOVER.md` - System handover doc with full job schedule
+- `docs/superpowers/specs/2026-03-27-worldmonitor-integration-design.md` - Platform design spec
+- `docs/superpowers/specs/2026-03-27-meridian-ontology-design.md` - Ontology schema spec
+- `docs/superpowers/specs/2026-03-27-meridian-improvements-spec.md` - 14 capability specs
+- `docs/specs/architecture/CLAUDE-meridian.md` - Living architecture reference
