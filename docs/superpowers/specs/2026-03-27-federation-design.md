@@ -190,11 +190,13 @@ A new poller runs per federation link, similar to the existing per-agent Telegra
 
 The federation poller applies strict filtering:
 
-1. **Remote bot only:** Only process messages where `message.from.username === remote_bot_username`. Messages from other participants (including the local bot, owners, anyone else) are ignored.
+1. **Remote bot only:** Only process messages where `message.from.username === remote_bot_username`. Messages from other participants (including the local bot, owners, anyone else in the group) are ignored entirely.
 2. **@ mention required:** The message text must contain `@<local_bot_username>` to trigger inference. Unmentioned messages are logged to the transcript but do not trigger inference. This supports future multi-agent groups.
 3. **No commands:** Messages starting with `/` from remote bots are ignored entirely. No exceptions.
-4. **Staleness window:** On startup, skip messages older than 1 hour. Log them to the transcript but do not trigger inference. Prevents backlog avalanche.
-5. **Rate limiting:** Track inbound message rate. If the remote bot exceeds 60 messages/hour, stop processing and alert the owner.
+4. **Text only (v1):** Non-text messages (photos, documents, voice notes, stickers) from remote bots are logged as `[media message skipped]` in the transcript but do not trigger inference.
+5. **Ignore edits:** Message edits (`edited_message` updates) from remote bots are ignored. Only original messages are processed. This prevents double-processing when a bot uses streaming display (edit-in-place).
+6. **Staleness window:** On startup, skip messages older than 1 hour. Log them to the transcript but do not trigger inference. Prevents backlog avalanche.
+7. **Rate limiting:** Track inbound message rate. If the remote bot exceeds 60 messages/hour, stop processing and alert the owner.
 
 ### @ mention addressing
 
@@ -307,6 +309,44 @@ When trust tier is `delegate` and the remote agent requests an action the local 
 
 If Will replies "no" or ignores:
 - Xan sends: `@sarah_companion_bot Will declined the meeting request.`
+
+---
+
+## Telegram group interaction issues
+
+Shared groups with two bots and two humans have several interaction quirks that must be handled.
+
+### Commands require @bot suffix
+
+In a group with multiple bots, bare `/stop` is ambiguous - both bots see it. Telegram natively supports bot-specific commands via the `@username` suffix: `/stop@xan_bot`. The existing daemon command handler must be updated to **require the `@bot_username` suffix for all commands in group chats** (not just federation groups - this is a general improvement). Commands without the suffix are ignored in group contexts. In DM contexts, the suffix remains optional.
+
+### Owner messages are ignored by federation poller
+
+Both owners may be in the shared group for observation or manual intervention. The federation poller ignores all human messages - it only processes messages from the `remote_bot_username`. If an owner wants to talk to the remote agent directly, they do it through their own agent (tell Xan to relay a message).
+
+### Primary poller must exclude federation groups
+
+The agent's existing Telegram poller (in `daemon.ts`) polls the agent's primary chat ID. The federation group has a different chat ID. The primary poller must NOT process messages from federation group IDs. The federation poller is the sole reader for those groups. On boot, the set of federation group IDs is built from `federation.json` and passed to the daemon so it can skip them.
+
+### Reply threading
+
+When responding to a federation message, the local bot should use Telegram's `reply_to_message_id` to thread its response to the specific message it's responding to. This keeps the conversation readable in the group, especially when messages interleave.
+
+### Bot permissions
+
+Bots in the federation group need:
+- **Required:** "Send Messages" permission
+- **Required:** "Group Privacy" disabled in BotFather (otherwise bots only see commands and @ mentions, not plain messages from other bots)
+- **Not needed:** Admin privileges. Bots should NOT be group admins.
+
+The setup guide must emphasize the BotFather privacy setting - this is the most common reason bots can't see each other's messages in groups.
+
+### No streaming display in federation
+
+The local agent's Telegram streaming display (edit-in-place with status indicators) should NOT be used for federation responses. Instead, send the complete response as a single message once inference finishes. Reasons:
+- Rapid edits create noise for the remote poller (even though edits are filtered, it's wasteful)
+- The remote instance doesn't benefit from seeing partial responses
+- Keeps federation traffic clean and minimal
 
 ---
 
