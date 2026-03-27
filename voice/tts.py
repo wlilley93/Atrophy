@@ -66,7 +66,7 @@ def synthesise_sync(text: str) -> Path:
     out_dir = Path.home() / ".atrophy" / "tts_output"
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = int(time.time())
-    text_hash = hashlib.md5(text.encode()).hexdigest()[:8]
+    text_hash = hashlib.sha256(text.encode()).hexdigest()[:8]
     out_path = out_dir / f"tts_{ts}_{text_hash}.mp3"
     out_path.write_bytes(audio)
     return out_path

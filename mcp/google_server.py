@@ -749,12 +749,17 @@ def _handle_gws(tool_args: dict) -> str:
     if any(w in lower for w in ("token", "credential", "secret", "auth")):
         return "Error: Cannot access credential resources."
 
-    # Build shell command - we use shell=True because args contain quoted JSON
-    cmd = f"{_GWS_BIN} {service} {args_str} --format json"
+    # Build command as list to avoid shell injection
+    import shlex
+    try:
+        parsed_args = shlex.split(args_str)
+    except ValueError:
+        return "Error: malformed arguments (unmatched quotes)."
+    cmd = [_GWS_BIN, service] + parsed_args + ["--format", "json"]
 
     try:
         result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=45, env=_gws_env(),
+            cmd, capture_output=True, text=True, timeout=45, env=_gws_env(),
         )
     except subprocess.TimeoutExpired:
         raise RuntimeError("gws command timed out after 45s")

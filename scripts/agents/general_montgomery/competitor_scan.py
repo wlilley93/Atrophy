@@ -14,6 +14,10 @@ import re
 import sqlite3
 import sys
 import urllib.request
+try:
+    from defusedxml.ElementTree import fromstring as _safe_fromstring
+except ImportError:
+    from xml.etree.ElementTree import fromstring as _safe_fromstring
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -110,7 +114,7 @@ def fetch_rss(url: str, label: str) -> list[dict]:
         with urllib.request.urlopen(req, timeout=15) as resp:
             content = resp.read()
 
-        root = ET.fromstring(content)
+        root = _safe_fromstring(content)
         ns = ""
         items = root.findall(".//item") or root.findall(".//{http://www.w3.org/2005/Atom}entry")
 

@@ -27,6 +27,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+try:
+    from defusedxml.ElementTree import fromstring as _safe_fromstring
+except ImportError:
+    from xml.etree.ElementTree import fromstring as _safe_fromstring
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -345,7 +349,7 @@ def _make_request(url: str, method: str = "GET", headers: dict | None = None) ->
 def _check_rss_freshness(body: bytes) -> bool:
     """Check if the latest RSS/Atom item was published within the freshness window."""
     try:
-        root = ET.fromstring(body)
+        root = _safe_fromstring(body)
     except ET.ParseError:
         return False
 

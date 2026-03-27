@@ -36,7 +36,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.4.0",
     "@types/uuid": "^11.0.0",
-    "electron": "^34.5.8",
+    "electron": "^35.7.5",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "puppeteer-core": "^24.39.0",
@@ -51,5 +51,11 @@
     "better-sqlite3": "^12.6.2",
     "electron-updater": "^6.8.3",
     "uuid": "^13.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "picomatch": ">=4.0.4",
+      "brace-expansion": ">=5.0.5"
+    }
   }
 }

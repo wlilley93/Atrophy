@@ -9,6 +9,24 @@ from pathlib import Path
 
 from config import DB_PATH, SCHEMA_PATH, AGENT_NAME
 
+# Allowlists for dynamic SQL identifiers that cannot use parameterized queries.
+# Any table or column name interpolated into SQL must be validated against these.
+_VALID_TABLES = {"turns", "observations", "summaries", "bookmarks", "entities"}
+_VALID_OBSERVATION_COLUMNS = {
+    "valid_from", "valid_to", "learned_at", "expired_at",
+    "confidence", "activation", "last_accessed", "embedding",
+}
+_VALID_OBSERVATION_DEFINITIONS = {
+    "DATETIME", "REAL DEFAULT 0.5", "REAL DEFAULT 1.0", "BLOB",
+}
+
+
+def _validate_table(table: str) -> str:
+    """Validate a table name against the allowlist. Raises ValueError if invalid."""
+    if table not in _VALID_TABLES:
+        raise ValueError(f"Invalid table name: {table!r}")
+    return table
+
 
 def _connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
@@ -61,6 +79,8 @@ def _migrate(conn: sqlite3.Connection):
         ("embedding", "BLOB"),
     ]:
         if col not in obs_cols:
+            if col not in _VALID_OBSERVATION_COLUMNS or defn not in _VALID_OBSERVATION_DEFINITIONS:
+                raise ValueError(f"Invalid migration column: {col!r} {defn!r}")
             conn.execute(f"ALTER TABLE observations ADD COLUMN {col} {defn}")
     conn.commit()
 
@@ -837,6 +857,8 @@ def _embed_async(table: str, row_id: int, text: str, db_path: Path = DB_PATH):
 
     Does not block the conversation pipeline.
     """
+    safe_table = _validate_table(table)
+
     def _do_embed():
         try:
             from core.embeddings import embed, vector_to_blob
@@ -844,13 +866,13 @@ def _embed_async(table: str, row_id: int, text: str, db_path: Path = DB_PATH):
             blob = vector_to_blob(vec)
             conn = _connect(db_path)
             conn.execute(
-                f"UPDATE {table} SET embedding = ? WHERE id = ?",
+                f"UPDATE {safe_table} SET embedding = ? WHERE id = ?",
                 (blob, row_id),
             )
             conn.commit()
             conn.close()
         except Exception as e:
-            print(f"  [embed-async] Failed to embed {table}:{row_id}: {e}")
+            print(f"  [embed-async] Failed to embed {safe_table}:{row_id}: {e}")
 
     t = threading.Thread(target=_do_embed, daemon=True)
     t.start()
@@ -878,12 +900,13 @@ def search_memory(query: str, n: int = 5, db_path: Path = DB_PATH) -> list[dict]
 
 def embed_and_store(table: str, row_id: int, text: str, db_path: Path = DB_PATH):
     """Embed text and update the embedding blob for a row (synchronous)."""
+    safe_table = _validate_table(table)
     from core.embeddings import embed, vector_to_blob
     vec = embed(text)
     blob = vector_to_blob(vec)
     conn = _connect(db_path)
     conn.execute(
-        f"UPDATE {table} SET embedding = ? WHERE id = ?",
+        f"UPDATE {safe_table} SET embedding = ? WHERE id = ?",
         (blob, row_id),
     )
     conn.commit()
@@ -896,12 +919,13 @@ def update_activation(table: str, row_id: int, db_path: Path = DB_PATH):
     Only applies to tables that have activation/last_accessed columns (observations).
     For other tables, just returns silently.
     """
+    safe_table = _validate_table(table)
     conn = _connect(db_path)
-    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({safe_table})").fetchall()}
     if "activation" in cols and "last_accessed" in cols:
         # Boost activation by 0.2, capped at 1.0
         conn.execute(
-            f"UPDATE {table} SET "
+            f"UPDATE {safe_table} SET "
             f"activation = MIN(1.0, COALESCE(activation, 0.5) + 0.2), "
             f"last_accessed = CURRENT_TIMESTAMP "
             f"WHERE id = ?",

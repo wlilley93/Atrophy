@@ -34,8 +34,10 @@ def _run_gh(args: list[str], timeout: int = TIMEOUT, cwd: str | None = None) -> 
         run_cwd = cwd or WORKING_DIR
         if not os.path.isdir(run_cwd):
             run_cwd = str(Path.home())
+        # Sanitize args - reject any that look like shell metacharacters
+        sanitized = [str(a) for a in args]
         result = subprocess.run(
-            [GH_BIN] + args,
+            [GH_BIN] + sanitized,
             capture_output=True,
             text=True,
             timeout=timeout,

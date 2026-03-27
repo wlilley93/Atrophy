@@ -23,6 +23,10 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+try:
+    from defusedxml.ElementTree import fromstring as _safe_fromstring
+except ImportError:
+    from xml.etree.ElementTree import fromstring as _safe_fromstring
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
@@ -240,7 +244,7 @@ def _fetch_rss(url: str) -> list[dict]:
     with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
         raw = resp.read()
 
-    root = ET.fromstring(raw)
+    root = _safe_fromstring(raw)
     ns = {"atom": "http://www.w3.org/2005/Atom"}
     items = []
 

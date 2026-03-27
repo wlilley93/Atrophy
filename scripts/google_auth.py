@@ -246,7 +246,7 @@ def run_extra_oauth() -> bool:
     # Find a free port
     import socket
     sock = socket.socket()
-    sock.bind(("", 0))
+    sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
     sock.close()
 
