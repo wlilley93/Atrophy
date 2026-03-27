@@ -70,11 +70,14 @@ export class Session {
     // Salience scoring - how much should this turn weigh in future aggregation?
     // High salience: emotional displacement, vulnerability, relational depth.
     // Low salience: routine task chat, one-liners.
-    let salience = weight; // default to caller's weight
+    // scoreSalience returns 0.0-1.0, DB weight column is INTEGER 1-5.
+    let dbWeight = weight;
     if (currentState) {
       try {
-        salience = scoreSalience(content, role, this._prevState, currentState);
+        const rawSalience = scoreSalience(content, role, this._prevState, currentState);
         this._prevState = currentState;
+        // Map 0.0-1.0 to 1-5: floor(salience * 4) + 1, clamped
+        dbWeight = Math.max(1, Math.min(5, Math.floor(rawSalience * 4) + 1));
       } catch { /* non-fatal */ }
     }
 
@@ -91,7 +94,7 @@ export class Session {
       } catch { /* non-fatal */ }
     }
 
-    const turnId = memory.writeTurn(this.sessionId, role, content, topicTags, salience, 'direct', emotionalVector);
+    const turnId = memory.writeTurn(this.sessionId, role, content, topicTags, dbWeight, 'direct', emotionalVector);
     this.turnHistory.push({ role, content, turnId });
     this.lastActivityAt = Date.now();
     return turnId;
