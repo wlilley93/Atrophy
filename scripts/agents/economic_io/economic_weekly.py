@@ -254,6 +254,37 @@ def main():
     except Exception as e:
         log.error(f"Telegram send failed: {e}")
 
+    # Push channel state to WorldMonitor
+    try:
+        from shared.channel_push import push_channel
+
+        layers = []
+        if data.get("economic"):
+            layers.append("energy-prices")
+        if data.get("trade"):
+            layers.append("trade-restrictions")
+
+        summary_line = assessment.split("\n")[0] if assessment else ""
+        now_str = datetime.now().strftime("%d %b %Y")
+        push_channel("economic_io", {
+            "agent": "economic_io",
+            "display_name": "Economic IO",
+            "alert_level": "normal",
+            "briefing": {
+                "title": f"Economic Weekly - {now_str}",
+                "summary": summary_line,
+                "body_md": assessment,
+                "sources": ["WorldMonitor", "IMF", "WTO"],
+            },
+            "map": {
+                "center": [30, 20],
+                "zoom": 2,
+                "layers": layers,
+            },
+        })
+    except Exception:
+        pass  # channel push is best-effort
+
 
 if __name__ == "__main__":
     main()

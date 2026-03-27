@@ -104,6 +104,46 @@ def run():
         db.commit()
         log.info("Battlefield summary logged to intelligence.db")
 
+        # Push channel state to WorldMonitor
+        try:
+            from shared.channel_push import push_channel
+
+            # Derive markers from ACLED conflict data if available
+            markers = []
+            try:
+                if context:
+                    import re
+                    # Context contains raw JSON snippets - try to extract lat/lon from conflicts
+                    for match in re.finditer(r'"latitude"\s*:\s*"?([0-9.-]+)"?\s*,\s*"longitude"\s*:\s*"?([0-9.-]+)"?', context):
+                        lat, lon = float(match.group(1)), float(match.group(2))
+                        markers.append({"lat": lat, "lon": lon, "label": "ACLED event"})
+                        if len(markers) >= 20:
+                            break
+            except Exception:
+                pass
+
+            summary_line = summary.split("\n")[0] if summary else ""
+            push_channel("rf_russia_ukraine", {
+                "agent": "rf_russia_ukraine",
+                "display_name": "RF Russia/Ukraine",
+                "alert_level": "elevated",
+                "briefing": {
+                    "title": f"Ukraine Battlefield Summary - {date_str}",
+                    "summary": summary_line,
+                    "body_md": summary,
+                    "sources": ["ACLED", "WorldMonitor"],
+                },
+                "map": {
+                    "center": [48.5, 35.0],
+                    "zoom": 6,
+                    "layers": ["acled-events", "thermal-escalations"],
+                    "regions": ["UA", "RU"],
+                    "markers": markers,
+                },
+            })
+        except Exception:
+            pass  # channel push is best-effort
+
     finally:
         db.close()
 

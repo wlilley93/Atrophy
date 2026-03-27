@@ -221,6 +221,54 @@ def main():
         send_telegram(*load_telegram_credentials("general_montgomery"), header + assessment)
         log.info("Three-hour update sent")
 
+        # Push channel state to WorldMonitor
+        try:
+            from shared.channel_push import push_channel
+
+            has_oref = bool(live.get("oref_alerts"))
+            has_conflicts = bool(live.get("conflict_events"))
+            has_thermal = bool(live.get("gps_jamming"))
+            if has_oref:
+                alert_level = "critical"
+            elif has_conflicts or has_thermal:
+                alert_level = "elevated"
+            else:
+                alert_level = "normal"
+
+            layers = []
+            if live.get("military_flights"):
+                layers.append("military-flights")
+            if live.get("conflict_events"):
+                layers.append("acled-events")
+            if live.get("gps_jamming"):
+                layers.append("gps-jamming")
+            if live.get("ais"):
+                layers.append("ais-vessels")
+            if live.get("energy_prices"):
+                layers.append("energy-prices")
+            if live.get("oref_alerts"):
+                layers.append("oref-alerts")
+
+            summary_line = assessment.split("\n")[0] if assessment else ""
+            push_channel("general_montgomery", {
+                "agent": "general_montgomery",
+                "display_name": "Gen. Montgomery",
+                "alert_level": alert_level,
+                "briefing": {
+                    "title": f"Situation - {now_str}",
+                    "summary": summary_line,
+                    "body_md": assessment,
+                    "sources": ["WorldMonitor", "OREF", "ACLED", "ADS-B"],
+                },
+                "map": {
+                    "center": [30, 30],
+                    "zoom": 2,
+                    "layers": layers,
+                },
+            })
+        except Exception:
+            pass  # channel push is best-effort
+
     except Exception as e:
         log.error(f"Update failed: {e}")
     finally:

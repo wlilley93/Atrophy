@@ -110,6 +110,7 @@ export async function runJob(
       PATH: `${pythonBinDir}:/usr/local/bin:/usr/bin:/bin`,
       AGENT: agentName,
       PYTHONPATH: `${BUNDLE_ROOT}:${path.join(USER_DATA, 'src')}`,
+      CHANNEL_API_KEY: process.env.CHANNEL_API_KEY || '',
     };
 
     const child = spawn(pythonPath, [scriptPath, ...extraArgs], {

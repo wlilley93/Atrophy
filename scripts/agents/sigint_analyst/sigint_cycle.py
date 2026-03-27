@@ -150,6 +150,65 @@ def run():
         state["seen_anomalies"] = state["seen_anomalies"][-1000:]
     save_state(state)
 
+    # Push channel state to WorldMonitor
+    try:
+        from shared.channel_push import push_channel
+
+        if total > 0:
+            alert_level = "elevated"
+        else:
+            alert_level = "normal"
+
+        # Derive markers from recently seen anomalies in state
+        markers = []
+        # Flight anomalies logged to DB have lat/lon in raw_data - pull recent ones
+        try:
+            db2 = sqlite3.connect(str(_INTEL_DB))
+            cur = db2.cursor()
+            cur.execute("""
+                SELECT type, description, raw_data FROM signals
+                WHERE type IN ('gps_jamming', 'military_flight')
+                ORDER BY created_at DESC LIMIT 20
+            """)
+            for row in cur.fetchall():
+                try:
+                    raw = json.loads(row[2])
+                    lat = raw.get("lat", raw.get("latitude"))
+                    lon = raw.get("lon", raw.get("longitude"))
+                    if lat is not None and lon is not None:
+                        markers.append({
+                            "lat": float(lat),
+                            "lon": float(lon),
+                            "label": row[1][:60],
+                        })
+                except Exception:
+                    pass
+            db2.close()
+        except Exception:
+            pass
+
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        summary = f"Cycle complete - {total} anomalies (GPS: {gps_count}, flights: {flight_count})"
+        push_channel("sigint_analyst", {
+            "agent": "sigint_analyst",
+            "display_name": "SIGINT Analyst",
+            "alert_level": alert_level,
+            "briefing": {
+                "title": f"SIGINT Cycle - {now_str}",
+                "summary": summary,
+                "body_md": summary,
+                "sources": ["ADS-B Exchange", "GPSJam"],
+            },
+            "map": {
+                "center": [30, 30],
+                "zoom": 2,
+                "layers": ["military-flights", "gps-jamming"],
+                "markers": markers,
+            },
+        })
+    except Exception:
+        pass  # channel push is best-effort
+
 
 if __name__ == "__main__":
     run()

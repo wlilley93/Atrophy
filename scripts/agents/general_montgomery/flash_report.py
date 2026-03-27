@@ -163,6 +163,49 @@ def run():
             message = f"*{timestamp}*\n\n{flash_text}"
             send_telegram(token, chat_id, message)
             log.info("Flash report sent")
+
+            # Push channel state to WorldMonitor
+            try:
+                from shared.channel_push import push_channel
+
+                # Try to derive center from raw_data location fields
+                center = [30, 30]
+                zoom = 2
+                try:
+                    parsed = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
+                    if isinstance(parsed, list) and parsed:
+                        first = parsed[0] if isinstance(parsed[0], dict) else {}
+                    elif isinstance(parsed, dict):
+                        first = parsed
+                    else:
+                        first = {}
+                    lat = first.get("lat", first.get("latitude"))
+                    lon = first.get("lon", first.get("longitude"))
+                    if lat is not None and lon is not None:
+                        center = [float(lat), float(lon)]
+                        zoom = 6
+                except Exception:
+                    pass
+
+                push_channel("general_montgomery", {
+                    "agent": "general_montgomery",
+                    "display_name": "Gen. Montgomery",
+                    "alert_level": "critical",
+                    "briefing": {
+                        "title": f"FLASH - {trigger}",
+                        "summary": flash_text.split("\n")[0] if flash_text else trigger,
+                        "body_md": flash_text,
+                        "sources": ["WorldMonitor", "OREF"],
+                    },
+                    "map": {
+                        "center": center,
+                        "zoom": zoom,
+                        "layers": ["oref-alerts"],
+                    },
+                })
+            except Exception:
+                pass  # channel push is best-effort
+
         except Exception as e:
             log.error(f"Flash report generation/send failed: {e}")
 
