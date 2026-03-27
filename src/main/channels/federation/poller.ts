@@ -1,16 +1,20 @@
 // src/main/channels/federation/poller.ts
-import { post } from '../telegram/api';
+import { post, sendMessage as telegramSend } from '../telegram/api';
 import { getConfig } from '../../config';
-import { switchboard } from '../switchboard';
 import { createLogger } from '../../logger';
 import type { FederationLink } from './config';
 import { appendTranscript } from './transcript';
+import { buildSandboxedMcpConfig, buildFederationPreamble, sanitizeFederationContent } from './sandbox';
+import { streamInference, stopInference, setMcpConfigPath, resetMcpConfig, type InferenceEvent } from '../../inference';
+import { loadSystemPrompt } from '../../context';
+import * as memory from '../../memory';
 
 const log = createLogger('federation-poller');
 
 const POLL_INTERVAL_MS = 5000;
 const STALENESS_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const INBOUND_RATE_LIMIT = 60; // per hour
+const FEDERATION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 interface PollerState {
   linkName: string;
@@ -147,6 +151,104 @@ function pollLoop(state: PollerState, botToken: string): void {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Config mutex - narrow lock so federation inference doesn't race with
+// other dispatches that also call config.reloadForAgent().
+// ---------------------------------------------------------------------------
+
+let _federationConfigQueue: Promise<void> = Promise.resolve();
+
+function withFederationConfigLock<T>(fn: () => Promise<T>): Promise<T> {
+  let resolve: () => void;
+  const next = new Promise<void>((r) => { resolve = r; });
+  const prev = _federationConfigQueue;
+  _federationConfigQueue = next;
+  return prev.then(async () => {
+    try {
+      return await fn();
+    } finally {
+      resolve!();
+      if (_federationConfigQueue === next) {
+        _federationConfigQueue = Promise.resolve();
+      }
+    }
+  });
+}
+
+/**
+ * Run sandboxed inference for a federation message and return the response text.
+ * Returns null if inference produced no output or timed out.
+ */
+async function dispatchFederationInference(
+  state: PollerState,
+  cleanText: string,
+): Promise<string | null> {
+  const { linkName, link } = state;
+  const config = getConfig();
+  const originalAgent = config.AGENT_NAME;
+
+  const sessionId = `federation-${linkName}`;
+
+  const sanitized = sanitizeFederationContent(cleanText);
+  const preamble = buildFederationPreamble(linkName, link.remote_bot_username, link.trust_tier);
+
+  // Narrow config lock - hold only while reloading and spawning the subprocess
+  const emitter = await withFederationConfigLock(async () => {
+    config.reloadForAgent(link.local_agent);
+    memory.initDb();
+
+    const sandboxedMcpPath = buildSandboxedMcpConfig(link.local_agent, link.trust_tier);
+    setMcpConfigPath(sandboxedMcpPath);
+
+    const baseSystem = loadSystemPrompt();
+    const system = preamble + baseSystem;
+
+    // Restore original agent immediately after spawning so the config
+    // singleton is not left pointing at the federation agent.
+    const emitterInner = streamInference(sanitized, system, sessionId, { source: 'other' });
+
+    resetMcpConfig();
+    config.reloadForAgent(originalAgent);
+
+    return emitterInner;
+  });
+
+  return new Promise<string | null>((resolve) => {
+    let fullText = '';
+    let settled = false;
+
+    const settle = (result: string | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      log.warn(`[${linkName}] federation inference timed out`);
+      stopInference(link.local_agent);
+      settle(null);
+    }, FEDERATION_TIMEOUT_MS);
+
+    emitter.on('event', (evt: InferenceEvent) => {
+      switch (evt.type) {
+        case 'TextDelta':
+          fullText += evt.text;
+          break;
+        case 'StreamDone':
+          settle(evt.fullText?.trim() || fullText.trim() || null);
+          break;
+        case 'StreamError':
+          log.error(`[${linkName}] federation inference error: ${evt.message}`);
+          settle(null);
+          break;
+        default:
+          break;
+      }
+    });
+  });
+}
+
 /**
  * Single poll iteration.
  */
@@ -274,43 +376,46 @@ async function pollOnce(state: PollerState, botToken: string): Promise<void> {
 
     log.info(`[${state.linkName}] Inbound from @${state.link.remote_bot_username}: "${cleanText.slice(0, 80)}"`);
 
-    // Create and route the envelope
-    const envelope = switchboard.createEnvelope(
-      `federation:${state.linkName}`,
-      `agent:${state.link.local_agent}`,
-      cleanText,
-      {
-        type: 'user',
-        priority: 'normal',
-        replyTo: `federation:${state.linkName}`,
-        metadata: {
-          telegramMessageId: msg.message_id,
-          remoteBotUsername: state.link.remote_bot_username,
-          linkName: state.linkName,
-          trustTier: state.link.trust_tier,
-        },
-      },
-    );
-    // Attach federation field (not part of createEnvelope defaults)
-    (envelope as any).federation = {
-      linkName: state.linkName,
-      remoteBotUsername: state.link.remote_bot_username,
-      trustTier: state.link.trust_tier,
-    };
+    // Log inbound message to transcript
+    appendTranscript(state.linkName, {
+      timestamp: new Date().toISOString(),
+      direction: 'inbound',
+      from_bot: state.link.remote_bot_username,
+      to_bot: state.localBotUsername || '',
+      text: cleanText,
+      telegram_message_id: msg.message_id,
+      inference_triggered: true,
+      trust_tier: state.link.trust_tier,
+    });
 
-    // Dispatch to inference via switchboard
-    // The response handler (registered in index.ts) handles outbound
-    try {
-      await switchboard.route(envelope);
-    } catch (e) {
-      log.error(`[${state.linkName}] Failed to route envelope: ${e}`);
+    // Dispatch sandboxed inference directly
+    const responseText = await dispatchFederationInference(state, cleanText);
+
+    // Send the response back to the federation group if we got one
+    if (responseText) {
+      await sendFederationResponse(state.linkName, responseText, msg.message_id);
     }
+
+    // Notify the owner about the federation message (Task 10)
+    try {
+      const notifConfig = getConfig();
+      const origAgent = notifConfig.AGENT_NAME;
+      notifConfig.reloadForAgent(state.link.local_agent);
+      const ownerChatId = notifConfig.TELEGRAM_DM_CHAT_ID || notifConfig.TELEGRAM_CHAT_ID;
+      const ownerBotToken = notifConfig.TELEGRAM_BOT_TOKEN;
+      notifConfig.reloadForAgent(origAgent);
+
+      if (ownerChatId && ownerBotToken) {
+        const notif = `[Federation] @${state.link.remote_bot_username} sent a message to ${state.link.local_agent}:\n"${cleanText.slice(0, 200)}"`;
+        await telegramSend(notif, ownerChatId, false, ownerBotToken);
+      }
+    } catch { /* notification is best-effort */ }
   }
 }
 
 /**
  * Send a response to the federation group.
- * Called by the switchboard handler when the agent produces a response.
+ * Called after inference produces a response.
  */
 export async function sendFederationResponse(
   linkName: string,

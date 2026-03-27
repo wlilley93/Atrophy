@@ -226,6 +226,16 @@ export function resetMcpConfig(): void {
 }
 
 /**
+ * Override the MCP config path for the next inference call.
+ * Used by federation dispatch to inject a sandboxed config.
+ * The override is consumed on first use - call resetMcpConfig() after
+ * inference to restore normal behaviour.
+ */
+export function setMcpConfigPath(path: string): void {
+  _mcpConfigPath = path;
+}
+
+/**
  * Get MCP config path for the current agent.
  * Uses the McpRegistry to build a per-agent config based on the agent's manifest.
  */
