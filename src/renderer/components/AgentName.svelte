@@ -26,6 +26,10 @@
     }
   });
 
+  // Track direction separately so the animation effect doesn't re-run when direction changes
+  let lastDirection = 0;
+  $effect(() => { lastDirection = direction; });
+
   $effect(() => {
     if (name !== prevName) {
       // Cancel any in-flight animation and start fresh
@@ -34,7 +38,10 @@
       const targetName = name;
       prevName = targetName;
       animating = true;
-      offset = direction > 0 ? 30 : -30;
+      // Set displayName immediately so it's never blank if the animation
+      // gets cancelled before the midpoint swap
+      displayName = targetName;
+      offset = lastDirection > 0 ? 30 : -30;
 
       const start = performance.now();
       const duration = 400;
@@ -46,10 +53,6 @@
         // Ease out cubic
         const ease = 1 - Math.pow(1 - t, 3);
         offset = from * (1 - ease);
-
-        if (t < 0.5 && displayName !== targetName) {
-          displayName = targetName;
-        }
 
         if (t < 1) {
           activeRafId = requestAnimationFrame(tick);
