@@ -627,8 +627,10 @@ export class McpRegistry {
           ? this.buildServerEnv(server.name, agentName, server.env)
           : { ...(server.env || {}) };
 
+        // Mark federation context so MCP tools can guard against misuse
+        const federationEnv = { ...env, ATROPHY_FEDERATION_SANDBOX: '1' };
         const entry: Record<string, unknown> = { command, args: [...server.args] };
-        if (env && Object.keys(env).length > 0) entry.env = env;
+        if (Object.keys(federationEnv).length > 0) entry.env = federationEnv;
         servers[server.name] = entry;
       }
     }

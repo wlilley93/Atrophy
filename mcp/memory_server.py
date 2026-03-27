@@ -283,6 +283,31 @@ TOOLS = [
             "required": ["action"],
         },
     },
+    # ── Group 6b: federation - Cross-instance agent communication ──
+    {
+        "name": "federation",
+        "description": (
+            "Manage federation links for cross-instance agent communication. "
+            "Actions: list (show all links and status), generate_invite (create "
+            "an invite token for another user), accept_invite (accept a token "
+            "to create a link), guide_setup (get step-by-step setup instructions "
+            "to walk your owner through)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "generate_invite", "accept_invite", "guide_setup"],
+                },
+                "telegram_group_id": {"type": "string", "description": "Chat ID of the shared Telegram group (for generate_invite)"},
+                "description": {"type": "string", "description": "Human-readable description of the link"},
+                "token": {"type": "string", "description": "Invite token to accept (for accept_invite)"},
+                "local_agent": {"type": "string", "description": "Which local agent handles this link (defaults to current agent)"},
+            },
+            "required": ["action"],
+        },
+    },
     # ── Group 7: display - Visual and UI tools ──
     {
         "name": "display",
@@ -2519,6 +2544,285 @@ def handle_switchboard_route_response(args):
     }
     _enqueue_switchboard(directive)
     return f"Next response will be routed to {channel}"
+
+
+# ---------------------------------------------------------------------------
+# Federation management tools
+# ---------------------------------------------------------------------------
+
+_FEDERATION_CONFIG_PATH = os.path.join(
+    os.path.expanduser("~"), ".atrophy", "federation.json"
+)
+
+
+def _load_federation_config():
+    """Load federation.json."""
+    if os.path.exists(_FEDERATION_CONFIG_PATH):
+        try:
+            with open(_FEDERATION_CONFIG_PATH) as f:
+                data = json.load(f)
+            if data.get("version") == 1 and isinstance(data.get("links"), dict):
+                return data
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"version": 1, "links": {}}
+
+
+def _save_federation_config(config):
+    """Save federation.json atomically."""
+    d = os.path.dirname(_FEDERATION_CONFIG_PATH)
+    os.makedirs(d, exist_ok=True)
+    tmp = _FEDERATION_CONFIG_PATH + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(config, f, indent=2)
+    os.chmod(tmp, 0o600)
+    os.rename(tmp, _FEDERATION_CONFIG_PATH)
+
+
+def _get_bot_token():
+    """Get the current agent's Telegram bot token from .env."""
+    env_path = os.path.join(os.path.expanduser("~"), ".atrophy", ".env")
+    upper = AGENT_NAME.upper().replace("-", "_")
+    # Try per-agent token first, then generic
+    candidates = [f"{upper}_TELEGRAM_BOT_TOKEN", f"TELEGRAM_BOT_TOKEN_{upper}", "TELEGRAM_BOT_TOKEN"]
+    if os.path.exists(env_path):
+        try:
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip().strip('"').strip("'")
+                    if k in candidates:
+                        return v
+        except OSError:
+            pass
+    # Fall back to env vars
+    for c in candidates:
+        v = os.environ.get(c)
+        if v:
+            return v
+    return None
+
+
+def _get_bot_username(bot_token):
+    """Call Telegram getMe to get the bot's username."""
+    import urllib.request
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/getMe"
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read())
+        if data.get("ok"):
+            return data["result"].get("username", "")
+    except Exception:
+        pass
+    return None
+
+
+def _is_federation_context():
+    """Check if we're running inside a federation sandboxed inference.
+    Federation sessions use session IDs starting with 'federation-'.
+    In that context, federation management tools are blocked."""
+    # The MCP server doesn't directly know the session ID, but the
+    # federation sandbox sets a marker env var when spawning.
+    return os.environ.get("ATROPHY_FEDERATION_SANDBOX") == "1"
+
+
+def handle_federation_list(args):
+    """List all federation links with status."""
+    config = _load_federation_config()
+    links = config.get("links", {})
+    if not links:
+        return "No federation links configured. Use the guide_setup action to walk your owner through creating one."
+
+    lines = [f"Federation links ({len(links)}):"]
+    for name, link in links.items():
+        status = "enabled" if link.get("enabled", True) else "disabled"
+        if link.get("muted"):
+            status = "muted"
+        tier = link.get("trust_tier", "chat")
+        lines.append(
+            f"  {name}: @{link.get('remote_bot_username', '?')} -> {link.get('local_agent', '?')} "
+            f"[{tier}] ({status}) group={link.get('telegram_group_id', '?')}"
+        )
+    return "\n".join(lines)
+
+
+def handle_federation_generate_invite(args):
+    """Generate a federation invite token."""
+    if _is_federation_context():
+        return "Error: federation management is not available during federated inference."
+    group_id = args.get("telegram_group_id", "")
+    description = args.get("description", "")
+    local_agent = args.get("local_agent", AGENT_NAME)
+
+    if not group_id:
+        return "Error: telegram_group_id is required. This is the chat ID of the shared Telegram group."
+
+    bot_token = _get_bot_token()
+    if not bot_token:
+        return f"Error: could not find a Telegram bot token for agent {AGENT_NAME}. Check .env file."
+
+    bot_username = _get_bot_username(bot_token)
+    if not bot_username:
+        return "Error: could not resolve bot username via Telegram API. Check bot token."
+
+    # Generate the token
+    import hashlib, hmac as _hmac, base64
+    payload = {
+        "v": 1,
+        "bot": bot_username,
+        "group": group_id,
+        "agent": local_agent,
+        "desc": description,
+        "exp": int((time.time() + 86400) * 1000),  # 24hr expiry
+        "nonce": os.urandom(16).hex(),
+    }
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    sig = _hmac.new(bot_token.encode(), payload_b64.encode(), hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig).decode().rstrip("=")
+
+    token = f"atrophy-fed-{payload_b64}.{sig_b64}"
+
+    return (
+        f"Invite token generated. Share this with the other Atrophy user:\n\n"
+        f"`{token}`\n\n"
+        f"Details:\n"
+        f"  Bot: @{bot_username}\n"
+        f"  Group: {group_id}\n"
+        f"  Agent: {local_agent}\n"
+        f"  Expires: 24 hours\n\n"
+        f"They paste this in Settings > Federation > Paste Invite, or give it to their agent."
+    )
+
+
+def handle_federation_accept_invite(args):
+    """Accept a federation invite token and create a link."""
+    if _is_federation_context():
+        return "Error: federation management is not available during federated inference."
+    token = args.get("token", "").strip()
+    local_agent = args.get("local_agent", AGENT_NAME)
+
+    if not token:
+        return "Error: token is required."
+
+    if not token.startswith("atrophy-fed-"):
+        return "Error: invalid token format - must start with atrophy-fed-"
+
+    # Parse the token
+    import base64
+    body = token[len("atrophy-fed-"):]
+    dot_idx = body.rfind(".")
+    if dot_idx < 0:
+        return "Error: invalid token - missing signature"
+
+    payload_b64 = body[:dot_idx]
+    # Add padding
+    padding = 4 - len(payload_b64) % 4
+    if padding != 4:
+        payload_b64 += "=" * padding
+
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+    except Exception:
+        return "Error: invalid token - corrupted payload"
+
+    if payload.get("v") != 1:
+        return f"Error: unsupported token version: {payload.get('v')}"
+
+    if not payload.get("bot") or not payload.get("group") or not payload.get("agent"):
+        return "Error: invalid token - missing required fields"
+
+    exp = payload.get("exp", 0)
+    if exp < time.time() * 1000:
+        return "Error: token has expired"
+
+    remote_bot = payload["bot"]
+    group_id = payload["group"]
+    description = payload.get("desc", "")
+
+    # Create the link
+    link_name = remote_bot.replace("_bot", "").replace("Bot", "").replace("-", "_")
+    # Sanitize
+    import re
+    link_name = re.sub(r"[^a-zA-Z0-9_-]", "", link_name)
+    if not link_name:
+        link_name = "federation-link"
+
+    config = _load_federation_config()
+    if link_name in config["links"]:
+        return f"Error: a link named '{link_name}' already exists. Remove it first or rename."
+
+    config["links"][link_name] = {
+        "remote_bot_username": remote_bot,
+        "telegram_group_id": group_id,
+        "local_agent": local_agent,
+        "trust_tier": "chat",
+        "enabled": True,
+        "muted": False,
+        "description": description or f"Link from @{remote_bot}",
+        "rate_limit_per_hour": 20,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    _save_federation_config(config)
+
+    return (
+        f"Federation link '{link_name}' created.\n\n"
+        f"  Remote: @{remote_bot}\n"
+        f"  Group: {group_id}\n"
+        f"  Local agent: {local_agent}\n"
+        f"  Trust tier: chat\n\n"
+        f"The link will activate on next app restart, or the owner can reload in Settings > Federation."
+    )
+
+
+def handle_federation_guide_setup(args):
+    """Return step-by-step setup instructions."""
+    bot_token = _get_bot_token()
+    bot_username = _get_bot_username(bot_token) if bot_token else None
+    bot_display = f"@{bot_username}" if bot_username else "(could not detect - check bot token)"
+
+    return f"""Federation Setup Guide
+
+To connect with another Atrophy user's agent, follow these steps:
+
+1. PREREQUISITES
+   - Both users need Atrophy running with agents that have Telegram bots
+   - Your bot: {bot_display}
+   - The other user needs to tell you their bot's @username
+
+2. CREATE A SHARED GROUP
+   - Either user creates a new private Telegram group
+   - Name it something descriptive (e.g. "Xan + Sarah's Companion")
+   - Add both bots to the group
+   - IMPORTANT: Both bots must have "Group Privacy: disabled" in @BotFather
+     (Settings > Group Privacy > Turn off)
+   - Send any message in the group to activate the bots
+
+3. GET THE GROUP CHAT ID
+   - After sending a message, I can detect the group chat ID automatically
+   - Or use the Telegram Bot API: GET https://api.telegram.org/bot<token>/getUpdates
+   - The chat ID will be a negative number like -1001234567890
+
+4. GENERATE AN INVITE TOKEN
+   - Tell me the group chat ID and I'll generate a token
+   - Example: "Generate a federation invite for group -1001234567890"
+   - I'll give you a token starting with atrophy-fed-
+
+5. SHARE THE TOKEN
+   - Send the token to the other user (text, email, etc.)
+   - They paste it in Settings > Federation > Paste Invite
+   - Or they tell their agent to accept it
+
+6. DONE
+   - Both instances will start polling the shared group
+   - Messages with @ mentions trigger sandboxed inference
+   - All communication is logged in Settings > Federation > Transcript
+
+Current agent: {AGENT_NAME}
+Bot: {bot_display}
+Federation config: {_FEDERATION_CONFIG_PATH}"""
 
 
 def handle_render_canvas(args):
@@ -5398,6 +5702,12 @@ _ACTION_ROUTES = {
         "broadcast": handle_switchboard_broadcast,
         "query_status": handle_switchboard_query_status,
         "route_response": handle_switchboard_route_response,
+    },
+    "federation": {
+        "list": handle_federation_list,
+        "generate_invite": handle_federation_generate_invite,
+        "accept_invite": handle_federation_accept_invite,
+        "guide_setup": handle_federation_guide_setup,
     },
     "display": {
         "render_canvas": handle_render_canvas,
