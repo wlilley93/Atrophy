@@ -592,6 +592,57 @@ export class McpRegistry {
   }
 
   /**
+   * Build a restricted MCP config for federation inference.
+   * Trust tiers control which servers are available:
+   *   - chat: no MCP servers (text response only)
+   *   - query: memory (read-only)
+   *   - delegate: memory (read/write)
+   * Shell, filesystem, GitHub, puppeteer are NEVER included.
+   */
+  buildFederationConfig(agentName: string, trustTier: 'chat' | 'query' | 'delegate'): string {
+    const BLOCKED_SERVERS = new Set([
+      'shell', 'github', 'puppeteer', 'fal', 'elevenlabs',
+      'worldmonitor', 'defence_sources',
+    ]);
+
+    const configPath = path.join(USER_DATA, 'mcp', `${agentName}.federation.config.json`);
+    let servers: Record<string, unknown> = {};
+
+    if (trustTier === 'chat') {
+      servers = {};
+    } else {
+      const pythonPath = this.getPythonPath();
+      const allServers = this.getForAgent(agentName);
+      for (const server of allServers) {
+        if (BLOCKED_SERVERS.has(server.name)) continue;
+        if (trustTier === 'query' && server.name !== 'memory') continue;
+        if (trustTier === 'delegate' && server.name !== 'memory' && server.name !== 'google') continue;
+
+        let command = server.command;
+        if (server.args.length > 0 && server.args[0].endsWith('.py')) {
+          command = pythonPath;
+        }
+        const env = server.bundled !== false
+          ? this.buildServerEnv(server.name, agentName, server.env)
+          : { ...(server.env || {}) };
+
+        const entry: Record<string, unknown> = { command, args: [...server.args] };
+        if (env && Object.keys(env).length > 0) entry.env = env;
+        servers[server.name] = entry;
+      }
+    }
+
+    const configContent = { mcpServers: servers };
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    const tmp = configPath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(configContent, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, configPath);
+
+    log.info(`Built federation MCP config for "${agentName}" (tier=${trustTier}): ${Object.keys(servers).length} servers`);
+    return configPath;
+  }
+
+  /**
    * Build environment variables for a specific server.
    * Replicates the per-server env logic from inference.ts getMcpConfigPath().
    */
