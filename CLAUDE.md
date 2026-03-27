@@ -672,115 +672,111 @@ Agents can message each other via switchboard MCP tools:
 
 ---
 
-## 13. Meridian Intelligence Platform
+## 13. Meridian Eye Intelligence Platform
 
-Meridian is the defence org's intelligence platform, deployed at `worldmonitor.atrophy.app`. It is a fork of the open-source WorldMonitor project, rebranded as MERIDIAN - Defence Intelligence, with a channel system, briefing panel, and knowledge graph integration.
+Meridian Eye is the defence org's intelligence platform, deployed at `worldmonitor.atrophy.app`. A fork of the open-source WorldMonitor project, rebranded as MERIDIAN - Defence Intelligence. It combines a channel system, cinematic briefing layer, 6,326-object knowledge graph, 294 harvested articles, and 31 autonomous cron jobs into a self-sustaining intelligence pipeline. See `docs/specs/architecture/CLAUDE-meridian.md` for the full living architecture reference.
 
 ### Architecture
 
 - **Platform:** Vercel-deployed fork of WorldMonitor (vanilla TypeScript + Preact, deck.gl/MapLibre maps, 60+ Edge Functions)
-- **State:** Upstash Redis for channel state and briefing content
+- **State:** Upstash Redis for channel state, briefings, commissions
 - **Fork repo:** `~/.atrophy/services/worldmonitor/` (GitHub: `wlilley93/worldmonitor`)
 - **Auth:** `X-Channel-Key` header with `CHANNEL_API_KEY` from `~/.atrophy/.env`
 - **Domain:** `worldmonitor.atrophy.app` (CNAME via GoDaddy -> Vercel)
 
 ### Channel system
 
-Each defence org agent gets a channel - a curated view of the intelligence picture. The site opens on Montgomery's channel by default. Channels hold:
-- Map state (center, zoom, bearing, pitch, active layers, markers, highlighted regions)
-- Briefing (title, summary, body markdown, sources)
-- Alert level (normal/elevated/critical)
-- Feed filters (categories, keywords)
+10 agent channels, each a curated view of the intelligence picture. The site opens on Montgomery's combined picture by default. Channels hold map state (center, zoom, bearing, pitch, layers, markers, regions), briefings (title, summary, markdown body, sources), alert level (normal/elevated/critical), and feed filters. Agent scripts push channel state via `channel_push.py`. The cron runner passes `CHANNEL_API_KEY` as an environment variable to all scripts.
 
-Agent scripts push channel state via `channel_push.py` after producing intelligence. The cron runner passes `CHANNEL_API_KEY` as an environment variable to all scripts.
-
-### API routes (added to the fork)
-
-| Route | Method | Purpose |
-|-------|--------|---------|
-| `api/channels/list` | GET | List all channels with metadata |
-| `api/channels/[name]` | GET/PUT | Get or update channel state |
-| `api/channels/[name]/briefing` | PUT | Update briefing only |
-| `api/channels/[name]/map` | PUT | Update map state only |
-| `api/commissions` | GET/POST | Commission portal |
-| `api/commissions/[id]` | PUT | Update commission status |
-
-### Live data layer
-
-70+ channel layer names are mapped to WorldMonitor's internal data layer IDs. When a channel activates layers like `military-flights` or `acled-events`, the platform toggles the corresponding WorldMonitor data layer. This gives agents control over which data appears on their view.
+API routes: `api/channels/list` (GET), `api/channels/[name]` (GET/PUT), `api/channels/[name]/briefing` (PUT), `api/channels/[name]/map` (PUT), `api/commissions` (GET/POST), `api/commissions/[id]` (PUT).
 
 ### Ontology (intelligence.db)
 
-The knowledge graph lives in `~/.atrophy/agents/general_montgomery/data/intelligence.db`. It uses a rich ontology schema that replaced the original flat entity table.
+The knowledge graph at `~/.atrophy/agents/general_montgomery/data/intelligence.db`. Current scale:
 
-#### Core tables
+| Table | Count | Description |
+|-------|-------|-------------|
+| objects | 6,326 | Typed entities across 11 types |
+| links | 7,218 | Typed relationships with provenance (20 link types) |
+| properties | 28,988 | Key-value pairs with confidence, source, temporal validity |
+| changelog | 24,681 | Full audit trail of all ontology mutations |
+| articles | 294 | Harvested from 7 RSS feeds + browser scraping |
+| vectors | 5,059 | TF-IDF 384-dim embeddings for semantic search |
 
-**`objects`** - Everything is an object with a type. 543+ objects seeded.
-- Types: person, organization, faction, country, location, platform, unit, event, document
-- Fields: type, subtype, name, aliases (JSON), status, lat/lon, country_code, first_seen, last_seen
+Object types: location (1,782), organization (1,519), event (1,017), document (469), platform (465), person (448), country (263), faction (184), financial_instrument, region, indicator.
 
-**`properties`** - Key-value with provenance. 2285+ properties.
-- Fields: object_id, key, value, value_type, confidence, source, valid_from, valid_to
-- Source format: `worldmonitor:acled`, `brief:34`, `seed:restcountries`, etc.
+Link types (20): leads, commands, member_of, located_at, operates, deployed_to, allied_with, opposes, funds, arms, sanctions, participated_in, targets, mediates, trades_with, subsidiary_of, borders, controls, hosts, produced_by.
 
-**`links`** - Typed relationships with provenance. 254+ links.
-- Types: leads, commands, member_of, located_at, operates, deployed_to, allied_with, opposes, funds, arms, sanctions, participated_in, targets, mediates, trades_with, subsidiary_of, borders, controls, hosts, produced_by
-- Fields: from_id, to_id, type, subtype, description, confidence, source, valid_from, valid_to
+The ontology auto-grows via three pipelines:
+1. **WorldMonitor ingestion** - `ontology_ingest.py` processes API responses (8 typed ingestors for flights, ACLED, AIS, GPS jamming, OREF, thermal, news, economic data)
+2. **Article harvesting** - `article_harvest.py` pulls from 7 RSS feeds (ICG, Atlantic Council, MEE, Al-Monitor, Carnegie, Stimson, War on the Rocks, Foreign Policy, Foreign Affairs) + browser scraper for blocked sources. `article_to_ontology.py` extracts entities and relationships via Claude Haiku.
+3. **Daily expansion** - `ontology_expand.py` uses Haiku to enrich sparse objects and grow coverage
 
-**`changelog`** - Full audit trail of all ontology changes.
-- Fields: object_id, table_name, record_id, action, field, old_value, new_value, source, agent
+### Vector search and research context
 
-**`brief_objects`** - Brief-to-object linking with relevance scoring.
+TF-IDF 384-dim vectors across 5,059 documents (articles + briefs + ontology descriptions). `vectorize_articles.py` runs every 4 hours. `research_context.py` assembles relevant articles + briefs + objects for brief generation via semantic retrieval.
 
-#### Auto-ingestion pipeline
+### Briefing layer
 
-8 typed ingestors in `ontology_ingest.py` extract objects and links from WorldMonitor API responses:
-- Military flights -> platform objects (aircraft) with position properties
-- ACLED events -> event objects with actor factions and locations
-- AIS maritime -> platform objects (vessels) with position properties
-- GPS jamming -> event objects (jamming zones)
-- OREF alerts -> event objects (missile/rocket alerts)
-- Thermal escalations -> event objects (thermal anomalies)
-- News digest -> entity extraction via LLM
-- Bootstrap/economic -> country property updates
+The full pipeline: WorldMonitor feeds -> ontology ingestion -> article harvesting -> vectorization -> research_context assembly -> brief generation (grounded in context) -> channel push to platform. Each brief triggers prediction extraction, timeline updates, relationship extraction, entity linking, and optional red team review.
 
-Called from `worldmonitor_poll.py` after each tier poll, and from the brief publication pipeline.
+### MCP ontology tools
 
-#### Seeding
+7 tools in the `ontology` action group of `mcp/memory_server.py`:
 
-Objects are seeded from multiple sources:
-- REST Countries API + World Bank (all countries with population, GDP, government type, capital)
-- Leaders extracted from country data
-- Military units, weapons systems, bases, chokepoints, infrastructure from structured seed scripts
-- Full government org charts for key countries
+| Tool | Description |
+|------|-------------|
+| `ontology.search` | Full-text search across objects by name, type, country, or query |
+| `ontology.get_object` | Full dossier - properties, links, changelog, related briefs |
+| `ontology.get_network` | Ego network - all first-hop relationships |
+| `ontology.find_connections` | Path-finding between two objects (1-2 hops) |
+| `ontology.recent_events` | Latest events by type, region, or time window |
+| `ontology.country_profile` | Full country dossier - government, economy, military |
+| `ontology.statistics` | Ontology counts, coverage metrics |
 
 ### Intelligence capabilities (14 systems)
 
 | # | System | Description |
 |---|--------|-------------|
-| 1 | Prediction Ledger | 40 predictions extracted from briefs, 30-day auto-review cycle |
-| 2 | Cross-Agent Synthesis | Nightly convergence report across all domains |
-| 3 | Source Health Dashboard | 39 sources monitored every 6 hours |
-| 4 | Entity Resolution | Deduplicated 134->88 entities, 204 brief-entity links |
-| 5 | Temporal Situation Tracking | 50 timeline entries across 6 conflicts |
-| 6 | Automated Relationship Extraction | 80+ relationships, hourly cron |
-| 7 | Commission Portal | Two-way sync between intelligence.db and platform |
-| 8 | Systematic Red Team Review | Adversarial challenge on high-priority briefs |
-| 9 | Live Data Layer | Channel-driven layer activation (70 layer mappings) |
-| 10 | Briefing Audio | ElevenLabs TTS with Montgomery's voice |
+| 1 | Prediction Ledger | Predictions extracted from briefs, 30-day auto-review cycle |
+| 2 | Cross-Agent Synthesis | Nightly convergence report identifying cross-domain patterns |
+| 3 | Source Health Dashboard | 39 sources monitored every 6 hours for availability and freshness |
+| 4 | Entity Resolution | Haiku-driven deduplication, alias population, brief-entity linking |
+| 5 | Temporal Situation Tracking | Timeline entries per active conflict with trajectory assessment |
+| 6 | Automated Relationship Extraction | Hourly extraction of typed relationships from briefs via Haiku |
+| 7 | Commission Portal | Two-way sync between intelligence.db and platform for gap tasking |
+| 8 | Systematic Red Team Review | Four-part adversarial challenge on high-priority briefs |
+| 9 | Live Data Layer | Channel-driven activation of 70+ WorldMonitor data layers |
+| 10 | Briefing Audio | ElevenLabs TTS briefing narration |
 | 11 | Agent Performance Metrics | Monthly review across 7 categories |
-| 12 | Geofencing | 8 watch zones with haversine alerting |
-| 13 | Structured Intelligence Products | 8 templates (SITREP, FLASH, WARNING, INTSUM, etc.) |
-| 14 | Multi-Source Verification | Corroboration scoring for key claims |
+| 12 | Geofencing | 8 watch zones with haversine distance alerting |
+| 13 | Structured Intelligence Products | 8 templates (SITREP, FLASH, WARNING, INTSUM, PROFILE, WEEKLY_DIGEST, ASSESSMENT, SYNTHESIS) |
+| 14 | Multi-Source Verification | Cross-reference claims against multiple sources, assign corroboration score |
+
+### 31 cron jobs
+
+**Montgomery:** worldmonitor_fast (15m), worldmonitor_medium (45m), worldmonitor_slow (4h), dashboard_refresh (15m), dashboard_brief (4h), article_harvest (4h), vectorize (4h), ontology_expand (daily 03:00), ship_track_alert (30m), flash_report (15m), weekly_digest (Mon 07:00), weekly_conflicts (Mon 08:00), parliamentary_monitor (weekdays 08:00), competitor_scan (weekdays 09:00), process_audit (1st Mon 10:00).
+
+**Shared:** source_health (6h), cross_agent_synthesis (daily 02:00), commission_sync (30m), geofence_check (15m), relationship_extract (hourly), prediction_review (monthly), agent_metrics (monthly), entity_enrichment (daily 04:00).
+
+**Research Fellows:** rf_uk_defence (Thu 06:00), rf_european_security (Thu 06:00), rf_russia_ukraine (weekdays 06:30), rf_gulf_iran_israel (1st of month 07:00), rf_indo_pacific (Fri 06:00).
+
+**Other agents:** librarian/entity_resolve (hourly), sigint_analyst/sigint_cycle (15m), economic_io/economic_scan (4h).
 
 ### Personal scripts
 
-Intelligence scripts that contain operational data (watch zones, source lists, seed data) live in `~/.atrophy/scripts/` rather than the repo. The cron runner checks this directory first, falling back to the bundle. 18 scripts are gitignored. The `PYTHONPATH` env passed to cron jobs includes `~/.atrophy/scripts/` so personal scripts can import shared modules.
+Intelligence scripts containing operational data live in `~/.atrophy/scripts/` (gitignored). The cron runner checks `~/.atrophy/scripts/agents/<path>` first, falling back to the bundle. `PYTHONPATH` includes `~/.atrophy/scripts/` so personal scripts can import shared modules. 20+ scripts including ontology_ingest, article_harvest, article_to_ontology, vectorize_articles, research_context, channel_push, and all intelligence capability scripts.
+
+### Site redesign (specced, not yet built)
+
+Full 1,051-line spec at `docs/superpowers/specs/2026-03-27-meridian-site-redesign.md`. Vision: game-style 3D globe with cinematic briefings (letterbox bars, camera sweeps, unit animations, voice narration), fog of war, unit figurines, territory control, convergence rings, entity glow, time scrub, and an in-map chat interface.
 
 ### Related docs
 
-- `docs/agents/general_montgomery/MERIDIAN-HANDOVER.md` - System handover doc with full job schedule
+- `docs/specs/architecture/CLAUDE-meridian.md` - Living architecture reference (schema, data flow, cron schedule, MCP tools, file locations)
+- `docs/meridian-platform.md` - Platform reference
+- `docs/ontology-reference.md` - Ontology reference
 - `docs/superpowers/specs/2026-03-27-worldmonitor-integration-design.md` - Platform design spec
 - `docs/superpowers/specs/2026-03-27-meridian-ontology-design.md` - Ontology schema spec
 - `docs/superpowers/specs/2026-03-27-meridian-improvements-spec.md` - 14 capability specs
-- `docs/specs/architecture/CLAUDE-meridian.md` - Living architecture reference
+- `docs/superpowers/specs/2026-03-27-meridian-site-redesign.md` - Site redesign vision

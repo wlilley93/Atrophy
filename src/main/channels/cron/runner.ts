@@ -127,7 +127,13 @@ export async function runJob(
       ...process.env as Record<string, string>,
       PATH: `${pythonBinDir}:/usr/local/bin:/usr/bin:/bin`,
       AGENT: agentName,
-      PYTHONPATH: `${path.join(USER_DATA, 'scripts')}:${BUNDLE_ROOT}:${path.join(USER_DATA, 'src')}`,
+      PYTHONPATH: [
+        path.join(USER_DATA, 'scripts', 'agents'),
+        path.join(USER_DATA, 'scripts'),
+        path.join(BUNDLE_ROOT, 'scripts', 'agents'),
+        BUNDLE_ROOT,
+        path.join(USER_DATA, 'src'),
+      ].join(':'),
       CHANNEL_API_KEY: process.env.CHANNEL_API_KEY || '',
     };
 
