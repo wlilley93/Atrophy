@@ -150,8 +150,25 @@ export function extractEntities(text: string): ExtractedEntity[] {
 // ---------------------------------------------------------------------------
 
 /**
+ * Map entity-extract types to ontology object types.
+ * The entities table uses 'country' for locations, but the objects table
+ * uses 'country' for sovereign states and 'location' for other places.
+ * For auto-extraction we keep 'country' since we only extract known countries.
+ */
+const ENTITY_TYPE_TO_OBJECT_TYPE: Record<string, string> = {
+  person: 'person',
+  organization: 'organization',
+  country: 'country',
+};
+
+/**
  * File extracted entities to the agent's intelligence.db.
- * Uses INSERT OR IGNORE to skip duplicates.
+ * Dual-writes to both the legacy `entities` table and the new `objects`
+ * ontology table so new entities from conversations flow into the
+ * knowledge graph.
+ *
+ * Uses INSERT OR IGNORE for entities (legacy) and existence checks for
+ * objects (ontology) to avoid duplicates.
  * Only runs for agents that have an intelligence.db.
  */
 export function fileEntities(agentName: string, text: string): number {
@@ -165,12 +182,13 @@ export function fileEntities(agentName: string, text: string): number {
   if (entities.length === 0) return 0;
 
   let filed = 0;
+  let ontologyFiled = 0;
   let db: Database.Database | null = null;
   try {
     db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
 
-    // Ensure entities table exists (it should, but be safe)
+    // Ensure legacy entities table exists (it should, but be safe)
     db.exec(`
       CREATE TABLE IF NOT EXISTS entities (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,10 +207,26 @@ export function fileEntities(agentName: string, text: string): number {
     db.exec('CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type)');
 
-    const insert = db.prepare(
+    const insertLegacy = db.prepare(
       `INSERT OR IGNORE INTO entities (name, type, description, created_at)
        VALUES (?, ?, 'auto-extracted', datetime('now'))`,
     );
+
+    // Check if objects table exists (ontology schema) for dual-write
+    const hasObjectsTable = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='objects'",
+    ).get();
+
+    // Prepare ontology statements if objects table exists
+    const checkObject = hasObjectsTable
+      ? db.prepare('SELECT id FROM objects WHERE name = ? AND type = ?')
+      : null;
+    const insertObject = hasObjectsTable
+      ? db.prepare(
+          `INSERT INTO objects (type, name, description, first_seen, last_seen, created_at, updated_at)
+           VALUES (?, ?, 'auto-extracted from conversation', datetime('now'), datetime('now'), datetime('now'), datetime('now'))`,
+        )
+      : null;
 
     // Guard against template/placeholder values leaking in as entity names
     const INVALID_NAMES = new Set(['entity name', 'string', 'name', 'example', 'null', 'undefined', 'test']);
@@ -200,8 +234,20 @@ export function fileEntities(agentName: string, text: string): number {
     const insertMany = db.transaction((items: ExtractedEntity[]) => {
       for (const e of items) {
         if (INVALID_NAMES.has(e.name.toLowerCase())) continue;
-        const result = insert.run(e.name, e.type);
+
+        // Legacy entities table
+        const result = insertLegacy.run(e.name, e.type);
         if (result.changes > 0) filed++;
+
+        // Ontology objects table (dual-write)
+        if (checkObject && insertObject) {
+          const objectType = ENTITY_TYPE_TO_OBJECT_TYPE[e.type] || e.type;
+          const existing = checkObject.get(e.name, objectType);
+          if (!existing) {
+            insertObject.run(objectType, e.name);
+            ontologyFiled++;
+          }
+        }
       }
     });
 
@@ -212,9 +258,11 @@ export function fileEntities(agentName: string, text: string): number {
     try { db?.close(); } catch { /* */ }
   }
 
-  if (filed > 0) {
-    log.info(`[${agentName}] filed ${filed} new entities (${entities.length} extracted)`);
+  if (filed > 0 || ontologyFiled > 0) {
+    log.info(
+      `[${agentName}] filed ${filed} legacy + ${ontologyFiled} ontology entities (${entities.length} extracted)`,
+    );
   }
 
-  return filed;
+  return filed + ontologyFiled;
 }

@@ -532,6 +532,49 @@ TOOLS = [
             "required": ["action"],
         },
     },
+    # ── Group 12: ontology - Knowledge graph queries ──
+    {
+        "name": "ontology",
+        "description": (
+            "Query the Meridian intelligence ontology - a knowledge graph of people, "
+            "organisations, countries, military platforms, factions, events, and their "
+            "relationships. Actions: search (find objects by name/type), get_object "
+            "(full detail for one object), get_network (ego graph of relationships), "
+            "find_connections (shortest path between two objects), recent_events "
+            "(latest events by region/type), country_profile (comprehensive country "
+            "dossier), statistics (ontology counts and coverage)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "search", "get_object", "get_network", "find_connections",
+                        "recent_events", "country_profile", "statistics",
+                    ],
+                },
+                "query": {"type": "string", "description": "Search term (for search)"},
+                "type": {
+                    "type": "string",
+                    "description": "Object type filter (for search)",
+                    "enum": ["person", "organization", "country", "location", "platform", "unit", "event", "faction", "document"],
+                },
+                "object_id": {"type": "integer", "description": "Object ID (for get_object, get_network)"},
+                "name": {"type": "string", "description": "Object name (for get_object, find_connections)"},
+                "depth": {"type": "integer", "description": "Network traversal depth 1-2 (for get_network, default 1)", "default": 1},
+                "from_name": {"type": "string", "description": "Source object name (for find_connections)"},
+                "to_name": {"type": "string", "description": "Target object name (for find_connections)"},
+                "max_hops": {"type": "integer", "description": "Max path length (for find_connections, default 3)", "default": 3},
+                "days": {"type": "integer", "description": "Lookback period in days (for recent_events, default 7)", "default": 7},
+                "event_type": {"type": "string", "description": "Event subtype filter (for recent_events)"},
+                "country": {"type": "string", "description": "Country name filter (for recent_events)"},
+                "country_name": {"type": "string", "description": "Country name (for country_profile)"},
+                "limit": {"type": "integer", "description": "Max results (default 20)", "default": 20},
+            },
+            "required": ["action"],
+        },
+    },
 ]
 
 # ── Custom tool loading ──
@@ -620,6 +663,22 @@ def _org_connect():
     if not ORG_DB_PATH or not os.path.exists(ORG_DB_PATH):
         return None
     conn = sqlite3.connect(ORG_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+# Intelligence DB path - lives alongside memory.db in the agent's data dir
+INTELLIGENCE_DB_PATH = os.path.join(DATA_DIR, "intelligence.db")
+
+
+def _intel_connect():
+    """Connect to the agent's intelligence/ontology database.
+
+    Returns None if the agent doesn't have an intelligence.db.
+    """
+    if not os.path.exists(INTELLIGENCE_DB_PATH):
+        return None
+    conn = sqlite3.connect(INTELLIGENCE_DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -3858,6 +3917,658 @@ def _init_org_db(slug):
     conn.close()
 
 
+# ── Ontology handlers ──
+
+
+def handle_ontology_search(args):
+    """Search objects by name, type, or description."""
+    conn = _intel_connect()
+    if not conn:
+        return "No intelligence database found for this agent."
+    try:
+        query = args.get("query", "")
+        obj_type = args.get("type")
+        limit = min(args.get("limit", 20), 50)
+
+        if not query:
+            return "Error: 'query' is required for ontology search."
+
+        like = f"%{query}%"
+        if obj_type:
+            rows = conn.execute(
+                "SELECT id, type, subtype, name, status, description, lat, lon, country_code "
+                "FROM objects WHERE type = ? AND (name LIKE ? OR description LIKE ? "
+                "OR aliases LIKE ?) ORDER BY name LIMIT ?",
+                (obj_type, like, like, like, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, type, subtype, name, status, description, lat, lon, country_code "
+                "FROM objects WHERE name LIKE ? OR description LIKE ? "
+                "OR aliases LIKE ? ORDER BY name LIMIT ?",
+                (like, like, like, limit),
+            ).fetchall()
+
+        if not rows:
+            return f"No objects found matching '{query}'" + (f" (type={obj_type})" if obj_type else "")
+
+        results = [f"### Ontology search: '{query}' ({len(rows)} results)\n"]
+        for r in rows:
+            line = f"**{r['name']}** (id={r['id']}, {r['type']}"
+            if r["subtype"]:
+                line += f"/{r['subtype']}"
+            line += f", status={r['status']})"
+            if r["description"]:
+                line += f"\n  {r['description'][:200]}"
+            if r["lat"] and r["lon"]:
+                line += f"\n  Location: {r['lat']:.4f}, {r['lon']:.4f}"
+            if r["country_code"]:
+                line += f" [{r['country_code']}]"
+
+            # Fetch top properties for each result
+            props = conn.execute(
+                "SELECT key, value FROM properties WHERE object_id = ? "
+                "ORDER BY confidence DESC LIMIT 5",
+                (r["id"],),
+            ).fetchall()
+            if props:
+                prop_strs = [f"{p['key']}={p['value'][:80]}" for p in props]
+                line += f"\n  Props: {', '.join(prop_strs)}"
+
+            results.append(line)
+
+        return "\n\n".join(results)
+    except Exception as e:
+        return f"Error in ontology search: {e}"
+    finally:
+        conn.close()
+
+
+def handle_ontology_get_object(args):
+    """Get full details for a specific object including properties, links, and briefs."""
+    conn = _intel_connect()
+    if not conn:
+        return "No intelligence database found for this agent."
+    try:
+        object_id = args.get("object_id")
+        name = args.get("name")
+
+        if not object_id and not name:
+            return "Error: provide either 'object_id' or 'name'."
+
+        if object_id:
+            obj = conn.execute(
+                "SELECT * FROM objects WHERE id = ?", (object_id,)
+            ).fetchone()
+        else:
+            obj = conn.execute(
+                "SELECT * FROM objects WHERE name = ? OR name LIKE ?",
+                (name, f"%{name}%"),
+            ).fetchone()
+
+        if not obj:
+            return f"Object not found: {object_id or name}"
+
+        oid = obj["id"]
+        lines = [f"### {obj['name']} (id={oid})"]
+        lines.append(f"**Type**: {obj['type']}" + (f"/{obj['subtype']}" if obj["subtype"] else ""))
+        lines.append(f"**Status**: {obj['status']}")
+        if obj["description"]:
+            lines.append(f"**Description**: {obj['description']}")
+        if obj["aliases"]:
+            lines.append(f"**Aliases**: {obj['aliases']}")
+        if obj["lat"] and obj["lon"]:
+            lines.append(f"**Location**: {obj['lat']:.4f}, {obj['lon']:.4f}")
+        if obj["country_code"]:
+            lines.append(f"**Country code**: {obj['country_code']}")
+        lines.append(f"**First seen**: {obj['first_seen']} | **Last seen**: {obj['last_seen']}")
+
+        # Properties
+        props = conn.execute(
+            "SELECT key, value, value_type, confidence, source, valid_from, valid_to "
+            "FROM properties WHERE object_id = ? ORDER BY key",
+            (oid,),
+        ).fetchall()
+        if props:
+            lines.append(f"\n**Properties** ({len(props)}):")
+            for p in props:
+                pline = f"- {p['key']}: {p['value']}"
+                if p["confidence"] and p["confidence"] < 1.0:
+                    pline += f" (conf={p['confidence']:.2f})"
+                if p["source"]:
+                    pline += f" [src: {p['source']}]"
+                lines.append(pline)
+
+        # Outgoing links
+        out_links = conn.execute(
+            "SELECT l.type, l.subtype, l.description, l.confidence, l.source, "
+            "o.id as target_id, o.name as target_name, o.type as target_type "
+            "FROM links l JOIN objects o ON l.to_id = o.id "
+            "WHERE l.from_id = ? ORDER BY l.type",
+            (oid,),
+        ).fetchall()
+        if out_links:
+            lines.append(f"\n**Outgoing links** ({len(out_links)}):")
+            for lk in out_links:
+                desc = f" - {lk['description']}" if lk["description"] else ""
+                lines.append(f"- --[{lk['type']}]--> {lk['target_name']} ({lk['target_type']}){desc}")
+
+        # Incoming links
+        in_links = conn.execute(
+            "SELECT l.type, l.subtype, l.description, l.confidence, l.source, "
+            "o.id as source_id, o.name as source_name, o.type as source_type "
+            "FROM links l JOIN objects o ON l.from_id = o.id "
+            "WHERE l.to_id = ? ORDER BY l.type",
+            (oid,),
+        ).fetchall()
+        if in_links:
+            lines.append(f"\n**Incoming links** ({len(in_links)}):")
+            for lk in in_links:
+                desc = f" - {lk['description']}" if lk["description"] else ""
+                lines.append(f"- {lk['source_name']} ({lk['source_type']}) --[{lk['type']}]--> this{desc}")
+
+        # Related briefs
+        briefs = conn.execute(
+            "SELECT b.id, b.title, b.date, b.product_type, bo.relevance "
+            "FROM brief_objects bo JOIN briefs b ON bo.brief_id = b.id "
+            "WHERE bo.object_id = ? ORDER BY b.date DESC LIMIT 10",
+            (oid,),
+        ).fetchall()
+        if briefs:
+            lines.append(f"\n**Related briefs** ({len(briefs)}):")
+            for br in briefs:
+                lines.append(f"- [{br['date']}] {br['title']} (id={br['id']}, {br['product_type']}, relevance={br['relevance']})")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error getting object: {e}"
+    finally:
+        conn.close()
+
+
+def handle_ontology_get_network(args):
+    """Get an object's relationship network (ego graph) up to depth hops."""
+    conn = _intel_connect()
+    if not conn:
+        return "No intelligence database found for this agent."
+    try:
+        object_id = args.get("object_id")
+        name = args.get("name")
+        depth = min(args.get("depth", 1), 2)
+
+        if not object_id and not name:
+            return "Error: provide either 'object_id' or 'name'."
+
+        if not object_id:
+            row = conn.execute("SELECT id FROM objects WHERE name = ? OR name LIKE ?", (name, f"%{name}%")).fetchone()
+            if not row:
+                return f"Object not found: {name}"
+            object_id = row["id"]
+
+        center = conn.execute("SELECT id, name, type, subtype FROM objects WHERE id = ?", (object_id,)).fetchone()
+        if not center:
+            return f"Object ID {object_id} not found."
+
+        # BFS traversal
+        visited = {object_id}
+        frontier = {object_id}
+        nodes = {object_id: {"id": center["id"], "name": center["name"], "type": center["type"], "subtype": center["subtype"], "depth": 0}}
+        edges = []
+
+        for d in range(1, depth + 1):
+            next_frontier = set()
+            for nid in frontier:
+                # Outgoing
+                for lk in conn.execute(
+                    "SELECT l.from_id, l.to_id, l.type, l.subtype, l.confidence, "
+                    "o.id as oid, o.name, o.type as otype, o.subtype as osubtype "
+                    "FROM links l JOIN objects o ON l.to_id = o.id WHERE l.from_id = ?",
+                    (nid,),
+                ).fetchall():
+                    edges.append({"from": nid, "to": lk["oid"], "type": lk["type"], "subtype": lk["subtype"]})
+                    if lk["oid"] not in visited:
+                        visited.add(lk["oid"])
+                        next_frontier.add(lk["oid"])
+                        nodes[lk["oid"]] = {"id": lk["oid"], "name": lk["name"], "type": lk["otype"], "subtype": lk["osubtype"], "depth": d}
+
+                # Incoming
+                for lk in conn.execute(
+                    "SELECT l.from_id, l.to_id, l.type, l.subtype, l.confidence, "
+                    "o.id as oid, o.name, o.type as otype, o.subtype as osubtype "
+                    "FROM links l JOIN objects o ON l.from_id = o.id WHERE l.to_id = ?",
+                    (nid,),
+                ).fetchall():
+                    edges.append({"from": lk["oid"], "to": nid, "type": lk["type"], "subtype": lk["subtype"]})
+                    if lk["oid"] not in visited:
+                        visited.add(lk["oid"])
+                        next_frontier.add(lk["oid"])
+                        nodes[lk["oid"]] = {"id": lk["oid"], "name": lk["name"], "type": lk["otype"], "subtype": lk["osubtype"], "depth": d}
+
+            frontier = next_frontier
+
+        # Deduplicate edges
+        seen_edges = set()
+        unique_edges = []
+        for e in edges:
+            key = (e["from"], e["to"], e["type"])
+            if key not in seen_edges:
+                seen_edges.add(key)
+                unique_edges.append(e)
+
+        lines = [f"### Network for {center['name']} (depth={depth})"]
+        lines.append(f"**Nodes**: {len(nodes)} | **Edges**: {len(unique_edges)}\n")
+
+        lines.append("**Nodes:**")
+        for n in sorted(nodes.values(), key=lambda x: (x["depth"], x["name"])):
+            d_marker = f"[d={n['depth']}]" if n["depth"] > 0 else "[center]"
+            lines.append(f"- {d_marker} {n['name']} ({n['type']}" + (f"/{n['subtype']}" if n["subtype"] else "") + ")")
+
+        lines.append("\n**Edges:**")
+        for e in unique_edges:
+            from_name = nodes.get(e["from"], {}).get("name", f"#{e['from']}")
+            to_name = nodes.get(e["to"], {}).get("name", f"#{e['to']}")
+            lines.append(f"- {from_name} --[{e['type']}]--> {to_name}")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error getting network: {e}"
+    finally:
+        conn.close()
+
+
+def handle_ontology_find_connections(args):
+    """Find shortest path between two objects via BFS through links."""
+    conn = _intel_connect()
+    if not conn:
+        return "No intelligence database found for this agent."
+    try:
+        from_name = args.get("from_name")
+        to_name = args.get("to_name")
+        max_hops = min(args.get("max_hops", 3), 5)
+
+        if not from_name or not to_name:
+            return "Error: both 'from_name' and 'to_name' are required."
+
+        # Resolve names to IDs
+        src = conn.execute("SELECT id, name FROM objects WHERE name = ? OR name LIKE ?", (from_name, f"%{from_name}%")).fetchone()
+        tgt = conn.execute("SELECT id, name FROM objects WHERE name = ? OR name LIKE ?", (to_name, f"%{to_name}%")).fetchone()
+
+        if not src:
+            return f"Source object not found: {from_name}"
+        if not tgt:
+            return f"Target object not found: {to_name}"
+
+        if src["id"] == tgt["id"]:
+            return f"Source and target are the same object: {src['name']}"
+
+        # BFS for shortest path
+        # parent tracks: {node_id: (parent_id, link_type, direction)}
+        parent = {src["id"]: None}
+        queue = [src["id"]]
+        found = False
+
+        for _ in range(max_hops):
+            next_queue = []
+            for nid in queue:
+                # Outgoing links
+                for lk in conn.execute(
+                    "SELECT to_id, type FROM links WHERE from_id = ?", (nid,)
+                ).fetchall():
+                    if lk["to_id"] not in parent:
+                        parent[lk["to_id"]] = (nid, lk["type"], "->")
+                        next_queue.append(lk["to_id"])
+                        if lk["to_id"] == tgt["id"]:
+                            found = True
+                            break
+                # Incoming links
+                if not found:
+                    for lk in conn.execute(
+                        "SELECT from_id, type FROM links WHERE to_id = ?", (nid,)
+                    ).fetchall():
+                        if lk["from_id"] not in parent:
+                            parent[lk["from_id"]] = (nid, lk["type"], "<-")
+                            next_queue.append(lk["from_id"])
+                            if lk["from_id"] == tgt["id"]:
+                                found = True
+                                break
+                if found:
+                    break
+            if found:
+                break
+            queue = next_queue
+            if not queue:
+                break
+
+        if not found:
+            return f"No connection found between '{src['name']}' and '{tgt['name']}' within {max_hops} hops."
+
+        # Reconstruct path
+        path_ids = []
+        current = tgt["id"]
+        while current is not None:
+            path_ids.append(current)
+            entry = parent.get(current)
+            if entry is None:
+                break
+            current = entry[0]
+        path_ids.reverse()
+
+        # Build display
+        lines = [f"### Connection: {src['name']} -> {tgt['name']} ({len(path_ids) - 1} hops)\n"]
+
+        for i, pid in enumerate(path_ids):
+            obj = conn.execute("SELECT id, name, type FROM objects WHERE id = ?", (pid,)).fetchone()
+            if i < len(path_ids) - 1:
+                next_id = path_ids[i + 1]
+                entry = parent.get(next_id)
+                if entry and entry[0] == pid:
+                    link_type = entry[1]
+                    direction = entry[2]
+                else:
+                    # Check reverse
+                    entry = parent.get(pid)
+                    link_type = entry[1] if entry else "?"
+                    direction = entry[2] if entry else "->"
+                lines.append(f"  {obj['name']} ({obj['type']})")
+                if direction == "->":
+                    lines.append(f"    --[{link_type}]-->")
+                else:
+                    lines.append(f"    <--[{link_type}]--")
+            else:
+                lines.append(f"  {obj['name']} ({obj['type']})")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error finding connections: {e}"
+    finally:
+        conn.close()
+
+
+def handle_ontology_recent_events(args):
+    """Get recent events, optionally filtered by region or type."""
+    conn = _intel_connect()
+    if not conn:
+        return "No intelligence database found for this agent."
+    try:
+        days = args.get("days", 7)
+        event_type = args.get("event_type")
+        country = args.get("country")
+        limit = min(args.get("limit", 20), 50)
+
+        query = "SELECT id, name, subtype, description, lat, lon, country_code, first_seen FROM objects WHERE type = 'event'"
+        params = []
+
+        if event_type:
+            query += " AND subtype = ?"
+            params.append(event_type)
+
+        if country:
+            # Match by country_code or by country name in properties
+            query += " AND (country_code = ? OR id IN (SELECT object_id FROM properties WHERE key = 'country' AND value LIKE ?))"
+            params.append(country)
+            params.append(f"%{country}%")
+
+        query += f" AND first_seen >= datetime('now', '-{int(days)} days')"
+        query += " ORDER BY first_seen DESC LIMIT ?"
+        params.append(limit)
+
+        rows = conn.execute(query, params).fetchall()
+
+        if not rows:
+            return f"No events found in the last {days} days" + (f" (type={event_type})" if event_type else "") + (f" (country={country})" if country else "")
+
+        lines = [f"### Recent events ({len(rows)} in last {days} days)\n"]
+        for r in rows:
+            line = f"**{r['name']}**"
+            if r["subtype"]:
+                line += f" [{r['subtype']}]"
+            line += f" - {r['first_seen']}"
+            if r["description"]:
+                line += f"\n  {r['description'][:200]}"
+            if r["lat"] and r["lon"]:
+                line += f"\n  Location: {r['lat']:.4f}, {r['lon']:.4f}"
+            if r["country_code"]:
+                line += f" [{r['country_code']}]"
+
+            # Get participants via links
+            participants = conn.execute(
+                "SELECT o.name, o.type, l.type as link_type FROM links l "
+                "JOIN objects o ON l.from_id = o.id "
+                "WHERE l.to_id = ? AND l.type IN ('participated_in', 'targets', 'controls')",
+                (r["id"],),
+            ).fetchall()
+            if not participants:
+                # Check reverse direction too
+                participants = conn.execute(
+                    "SELECT o.name, o.type, l.type as link_type FROM links l "
+                    "JOIN objects o ON l.to_id = o.id "
+                    "WHERE l.from_id = ? AND l.type IN ('participated_in', 'targets', 'controls')",
+                    (r["id"],),
+                ).fetchall()
+            if participants:
+                parts = [f"{p['name']} ({p['link_type']})" for p in participants]
+                line += f"\n  Participants: {', '.join(parts)}"
+
+            lines.append(line)
+
+        return "\n\n".join(lines)
+    except Exception as e:
+        return f"Error getting recent events: {e}"
+    finally:
+        conn.close()
+
+
+def handle_ontology_country_profile(args):
+    """Get a comprehensive country profile - properties, leadership, military, alliances, conflicts."""
+    conn = _intel_connect()
+    if not conn:
+        return "No intelligence database found for this agent."
+    try:
+        country_name = args.get("country_name") or args.get("name")
+        if not country_name:
+            return "Error: 'country_name' is required."
+
+        obj = conn.execute(
+            "SELECT * FROM objects WHERE type = 'country' AND (name = ? OR name LIKE ? OR aliases LIKE ?)",
+            (country_name, f"%{country_name}%", f"%{country_name}%"),
+        ).fetchone()
+
+        if not obj:
+            return f"Country not found: {country_name}"
+
+        oid = obj["id"]
+        lines = [f"### Country Profile: {obj['name']}"]
+        if obj["description"]:
+            lines.append(f"{obj['description']}")
+        if obj["country_code"]:
+            lines.append(f"**Country code**: {obj['country_code']}")
+
+        # All properties
+        props = conn.execute(
+            "SELECT key, value, confidence, source FROM properties WHERE object_id = ? ORDER BY key",
+            (oid,),
+        ).fetchall()
+        if props:
+            lines.append(f"\n**Properties** ({len(props)}):")
+            for p in props:
+                pline = f"- **{p['key']}**: {p['value']}"
+                if p["source"]:
+                    pline += f" [src: {p['source']}]"
+                lines.append(pline)
+
+        # Leaders (people who lead this country)
+        leaders = conn.execute(
+            "SELECT o.id, o.name, o.subtype, l.description FROM links l "
+            "JOIN objects o ON l.from_id = o.id "
+            "WHERE l.to_id = ? AND l.type = 'leads' AND o.type = 'person'",
+            (oid,),
+        ).fetchall()
+        if leaders:
+            lines.append(f"\n**Leadership** ({len(leaders)}):")
+            for ld in leaders:
+                desc = f" - {ld['description']}" if ld["description"] else ""
+                sub = f" ({ld['subtype']})" if ld["subtype"] else ""
+                lines.append(f"- {ld['name']}{sub}{desc}")
+
+        # Military units
+        units = conn.execute(
+            "SELECT o.id, o.name, o.subtype FROM links l "
+            "JOIN objects o ON l.from_id = o.id "
+            "WHERE l.to_id = ? AND l.type IN ('member_of', 'subsidiary_of', 'deployed_to') "
+            "AND o.type IN ('unit', 'platform', 'organization')",
+            (oid,),
+        ).fetchall()
+        if not units:
+            # Try reverse direction
+            units = conn.execute(
+                "SELECT o.id, o.name, o.subtype FROM links l "
+                "JOIN objects o ON l.to_id = o.id "
+                "WHERE l.from_id = ? AND l.type IN ('operates', 'controls', 'hosts') "
+                "AND o.type IN ('unit', 'platform', 'organization')",
+                (oid,),
+            ).fetchall()
+        if units:
+            lines.append(f"\n**Military / Security** ({len(units)}):")
+            for u in units:
+                sub = f" ({u['subtype']})" if u["subtype"] else ""
+                lines.append(f"- {u['name']}{sub}")
+
+        # Alliances and memberships
+        alliances = conn.execute(
+            "SELECT o.id, o.name, o.type as otype, l.type as link_type FROM links l "
+            "JOIN objects o ON l.to_id = o.id "
+            "WHERE l.from_id = ? AND l.type IN ('member_of', 'allied_with')",
+            (oid,),
+        ).fetchall()
+        if alliances:
+            lines.append(f"\n**Alliances / Memberships** ({len(alliances)}):")
+            for a in alliances:
+                lines.append(f"- {a['name']} ({a['link_type']})")
+
+        # Conflicts and tensions
+        conflicts = conn.execute(
+            "SELECT o.id, o.name, l.type as link_type, l.description FROM links l "
+            "JOIN objects o ON l.to_id = o.id "
+            "WHERE l.from_id = ? AND l.type IN ('opposes', 'sanctions', 'participated_in')",
+            (oid,),
+        ).fetchall()
+        if not conflicts:
+            conflicts = conn.execute(
+                "SELECT o.id, o.name, l.type as link_type, l.description FROM links l "
+                "JOIN objects o ON l.from_id = o.id "
+                "WHERE l.to_id = ? AND l.type IN ('opposes', 'sanctions', 'participated_in')",
+                (oid,),
+            ).fetchall()
+        if conflicts:
+            lines.append(f"\n**Conflicts / Tensions** ({len(conflicts)}):")
+            for c in conflicts:
+                desc = f" - {c['description']}" if c["description"] else ""
+                lines.append(f"- {c['name']} ({c['link_type']}){desc}")
+
+        # Neighbors
+        neighbors = conn.execute(
+            "SELECT o.id, o.name FROM links l "
+            "JOIN objects o ON l.to_id = o.id "
+            "WHERE l.from_id = ? AND l.type = 'borders'",
+            (oid,),
+        ).fetchall()
+        if not neighbors:
+            neighbors = conn.execute(
+                "SELECT o.id, o.name FROM links l "
+                "JOIN objects o ON l.from_id = o.id "
+                "WHERE l.to_id = ? AND l.type = 'borders'",
+                (oid,),
+            ).fetchall()
+        if neighbors:
+            lines.append(f"\n**Neighbors** ({len(neighbors)}):")
+            names = [n["name"] for n in neighbors]
+            lines.append(f"- {', '.join(names)}")
+
+        # Recent briefs mentioning this country
+        briefs = conn.execute(
+            "SELECT b.id, b.title, b.date, b.product_type FROM brief_objects bo "
+            "JOIN briefs b ON bo.brief_id = b.id WHERE bo.object_id = ? "
+            "ORDER BY b.date DESC LIMIT 5",
+            (oid,),
+        ).fetchall()
+        if briefs:
+            lines.append(f"\n**Recent briefs** ({len(briefs)}):")
+            for br in briefs:
+                lines.append(f"- [{br['date']}] {br['title']} ({br['product_type']})")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error getting country profile: {e}"
+    finally:
+        conn.close()
+
+
+def handle_ontology_statistics(args):
+    """Get ontology statistics - object counts by type, link counts by type, total properties."""
+    conn = _intel_connect()
+    if not conn:
+        return "No intelligence database found for this agent."
+    try:
+        lines = ["### Ontology Statistics\n"]
+
+        # Total objects
+        total = conn.execute("SELECT COUNT(*) as c FROM objects").fetchone()["c"]
+        lines.append(f"**Total objects**: {total}")
+
+        # By type
+        by_type = conn.execute(
+            "SELECT type, COUNT(*) as c FROM objects GROUP BY type ORDER BY c DESC"
+        ).fetchall()
+        lines.append("\n**Objects by type**:")
+        for r in by_type:
+            lines.append(f"- {r['type']}: {r['c']}")
+
+        # Total links
+        total_links = conn.execute("SELECT COUNT(*) as c FROM links").fetchone()["c"]
+        lines.append(f"\n**Total links**: {total_links}")
+
+        # By link type
+        by_link_type = conn.execute(
+            "SELECT type, COUNT(*) as c FROM links GROUP BY type ORDER BY c DESC"
+        ).fetchall()
+        lines.append("\n**Links by type**:")
+        for r in by_link_type:
+            lines.append(f"- {r['type']}: {r['c']}")
+
+        # Total properties
+        total_props = conn.execute("SELECT COUNT(*) as c FROM properties").fetchone()["c"]
+        lines.append(f"\n**Total properties**: {total_props}")
+
+        # Properties by top keys
+        top_keys = conn.execute(
+            "SELECT key, COUNT(*) as c FROM properties GROUP BY key ORDER BY c DESC LIMIT 15"
+        ).fetchall()
+        lines.append("\n**Top property keys**:")
+        for r in top_keys:
+            lines.append(f"- {r['key']}: {r['c']}")
+
+        # Brief linkage
+        brief_links = conn.execute("SELECT COUNT(*) as c FROM brief_objects").fetchone()["c"]
+        total_briefs = conn.execute("SELECT COUNT(*) as c FROM briefs").fetchone()["c"]
+        lines.append(f"\n**Briefs**: {total_briefs} total, {brief_links} object-brief links")
+
+        # Changelog stats
+        try:
+            changelog_total = conn.execute("SELECT COUNT(*) as c FROM changelog").fetchone()["c"]
+            recent = conn.execute(
+                "SELECT COUNT(*) as c FROM changelog WHERE created_at >= datetime('now', '-7 days')"
+            ).fetchone()["c"]
+            lines.append(f"\n**Changelog**: {changelog_total} total entries, {recent} in last 7 days")
+        except Exception:
+            pass
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error getting statistics: {e}"
+    finally:
+        conn.close()
+
+
 def handle_org_create(args):
     """Create a new organization."""
     from datetime import datetime
@@ -4717,6 +5428,15 @@ _ACTION_ROUTES = {
         "get_decisions": handle_org_get_decisions,
         "digest": handle_org_digest,
     },
+    "ontology": {
+        "search": handle_ontology_search,
+        "get_object": handle_ontology_get_object,
+        "get_network": handle_ontology_get_network,
+        "find_connections": handle_ontology_find_connections,
+        "recent_events": handle_ontology_recent_events,
+        "country_profile": handle_ontology_country_profile,
+        "statistics": handle_ontology_statistics,
+    },
 }
 
 
@@ -4748,6 +5468,7 @@ HANDLERS = {
     "tools": lambda args: _route_grouped("tools", args),
     "mcp": lambda args: _route_grouped("mcp", args),
     "org_memory": lambda args: _route_grouped("org_memory", args),
+    "ontology": lambda args: _route_grouped("ontology", args),
     # Org tool (has its own dispatch with provision gate)
     "org": handle_org,
     # Standalone tools
