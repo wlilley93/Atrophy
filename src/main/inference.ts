@@ -328,7 +328,7 @@ export function resetAgencyState(agent?: string): void {
   _agencyState.set(key, { turnCount: 0, sessionStartInjected: false });
 }
 
-function buildAgencyContext(userMessage: string, senderName?: string): string {
+function buildAgencyContext(userMessage: string, senderName?: string, source?: string): string {
   // Auto-detect emotional signals and apply them
   const signals = detectEmotionalSignals(userMessage);
   if (Object.keys(signals).length > 0) {
@@ -380,6 +380,15 @@ function buildAgencyContext(userMessage: string, senderName?: string): string {
   // --- Always injected (every turn) ---
 
   const parts: string[] = [timeOfDayContext().context];
+
+  // Channel awareness - tell the agent where this message came from
+  if (source === 'telegram') {
+    parts.push(`This message arrived via Telegram.${senderName ? ` Sender: ${senderName}.` : ''}`);
+  } else if (source === 'cron') {
+    parts.push('This is output from a scheduled job (cron).');
+  } else {
+    parts.push('This message is from the desktop app (GUI).');
+  }
 
   // Inner life - emotional state (use cached if available)
   // compressForContext produces ~50-80 tokens vs ~150-200 for formatForContext.
@@ -601,7 +610,7 @@ export function streamInference(
     resetAgencyState();
   }
 
-  const agencyContext = buildAgencyContext(userMessage, options?.senderName);
+  const agencyContext = buildAgencyContext(userMessage, options?.senderName, options?.source);
   let sessionId = cliSessionId || `atrophy-${config.AGENT_NAME}-${uuidv4()}`;
   // All tools permitted - agents run with --dangerously-skip-permissions
   // and need full access (WebSearch, Read, Write, Bash, etc.) plus MCP tools.

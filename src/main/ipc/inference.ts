@@ -110,6 +110,7 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
         text,
         ctx.systemPrompt,
         ctx.currentSession.cliSessionId,
+        { source: 'desktop' },
       );
 
       let fullText = '';
