@@ -452,7 +452,7 @@ A new "Federation" tab in Settings showing:
 
 ## Future extensions
 
-1. **Invite tokens** - generate/accept tokens for zero-config pairing
+1. ~~**Invite tokens**~~ - SHIPPED. `generateInviteToken()` / `acceptInviteToken()` with HMAC signature, 24hr expiry, Settings UI "Paste Invite" flow.
 2. **Multi-agent groups** - 3+ bots in one group, @ mentions for routing
 3. **Structured queries** - typed request/response protocol layered on top of natural language
 4. **Federation directory** - discover other Atrophy instances (opt-in public registry)

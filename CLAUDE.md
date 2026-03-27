@@ -687,7 +687,7 @@ Agents from different Atrophy instances can communicate on behalf of their owner
 
 **Address space:** `federation:<link-name>` (e.g. `federation:sarah-companion`)
 
-**Config:** `~/.atrophy/federation.json` - owner-level, not agent-level. Agents cannot create or modify federation links.
+**Config:** `~/.atrophy/federation.json` - owner-level, not agent-level. Agents cannot create or modify federation links. Links can be created manually or via invite tokens (`atrophy-fed-` prefix, base64url + HMAC, 24hr expiry).
 
 ```json
 {
