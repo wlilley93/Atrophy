@@ -575,21 +575,25 @@ async function _generateDeferredSummary(
     );
 
     if (summary && summary.trim()) {
-      // Briefly switch to old agent DB to write summary
-      config.reloadForAgent(oldAgentName);
-      initDb();
-      const { writeSummary, endSession: endSess } = await import('./memory');
-      endSess(sessionId, summary.trim());
-      writeSummary(sessionId, summary.trim());
-      // Switch back
-      config.reloadForAgent(currentAgent);
-      initDb();
-      log.info(`[deferred-summary] Written for ${oldAgentName} session ${sessionId}`);
+      // Write directly to the old agent's DB by path - avoids swapping
+      // the config singleton which would race with the Telegram daemon.
+      const Database = (await import('better-sqlite3')).default;
+      const dbPath = path.join(USER_DATA, 'agents', oldAgentName, 'data', 'memory.db');
+      const db = new Database(dbPath);
+      try {
+        db.prepare(
+          'UPDATE sessions SET ended_at = CURRENT_TIMESTAMP, summary = ? WHERE id = ?',
+        ).run(summary.trim(), sessionId);
+        db.prepare(
+          'INSERT INTO summaries (session_id, content) VALUES (?, ?)',
+        ).run(sessionId, summary.trim());
+        log.info(`[deferred-summary] Written for ${oldAgentName} session ${sessionId}`);
+      } finally {
+        db.close();
+      }
     }
   } catch (err) {
     log.warn(`[deferred-summary] Failed for ${oldAgentName}: ${err}`);
-    // Ensure we're back on the right agent
-    try { config.reloadForAgent(currentAgent); initDb(); } catch { /* */ }
   }
 }
 
@@ -860,6 +864,38 @@ app.whenReady().then(() => {
   // 5. Start switchboard MCP queue polling - processes envelopes from
   // agent MCP tools (Python subprocess writes, TypeScript reads).
   switchboard.startQueuePolling();
+
+  // 5b. Register meridian:web as a switchboard address for the web interface.
+  // This is a send-only channel - the web interface sends questions via the
+  // /meridian/chat HTTP endpoint, not via switchboard routing.
+  if (!switchboard.hasHandler('meridian:web')) {
+    switchboard.register('meridian:web', async () => {
+      log.debug('meridian:web received envelope (send-only channel, ignored)');
+    }, {
+      type: 'channel',
+      description: 'Meridian Eye web interface',
+      capabilities: ['chat', 'query'],
+    });
+  }
+
+  // 5c. Start Cloudflare Tunnel for Meridian bridge (if configured).
+  // The tunnel connects bridge.atrophy.app to the local Atrophy HTTP server,
+  // allowing the Meridian Eye website to route inference requests through
+  // the switchboard.
+  const tunnelConfigPath = path.join(USER_DATA, 'services', 'cloudflared', 'config.yml');
+  if (fs.existsSync(tunnelConfigPath)) {
+    try {
+      const { spawn: spawnTunnel } = require('child_process');
+      const tunnelProc = spawnTunnel('cloudflared', ['tunnel', 'run', '--config', tunnelConfigPath], {
+        stdio: 'ignore',
+        detached: true,
+      });
+      tunnelProc.unref();
+      log.info('Cloudflare Tunnel started for Meridian bridge');
+    } catch (e) {
+      log.warn(`Failed to start Cloudflare Tunnel (non-fatal): ${e}`);
+    }
+  }
 
   // 6. Periodically write switchboard state for MCP servers to read.
   mcpStateTimer = setInterval(() => switchboard.writeStateForMCP(), 5000);
