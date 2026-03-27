@@ -29,6 +29,7 @@ import { runCoherenceCheck } from './sentinel';
 import { drainAllAgentQueues } from './queue';
 import { startServer, stopServer } from './server';
 import { startDaemon, stopDaemonSync, setMainWindowAccessor } from './channels/telegram';
+import { startFederation, stopFederation } from './channels/federation';
 import { cronScheduler, stopAllJobs } from './channels/cron';
 import { mcpRegistry } from './mcp-registry';
 import { wireAgent, markBootComplete } from './create-agent';
@@ -853,6 +854,9 @@ app.whenReady().then(() => {
   // Give telegram daemon access to mainWindow for desktop delivery
   setMainWindowAccessor(() => mainWindow);
 
+  // Start federation pollers
+  startFederation().catch((e) => log.error(`Federation start failed: ${e}`));
+
   // 5. Start switchboard MCP queue polling - processes envelopes from
   // agent MCP tools (Python subprocess writes, TypeScript reads).
   switchboard.startQueuePolling();
@@ -1203,6 +1207,7 @@ app.on('will-quit', () => {
   stopWakeWordListener(() => mainWindow);
   disableKeepAwake();
   stopDaemonSync();
+  stopFederation();
   stopServer();
 
   // End the current desktop session synchronously (summary generation is

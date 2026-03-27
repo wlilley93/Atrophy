@@ -40,7 +40,7 @@ export type MessageHandler = (envelope: Envelope) => Promise<void>;
  */
 export interface ServiceEntry {
   address: string;       // e.g. "telegram:xan", "agent:companion"
-  type: 'channel' | 'agent' | 'system' | 'webhook' | 'mcp';
+  type: 'channel' | 'agent' | 'system' | 'webhook' | 'mcp' | 'federation';
   description: string;   // human-readable description
   capabilities?: string[]; // what this service can do
   registeredAt: number;  // timestamp
@@ -75,6 +75,7 @@ class Switchboard {
       if (address.startsWith('telegram:') || address.startsWith('desktop:')) return 'channel';
       if (address.startsWith('webhook:')) return 'webhook';
       if (address.startsWith('mcp:')) return 'mcp';
+      if (address.startsWith('federation:')) return 'federation';
       return 'system';
     };
 
