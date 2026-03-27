@@ -239,12 +239,12 @@
 
     // Switch to left-based positioning on first drag for simpler math
     if (posMode === 'right') {
-      // Convert right-based to left-based
+      // Convert right-based to left-based and apply this frame's delta
       const el = document.querySelector('.timer-overlay') as HTMLElement;
       if (el) {
         const rect = el.getBoundingClientRect();
-        posLeft = rect.left;
-        posTop = rect.top;
+        posLeft = rect.left + dx;
+        posTop = rect.top + dy;
         posMode = 'left';
       }
     } else {

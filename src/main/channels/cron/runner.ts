@@ -8,6 +8,7 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
 import { getConfig, BUNDLE_ROOT, USER_DATA } from '../../config';
 import { switchboard } from '../switchboard';
 import { createLogger } from '../../logger';
@@ -91,7 +92,10 @@ export async function runJob(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<JobResult> {
   const config = getConfig();
-  const scriptPath = path.resolve(BUNDLE_ROOT, definition.script);
+  // Check personal scripts dir first (~/.atrophy/scripts/), fall back to bundle
+  const personalPath = path.resolve(USER_DATA, 'scripts', definition.script.replace(/^scripts\//, ''));
+  const bundlePath = path.resolve(BUNDLE_ROOT, definition.script);
+  const scriptPath = fs.existsSync(personalPath) ? personalPath : bundlePath;
   const rawArgs = definition.args || [];
   const extraArgs = typeof rawArgs === 'string' ? (rawArgs as string).split(/\s+/).filter(Boolean) : rawArgs;
   const pythonPath = config.PYTHON_PATH;
@@ -109,7 +113,7 @@ export async function runJob(
       ...process.env as Record<string, string>,
       PATH: `${pythonBinDir}:/usr/local/bin:/usr/bin:/bin`,
       AGENT: agentName,
-      PYTHONPATH: `${BUNDLE_ROOT}:${path.join(USER_DATA, 'src')}`,
+      PYTHONPATH: `${path.join(USER_DATA, 'scripts')}:${BUNDLE_ROOT}:${path.join(USER_DATA, 'src')}`,
       CHANNEL_API_KEY: process.env.CHANNEL_API_KEY || '',
     };
 

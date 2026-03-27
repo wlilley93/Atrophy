@@ -1233,6 +1233,8 @@ def handle_track_thread(args):
         "SELECT id FROM threads WHERE name = ?", (name,)
     ).fetchone()
     if existing:
+        # Allowlist of permitted SET clauses (defense-in-depth - these are hardcoded below)
+        _ALLOWED_THREAD_SETS = {"last_updated = CURRENT_TIMESTAMP", "summary = ?", "status = ?"}
         updates = ["last_updated = CURRENT_TIMESTAMP"]
         params = []
         if summary:
@@ -1241,8 +1243,11 @@ def handle_track_thread(args):
         if status:
             updates.append("status = ?")
             params.append(status)
+        # Validate all update fragments against allowlist
+        assert all(u in _ALLOWED_THREAD_SETS for u in updates), f"Invalid SET clause: {updates}"
         params.append(existing["id"])
-        conn.execute(f"UPDATE threads SET {', '.join(updates)} WHERE id = ?", params)
+        set_clause = ", ".join(updates)
+        conn.execute("UPDATE threads SET " + set_clause + " WHERE id = ?", params)
         conn.commit()
         conn.close()
         return f"Updated thread '{name}' ({status})"
@@ -2905,9 +2910,12 @@ def _check_db_health(agent_name):
         # Row counts
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
+        _ALLOWED_TABLES = {"sessions", "turns", "observations", "threads", "summaries", "bookmarks"}
         for table in ["sessions", "turns", "observations", "threads", "summaries", "bookmarks"]:
+            assert table in _ALLOWED_TABLES, f"Invalid table name: {table}"
             try:
-                count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                # Table names cannot be parameterized in SQL; validated against allowlist above
+                count = conn.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
                 results.append(f"  {table}: {count} rows")
             except Exception:
                 results.append(f"  {table}: table missing")
@@ -4396,6 +4404,11 @@ def handle_org_track_thread(args):
         ).fetchone()
 
         if existing:
+            # Allowlist of permitted SET clauses (defense-in-depth - these are hardcoded below)
+            _ALLOWED_ORG_THREAD_SETS = {
+                "summary = ?", "priority = ?", "status = ?",
+                "closed_at = datetime('now')", "updated_at = datetime('now')",
+            }
             updates = []
             params = []
             if summary:
@@ -4410,10 +4423,13 @@ def handle_org_track_thread(args):
                 if status == "closed":
                     updates.append("closed_at = datetime('now')")
             updates.append("updated_at = datetime('now')")
+            # Validate all update fragments against allowlist
+            assert all(u in _ALLOWED_ORG_THREAD_SETS for u in updates), f"Invalid SET clause: {updates}"
             params.append(existing["id"])
 
+            set_clause = ", ".join(updates)
             conn.execute(
-                f"UPDATE threads SET {', '.join(updates)} WHERE id = ?",
+                "UPDATE threads SET " + set_clause + " WHERE id = ?",
                 params,
             )
             conn.commit()

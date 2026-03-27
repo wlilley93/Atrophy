@@ -68,31 +68,27 @@
       updateStatusText = 'Checking for app updates...';
       const appResult = await new Promise<string | null>((resolve) => {
         let settled = false;
-        const timer = setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, 20000);
+        let c4: (() => void) | undefined;
+        const settle = (val: string | null) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          c1?.(); c2?.(); c3?.(); c4?.();
+          resolve(val);
+        };
+        const timer = setTimeout(() => settle(null), 20000);
 
-        const c1 = api.onUpdateDownloaded?.((info: { version: string }) => {
-          if (!settled) { settled = true; clearTimeout(timer); c1?.(); c2?.(); c3?.(); resolve(info.version); }
-        });
-        const c2 = api.onUpdateNotAvailable?.(() => {
-          if (!settled) { settled = true; clearTimeout(timer); c1?.(); c2?.(); c3?.(); resolve(null); }
-        });
-        const c3 = api.onUpdateError?.(() => {
-          if (!settled) { settled = true; clearTimeout(timer); c1?.(); c2?.(); c3?.(); resolve(null); }
-        });
+        const c1 = api.onUpdateDownloaded?.((info: { version: string }) => settle(info.version));
+        const c2 = api.onUpdateNotAvailable?.(() => settle(null));
+        const c3 = api.onUpdateError?.(() => settle(null));
 
-        // Listen for progress
-        const c4 = api.onUpdateProgress?.((info: { percent: number }) => {
+        c4 = api.onUpdateProgress?.((info: { percent: number }) => {
           updateDownloadPercent = info.percent;
           updateCheckStatus = 'downloading';
           updateStatusText = `Downloading... ${Math.round(info.percent)}%`;
         });
 
         api.checkForUpdates?.();
-
-        // Clean up progress listener when done
-        const origResolve = resolve;
-        // Piggyback cleanup on the timer/event listeners above
-        setTimeout(() => c4?.(), 25000);
       });
 
       if (appResult) {

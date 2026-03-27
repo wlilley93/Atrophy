@@ -88,6 +88,7 @@
           completeLast();
         }
         session.inferenceState = 'idle';
+        revertToDefault();
       } finally {
         _submitting = false;
       }
@@ -511,7 +512,11 @@
       window.removeEventListener('keyup', onGlobalKeyup);
       if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
       recordingCancelled = true; // Signal startRecording to abort if still awaiting mic
-      if (isRecording) stopRecording();
+      if (isRecording) {
+        // Cancel recording without submitting - avoid sending to wrong agent
+        api.stopRecording().catch(() => {});
+        isRecording = false;
+      }
       if (callActive) stopCallMode();
     };
   });

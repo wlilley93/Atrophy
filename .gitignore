@@ -50,3 +50,29 @@ mcp/config.json
 
 # Personal agent documentation (not shipped)
 docs/agents/companion/
+
+# Personal Meridian intelligence scripts (live in ~/.atrophy/scripts/)
+scripts/agents/shared/channel_push.py
+scripts/agents/shared/source_health.py
+scripts/agents/shared/verify_brief.py
+scripts/agents/shared/red_team_review.py
+scripts/agents/shared/product_templates.py
+scripts/agents/shared/timeline_update.py
+scripts/agents/shared/cross_agent_synthesis.py
+scripts/agents/shared/prediction_extract.py
+scripts/agents/shared/prediction_review.py
+scripts/agents/shared/agent_metrics.py
+scripts/agents/shared/generate_brief_audio.py
+scripts/agents/shared/geofence_check.py
+scripts/agents/shared/commission_sync.py
+scripts/agents/shared/ontology.py
+scripts/agents/shared/ontology_migrate.py
+scripts/agents/shared/ontology_ingest.py
+scripts/agents/librarian/entity_resolve.py
+scripts/agents/librarian/relationship_extract.py
+
+# Personal Meridian specs and plans
+docs/superpowers/specs/2026-03-27-worldmonitor-integration-design.md
+docs/superpowers/specs/2026-03-27-meridian-improvements-spec.md
+docs/superpowers/specs/2026-03-27-meridian-ontology-design.md
+docs/superpowers/plans/2026-03-27-worldmonitor-platform.md
