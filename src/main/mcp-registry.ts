@@ -595,8 +595,9 @@ export class McpRegistry {
    * Build a restricted MCP config for federation inference.
    * Trust tiers control which servers are available:
    *   - chat: no MCP servers (text response only)
-   *   - query: memory (read-only)
-   *   - delegate: memory (read/write)
+   *   - query: memory only
+   *   - delegate: memory only (same as query for now - calendar/action
+   *     differentiation is future work requiring per-tool filtering)
    * Shell, filesystem, GitHub, puppeteer are NEVER included.
    */
   buildFederationConfig(agentName: string, trustTier: 'chat' | 'query' | 'delegate'): string {

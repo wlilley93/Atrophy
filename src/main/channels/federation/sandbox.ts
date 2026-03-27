@@ -47,6 +47,9 @@ export function sanitizeFederationContent(text: string): string {
   sanitized = sanitized.replace(/<function_call>/gi, '&lt;function_call&gt;');
   sanitized = sanitized.replace(/<tool_result>/gi, '&lt;tool_result&gt;');
 
+  // Escape federation preamble mimicry
+  sanitized = sanitized.replace(/\[FEDERATION\]/gi, '[fed]');
+
   // Escape prompt injection patterns
   sanitized = sanitized.replace(/<system>/gi, '&lt;system&gt;');
   sanitized = sanitized.replace(/<\/system>/gi, '&lt;/system&gt;');

@@ -27,6 +27,7 @@ interface PollerState {
   outboundCount: number;
   outboundWindowStart: number;
   localBotUsername: string | null;
+  botToken: string;
 }
 
 const _pollers = new Map<string, PollerState>();
@@ -77,6 +78,7 @@ export async function startPoller(linkName: string, link: FederationLink): Promi
     outboundCount: 0,
     outboundWindowStart: Date.now(),
     localBotUsername,
+    botToken,
   };
 
   _pollers.set(linkName, state);
@@ -380,6 +382,17 @@ async function pollOnce(state: PollerState, botToken: string): Promise<void> {
     state.inboundCount++;
     if (state.inboundCount > INBOUND_RATE_LIMIT) {
       log.warn(`[${state.linkName}] Inbound rate limit exceeded (${state.inboundCount}/${INBOUND_RATE_LIMIT}/hr)`);
+      appendTranscript(state.linkName, {
+        timestamp: new Date().toISOString(),
+        direction: 'inbound',
+        from_bot: state.link.remote_bot_username,
+        to_bot: state.localBotUsername || '',
+        text: msg.text,
+        telegram_message_id: msg.message_id,
+        inference_triggered: false,
+        trust_tier: state.link.trust_tier,
+        skipped_reason: 'rate-limited',
+      });
       continue;
     }
 
@@ -449,17 +462,8 @@ export async function sendFederationResponse(
   // Prefix with @ mention of remote bot
   const mentionedText = `@${state.link.remote_bot_username} ${text}`;
 
-  // Get bot token for the local agent
-  const config = getConfig();
-  const originalAgent = config.AGENT_NAME;
-  config.reloadForAgent(state.link.local_agent);
-  const botToken = config.TELEGRAM_BOT_TOKEN;
-  config.reloadForAgent(originalAgent);
-
-  if (!botToken) {
-    log.error(`[${linkName}] No bot token - cannot send response`);
-    return;
-  }
+  // Use the bot token cached at poller start - no config reload needed
+  const botToken = state.botToken;
 
   // Send as a single complete message (no streaming display)
   const payload: Record<string, unknown> = {
