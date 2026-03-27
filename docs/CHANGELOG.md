@@ -4,6 +4,17 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.8.4
+
+### Boot diagnostics
+
+- **Persistent file logging** - all log entries now write to `~/.atrophy/logs/app.log` (2MB rotation with one prev file). Replaces the old `boot.log` with a unified logger. Diagnostics survive crashes.
+- **Renderer boot instrumentation** - every boot phase (update check, config load, brain frames, opening line) logs to the main process file. Uncaught errors and unhandled rejections in the renderer are forwarded to the log file.
+- **Console tab upgrade** - three source tabs: Live (streaming), Log file (current session from disk), Prev boot (previous session). Filter works across all sources.
+- **Renderer load diagnostics** - main process now captures `did-fail-load`, `render-process-gone`, `unresponsive`, and renderer `console.error` events to the log file.
+
+---
+
 ## 1.8.0
 
 ### Stability and reliability fixes
