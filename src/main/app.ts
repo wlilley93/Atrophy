@@ -492,20 +492,33 @@ async function switchAgent(name: string): Promise<SwitchAgentResult> {
     stopInference(currentAgentName ?? undefined);
     clearAudioQueue();
 
-    // End current session (writes summary to old agent's DB)
-    if (currentSession && systemPrompt) {
-      try { await currentSession.end(systemPrompt); } catch { /* non-fatal */ }
+    // End current session synchronously (just close it in the DB - fast).
+    // Summary generation is deferred to background after the switch completes,
+    // so the user isn't blocked waiting for Claude CLI.
+    const oldSession = currentSession;
+    const oldPrompt = systemPrompt;
+    const oldAgentName = currentAgentName;
+    if (oldSession?.sessionId != null) {
+      // Close the session without summary - just set ended_at
+      endSession(oldSession.sessionId, null, oldSession.mood);
+      // Generate summary in background after the switch
+      if (oldPrompt && oldSession.turnHistory.length >= 4) {
+        const sid = oldSession.sessionId;
+        const turnHistory = [...oldSession.turnHistory];
+        setImmediate(() => {
+          _generateDeferredSummary(sid, turnHistory, oldPrompt, oldAgentName || '').catch(() => {});
+        });
+      }
     }
     currentSession = null;
     systemPrompt = null;
 
-    // Close the outgoing agent's DB connection to prevent FD accumulation.
-    // Each agent has its own memory.db and connect() caches connections by path.
-    // Without this, repeated agent switches exhaust the 256 FD limit.
+    // Close the outgoing agent's DB - deferred slightly to let the
+    // summary write complete if it's fast
     const oldDbPath = getConfig().DB_PATH;
-    closeForPath(oldDbPath);
+    setTimeout(() => closeForPath(oldDbPath), 5000);
 
-    // Switch config and reinitialise
+    // Switch config and reinitialise - happens immediately, no waiting
     getConfig().reloadForAgent(name);
     initDb();
     resetMcpConfig();
@@ -525,6 +538,57 @@ async function switchAgent(name: string): Promise<SwitchAgentResult> {
     };
   } finally {
     _switchInProgress = false;
+  }
+}
+
+/** Generate a session summary in the background after an agent switch.
+ *  Briefly swaps config to the old agent to write, then swaps back. */
+async function _generateDeferredSummary(
+  sessionId: number,
+  turnHistory: { role: string; content: string; turnId: number }[],
+  systemPrompt: string,
+  oldAgentName: string,
+): Promise<void> {
+  const config = getConfig();
+  const currentAgent = config.AGENT_NAME;
+
+  const turnText = turnHistory
+    .map((t) => {
+      const label = t.role === 'will' ? 'Will' : oldAgentName;
+      return `${label}: ${t.content}`;
+    })
+    .join('\n');
+
+  const summaryPrompt =
+    'Summarise this conversation in 2-4 sentences.\n\n' +
+    'Capture what actually happened between these two people, not just the topic.\n' +
+    'If something shifted - in the relationship, in understanding, in how they talk ' +
+    'to each other - name it. Do not use em dashes - only hyphens.\n\n' +
+    turnText;
+
+  try {
+    const { runInferenceOneshot } = await import('./inference');
+    const summary = await runInferenceOneshot(
+      [{ role: 'user', content: summaryPrompt }],
+      `You are ${oldAgentName}, writing a memory of a conversation. Third person. 2-4 sentences.`,
+    );
+
+    if (summary && summary.trim()) {
+      // Briefly switch to old agent DB to write summary
+      config.reloadForAgent(oldAgentName);
+      initDb();
+      const { writeSummary, endSession: endSess } = await import('./memory');
+      endSess(sessionId, summary.trim());
+      writeSummary(sessionId, summary.trim());
+      // Switch back
+      config.reloadForAgent(currentAgent);
+      initDb();
+      log.info(`[deferred-summary] Written for ${oldAgentName} session ${sessionId}`);
+    }
+  } catch (err) {
+    log.warn(`[deferred-summary] Failed for ${oldAgentName}: ${err}`);
+    // Ensure we're back on the right agent
+    try { config.reloadForAgent(currentAgent); initDb(); } catch { /* */ }
   }
 }
 
