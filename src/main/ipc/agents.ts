@@ -7,7 +7,7 @@
 import { ipcMain, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getConfig, saveAgentConfig, saveUserConfig, saveEnvVar, USER_DATA, BUNDLE_ROOT } from '../config';
+import { getConfig, isValidAgentName, saveAgentConfig, saveUserConfig, saveEnvVar, USER_DATA, BUNDLE_ROOT } from '../config';
 import {
   discoverUiAgents, discoverAgents, cycleAgent, getAgentState, setAgentState,
   suspendAgentSession, resumeAgentSession,
@@ -241,14 +241,13 @@ export function registerAgentHandlers(ctx: IpcContext): void {
         }
       }
     }
-    writeAskResponse(requestId, response, destinationFailed);
+    writeAskResponse(requestId, response, destinationFailed, ctx.pendingAskAgent || undefined);
     ctx.pendingAskId = null;
     ctx.pendingAskDestination = null;
+    ctx.pendingAskAgent = null;
   });
 
   // -- Agent CRUD (for org management UI) --
-
-  const AGENT_RE = /^[a-zA-Z0-9_-]+$/;
 
   ipcMain.handle('agent:listAll', () => {
     return discoverAgents().map((a) => {
@@ -266,19 +265,19 @@ export function registerAgentHandlers(ctx: IpcContext): void {
   });
 
   ipcMain.handle('agent:getManifest', (_event, name: string) => {
-    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    if (!isValidAgentName(name)) throw new Error('Invalid agent name');
     const manifest = findManifest(name);
     if (!manifest) return null;
     return manifest;
   });
 
   ipcMain.handle('agent:updateManifest', (_event, name: string, updates: Record<string, unknown>) => {
-    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    if (!isValidAgentName(name)) throw new Error('Invalid agent name');
     saveAgentConfig(name, updates);
   });
 
   ipcMain.handle('agent:getPrompt', (_event, name: string, promptName: string) => {
-    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    if (!isValidAgentName(name)) throw new Error('Invalid agent name');
     if (!/^[a-zA-Z0-9_-]+$/.test(promptName.replace(/\.md$/, ''))) {
       throw new Error('Invalid prompt name');
     }
@@ -299,7 +298,7 @@ export function registerAgentHandlers(ctx: IpcContext): void {
   });
 
   ipcMain.handle('agent:updatePrompt', (_event, name: string, promptName: string, content: string) => {
-    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    if (!isValidAgentName(name)) throw new Error('Invalid agent name');
     // Validate promptName - only allow simple filenames, no path traversal
     if (!/^[a-zA-Z0-9_-]+$/.test(promptName.replace(/\.md$/, ''))) {
       throw new Error('Invalid prompt name');
@@ -317,7 +316,7 @@ export function registerAgentHandlers(ctx: IpcContext): void {
   });
 
   ipcMain.handle('agent:delete', (_event, name: string) => {
-    if (!AGENT_RE.test(name)) throw new Error('Invalid agent name');
+    if (!isValidAgentName(name)) throw new Error('Invalid agent name');
     deleteAgent(name);
   });
 }

@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { getConfig, BUNDLE_ROOT, USER_DATA } from './config';
+import { getConfig, isValidAgentName, BUNDLE_ROOT, USER_DATA } from './config';
 import { createLogger } from './logger';
 
 const log = createLogger('agent-manager');
@@ -473,6 +473,16 @@ export interface AskResponse {
   destination_failed?: boolean;
 }
 
+/** Resolve a path under an agent's data dir, rejecting traversal attempts. */
+function safeAgentDataPath(agentName: string, filename: string): string {
+  const base = path.resolve(USER_DATA, 'agents');
+  const resolved = path.resolve(base, agentName, 'data', filename);
+  if (!resolved.startsWith(base + path.sep)) {
+    throw new Error(`Path traversal detected in agentName: ${agentName}`);
+  }
+  return resolved;
+}
+
 function askRequestPath(): string {
   const config = getConfig();
   return path.join(USER_DATA, 'agents', config.AGENT_NAME, 'data', '.ask_request.json');
@@ -483,9 +493,28 @@ function askResponsePath(): string {
   return path.join(USER_DATA, 'agents', config.AGENT_NAME, 'data', '.ask_response.json');
 }
 
-/** Check for pending ask_user requests (called periodically by main process). */
-export function checkAskRequest(): AskRequest | null {
-  const reqPath = askRequestPath();
+/** Check for pending ask_user requests across ALL agents (called periodically by main process). */
+export function checkAskRequest(): (AskRequest & { _agent?: string }) | null {
+  // Check the active agent first (most common case)
+  const activeResult = _checkAskFile(askRequestPath());
+  if (activeResult) return activeResult;
+
+  // Scan all other agents for background ask requests (cron, telegram)
+  const agentsDir = path.join(USER_DATA, 'agents');
+  if (!fs.existsSync(agentsDir)) return null;
+  const currentAgent = getConfig().AGENT_NAME;
+  try {
+    for (const entry of fs.readdirSync(agentsDir)) {
+      if (entry === currentAgent) continue;
+      const reqPath = path.join(agentsDir, entry, 'data', '.ask_request.json');
+      const result = _checkAskFile(reqPath);
+      if (result) return { ...result, _agent: entry };
+    }
+  } catch { /* non-fatal */ }
+  return null;
+}
+
+function _checkAskFile(reqPath: string): AskRequest | null {
   if (!fs.existsSync(reqPath)) return null;
   try {
     const data = fs.readFileSync(reqPath, 'utf-8');
@@ -502,9 +531,11 @@ export function checkAskRequest(): AskRequest | null {
   }
 }
 
-/** Write the user's response for MCP to pick up. */
-export function writeAskResponse(requestId: string, response: string | boolean | null, destinationFailed = false): void {
-  const respPath = askResponsePath();
+/** Write the user's response for MCP to pick up. agentName is for background agent requests. */
+export function writeAskResponse(requestId: string, response: string | boolean | null, destinationFailed = false, agentName?: string): void {
+  const respPath = agentName
+    ? safeAgentDataPath(agentName, '.ask_response.json')
+    : askResponsePath();
   const dir = path.dirname(respPath);
   fs.mkdirSync(dir, { recursive: true });
 
@@ -521,7 +552,9 @@ export function writeAskResponse(requestId: string, response: string | boolean |
   fs.renameSync(tmp, respPath);
 
   // Clean up request file
-  const reqPath = askRequestPath();
+  const reqPath = agentName
+    ? safeAgentDataPath(agentName, '.ask_request.json')
+    : askRequestPath();
   try { fs.unlinkSync(reqPath); } catch { /* already gone */ }
   log.info(`ask_user response written for ${requestId}`);
 }
@@ -547,12 +580,15 @@ export function cleanupAskFiles(): void {
  * @throws If agent directory does not exist.
  */
 export function deleteAgent(name: string): void {
+  if (!isValidAgentName(name)) {
+    throw new Error(`Invalid agent name: "${name}"`);
+  }
   const agentDir = path.join(USER_DATA, 'agents', name);
   if (!fs.existsSync(agentDir)) {
     throw new Error(`Agent directory for "${name}" not found`);
   }
 
-  const dbPath = path.join(agentDir, 'memory.db');
+  const dbPath = path.join(agentDir, 'data', 'memory.db');
   // Back up OUTSIDE agentDir so rmSync doesn't destroy it
   const backupPath = path.join(USER_DATA, 'agents', `${name}.memory.db.preserved`);
 

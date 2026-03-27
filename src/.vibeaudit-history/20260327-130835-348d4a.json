@@ -1,0 +1,31 @@
+{
+  "findings": [],
+  "scanned_files": 118,
+  "scanned_classes": [
+    "idor",
+    "auth_bypass",
+    "mass_assignment",
+    "race_condition",
+    "broken_access_control",
+    "jwt_misconfig",
+    "ssrf",
+    "path_traversal",
+    "crypto_weakness",
+    "data_exposure",
+    "command_injection",
+    "xxe",
+    "graphql",
+    "prototype_pollution",
+    "insecure_defaults",
+    "timing_attacks",
+    "missing_rate_limit",
+    "ai_prompt_injection"
+  ],
+  "total_tokens": 0,
+  "total_cost_usd": 0.0,
+  "duration_seconds": 229.24212098121643,
+  "provider": "claude-code",
+  "model": "sonnet",
+  "timestamp": "2026-03-27T13:08:35.046553Z",
+  "counts_by_severity": {}
+}

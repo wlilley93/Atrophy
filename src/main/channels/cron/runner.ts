@@ -92,10 +92,24 @@ export async function runJob(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<JobResult> {
   const config = getConfig();
-  // Check personal scripts dir first (~/.atrophy/scripts/), fall back to bundle
-  const personalPath = path.resolve(USER_DATA, 'scripts', definition.script.replace(/^scripts\//, ''));
+  // Check personal scripts dir first (~/.atrophy/scripts/), fall back to bundle.
+  // Validate resolved paths stay within their expected directories to prevent traversal.
+  const scriptRelative = definition.script.replace(/^scripts\//, '');
+  const personalPath = path.resolve(USER_DATA, 'scripts', scriptRelative);
   const bundlePath = path.resolve(BUNDLE_ROOT, definition.script);
-  const scriptPath = fs.existsSync(personalPath) ? personalPath : bundlePath;
+  const personalRoot = path.resolve(USER_DATA, 'scripts') + path.sep;
+  const bundleRoot = path.resolve(BUNDLE_ROOT) + path.sep;
+  const personalSafe = personalPath.startsWith(personalRoot);
+  const bundleSafe = bundlePath.startsWith(bundleRoot);
+  let scriptPath: string;
+  if (personalSafe && fs.existsSync(personalPath)) {
+    scriptPath = personalPath;
+  } else if (bundleSafe) {
+    scriptPath = bundlePath;
+  } else {
+    log.error(`Job '${agentName}.${jobName}' script path escapes allowed directories: ${definition.script}`);
+    return { agent: agentName, job: jobName, stdout: '', stderr: 'Script path rejected - traversal detected', exitCode: 1, durationMs: 0, timestamp: new Date().toISOString() };
+  }
   const rawArgs = definition.args || [];
   const extraArgs = typeof rawArgs === 'string' ? (rawArgs as string).split(/\s+/).filter(Boolean) : rawArgs;
   const pythonPath = config.PYTHON_PATH;

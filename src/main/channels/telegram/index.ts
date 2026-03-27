@@ -33,6 +33,7 @@ export {
 export {
   startDaemon,
   stopDaemon,
+  stopDaemonSync,
   isDaemonRunning,
   acquireLock,
   releaseLock,

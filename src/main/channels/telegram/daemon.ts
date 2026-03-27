@@ -1400,8 +1400,11 @@ function registerAgentSwitchboard(agent: TelegramAgent): void {
         );
       }
 
-      // Track consecutive failures for alerting
-      await recordDispatchOutcome(agent.name, !!response, chatId, botToken);
+      // Track consecutive failures for alerting.
+      // Cron jobs and tool-only dispatches may legitimately return no text.
+      // For Telegram-origin messages, a null response after retry is a real failure.
+      const success = response !== null || isCron;
+      await recordDispatchOutcome(agent.name, success, chatId, botToken);
     } catch (dispatchErr) {
       await recordDispatchOutcome(
         agent.name, false, chatId, botToken,
@@ -1536,14 +1539,57 @@ export function startDaemon(): boolean {
  * Stop the polling daemon and release the instance lock.
  * Tears down agent routers and unregisters switchboard handlers.
  */
-export function stopDaemon(): void {
+/**
+ * Stop the daemon gracefully - waits for in-flight dispatches and uses config lock.
+ * Use from IPC handlers where we can await.
+ */
+export async function stopDaemon(): Promise<void> {
   _running = false;
   for (const t of _pollerTimers) clearTimeout(t);
   _pollerTimers = [];
 
+  // Wait for in-flight dispatches to settle before touching config/DB
+  if (_activeDispatches.size > 0) {
+    log.info(`Waiting for ${_activeDispatches.size} active dispatch(es) to finish...`);
+    const deadline = Date.now() + 10_000;
+    while (_activeDispatches.size > 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
   // End all per-agent telegram sessions so ended_at gets set.
-  // Each agent has its own DB, so we must switch config before ending.
+  // Use config lock to avoid racing with any remaining dispatch finally blocks.
   const config = getConfig();
+  await withConfigLock(async () => {
+    _endAllSessions(config);
+  });
+  _agentSessions.clear();
+
+  _teardownRoutersAndHandlers();
+  releaseLock();
+  log.info('Stopped (graceful)');
+}
+
+/**
+ * Stop the daemon synchronously - for app shutdown (will-quit) where we can't await.
+ * Skips dispatch drain and config lock since the process is exiting.
+ */
+export function stopDaemonSync(): void {
+  _running = false;
+  for (const t of _pollerTimers) clearTimeout(t);
+  _pollerTimers = [];
+
+  // Best-effort session ending without config lock (process is exiting)
+  const config = getConfig();
+  _endAllSessions(config);
+  _agentSessions.clear();
+
+  _teardownRoutersAndHandlers();
+  releaseLock();
+  log.info('Stopped (sync)');
+}
+
+function _endAllSessions(config: ReturnType<typeof getConfig>): void {
   for (const [name, session] of _agentSessions) {
     if (session.sessionId != null) {
       try {
@@ -1553,23 +1599,19 @@ export function stopDaemon(): void {
       } catch { /* DB may already be closing */ }
     }
   }
-  _agentSessions.clear();
+}
 
-  // Tear down agent routers
-  for (const [name, router] of _agentRouters) {
+function _teardownRoutersAndHandlers(): void {
+  for (const [, router] of _agentRouters) {
     router.destroy();
   }
   _agentRouters.clear();
 
-  // Unregister telegram response handlers
   for (const address of switchboard.getRegisteredAddresses()) {
     if (address.startsWith('telegram:')) {
       switchboard.unregister(address);
     }
   }
-
-  releaseLock();
-  log.info('Stopped');
 }
 
 export function isDaemonRunning(): boolean {

@@ -18,8 +18,8 @@ export function registerTelegramHandlers(_ctx: IpcContext): void {
     return startDaemon();
   });
 
-  ipcMain.handle('telegram:stopDaemon', () => {
-    stopDaemon();
+  ipcMain.handle('telegram:stopDaemon', async () => {
+    await stopDaemon();
   });
 
   ipcMain.handle('telegram:isRunning', () => {

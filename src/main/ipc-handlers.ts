@@ -37,6 +37,7 @@ export interface IpcContext {
   currentAgentName: string | null;
   pendingAskId: string | null;
   pendingAskDestination: string | null;
+  pendingAskAgent: string | null;
   pendingBundleVersion: string | null;
   readonly hotBundle: HotBundlePaths | null;
   readonly isMenuBarMode: boolean;

@@ -115,7 +115,12 @@ function backupSingleAgent(agentSrc: string, agentDst: string): void {
     try {
       const db = new Database(dbSrc, { readonly: true });
       db.pragma('journal_mode = WAL');
-      db.exec(`VACUUM INTO '${dbDst.replace(/'/g, "''")}'`);
+      // Validate destination is within the backup directory (defense against SQL injection via path)
+      const resolvedDst = path.resolve(dbDst);
+      if (!resolvedDst.startsWith(path.resolve(BACKUP_DIR) + path.sep)) {
+        throw new Error(`backup path outside BACKUP_DIR: ${resolvedDst}`);
+      }
+      db.exec(`VACUUM INTO '${resolvedDst.replace(/'/g, "''")}'`);
       db.close();
     } catch (e) {
       log.debug(`memory.db backup skipped for ${path.basename(agentSrc)}: ${e}`);

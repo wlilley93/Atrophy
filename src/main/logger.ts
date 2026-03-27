@@ -91,14 +91,18 @@ function writeToFile(level: LogLevel, tag: string, message: string): void {
       try {
         fs.closeSync(_logFd);
         _logFd = null;
-        _logSize = 0;
         try { fs.unlinkSync(LOG_FILE_PREV); } catch { /* ok */ }
         fs.renameSync(LOG_FILE, LOG_FILE_PREV);
         _logFd = fs.openSync(LOG_FILE, 'a');
+        _logSize = 0; // Reset size only after successful rotation
       } catch {
         // Rotation failed - try to re-open so logging doesn't go permanently dark
         if (_logFd === null) {
-          try { _logFd = fs.openSync(LOG_FILE, 'a'); } catch { /* give up */ }
+          try {
+            _logFd = fs.openSync(LOG_FILE, 'a');
+            // Approximate actual file size since rotation failed
+            try { _logSize = fs.fstatSync(_logFd).size; } catch { /* keep current estimate */ }
+          } catch { /* give up */ }
         }
       }
     }

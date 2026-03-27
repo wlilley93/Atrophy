@@ -6,6 +6,7 @@
  * text replies. Pure HTTP via fetch - no webhooks, no extra dependencies.
  */
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -39,7 +40,11 @@ function apiUrl(method: string, botToken?: string): string {
 
 const MAX_RETRIES = 3;
 
-export async function post(method: string, payload: Record<string, unknown>, timeoutMs = 15_000, botToken?: string): Promise<unknown | null> {
+// Sentinel for internal use: distinguishes network errors from API errors.
+// Only used by the markdown fallback functions - post() returns null to external callers.
+const NETWORK_ERROR = Symbol('network_error');
+
+async function _post(method: string, payload: Record<string, unknown>, timeoutMs = 15_000, botToken?: string): Promise<unknown | null | typeof NETWORK_ERROR> {
   const token = botToken || getConfig().TELEGRAM_BOT_TOKEN;
   if (!token) {
     log.warn('TELEGRAM_BOT_TOKEN not configured');
@@ -48,7 +53,7 @@ export async function post(method: string, payload: Record<string, unknown>, tim
 
   // Long-poll requests (getUpdates with timeout) need a longer fetch timeout
   const pollTimeout = (payload.timeout as number) || 0;
-  const fetchTimeout = pollTimeout > 0 ? (pollTimeout + 10) * 1000 : 15_000;
+  const fetchTimeout = pollTimeout > 0 ? (pollTimeout + 10) * 1000 : timeoutMs;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
@@ -95,11 +100,17 @@ export async function post(method: string, payload: Record<string, unknown>, tim
         continue;
       }
       log.error(`${method} failed after ${MAX_RETRIES} attempts: ${e}`);
-      return null;
+      return NETWORK_ERROR;
     }
   }
 
   return null;
+}
+
+/** Public wrapper - strips the internal NETWORK_ERROR sentinel for external callers. */
+export async function post(method: string, payload: Record<string, unknown>, timeoutMs = 15_000, botToken?: string): Promise<unknown | null> {
+  const result = await _post(method, payload, timeoutMs, botToken);
+  return result === NETWORK_ERROR ? null : result;
 }
 
 /**
@@ -109,15 +120,20 @@ async function postWithMarkdownFallback(
   payload: Record<string, unknown>,
   botToken?: string,
 ): Promise<unknown | null> {
-  // Try with Markdown first
-  const result = await post('sendMessage', payload, 15_000, botToken);
-  if (result !== null) return result;
+  // Try with Markdown first (use _post to get network error distinction)
+  const result = await _post('sendMessage', payload, 15_000, botToken);
+  if (result !== null && result !== NETWORK_ERROR) return result;
 
-  // If Markdown fails, retry without parse_mode
+  // Don't retry without Markdown if the failure was a network error -
+  // retrying the same request won't help if the network is down.
+  if (result === NETWORK_ERROR) return null;
+
+  // API error (likely Markdown parse failure) - retry without parse_mode
   const plainPayload = { ...payload };
   delete plainPayload.parse_mode;
   log.debug('Send failed - retrying without Markdown');
-  return post('sendMessage', plainPayload, 15_000, botToken);
+  const fallback = await _post('sendMessage', plainPayload, 15_000, botToken);
+  return fallback === NETWORK_ERROR ? null : fallback;
 }
 
 /**
@@ -127,12 +143,15 @@ async function editWithMarkdownFallback(
   payload: Record<string, unknown>,
   botToken?: string,
 ): Promise<unknown | null> {
-  const result = await post('editMessageText', payload, 15_000, botToken);
-  if (result !== null) return result;
+  const result = await _post('editMessageText', payload, 15_000, botToken);
+  if (result !== null && result !== NETWORK_ERROR) return result;
+
+  if (result === NETWORK_ERROR) return null;
 
   const plainPayload = { ...payload };
   delete plainPayload.parse_mode;
-  return post('editMessageText', plainPayload, 15_000, botToken);
+  const fallback = await _post('editMessageText', plainPayload, 15_000, botToken);
+  return fallback === NETWORK_ERROR ? null : fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +203,7 @@ export async function sendMessage(
       // Try to split at a paragraph boundary
       let splitAt = remaining.lastIndexOf('\n\n', MAX_LEN);
       if (splitAt < MAX_LEN / 2) splitAt = remaining.lastIndexOf('\n', MAX_LEN);
-      if (splitAt < MAX_LEN / 2) splitAt = MAX_LEN;
+      if (splitAt <= 0) splitAt = MAX_LEN;
       chunk = remaining.slice(0, splitAt);
       remaining = remaining.slice(splitAt).trimStart();
     }
@@ -380,7 +399,7 @@ async function sendFileUpload(
   }
 
   try {
-    const boundary = `----FormBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const boundary = `----FormBoundary${crypto.randomBytes(16).toString('hex')}`;
 
     const fields: Record<string, string> = { chat_id: target };
     if (caption) {
@@ -624,7 +643,10 @@ export async function pollCallback(
       setOffset(update.update_id, botToken);
 
       const cb = update.callback_query;
-      if (cb && String(cb.from?.id) === target) {
+      // Match on chat ID (works for both groups and DMs) or fall back to user ID
+      const cbChatId = String((cb as any)?.message?.chat?.id ?? '');
+      const cbUserId = String(cb?.from?.id ?? '');
+      if (cb && (cbChatId === target || cbUserId === target)) {
         await post('answerCallbackQuery', { callback_query_id: cb.id }, 15_000, botToken);
         return cb.data ?? null;
       }
@@ -666,7 +688,10 @@ export async function pollReply(
       setOffset(update.update_id, botToken);
 
       const msg = update.message;
-      if (msg && String(msg.from?.id) === target && msg.text) {
+      // Match on chat ID (works for both groups and DMs) or fall back to user ID
+      const msgChatId = String((msg as any)?.chat?.id ?? '');
+      const msgUserId = String(msg?.from?.id ?? '');
+      if (msg && (msgChatId === target || msgUserId === target) && msg.text) {
         return msg.text;
       }
     }
@@ -878,7 +903,7 @@ export async function setBotProfilePhoto(photoPath: string, botToken?: string): 
   if (!token) return false;
 
   try {
-    const boundary = `----FormBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const boundary = `----FormBoundary${crypto.randomBytes(16).toString('hex')}`;
     const body = buildMultipartBody({}, { name: 'photo', path: photoPath, contentType: 'image/png' }, boundary);
 
     const resp = await fetch(apiUrl('setMyProfilePhoto', token), {

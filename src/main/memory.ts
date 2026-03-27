@@ -1236,15 +1236,38 @@ export function getOtherAgentsRecentSummaries(
   const current = currentAgent || getConfig().AGENT_NAME;
   const results: { agent: string; display_name: string; summaries: { content: string; created_at: string; mood: string | null }[] }[] = [];
 
-  const agents = fs.readdirSync(agentsDir).filter((n) => n !== current);
-  for (const agent of agents.slice(0, maxAgents)) {
-    const dbPath = path.join(agentsDir, agent, 'data', 'memory.db');
+  // Collect agents - scan flat entries and recurse one level into org directories
+  const allAgents: { name: string; dir: string }[] = [];
+  for (const entry of fs.readdirSync(agentsDir)) {
+    if (entry === current) continue;
+    const entryPath = path.join(agentsDir, entry);
+    if (!fs.statSync(entryPath).isDirectory()) continue;
+    // Check if this is a direct agent (has data/memory.db) or an org directory
+    if (fs.existsSync(path.join(entryPath, 'data', 'memory.db'))) {
+      allAgents.push({ name: entry, dir: entryPath });
+    } else {
+      // Check for nested agents inside org directory
+      try {
+        for (const sub of fs.readdirSync(entryPath)) {
+          const subName = `${entry}/${sub}`;
+          if (subName === current) continue;
+          const subPath = path.join(entryPath, sub);
+          if (fs.statSync(subPath).isDirectory() && fs.existsSync(path.join(subPath, 'data', 'memory.db'))) {
+            allAgents.push({ name: subName, dir: subPath });
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+  }
+
+  for (const { name: agent, dir: agentDir } of allAgents.slice(0, maxAgents)) {
+    const dbPath = path.join(agentDir, 'data', 'memory.db');
     if (!fs.existsSync(dbPath)) continue;
 
     // Read display_name from agent manifest (check user data then bundle)
     let displayName = agent.charAt(0).toUpperCase() + agent.slice(1);
     const manifestPaths = [
-      path.join(agentsDir, agent, 'data', 'agent.json'),
+      path.join(agentDir, 'data', 'agent.json'),
       path.join(BUNDLE_ROOT, 'agents', agent, 'data', 'agent.json'),
     ];
     for (const manifestPath of manifestPaths) {

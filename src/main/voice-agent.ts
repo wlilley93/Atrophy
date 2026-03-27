@@ -290,18 +290,38 @@ function _disconnectWebSocket(): void {
  * Ensure WebSocket is connected. If already connected, returns immediately.
  * If disconnected, reconnects to the cached agent (~200ms).
  */
+let _connectingPromise: Promise<boolean> | null = null;
+
 async function _ensureConnected(): Promise<boolean> {
   if (_ws && _ws.readyState === WebSocket.OPEN) {
     _resetIdleTimer();
     return true;
   }
 
+  // Prevent concurrent reconnect attempts - reuse in-flight promise
+  if (_connectingPromise) return _connectingPromise;
+
+  _connectingPromise = _doConnect();
+  try {
+    return await _connectingPromise;
+  } finally {
+    _connectingPromise = null;
+  }
+}
+
+async function _doConnect(): Promise<boolean> {
   if (!_agentId) {
     log.error('no agent_id cached - call startVoiceAgent first');
     return false;
   }
 
   _setStatus('connecting');
+
+  // Close any existing WebSocket in non-OPEN state to prevent leaks
+  if (_ws && _ws.readyState !== WebSocket.OPEN) {
+    try { _ws.close(); } catch {}
+    _ws = null;
+  }
 
   try {
     // Get a fresh signed URL (they expire)
@@ -1146,10 +1166,13 @@ function _handleAgentResponse(msg: ConvAIAgentResponse): void {
   const text = msg.agent_response_event.agent_response;
   log.debug(`agent said: "${text.slice(0, 80)}"`);
 
+  // Reset skip flag at the start of each new response
+  _skipNextAudio = false;
+
   _emitter.emit('agentResponse', text);
   _getWindow?.()?.webContents.send('voice-agent:agentResponse', text);
 
-  // For very short responses, skip TTS audio - just display text
+  // For very short responses, skip TTS audio for this entire response
   if (text.length < 20) {
     _skipNextAudio = true;
     log.debug('short response - skipping TTS audio');
@@ -1167,8 +1190,7 @@ function _handleAgentResponseCorrection(msg: ConvAIAgentResponseCorrection): voi
 
 function _handleAudioEvent(msg: ConvAIAudio): void {
   if (_skipNextAudio) {
-    _skipNextAudio = false;
-    return;
+    return; // Skip all audio chunks until next agent_response resets the flag
   }
   const audioBytes = Buffer.from(msg.audio_event.audio_base_64, 'base64');
   _handleAudioOutput(audioBytes);
@@ -1288,16 +1310,27 @@ async function _handleClaudeCode(params: Record<string, unknown>): Promise<strin
     const emitter = streamInference(prompt, _systemPrompt!, _cliSessionId);
     let fullText = '';
     let toolsUsed: string[] = [];
+    let resolved = false;
+
+    function settle(result: string): void {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      emitter.removeAllListeners('event');
+      // Don't call stopInference() here - it would kill any concurrent
+      // GUI inference on the same agent. The subprocess self-terminates
+      // after emitting StreamDone/StreamError.
+      resolve(result);
+    }
 
     const timeout = setTimeout(() => {
       log.warn('claude_code timed out');
-      resolve(fullText || 'Claude Code timed out. Try again with a simpler request.');
+      settle(fullText || 'Claude Code timed out. Try again with a simpler request.');
     }, CLAUDE_CODE_TIMEOUT_MS);
 
     emitter.on('event', (evt: InferenceEvent) => {
       if (!_active) {
-        clearTimeout(timeout);
-        resolve(fullText || 'Voice agent stopped.');
+        settle(fullText || 'Voice agent stopped.');
         return;
       }
 
@@ -1323,7 +1356,6 @@ async function _handleClaudeCode(params: Record<string, unknown>): Promise<strin
           break;
 
         case 'StreamDone':
-          clearTimeout(timeout);
           fullText = evt.fullText || fullText;
 
           // Update CLI session ID for continuity
@@ -1345,11 +1377,14 @@ async function _handleClaudeCode(params: Record<string, unknown>): Promise<strin
               ? fullText.slice(0, 3800) + '\n\n[Response truncated - full result displayed on screen]'
               : fullText;
 
+          // Don't kill the process on normal completion - it finished naturally
+          resolved = true;
+          clearTimeout(timeout);
+          emitter.removeAllListeners('event');
           resolve(truncated);
           break;
 
         case 'StreamError':
-          clearTimeout(timeout);
           log.error(`claude_code error: ${evt.message}`);
           _getWindow?.()?.webContents.send('inference:error', evt.message);
 
@@ -1359,9 +1394,9 @@ async function _handleClaudeCode(params: Record<string, unknown>): Promise<strin
             evt.message.includes('rate') ||
             evt.message.includes('overloaded')
           ) {
-            resolve('Claude is temporarily unavailable due to rate limiting. Try again in a moment.');
+            settle('Claude is temporarily unavailable due to rate limiting. Try again in a moment.');
           } else {
-            resolve(`Claude encountered an error: ${evt.message.slice(0, 200)}`);
+            settle(`Claude encountered an error: ${evt.message.slice(0, 200)}`);
           }
           break;
       }
@@ -1557,6 +1592,10 @@ function _cleanup(): void {
   _active = false;
   _conversationId = null;
   _pendingToolCalls = 0;
+  _connectingPromise = null;
+  _vadSpeechDetected = false;
+  _vadSilenceFrames = 0;
+  _skipNextAudio = false;
   _setStatus('disconnected');
   _emitter.emit('ended');
 }

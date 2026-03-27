@@ -92,7 +92,10 @@ export function isAllowedEnvKey(key: string): boolean {
 
 /** Save a secret to ~/.atrophy/.env. Updates or appends the key. Returns false if key not in whitelist. */
 export function saveEnvVar(key: string, value: string): boolean {
-  if (!ALLOWED_ENV_KEYS.has(key)) return false;
+  const isAllowed = ALLOWED_ENV_KEYS.has(key)
+    || /^[A-Z][A-Z0-9_]*_TELEGRAM_(BOT_TOKEN|CHAT_ID|DM_CHAT_ID)$/.test(key)
+    || /^[A-Z][A-Z0-9_]*_ELEVENLABS_(API_KEY|VOICE_ID)$/.test(key);
+  if (!isAllowed) return false;
   // Strip newlines to prevent env injection
   value = value.replace(/[\r\n]/g, '');
   const envPath = path.join(USER_DATA, '.env');
@@ -344,7 +347,7 @@ function findPython(): string {
     const p = process.env.PYTHON_PATH;
     // Validate it looks like a file path - reject shell metacharacters
     if (/^[a-zA-Z0-9_.\/~-]+$/.test(p)) return p;
-    log.warn('PYTHON_PATH contains invalid characters, ignoring');
+    console.warn('PYTHON_PATH contains invalid characters, ignoring');
   }
 
   // Scan common Python locations. Electron apps don't inherit shell PATH,

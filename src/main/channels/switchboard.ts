@@ -94,6 +94,7 @@ class Switchboard {
    */
   unregister(address: string): void {
     if (this.handlers.delete(address)) {
+      this.directory.delete(address);
       log.info(`Unregistered handler: ${address}`);
     }
   }
@@ -295,8 +296,12 @@ class Switchboard {
         }
         if (envelopes.length === 0) return;
 
-        // Process each envelope
+        // Process each envelope - only allow mcp:* and cron:* origins from queue
         for (const env of envelopes) {
+          if (env.from && !env.from.startsWith('mcp:') && !env.from.startsWith('cron:')) {
+            log.warn(`Queue: rejected envelope with non-MCP origin: ${env.from}`);
+            continue;
+          }
           log.info(`Queue: ${env.from} -> ${env.to} "${env.text?.slice(0, 60)}"`);
           try {
             await this.route(env);

@@ -542,8 +542,13 @@ export class McpRegistry {
         command = pythonPath;
       }
 
-      // Build env vars - merge server defaults with per-server overrides
-      const env = this.buildServerEnv(server.name, agentName, server.env);
+      // Build env vars - for bundled servers, apply built-in env logic.
+      // For custom servers (bundled=false), use their env directly to avoid
+      // the switch statement injecting built-in server env vars into custom servers
+      // that happen to share a name with a built-in.
+      const env = server.bundled !== false
+        ? this.buildServerEnv(server.name, agentName, server.env)
+        : { ...(server.env || {}) };
 
       const entry: Record<string, unknown> = {
         command,

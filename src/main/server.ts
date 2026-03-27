@@ -83,12 +83,26 @@ function sendJson(res: http.ServerResponse, data: unknown, status = 200): void {
   res.end(JSON.stringify(data));
 }
 
+// Rate limiting for auth failures - sliding window of timestamps
+const AUTH_FAIL_WINDOW_MS = 60_000; // 1 minute
+const AUTH_FAIL_MAX = 10; // max failures per window
+const _authFailures: number[] = [];
+
 function checkAuth(req: http.IncomingMessage): boolean {
+  // Check rate limit before attempting auth
+  const now = Date.now();
+  while (_authFailures.length > 0 && _authFailures[0] < now - AUTH_FAIL_WINDOW_MS) {
+    _authFailures.shift();
+  }
+  if (_authFailures.length >= AUTH_FAIL_MAX) return false;
+
   const auth = req.headers.authorization || '';
-  if (!auth.startsWith('Bearer ')) return false;
+  if (!auth.startsWith('Bearer ')) { _authFailures.push(now); return false; }
   const provided = crypto.createHash('sha256').update(auth.slice(7)).digest();
   const expected = crypto.createHash('sha256').update(serverToken).digest();
-  return crypto.timingSafeEqual(provided, expected);
+  const ok = crypto.timingSafeEqual(provided, expected);
+  if (!ok) _authFailures.push(now);
+  return ok;
 }
 
 function parseQuery(url: string): Record<string, string> {

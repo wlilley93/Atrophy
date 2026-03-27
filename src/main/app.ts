@@ -15,7 +15,7 @@ const bootLogger = createLogger('boot');
 // Performance: increase V8 heap limit and enable concurrent GC
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 app.commandLine.appendSwitch('enable-features', 'V8ConcurrentSparkplug');
-import { ensureUserData, getConfig, BUNDLE_ROOT, USER_DATA } from './config';
+import { ensureUserData, getConfig, isValidAgentName, BUNDLE_ROOT, USER_DATA } from './config';
 import { initDb, closeAll as closeAllDbs, closeForPath, closeStaleOpenSessions, endSession } from './memory';
 import { stopAllInference, stopInference, resetMcpConfig, prefetchContext, invalidateContextCache } from './inference';
 import { loadSystemPrompt } from './context';
@@ -28,7 +28,7 @@ import { discoverAgents, syncBundledPrompts, cycleAgent, setLastActiveAgent, get
 import { runCoherenceCheck } from './sentinel';
 import { drainAllAgentQueues } from './queue';
 import { startServer, stopServer } from './server';
-import { startDaemon, stopDaemon, setMainWindowAccessor } from './channels/telegram';
+import { startDaemon, stopDaemonSync, setMainWindowAccessor } from './channels/telegram';
 import { cronScheduler, stopAllJobs } from './channels/cron';
 import { mcpRegistry } from './mcp-registry';
 import { wireAgent, markBootComplete } from './create-agent';
@@ -80,6 +80,7 @@ let deferralTimer: ReturnType<typeof setInterval> | null = null;
 let askUserTimer: ReturnType<typeof setInterval> | null = null;
 let pendingAskId: string | null = null; // track which ask is currently shown in UI
 let pendingAskDestination: string | null = null; // destination for secure_input auto-save
+let pendingAskAgent: string | null = null; // source agent for background ask requests
 let artefactTimer: ReturnType<typeof setInterval> | null = null;
 let canvasTimer: ReturnType<typeof setInterval> | null = null;
 let canvasLastMtime = 0;
@@ -147,9 +148,10 @@ function createWindow(): BrowserWindow {
   });
 
   // Load renderer
-  if (process.env.ELECTRON_RENDERER_URL) {
-    bootLogger.info(`loadURL: ${process.env.ELECTRON_RENDERER_URL}`);
-    win.loadURL(process.env.ELECTRON_RENDERER_URL);
+  const devUrl = process.env.ELECTRON_RENDERER_URL;
+  if (devUrl && /^https?:\/\/localhost[:/]/.test(devUrl)) {
+    bootLogger.info(`loadURL: ${devUrl}`);
+    win.loadURL(devUrl);
   } else {
     const rendererPath = _hotBundle?.renderer ?? path.join(__dirname, '..', 'renderer', 'index.html');
     bootLogger.info(`loadFile: ${rendererPath}`);
@@ -480,7 +482,7 @@ async function switchAgent(name: string): Promise<SwitchAgentResult> {
   if (_switchInProgress) throw new Error('Agent switch already in progress');
   _switchInProgress = true;
   try {
-    if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Invalid agent name');
+    if (!isValidAgentName(name)) throw new Error('Invalid agent name');
     const knownAgents = discoverAgents();
     if (!knownAgents.some(a => a.name === name)) {
       throw new Error(`Agent "${name}" not found`);
@@ -546,6 +548,8 @@ function initIpcHandlers(): void {
     set pendingAskId(v) { pendingAskId = v; },
     get pendingAskDestination() { return pendingAskDestination; },
     set pendingAskDestination(v) { pendingAskDestination = v; },
+    get pendingAskAgent() { return pendingAskAgent; },
+    set pendingAskAgent(v) { pendingAskAgent = v; },
     get pendingBundleVersion() { return pendingBundleVersion; },
     set pendingBundleVersion(v) { pendingBundleVersion = v; },
     get hotBundle() { return _hotBundle; },
@@ -876,6 +880,7 @@ app.whenReady().then(() => {
 
     pendingAskId = request.request_id;
     pendingAskDestination = request.destination || null;
+    pendingAskAgent = (request as any)._agent || null;
     mainWindow.webContents.send('ask:request', {
       question: request.question,
       action_type: request.action_type,
@@ -1124,7 +1129,7 @@ app.on('will-quit', () => {
   stopAllJobs();
   stopWakeWordListener(() => mainWindow);
   disableKeepAwake();
-  stopDaemon();
+  stopDaemonSync();
   stopServer();
 
   // End the current desktop session synchronously (summary generation is

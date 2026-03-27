@@ -65,10 +65,18 @@
     scrollToBottom();
   });
 
+  let showScrollButton = $derived(!transcript.autoScroll);
+
   function onScroll() {
     if (!container) return;
     const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
     transcript.autoScroll = atBottom;
+  }
+
+  function jumpToBottom() {
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+    transcript.autoScroll = true;
   }
 
   // ---- Markdown rendering ----
@@ -334,33 +342,51 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="transcript selectable" data-no-drag bind:this={container} onscroll={onScroll} onclick={handleCopyClick}>
-  <div class="transcript-inner">
-    {#each transcript.messages as msg, i (msg.id)}
-      {#if msg.role === 'divider'}
-        <div class="divider">
-          <span class="divider-text">{msg.content}</span>
-        </div>
-      {:else}
-        {#if msg.role === 'agent' && !msg.content && session.inferenceState !== 'idle' && i === transcript.messages.length - 1}
-          <!-- Brain cycling indicator while waiting for first token -->
-          <div class="thinking-row">
-            <ThinkingIndicator />
+<div class="transcript-wrapper">
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="transcript selectable" data-no-drag bind:this={container} onscroll={onScroll} onclick={handleCopyClick}>
+    <div class="transcript-inner">
+      {#each transcript.messages as msg, i (msg.id)}
+        {#if msg.role === 'divider'}
+          <div class="divider">
+            <span class="divider-text">{msg.content}</span>
           </div>
         {:else}
-          <div class="message {msg.role}">
-            <div class="message-text">{@html renderMessage(msg)}</div>
-            <span class="message-time">{relativeTime(msg.timestamp, now)}</span>
-          </div>
+          {#if msg.role === 'agent' && !msg.content && session.inferenceState !== 'idle' && i === transcript.messages.length - 1}
+            <!-- Brain cycling indicator while waiting for first token -->
+            <div class="thinking-row">
+              <ThinkingIndicator />
+            </div>
+          {:else}
+            <div class="message {msg.role}">
+              <div class="message-text">{@html renderMessage(msg)}</div>
+              <span class="message-time">{relativeTime(msg.timestamp, now)}</span>
+            </div>
+          {/if}
         {/if}
-      {/if}
-    {/each}
+      {/each}
+    </div>
   </div>
+
+  {#if showScrollButton}
+    <button class="scroll-to-bottom" onclick={jumpToBottom} aria-label="Scroll to bottom">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </button>
+  {/if}
 </div>
 
 <style>
+  .transcript-wrapper {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
   .transcript {
     flex: 1;
     overflow-y: auto;
@@ -373,8 +399,8 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.3) 15%, black 33%);
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.3) 15%, black 33%);
+    mask-image: linear-gradient(to bottom, transparent 0%, black 8%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 8%);
   }
 
   .transcript-inner {
@@ -641,5 +667,34 @@
     color: var(--text-dim);
     margin-left: auto;
     flex-shrink: 0;
+  }
+
+  .scroll-to-bottom {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: rgba(20, 20, 24, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s, color 0.15s, border-color 0.15s;
+    opacity: 0.8;
+    -webkit-app-region: no-drag;
+  }
+
+  .scroll-to-bottom:hover {
+    opacity: 1;
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
   }
 </style>

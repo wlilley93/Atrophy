@@ -121,9 +121,23 @@
     }
   }
 
-  /** When the current video ends, loop it. Emotion changes handle clip switching. */
+  /** When the current video ends, cycle to the next loop or replay. */
   function onVideoEnded() {
-    videoEl?.play().catch(() => {});
+    if (allLoops.length > 1) {
+      // Cycle through all available loops ambiently
+      currentLoopIndex = (currentLoopIndex + 1) % allLoops.length;
+      const nextSrc = `file://${allLoops[currentLoopIndex]}`;
+      if (nextSrc === videoSrc) {
+        // Same src - Svelte won't update the DOM attribute, force reload
+        videoEl?.load();
+        videoEl?.play().catch(() => {});
+      } else {
+        videoSrc = nextSrc;
+        videoReady = false;
+      }
+    } else {
+      videoEl?.play().catch(() => {});
+    }
   }
 
   function onVideoCanPlay() {

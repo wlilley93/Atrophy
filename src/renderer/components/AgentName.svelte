@@ -16,6 +16,7 @@
   let offset = $state(0);
   let animating = $state(false);
   let prevName = '';
+  let activeRafId = 0;
 
   // Initialize on first render
   $effect(() => {
@@ -26,16 +27,18 @@
   });
 
   $effect(() => {
-    if (name !== prevName && !animating) {
-      prevName = name;
+    if (name !== prevName) {
+      // Cancel any in-flight animation and start fresh
+      if (activeRafId) cancelAnimationFrame(activeRafId);
+
+      const targetName = name;
+      prevName = targetName;
       animating = true;
       offset = direction > 0 ? 30 : -30;
 
-      // Animate to 0
       const start = performance.now();
       const duration = 400;
       const from = offset;
-      let rafId = 0;
 
       function tick(now: number) {
         const elapsed = now - start;
@@ -44,22 +47,24 @@
         const ease = 1 - Math.pow(1 - t, 3);
         offset = from * (1 - ease);
 
-        if (t < 0.5 && displayName !== name) {
-          displayName = name;
+        if (t < 0.5 && displayName !== targetName) {
+          displayName = targetName;
         }
 
         if (t < 1) {
-          rafId = requestAnimationFrame(tick);
+          activeRafId = requestAnimationFrame(tick);
         } else {
           offset = 0;
           animating = false;
-          prevName = name;
+          activeRafId = 0;
         }
       }
-      rafId = requestAnimationFrame(tick);
+      activeRafId = requestAnimationFrame(tick);
 
-      // Cancel animation on cleanup (component destroy or effect re-run)
-      return () => cancelAnimationFrame(rafId);
+      // Cancel animation on component destroy
+      return () => {
+        if (activeRafId) { cancelAnimationFrame(activeRafId); activeRafId = 0; }
+      };
     }
   });
 </script>

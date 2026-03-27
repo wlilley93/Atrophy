@@ -490,9 +490,9 @@
         addMessage('agent', cumulativeText);
       } else if (msgs.length > 0) {
         const last = msgs[msgs.length - 1];
-        // Complete the previous paragraph's reveal before appending new one
-        last.revealed = prevLength;
-        // Append new paragraph text - the reveal timer will animate from prevLength
+        // Ensure reveal is at least up to previous text before appending new paragraph
+        last.revealed = Math.max(last.revealed ?? 0, prevLength);
+        // Append new paragraph text - the reveal timer will animate from current position
         last.content = cumulativeText;
       }
     }

@@ -266,7 +266,7 @@ class CronScheduler {
     this.started = true;
 
     for (const job of this.jobs.values()) {
-      this.scheduleJob(job);
+      if (!job.disabled) this.scheduleJob(job);
     }
 
     log.info(`Started scheduler with ${this.jobs.size} job(s)`);

@@ -229,6 +229,7 @@
           srcdoc={content}
           class="artefact-iframe"
           sandbox="allow-scripts"
+          csp="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:;"
           title="Artefact content"
         ></iframe>
       {:else if contentType === 'image'}
