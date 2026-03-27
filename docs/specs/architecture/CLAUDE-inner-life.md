@@ -52,7 +52,9 @@ Named combinations of emotional dimensions that produce qualitatively different 
 
 ## Layer 2 - Salience Scoring
 
-Every turn scored at write time (0.05-1.0) in `inner-life-salience.ts`. Score becomes the turn's `weight` in memory.db.
+Every turn scored at write time (0.05-1.0) in `inner-life-salience.ts`. Score is mapped to integer weight 1-5 in memory.db (DB column is `INTEGER CHECK(weight BETWEEN 1 AND 5)`).
+
+Mapping: `Math.max(1, Math.min(5, Math.round(rawScore * 5)))`.
 
 Factors:
 - Emotional displacement (how much state changed)
@@ -95,20 +97,39 @@ Extracts weighted observations from recent turns. Prioritises emotional weight o
 Two passes: structured extraction (facts, threads, patterns, trust, identity flags) + first-person reflection. The reflection is stored as a 0.9-confidence observation.
 
 ### Evolve (monthly 1st)
-LLM rewrites soul.md and system_prompt.md from accumulated material. Parses personality adjustment JSON. Archives previous versions.
+Rewritten as standalone Claude CLI invocation (no Anthropic SDK). LLM rewrites soul.md and system_prompt.md from accumulated material. Parses personality adjustment JSON. Archives previous versions.
+
+### Session summaries
+Session summaries now capture emotional texture - not just topic coverage but the emotional arc of the conversation. Written by `_generateDeferredSummary()` in the background after agent switch, using a config snapshot of the old agent to avoid race conditions.
+
+## IPC Pipeline (main -> renderer -> orb)
+
+The emotion pipeline is wired end-to-end:
+
+1. **Main process**: after each inference turn completes (`StreamDone` event), `ipc/inference.ts` calls `loadEmotionalState()` and broadcasts `emotion:updated` via `webContents.send()`.
+2. **Preload**: exposes `onEmotionUpdated` listener via `contextBridge`.
+3. **Renderer**: `InputBar.svelte` listens for the event and calls `applyEmotionUpdate()` which feeds the orb avatar's color/animation/intensity parameters.
+
+This means the orb reflects the agent's real emotional state in real time - not just a cosmetic animation.
+
+## Distributed Emotional Memory
+
+Emotional vectors (32-dim) are written per turn to `memory.db:turns.emotional_vector`. The `computeDistributedState()` function in `inner-life.ts` reads recent vectors from memory and computes a weighted average, allowing emotional state to persist across sessions and be influenced by historical patterns. `getRecentEmotionalVectors()` in `memory.ts` provides the retrieval layer.
 
 ## File Map
 
 | File | Purpose |
 |------|---------|
 | `inner-life-types.ts` | Interfaces, defaults, baselines, half-lives |
-| `inner-life.ts` | State load/save, decay, update functions, vector encoding |
+| `inner-life.ts` | State load/save, decay, update, velocity tracking, vector encoding, distributed state |
 | `inner-life-interactions.ts` | Interaction state detection (8 named registers) |
 | `inner-life-salience.ts` | Turn salience scoring + disclosure mapping |
 | `inner-life-compress.ts` | Context injection formatter (v3) |
 | `inner-life-needs.ts` | Need satisfaction/depletion, drive computation |
 | `session.ts` | Turn writing with salience + disclosure inline |
-| `agency.ts` | Emotional signal detection from user messages |
+| `agency.ts` | Emotional signal detection from user messages, relationship baseline growth |
+| `opening.ts` | Dynamic opening line generation + pre-caching for all agents |
+| `ipc/inference.ts` | Broadcasts `emotion:updated` to renderer after each turn |
 
 ## Data Paths
 

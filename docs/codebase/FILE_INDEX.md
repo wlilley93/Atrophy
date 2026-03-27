@@ -393,8 +393,8 @@ docs/codebase/
 | Database | 1 | 1 | 100% |
 | MCP Servers | 3 | 3 | 100% |
 | Utilities | 3 | 3 | 100% |
-| Scripts (Python) | 5 | 70+ | 7% |
-| **Total** | **103** | **180+** | **57%** |
+| Scripts (Python) | 15 | 70+ | 21% |
+| **Total** | **113** | **180+** | **63%** |
 
 ---
 

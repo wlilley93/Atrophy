@@ -54,7 +54,13 @@ src/
     context.ts               # Context assembly (port of core/context.py)
     prompts.ts               # Prompt loading (port of core/prompts.py)
     agency.ts                # Behavioral agency (port of core/agency.py)
-    inner-life.ts            # Emotional state engine (port of core/inner_life.py)
+    inner-life.ts            # Emotional state engine - load/save, decay, velocity, vectors
+    inner-life-types.ts      # Interfaces, defaults, baselines, half-lives
+    inner-life-interactions.ts # 8 named interaction state detection
+    inner-life-salience.ts   # Turn salience scoring + disclosure mapping
+    inner-life-compress.ts   # Context injection formatter (v3, under 100 tokens)
+    inner-life-needs.ts      # Need satisfaction/depletion, drive computation
+    opening.ts               # Dynamic opening line generation + pre-caching
     agent-manager.ts         # Multi-agent management (port of core/agent_manager.py)
     sentinel.ts              # Coherence monitoring (port of core/sentinel.py)
     embeddings.ts            # Local embeddings via Transformers.js
@@ -297,7 +303,7 @@ These are straightforward TypeScript translations:
 | Python | TypeScript | Source |
 |--------|-----------|--------|
 | `core/agency.py` | `src/main/agency.ts` | Time awareness, mood, energy |
-| `core/inner_life.py` | `src/main/inner-life.ts` | Emotional state with decay |
+| `core/inner_life.py` | `src/main/inner-life*.ts` (6 files) | 5-layer emotional engine (see section 14) |
 | `core/agent_manager.py` | `src/main/agent-manager.ts` | Agent discovery, switching |
 | `core/sentinel.py` | `src/main/sentinel.ts` | Coherence monitoring |
 | `core/thinking.py` | `src/main/thinking.ts` | Effort classification |
@@ -658,13 +664,15 @@ Agents can self-serve MCP via switchboard tools: list servers, activate/deactiva
 
 ### Boot sequence (`app.ts`)
 
-1. `initDb()` - database
-2. `mcpRegistry.discover()` + `registerWithSwitchboard()` - MCP server discovery
-3. `discoverAgents()` + `wireAgent()` per agent - switchboard registration, cron, MCP
-4. `cronScheduler.start()` - start all job timers
-5. `startDaemon()` - Telegram polling
-6. `switchboard.startQueuePolling()` - MCP queue file polling
-7. Periodic `switchboard.writeStateForMCP()` - state dump for Python MCP servers
+1. `ensureUserData()` - config dirs + `cleanupStaleFiles()` (temp TTS, old logs, orphaned artifacts)
+2. `initDb()` - database, close stale open sessions per agent
+3. `mcpRegistry.discover()` + `registerWithSwitchboard()` - MCP server discovery
+4. `discoverAgents()` + `wireAgent()` per agent - switchboard registration, cron, MCP
+5. `cronScheduler.start()` - start all job timers
+6. `startDaemon()` - Telegram polling
+7. `switchboard.startQueuePolling()` - MCP queue file polling
+8. Periodic `switchboard.writeStateForMCP()` - state dump for Python MCP servers
+9. `precacheAllOpenings()` - background pre-generate opening lines for all agents (idle time)
 
 ### Agent-to-agent communication
 Agents can message each other via switchboard MCP tools:
@@ -839,3 +847,74 @@ Full 1,051-line spec at `docs/superpowers/specs/2026-03-27-meridian-site-redesig
 - `docs/superpowers/specs/2026-03-27-meridian-ontology-design.md` - Ontology schema spec
 - `docs/superpowers/specs/2026-03-27-meridian-improvements-spec.md` - 14 capability specs
 - `docs/superpowers/specs/2026-03-27-meridian-site-redesign.md` - Site redesign vision
+
+---
+
+## 14. Inner Life - Emotion Pipeline
+
+The emotional engine is wired end-to-end: main process computes state, IPC broadcasts it, renderer drives the orb. See `docs/specs/architecture/CLAUDE-inner-life.md` for the full architecture reference.
+
+### 5-layer architecture
+
+| Layer | Speed | File | Purpose |
+|-------|-------|------|---------|
+| 0 - Physics | per-turn | `inner-life.ts` | Value/velocity/half-life per dimension. Velocity smoothed with exponential averaging (60% new, 40% momentum). 14 emotions, 6 trust domains, 8 needs, 6 relationship signals. |
+| 1 - Interaction States | per-turn | `inner-life-interactions.ts` | 8 named behavioral registers detected by threshold crossings on emotion combinations (e.g. protective_friction, charged_presence, irreverence). |
+| 2 - Salience | per-turn | `inner-life-salience.ts` | Every turn scored 0.05-1.0 at write time. Score mapped to integer weight 1-5 in memory.db. Factors: emotional displacement, vulnerability, relational content, disclosure breadth, technical penalty. |
+| 3 - Disclosure | per-turn | `inner-life-salience.ts` | 8-category map (career, relationship, anxiety, physical, spiritual, creative, identity, vulnerability). Depth only increases. Injected at session start. |
+| 4 - Context Injection | per-turn + session start | `inner-life-compress.ts` | Compact priors under 100 tokens. Session start includes personality, relationship, disclosure. Per-turn includes state, velocity arrows, active registers, trust. |
+| 5 - Slow Evolution | 15min/daily/monthly | observer, sleep cycle, evolve | Weighted observations (noise floor 0.3), structured extraction + first-person reflection, personality rewrite via standalone Claude CLI. |
+
+### Trust betrayal asymmetry
+
+Negative trust changes hit 2x harder than positive. Max +0.05/call, max -0.10/call. Stored per domain (emotional, intellectual, creative, practical, operational, personal).
+
+### Relationship baseline growth
+
+Familiarity and reliability grow on every real message (>50 chars). All relationship signals boosted to outpace decay, ensuring relationships accumulate over time rather than flatline.
+
+### IPC pipeline (main -> renderer -> orb)
+
+After each inference turn completes, `ipc/inference.ts` loads the emotional state and broadcasts `emotion:updated` to the renderer. The renderer's `InputBar.svelte` listens and calls `applyEmotionUpdate()` which feeds the orb's color/animation parameters.
+
+### Agent switching - instant with deferred summary
+
+`switchAgent()` in `app.ts` is now instant. Instead of blocking on session summary generation, it fires `_generateDeferredSummary()` as a background task that writes directly to the DB using the old agent's config snapshot. No config swap race.
+
+### Opening line pre-caching
+
+`opening.ts` generates stylistically varied opening lines via oneshot inference. `precacheAllOpenings()` runs during boot idle time, pre-generating for all agents that lack a valid cached opening. Cache invalidates on time bracket change (morning/afternoon/evening/night).
+
+### Observer and sleep cycle (upgraded)
+
+- **Observer** (every 15 min): extracts weighted observations from recent turns. Prioritises emotional weight over technical facts. Noise floor at weight 0.3.
+- **Sleep cycle** (daily 3am): two passes - structured extraction (facts, threads, patterns, trust, identity flags) + first-person reflection stored as 0.9-confidence observation. Session summaries now capture emotional texture.
+- **Evolve** (monthly 1st): rewritten as standalone Claude CLI invocation. LLM rewrites soul.md and system_prompt.md from accumulated material. Parses personality adjustment JSON. Archives previous versions.
+
+### Python scripts updated
+
+- `converse.py` scans runtime agents at `~/.atrophy/agents/` (not just bundle), so all agents including org-nested ones are available for inter-agent conversation scheduling.
+- `evolve.py` rewritten to use standalone Claude CLI binary instead of the Anthropic SDK.
+
+### Boot-time housekeeping
+
+- `cleanupStaleFiles()` in `config.ts` removes TTS temp files older than 24h, old logs, and orphaned artifacts.
+- Stale open sessions are closed per agent during DB init.
+- Opening lines pre-cached in background after boot completes.
+
+### TTS voice race condition fix
+
+Voice config is snapshot before async TTS fetch to prevent race conditions when agent switching happens mid-synthesis. The snapshot captures voice ID, model, and stability settings at call time.
+
+### File map
+
+| File | Purpose |
+|------|---------|
+| `inner-life-types.ts` | Interfaces, defaults, baselines, half-lives |
+| `inner-life.ts` | State load/save, decay, update, velocity tracking, vector encoding, distributed state |
+| `inner-life-interactions.ts` | 8 named interaction state detection |
+| `inner-life-salience.ts` | Turn salience scoring + disclosure mapping |
+| `inner-life-compress.ts` | Context injection formatter (v3) |
+| `inner-life-needs.ts` | Need satisfaction/depletion, drive computation |
+| `agency.ts` | Emotional signal detection, relationship baseline growth |
+| `opening.ts` | Dynamic opening line generation + pre-caching |
