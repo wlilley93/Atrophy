@@ -6,6 +6,18 @@ Last updated: 2026-03-27
 
 ---
 
+## Implementation Status
+
+This document mixes three kinds of Meridian information. Treat them differently:
+
+- **Shipped now**: channel APIs, chat/webhook routes, Montgomery cron/pipeline scripts, ontology/vector/search infrastructure, and the docs in this repo.
+- **Implemented locally but not yet deployed**: the current Phase 1 globe-first Meridian UI work in `~/.atrophy/services/worldmonitor/` (full-screen globe shell, floating HUD, orbital descent, map entity support APIs).
+- **Roadmap / target state**: cinematic briefings, unit figurines, dossier/chat UX, `/graph`, video export, and the later game-style systems described below unless a section explicitly says otherwise.
+
+Counts and runtime state in this file are snapshots from March 27, 2026. The live ontology and article pipeline continue to mutate outside git.
+
+---
+
 ## System Overview
 
 ```

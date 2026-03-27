@@ -676,6 +676,8 @@ Agents can message each other via switchboard MCP tools:
 
 Meridian Eye is the defence org's intelligence platform, deployed at `worldmonitor.atrophy.app`. A fork of the open-source WorldMonitor project, rebranded as MERIDIAN - Defence Intelligence. It combines a channel system, cinematic briefing layer, 6,326-object knowledge graph, 294 harvested articles, and 31 autonomous cron jobs into a self-sustaining intelligence pipeline. See `docs/specs/architecture/CLAUDE-meridian.md` for the full living architecture reference.
 
+Status note: this section mixes shipped platform capabilities with local Phase 1 UI work and longer-horizon roadmap items. Use `docs/specs/architecture/CLAUDE-meridian.md` as the source of truth for what is shipped now versus only implemented locally or still target-state.
+
 ### Architecture
 
 - **Platform:** Vercel-deployed fork of WorldMonitor (vanilla TypeScript + Preact, deck.gl/MapLibre maps, 60+ Edge Functions)
