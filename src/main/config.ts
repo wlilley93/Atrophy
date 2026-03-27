@@ -101,8 +101,10 @@ export function saveEnvVar(key: string, value: string): boolean {
   if (!isAllowed) return false;
   // Strip newlines to prevent env injection
   value = value.replace(/[\r\n]/g, '');
-  const envPath = path.join(USER_DATA, '.env');
-  fs.mkdirSync(USER_DATA, { recursive: true });
+  // Resolve data dir dynamically so tests can override via ATROPHY_DATA
+  const dataDir = process.env.ATROPHY_DATA || USER_DATA;
+  const envPath = path.join(dataDir, '.env');
+  fs.mkdirSync(dataDir, { recursive: true });
   let lines: string[] = [];
   let replaced = false;
   if (fs.existsSync(envPath)) {
