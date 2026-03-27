@@ -19,8 +19,9 @@ import { getConfig, USER_DATA } from './config';
 import * as memory from './memory';
 import { Session } from './session';
 import { loadSystemPrompt } from './context';
-import { streamInference, stopInference, InferenceEvent } from './inference';
+import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from './inference';
 import { search as vectorSearch } from './vector-search';
+import { switchboard } from './channels/switchboard';
 import { createLogger } from './logger';
 
 const log = createLogger('server');
@@ -654,6 +655,213 @@ async function handleSession(req: http.IncomingMessage, res: http.ServerResponse
 }
 
 // ---------------------------------------------------------------------------
+// Meridian bridge auth (X-Channel-Key or Bearer token)
+// ---------------------------------------------------------------------------
+
+function checkMeridianAuth(req: http.IncomingMessage): boolean {
+  // Accept the channel API key used by the Meridian platform
+  const channelKey = req.headers['x-channel-key'];
+  if (channelKey && typeof channelKey === 'string') {
+    const expected = process.env.CHANNEL_API_KEY || '';
+    if (expected && crypto.timingSafeEqual(
+      crypto.createHash('sha256').update(channelKey).digest(),
+      crypto.createHash('sha256').update(expected).digest(),
+    )) {
+      return true;
+    }
+  }
+  // Fall back to standard bearer token auth
+  return checkAuth(req);
+}
+
+// ---------------------------------------------------------------------------
+// Meridian chat endpoint - routes through switchboard
+// ---------------------------------------------------------------------------
+
+/** Per-agent session for Meridian web chats. Separate from desktop/Telegram. */
+const _meridianSessions: Map<string, Session> = new Map();
+
+function getMeridianSession(agentName: string): Session {
+  let session = _meridianSessions.get(agentName);
+  if (!session) {
+    session = new Session();
+    session.start();
+    _meridianSessions.set(agentName, session);
+  }
+  return session;
+}
+
+async function handleMeridianChat(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  if (!checkMeridianAuth(req)) {
+    sendJson(res, { error: 'unauthorized' }, 401);
+    return;
+  }
+
+  const body = await parseBody(req);
+  let data: {
+    entity_context?: string;
+    channel?: string;
+    question?: string;
+    history?: { role: string; content: string }[];
+  };
+  try {
+    data = JSON.parse(body);
+  } catch {
+    sendJson(res, { error: 'invalid json' }, 400);
+    return;
+  }
+
+  const entityContext = (data.entity_context || '').trim();
+  const question = (data.question || '').trim();
+  const agentName = data.channel || 'general_montgomery';
+  const history = Array.isArray(data.history) ? data.history : [];
+
+  if (!entityContext) {
+    sendJson(res, { error: 'entity_context is required' }, 400);
+    return;
+  }
+  if (!question) {
+    sendJson(res, { error: 'question is required' }, 400);
+    return;
+  }
+
+  // SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  // Build the contextual prompt that includes entity data and conversation history
+  let prompt = '';
+  if (history.length > 0) {
+    const transcript = history
+      .map(h => `${h.role === 'assistant' ? 'You' : 'User'}: ${h.content}`)
+      .slice(-12)
+      .join('\n\n');
+    prompt += `Conversation so far:\n${transcript}\n\n`;
+  }
+  prompt += `[Meridian Eye - entity context]\n\n${entityContext}\n\nUser question: ${question}`;
+
+  // Record the inbound envelope on the switchboard for audit trail
+  const envelope = switchboard.createEnvelope(
+    'meridian:web',
+    `agent:${agentName}`,
+    question,
+    {
+      type: 'user',
+      metadata: {
+        source: 'meridian_web',
+        entityContext: entityContext.slice(0, 500),
+        historyLength: history.length,
+      },
+    },
+  );
+  switchboard.record(envelope);
+
+  // Switch config to the target agent, run inference, then restore.
+  // This mirrors how the Telegram daemon dispatches per-agent.
+  const config = getConfig();
+  const originalAgent = config.AGENT_NAME;
+  let emitter: ReturnType<typeof streamInference>;
+  let streamEnded = false;
+
+  const finalize = () => {
+    if (streamEnded) return;
+    streamEnded = true;
+    // Restore original agent config
+    if (originalAgent && originalAgent !== agentName) {
+      try { config.reloadForAgent(originalAgent); } catch { /* best effort */ }
+    }
+  };
+
+  try {
+    // Reload config for the target agent so system prompt + MCP are correct
+    config.reloadForAgent(agentName);
+    resetMcpConfig();
+    memory.initDb();
+
+    const system = loadSystemPrompt();
+    const agentSession = getMeridianSession(agentName);
+    agentSession.inheritCliSessionId();
+
+    try { agentSession.addTurn('will', question); } catch { /* session not started */ }
+
+    emitter = streamInference(prompt, system, agentSession.cliSessionId, {
+      senderName: 'Meridian Web User',
+      source: 'server',
+    });
+  } catch (err) {
+    finalize();
+    res.write(`data: ${JSON.stringify({ type: 'error', error: String(err) })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    res.end();
+    return;
+  }
+
+  // Handle client disconnect
+  res.on('close', () => {
+    if (!streamEnded) {
+      finalize();
+      emitter.removeAllListeners();
+      stopInference(agentName);
+    }
+  });
+
+  let fullText = '';
+  let lastSessionId: string | null = null;
+
+  emitter.on('event', (evt: InferenceEvent) => {
+    if (streamEnded) return;
+
+    switch (evt.type) {
+      case 'TextDelta':
+        res.write(`data: ${JSON.stringify({ type: 'text_delta', text: evt.text })}\n\n`);
+        break;
+
+      case 'ToolUse':
+        res.write(`data: ${JSON.stringify({ type: 'tool_use', name: evt.name })}\n\n`);
+        break;
+
+      case 'StreamDone':
+        fullText = evt.fullText;
+        lastSessionId = evt.sessionId || null;
+
+        // Update session
+        const agentSession = getMeridianSession(agentName);
+        if (lastSessionId && lastSessionId !== agentSession.cliSessionId) {
+          agentSession.setCliSessionId(lastSessionId);
+        }
+        if (fullText) {
+          try { agentSession.addTurn('agent', fullText); } catch { /* ignore */ }
+        }
+
+        // Record response on switchboard
+        const responseEnvelope = switchboard.createEnvelope(
+          `agent:${agentName}`,
+          'meridian:web',
+          fullText.slice(0, 500),
+          { type: 'agent', metadata: { source: 'meridian_web' } },
+        );
+        switchboard.record(responseEnvelope);
+
+        finalize();
+        res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        break;
+
+      case 'StreamError':
+        finalize();
+        res.write(`data: ${JSON.stringify({ type: 'error', error: evt.message })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        break;
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
 
@@ -673,12 +881,13 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
     const pathname = url.split('?')[0];
     const method = req.method || 'GET';
 
-    // CORS - restrict to localhost only
+    // CORS - allow localhost, Meridian/WorldMonitor origins, and bridge tunnel
     const origin = req.headers.origin || '';
-    if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    const CORS_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$|^https:\/\/(.*\.)?(worldmonitor\.app|worldmonitor\.atrophy\.app|bridge\.atrophy\.app)$/;
+    if (origin && CORS_PATTERN.test(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Channel-Key');
     }
     if (method === 'OPTIONS') {
       res.writeHead(204);
@@ -707,6 +916,8 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
         await handleMemoryThreads(req, res);
       } else if (pathname === '/session' && method === 'GET') {
         await handleSession(req, res);
+      } else if (pathname === '/meridian/chat' && method === 'POST') {
+        await handleMeridianChat(req, res);
       } else {
         sendJson(res, { error: 'not found' }, 404);
       }
@@ -725,7 +936,7 @@ export function startServer(port = 5000, host = '127.0.0.1'): void {
     log.info(`http://${host}:${port}`);
     log.info(`Token: ${serverToken.slice(0, 8)}...${serverToken.slice(-4)}`);
     log.info(`Token file: ${TOKEN_PATH}`);
-    log.info(`Endpoints: /health, /chat, /chat/stream, /chat/stream-json, /status, /agents, /agents/create, /memory/search, /memory/threads, /session`);
+    log.info(`Endpoints: /health, /chat, /chat/stream, /chat/stream-json, /meridian/chat, /status, /agents, /agents/create, /memory/search, /memory/threads, /session`);
     log.info(`Auth: Bearer token required on all endpoints except /health`);
   });
 }
@@ -739,5 +950,69 @@ export async function stopServer(): Promise<void> {
   if (session) {
     await session.end(systemPrompt);
     session = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Meridian bridge server - lightweight HTTP server for the /meridian/chat
+// endpoint. Runs during GUI/menubar mode alongside the Cloudflare Tunnel.
+// Separate from the full startServer() which is used in --server mode.
+// ---------------------------------------------------------------------------
+
+let meridianServer: http.Server | null = null;
+
+export function startMeridianServer(port = 3847, host = '127.0.0.1'): void {
+  if (meridianServer) return; // already running
+
+  // Load server token for bearer auth fallback
+  serverToken = loadOrCreateToken();
+
+  meridianServer = http.createServer(async (req, res) => {
+    const url = req.url || '/';
+    const pathname = url.split('?')[0];
+    const method = req.method || 'GET';
+
+    // CORS - allow Meridian/WorldMonitor origins and bridge tunnel
+    const origin = req.headers.origin || '';
+    const CORS_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$|^https:\/\/(.*\.)?(worldmonitor\.app|worldmonitor\.atrophy\.app|bridge\.atrophy\.app)$/;
+    if (origin && CORS_PATTERN.test(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Channel-Key');
+    }
+    if (method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    try {
+      if (pathname === '/health' && method === 'GET') {
+        sendJson(res, { status: 'ok', service: 'meridian-bridge' });
+      } else if (pathname === '/meridian/chat' && method === 'POST') {
+        await handleMeridianChat(req, res);
+      } else {
+        sendJson(res, { error: 'not found' }, 404);
+      }
+    } catch (e) {
+      log.error(`Meridian server error: ${method} ${pathname}: ${e}`);
+      if (!res.headersSent) {
+        sendJson(res, { error: 'internal server error' }, 500);
+      }
+    }
+  });
+
+  meridianServer.listen(port, host, () => {
+    log.info(`Meridian bridge server: http://${host}:${port}`);
+    log.info(`Endpoints: /health, /meridian/chat`);
+    log.info(`Auth: X-Channel-Key or Bearer token`);
+  });
+}
+
+export function stopMeridianServer(): void {
+  if (meridianServer) {
+    meridianServer.close();
+    meridianServer = null;
+    log.info('Meridian bridge server stopped');
   }
 }

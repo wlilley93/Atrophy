@@ -27,7 +27,7 @@ import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordLi
 import { discoverAgents, syncBundledPrompts, cycleAgent, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, checkAskRequest, cleanupAskFiles } from './agent-manager';
 import { runCoherenceCheck } from './sentinel';
 import { drainAllAgentQueues } from './queue';
-import { startServer, stopServer } from './server';
+import { startServer, stopServer, startMeridianServer, stopMeridianServer } from './server';
 import { startDaemon, stopDaemonSync, setMainWindowAccessor } from './channels/telegram';
 import { startFederation, stopFederation } from './channels/federation';
 import { cronScheduler, stopAllJobs } from './channels/cron';
@@ -878,12 +878,15 @@ app.whenReady().then(() => {
     });
   }
 
-  // 5c. Start Cloudflare Tunnel for Meridian bridge (if configured).
-  // The tunnel connects bridge.atrophy.app to the local Atrophy HTTP server,
-  // allowing the Meridian Eye website to route inference requests through
-  // the switchboard.
+  // 5c. Start Meridian bridge - HTTP server + Cloudflare Tunnel.
+  // The HTTP server handles /meridian/chat on port 3847. The tunnel connects
+  // bridge.atrophy.app to this port, allowing the Meridian Eye website to
+  // route inference requests through the switchboard.
   const tunnelConfigPath = path.join(USER_DATA, 'services', 'cloudflared', 'config.yml');
   if (fs.existsSync(tunnelConfigPath)) {
+    // Start the bridge HTTP server first so the tunnel has something to connect to
+    startMeridianServer(3847, '127.0.0.1');
+
     try {
       const { spawn: spawnTunnel } = require('child_process');
       const tunnelProc = spawnTunnel('cloudflared', ['tunnel', 'run', '--config', tunnelConfigPath], {
@@ -1245,6 +1248,7 @@ app.on('will-quit', () => {
   stopDaemonSync();
   stopFederation();
   stopServer();
+  stopMeridianServer();
 
   // End the current desktop session synchronously (summary generation is
   // async and won't complete during shutdown - just close it in the DB
