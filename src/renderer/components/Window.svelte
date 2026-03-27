@@ -143,8 +143,11 @@
   let silenceTimerEnabled = true;
   let silenceTimeoutMs = 5 * 60 * 1000; // default 5 minutes
 
-  // Pending bundle update banner
+  // Pending update banner - shown only when a prior boot downloaded an update
+  // that was not auto-applied (e.g. user quit before restart could happen).
   let pendingUpdateVersion = $state<string | null>(null);
+  let pendingUpdateType = $state<'bundle' | 'app'>('bundle');
+  let pendingUpdateApplying = $state(false);
 
   // Status bar metrics
   let lastResponseMs = $state<number | null>(null);
@@ -171,7 +174,9 @@
 
   let bootRan = false;
 
-  /** Run update check - checks for hot bundle updates, downloads if available */
+  /** Run update check - checks both bundle (hot swap) and full app (electron-updater).
+   *  Bundle updates are preferred (instant restart). Full app updates are fallback.
+   *  Either way, the download happens here in the boot screen with brain animation. */
   async function runUpdateCheck(): Promise<void> {
     if (!api) return;
 
@@ -188,46 +193,86 @@
 
     updateStatus = 'checking';
 
-    // Listen for download progress - brain degrades as download progresses
-    const progressCleanup = api.onBundleProgress?.((percent: number) => {
+    // Shared progress handler for brain animation
+    function onProgress(percent: number) {
       if (updateStatus !== 'downloading') {
-        // Stop random cycling when download starts
         if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
       }
       updateStatus = 'downloading';
       updatePercent = percent;
-      // Map download percent to brain frame (0% = healthy frame 0, 100% = decayed frame 9)
       if (brainFramePaths.length > 0) {
         updateBrainFrame = Math.min(
           Math.floor((percent / 100) * brainFramePaths.length),
           brainFramePaths.length - 1,
         );
       }
+    }
+
+    // Listen for bundle download progress
+    const bundleProgressCleanup = api.onBundleProgress?.(onProgress);
+    // Listen for full app download progress
+    const appProgressCleanup = api.onUpdateProgress?.((info: { percent: number }) => {
+      onProgress(info.percent);
     });
 
-    try {
-      // Check for hot bundle update with a 15s timeout so boot never hangs.
-      // In dev mode the IPC returns null immediately. In production it may
-      // hit the network - if it hangs, skip and boot normally.
-      const updatePromise = api.checkBundleUpdate();
-      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000));
-      const newVersion = await Promise.race([updatePromise, timeoutPromise]);
-
+    function cleanupListeners() {
       if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
-      progressCleanup?.();
+      bundleProgressCleanup?.();
+      appProgressCleanup?.();
+    }
 
-      if (newVersion) {
+    try {
+      // 1. Check for hot bundle update first (fast, no full app restart needed)
+      const bundlePromise = api.checkBundleUpdate();
+      const bundleTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000));
+      const bundleVersion = await Promise.race([bundlePromise, bundleTimeout]);
+
+      if (bundleVersion) {
+        cleanupListeners();
         updateStatus = 'downloaded';
-        updateVersion = newVersion;
-        // Trigger restart after a brief delay so the user sees the status
+        updateVersion = bundleVersion;
         setTimeout(() => api?.restartForUpdate(), 1500);
+        return;
+      }
+
+      // 2. No bundle update - check for full app update via electron-updater.
+      //    This auto-downloads if available (autoDownload = true in updater.ts).
+      const appUpdateResult = await new Promise<string | null>((resolve) => {
+        let settled = false;
+        const timer = setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, 20000);
+
+        const cleanupDownloaded = api.onUpdateDownloaded?.((info: { version: string }) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            cleanupDownloaded?.();
+            cleanupNotAvailable?.();
+            cleanupError?.();
+            resolve(info.version);
+          }
+        });
+        const cleanupNotAvailable = api.onUpdateNotAvailable?.(() => {
+          if (!settled) { settled = true; clearTimeout(timer); cleanupNotAvailable?.(); cleanupDownloaded?.(); cleanupError?.(); resolve(null); }
+        });
+        const cleanupError = api.onUpdateError?.(() => {
+          if (!settled) { settled = true; clearTimeout(timer); cleanupError?.(); cleanupDownloaded?.(); cleanupNotAvailable?.(); resolve(null); }
+        });
+
+        api.checkForUpdates?.();
+      });
+
+      cleanupListeners();
+
+      if (appUpdateResult) {
+        updateStatus = 'downloaded';
+        updateVersion = appUpdateResult;
+        setTimeout(() => api?.quitAndInstall(), 1500);
       } else {
         updateStatus = 'up-to-date';
       }
     } catch {
       updateStatus = 'error';
-      if (updateBrainTimer) { clearInterval(updateBrainTimer); updateBrainTimer = null; }
-      progressCleanup?.();
+      cleanupListeners();
     }
   }
 
@@ -942,14 +987,17 @@
       }));
     }
 
-    // Check for previously downloaded bundle update (from a prior session).
-    // Only show the banner for updates downloaded BEFORE this boot - not for
-    // background downloads during this session (those load automatically on next boot).
-    api?.getBundleStatus?.().then((status) => {
-      if (status?.pending?.pendingRestart && status.pending.version) {
-        pendingUpdateVersion = status.pending.version;
-      }
-    }).catch(() => { /* non-critical */ });
+    // Check for stale pending updates (downloaded in a prior session but never applied).
+    // The boot update check handles fresh downloads automatically - this banner is the
+    // fallback for when the user quit before the auto-restart could fire.
+    if (updateStatus !== 'downloaded') {
+      api?.getBundleStatus?.().then((status) => {
+        if (status?.pending?.pendingRestart && status.pending.version) {
+          pendingUpdateVersion = status.pending.version;
+          pendingUpdateType = 'bundle';
+        }
+      }).catch(() => { /* non-critical */ });
+    }
 
     // Listen for shutdown signal from main process
     const shutdownCleanup = api?.onShutdownRequested?.(() => {
@@ -1468,11 +1516,24 @@
     </button>
   </div>
 
-  <!-- Update banner - fixed position so it stays visible -->
+  <!-- Update banner - shown for stale pending updates that weren't auto-applied -->
   {#if pendingUpdateVersion}
     <div class="update-banner">
       <span class="update-banner-text">v{pendingUpdateVersion} ready</span>
-      <button class="update-banner-btn" onclick={() => api?.restartForUpdate()}>Restart</button>
+      <button
+        class="update-banner-btn"
+        disabled={pendingUpdateApplying}
+        onclick={async () => {
+          pendingUpdateApplying = true;
+          if (pendingUpdateType === 'bundle') {
+            api?.restartForUpdate();
+          } else {
+            api?.quitAndInstall();
+          }
+        }}
+      >
+        {pendingUpdateApplying ? 'Restarting...' : 'Restart to update'}
+      </button>
       <button class="update-banner-dismiss" onclick={() => pendingUpdateVersion = null} aria-label="Dismiss">&times;</button>
     </div>
   {/if}

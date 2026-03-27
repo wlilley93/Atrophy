@@ -45,17 +45,61 @@
     }) ?? null;
   }
 
+  let updateType = $state<'bundle' | 'app'>('bundle');
+
   async function checkForUpdates() {
     if (!api) return;
     updateCheckStatus = 'checking';
     updateStatusText = 'Checking for updates...';
     updateDownloadPercent = 0;
+
     try {
-      const newVersion = await api.checkBundleUpdate();
-      if (newVersion) {
-        updateReadyVersion = newVersion;
+      // 1. Check bundle updates first (faster, no full restart)
+      const newBundleVersion = await api.checkBundleUpdate();
+      if (newBundleVersion) {
+        updateReadyVersion = newBundleVersion;
+        updateType = 'bundle';
         updateCheckStatus = 'ready';
-        updateStatusText = `v${newVersion} downloaded - restart to apply`;
+        updateStatusText = `v${newBundleVersion} downloaded - restart to apply`;
+        return;
+      }
+
+      // 2. Check full app updates via electron-updater
+      updateStatusText = 'Checking for app updates...';
+      const appResult = await new Promise<string | null>((resolve) => {
+        let settled = false;
+        const timer = setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, 20000);
+
+        const c1 = api.onUpdateDownloaded?.((info: { version: string }) => {
+          if (!settled) { settled = true; clearTimeout(timer); c1?.(); c2?.(); c3?.(); resolve(info.version); }
+        });
+        const c2 = api.onUpdateNotAvailable?.(() => {
+          if (!settled) { settled = true; clearTimeout(timer); c1?.(); c2?.(); c3?.(); resolve(null); }
+        });
+        const c3 = api.onUpdateError?.(() => {
+          if (!settled) { settled = true; clearTimeout(timer); c1?.(); c2?.(); c3?.(); resolve(null); }
+        });
+
+        // Listen for progress
+        const c4 = api.onUpdateProgress?.((info: { percent: number }) => {
+          updateDownloadPercent = info.percent;
+          updateCheckStatus = 'downloading';
+          updateStatusText = `Downloading... ${Math.round(info.percent)}%`;
+        });
+
+        api.checkForUpdates?.();
+
+        // Clean up progress listener when done
+        const origResolve = resolve;
+        // Piggyback cleanup on the timer/event listeners above
+        setTimeout(() => c4?.(), 25000);
+      });
+
+      if (appResult) {
+        updateReadyVersion = appResult;
+        updateType = 'app';
+        updateCheckStatus = 'ready';
+        updateStatusText = `v${appResult} downloaded - restart to apply`;
       } else {
         updateCheckStatus = 'up-to-date';
         updateStatusText = 'Already up to date';
@@ -68,7 +112,11 @@
 
   async function restartToApply() {
     if (!api) return;
-    await api.restartForUpdate();
+    if (updateType === 'app') {
+      api.quitAndInstall();
+    } else {
+      await api.restartForUpdate();
+    }
   }
 
   onDestroy(() => {
