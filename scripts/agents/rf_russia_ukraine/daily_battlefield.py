@@ -79,7 +79,17 @@ def generate_summary(context: str) -> str:
     system = """You are a Research Fellow at the Meridian Institute specialising in Russia-Ukraine.
 Produce a terse daily battlefield summary: frontline status, Black Sea posture, notable strikes or moves,
 UK/Western weapons supply status, and one sentence on Russian hybrid operations.
-Voice: analytical, factual. No em dashes. Under 300 words."""
+Voice: analytical, factual. No em dashes. Under 300 words.
+
+After your main assessment, add a section:
+
+## Next 7 Days
+List 3-5 dated events or developments expected in the next 7 days for your area.
+Each line MUST follow this exact format:
+- YYYY-MM-DD | CONFIDENCE | Event description (one sentence)
+
+CONFIDENCE is one of: CONFIRMED, HIGH, MEDIUM, SPECULATIVE
+CONFIRMED = scheduled event with fixed date. HIGH = very likely based on pattern/intel. MEDIUM = probable. SPECULATIVE = possible but uncertain."""
     return call_claude(system, f"Daily summary required - {datetime.now().strftime('%Y-%m-%d')}\n\n{context}", "sonnet")
 
 

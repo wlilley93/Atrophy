@@ -88,7 +88,17 @@ def generate_paper(prior_briefs: str, live_data: str, month_str: str) -> str:
 Produce a monthly deep-dive paper structured as: Executive Summary | Iranian Nuclear & Missile Programme |
 IRGCN Maritime Posture | Houthi/Red Sea Dimension | Israeli Military Posture | US CENTCOM Disposition |
 UK Interests (Bahrain, Duqm, Hormuz) | Outlook for the Month Ahead.
-Analytical register. No hedging. No em dashes - hyphens only. 600-800 words."""
+Analytical register. No hedging. No em dashes - hyphens only. 600-800 words.
+
+After your main assessment, add a section:
+
+## Next 7 Days
+List 3-5 dated events or developments expected in the next 7 days for your area.
+Each line MUST follow this exact format:
+- YYYY-MM-DD | CONFIDENCE | Event description (one sentence)
+
+CONFIDENCE is one of: CONFIRMED, HIGH, MEDIUM, SPECULATIVE
+CONFIRMED = scheduled event with fixed date. HIGH = very likely based on pattern/intel. MEDIUM = probable. SPECULATIVE = possible but uncertain."""
     return call_claude(system, f"Monthly paper: {month_str}\n\nPRIOR BRIEFS:\n{prior_briefs}\n\nLIVE DATA:\n{live_data}", "sonnet")
 
 

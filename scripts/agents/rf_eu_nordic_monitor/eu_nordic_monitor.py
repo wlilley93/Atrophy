@@ -95,7 +95,17 @@ Constraints:
 - If live context is thin on a country, draw on the standing picture and state posture clearly
 - Under 750 words total for the five items; Editor's note 80-120 words; Sources brief
 
-Do NOT include a header line or date - the caller adds those. Start directly with "1 of 5"."""
+Do NOT include a header line or date - the caller adds those. Start directly with "1 of 5".
+
+After your main assessment, add a section:
+
+## Next 7 Days
+List 3-5 dated events or developments expected in the next 7 days for your area.
+Each line MUST follow this exact format:
+- YYYY-MM-DD | CONFIDENCE | Event description (one sentence)
+
+CONFIDENCE is one of: CONFIRMED, HIGH, MEDIUM, SPECULATIVE
+CONFIRMED = scheduled event with fixed date. HIGH = very likely based on pattern/intel. MEDIUM = probable. SPECULATIVE = possible but uncertain."""
 
 
 def fetch_news_context() -> str:

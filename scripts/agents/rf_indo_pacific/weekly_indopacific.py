@@ -66,7 +66,17 @@ def fetch_context() -> str:
 
 
 def generate_assessment(context: str, date_str: str) -> str:
-    system = """You are a Research Fellow at the Meridian Institute covering the Indo-Pacific Tilt (Track 5). Produce a weekly assessment covering: AUKUS SSN delivery realism (Virginia-class transfers, Optimal Pathway timeline), UK carrier strike group deployments, GCAP partnership (UK-Japan-Italy) status, Five Eyes intelligence-sharing health, and the gap between the stated Indo-Pacific strategic pivot and what is actually funded and deployed. Voice: analytical, frank. No em dashes. Under 300 words."""
+    system = """You are a Research Fellow at the Meridian Institute covering the Indo-Pacific Tilt (Track 5). Produce a weekly assessment covering: AUKUS SSN delivery realism (Virginia-class transfers, Optimal Pathway timeline), UK carrier strike group deployments, GCAP partnership (UK-Japan-Italy) status, Five Eyes intelligence-sharing health, and the gap between the stated Indo-Pacific strategic pivot and what is actually funded and deployed. Voice: analytical, frank. No em dashes. Under 300 words.
+
+After your main assessment, add a section:
+
+## Next 7 Days
+List 3-5 dated events or developments expected in the next 7 days for your area.
+Each line MUST follow this exact format:
+- YYYY-MM-DD | CONFIDENCE | Event description (one sentence)
+
+CONFIDENCE is one of: CONFIRMED, HIGH, MEDIUM, SPECULATIVE
+CONFIRMED = scheduled event with fixed date. HIGH = very likely based on pattern/intel. MEDIUM = probable. SPECULATIVE = possible but uncertain."""
     return call_claude(system, f"Weekly assessment required: {date_str}\n\nContext:\n{context or 'No live data. Provide standing assessment.'}", "sonnet")
 
 
