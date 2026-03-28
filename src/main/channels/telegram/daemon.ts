@@ -188,9 +188,10 @@ let _lockFd: number | null = null;
 export function acquireLock(): boolean {
   fs.mkdirSync(path.dirname(LOCK_FILE), { recursive: true });
 
-  // macOS supports O_EXLOCK (0x20) for advisory exclusive lock on open
+  // macOS supports O_EXLOCK (0x20) for advisory exclusive lock on open.
+  // O_NONBLOCK (0x4 on macOS) ensures we fail immediately instead of blocking.
   const O_EXLOCK = 0x20;
-  const O_NONBLOCK = 0x4000; // fs.constants.O_NONBLOCK is not always exposed
+  const O_NONBLOCK = fs.constants.O_NONBLOCK ?? 0x4;
 
   try {
     _lockFd = fs.openSync(
@@ -202,6 +203,7 @@ export function acquireLock(): boolean {
     // EAGAIN / EWOULDBLOCK means another process holds the lock
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'EAGAIN' || code === 'EWOULDBLOCK') {
+      log.warn(`Telegram lock held by another process (${readLockPid() ?? 'unknown'})`);
       return false;
     }
     // If O_EXLOCK is not supported (Linux), fall back to pid-check
@@ -215,6 +217,15 @@ export function acquireLock(): boolean {
   return true;
 }
 
+/** Read the PID from the lock file without acquiring it. */
+function readLockPid(): number | null {
+  try {
+    const raw = fs.readFileSync(LOCK_FILE, 'utf-8').trim();
+    const pid = parseInt(raw.split('\n')[0], 10);
+    return isNaN(pid) ? null : pid;
+  } catch { return null; }
+}
+
 /**
  * Fallback lock strategy for systems without O_EXLOCK.
  *
@@ -226,16 +237,13 @@ function acquireLockFallback(): boolean {
   if (fs.existsSync(LOCK_FILE)) {
     try {
       const raw = fs.readFileSync(LOCK_FILE, 'utf-8').trim();
-      const lines = raw.split('\n');
-      const pid = parseInt(lines[0], 10);
-      const lockTime = lines[1] ? parseInt(lines[1], 10) : NaN;
+      const pid = parseInt(raw.split('\n')[0], 10);
 
-      // If process is alive AND lock is < 30 minutes old, it's valid.
-      const STALE_MS = 30 * 60 * 1000;
+      // If the owning process is still alive, the lock is valid - period.
+      // No timeout: a long-running daemon is not "stale".
       if (pid && isProcessAlive(pid)) {
-        if (isNaN(lockTime) || (Date.now() - lockTime < STALE_MS)) {
-          return false;
-        }
+        log.warn(`Telegram lock held by PID ${pid} (fallback check)`);
+        return false;
       }
     } catch { /* stale or corrupt - reclaim */ }
   }
