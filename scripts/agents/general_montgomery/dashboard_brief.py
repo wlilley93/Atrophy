@@ -15,9 +15,10 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # --- Paths ---
@@ -409,6 +410,72 @@ def collect_ops_data() -> dict:
     return {"agents": agents, "jobs": jobs, "librarian": lib}
 
 
+def collect_horizon() -> dict:
+    """Query upcoming horizon events for the brief."""
+    try:
+        db = sqlite3.connect(str(_INTEL_DB))
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        end = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+        rows = db.execute(
+            """SELECT event_date, event_type, title, significance, confidence, source
+            FROM horizon_events
+            WHERE event_date BETWEEN ? AND ?
+            ORDER BY event_date ASC, significance DESC""",
+            (today, end),
+        ).fetchall()
+        db.close()
+
+        events = []
+        for row in rows:
+            events.append({
+                "date": row[0],
+                "type": row[1],
+                "title": row[2],
+                "significance": row[3],
+                "confidence": row[4],
+                "source": row[5],
+            })
+        return {"horizon_events": events}
+    except Exception as e:
+        log.warning("Horizon data collection failed: %s", e)
+        return {"horizon_events": []}
+
+
+def generate_greeting(data: dict) -> str:
+    """Generate a brief Montgomery-voice greeting for the Telegram caption."""
+    status = data.get("overall_status", "NORMAL")
+    horizon_events = data.get("horizon_events", [])
+    horizon_count = len(horizon_events)
+    ops = data.get("ops", {})
+    lib = ops.get("librarian", {})
+    recent_count = lib.get("total_briefs", 0)
+    assessment = data.get("assessment", "")
+    snippet = assessment[:200] if assessment else "No assessment available."
+
+    system = (
+        "You are General Montgomery. Write a brief, clipped greeting for the "
+        "morning brief. Mention the key items: overall status, any notable events "
+        "in the next 7 days, and what the agents have been producing. 2-3 sentences, "
+        "Montgomery voice. No em dashes - only hyphens."
+    )
+    prompt = (
+        f"Status: {status}\n"
+        f"Horizon events next 7 days: {horizon_count}\n"
+        f"Total briefs in library: {recent_count}\n"
+        f"Assessment snippet: {snippet}\n\n"
+        f"Write a 2-3 sentence greeting to accompany today's intelligence brief."
+    )
+
+    try:
+        return call_claude(system, prompt, "haiku")
+    except Exception as e:
+        log.error("Greeting generation failed: %s", e)
+        return f"Brief attached. Status: {status}."
+
+
+_GREETING_FILE = Path("/tmp/montgomery_greeting.txt")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["refresh", "send"], default="refresh")
@@ -418,6 +485,9 @@ def main():
 
     # 1. Collect live data
     data = collect_data()
+
+    # 1b. Collect horizon events
+    data.update(collect_horizon())
 
     if args.mode == "send":
         # 2. Generate LLM assessment
@@ -436,6 +506,11 @@ def main():
 
     # 5. Send
     if args.mode == "send":
+        # Generate greeting and write to file for send_brief.py
+        log.info("Generating greeting...")
+        greeting = generate_greeting(data)
+        _GREETING_FILE.write_text(greeting, encoding="utf-8")
+        log.info("Greeting written: %s", _GREETING_FILE)
         send_html()
         log.info("4-hour brief dispatched")
     elif is_breaking(data):
