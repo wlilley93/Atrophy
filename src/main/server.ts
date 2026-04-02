@@ -1002,6 +1002,18 @@ export function startMeridianServer(port = 3847, host = '127.0.0.1'): void {
     }
   });
 
+  // Handle listen errors gracefully - EADDRINUSE from a stale process
+  // should not crash the app or trigger the crash loop detector.
+  meridianServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      log.warn(`Meridian bridge port ${port} already in use - skipping (another instance may be running)`);
+      meridianServer = null;
+    } else {
+      log.error(`Meridian bridge server error: ${err.message}`);
+      meridianServer = null;
+    }
+  });
+
   meridianServer.listen(port, host, () => {
     log.info(`Meridian bridge server: http://${host}:${port}`);
     log.info(`Endpoints: /health, /meridian/chat`);

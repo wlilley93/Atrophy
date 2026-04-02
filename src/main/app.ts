@@ -145,7 +145,7 @@ function createWindow(): BrowserWindow {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src 'self' file:; font-src 'self'; connect-src 'self' https:; frame-src 'self' blob:; form-action 'none'; base-uri 'self'",
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: file:; media-src 'self' file:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https:; frame-src 'self' blob:; form-action 'none'; base-uri 'self'",
         ],
       },
     });
@@ -534,6 +534,14 @@ async function switchAgent(name: string): Promise<SwitchAgentResult> {
     // Prefetch context for the new agent during idle
     setImmediate(() => prefetchContext());
 
+    // Re-provision ElevenLabs voice agent for the new agent so the
+    // conversational voice matches the switched-to agent.
+    if (getConfig().ELEVENLABS_API_KEY) {
+      import('./voice-agent').then(({ provisionAgent }) => {
+        provisionAgent(name).catch(() => { /* non-critical */ });
+      });
+    }
+
     const c = getConfig();
     return {
       agentName: c.AGENT_NAME,
@@ -891,7 +899,12 @@ app.whenReady().then(() => {
     startMeridianServer(3847, '127.0.0.1');
 
     try {
-      const { spawn: spawnTunnel } = require('child_process');
+      const { execFileSync, spawn: spawnTunnel } = require('child_process');
+      // Verify cloudflared is installed before attempting to spawn
+      try { execFileSync('which', ['cloudflared'], { stdio: 'ignore' }); } catch {
+        log.info('cloudflared not installed - skipping Meridian tunnel');
+        throw new Error('cloudflared not found');
+      }
       const tunnelProc = spawnTunnel('cloudflared', ['tunnel', 'run', '--config', tunnelConfigPath], {
         stdio: 'ignore',
         detached: true,
@@ -899,7 +912,9 @@ app.whenReady().then(() => {
       tunnelProc.unref();
       log.info('Cloudflare Tunnel started for Meridian bridge');
     } catch (e) {
-      log.warn(`Failed to start Cloudflare Tunnel (non-fatal): ${e}`);
+      if (String(e) !== 'Error: cloudflared not found') {
+        log.warn(`Failed to start Cloudflare Tunnel (non-fatal): ${e}`);
+      }
     }
   }
 
