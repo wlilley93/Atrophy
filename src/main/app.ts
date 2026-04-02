@@ -1340,7 +1340,9 @@ function isCrashRateSafe(): boolean {
 
 // Record a boot timestamp so we can detect crash loops.
 // On a healthy boot this entry ages out of the window naturally.
-recordCrash();
+// Only record for the primary instance - second instances that quit
+// immediately (single-instance lock) should not pollute the crash log.
+if (gotTheLock) recordCrash();
 
 // ---------------------------------------------------------------------------
 // Global error handlers - catch unhandled rejections and exceptions
