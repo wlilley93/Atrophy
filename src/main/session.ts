@@ -123,8 +123,12 @@ export class Session {
     const sid = this.sessionId!;
     this.sessionId = null;
 
+    // Pin the DB path before any async work - reloadForAgent() can swap
+    // the config to a different agent's DB during summary inference.
+    const dbPath = getConfig().DB_PATH;
+
     if (!this.turnHistory.length || this.turnHistory.length < 4) {
-      memory.endSession(sid);
+      memory.endSession(sid, null, null, false, dbPath);
       return;
     }
 
@@ -158,7 +162,7 @@ export class Session {
       summary = `[Summary generation failed: ${e}]`;
     }
 
-    memory.endSession(sid, summary, this.mood);
-    memory.writeSummary(sid, summary);
+    memory.endSession(sid, summary, this.mood, false, dbPath);
+    memory.writeSummary(sid, summary, undefined, dbPath);
   }
 }

@@ -456,8 +456,9 @@ export function endSession(
   summary: string | null = null,
   mood: string | null = null,
   notable = false,
+  dbPath?: string,
 ): void {
-  const db = getDb();
+  const db = dbPath ? connect(dbPath) : getDb();
   db.prepare(
     `UPDATE sessions
      SET ended_at = CURRENT_TIMESTAMP,
@@ -616,8 +617,9 @@ export function writeSummary(
   sessionId: number,
   content: string,
   topics?: string,
+  dbPath?: string,
 ): number {
-  const db = getDb();
+  const db = dbPath ? connect(dbPath) : getDb();
   const result = db
     .prepare('INSERT INTO summaries (session_id, content, topics) VALUES (?, ?, ?)')
     .run(sessionId, content, topics || null);
