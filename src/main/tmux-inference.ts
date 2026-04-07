@@ -376,9 +376,11 @@ export class TmuxPool {
     ], TMUX_EXEC_OPTS);
 
     // Determine if the session already exists (resume) or is new (--session-id).
-    // A session is "existing" if its JSONL file is on disk.
-    const existingJsonl = this.findJsonlPath(agentName, sessionId);
-    const sessionFlag = existingJsonl ? '--resume' : '--session-id';
+    // A session is "existing" if its JSONL file is actually on disk - findJsonlPath
+    // returns the expected path regardless, so we have to check fs.existsSync.
+    const expectedJsonl = this.findJsonlPath(agentName, sessionId);
+    const sessionExists = fs.existsSync(expectedJsonl);
+    const sessionFlag = sessionExists ? '--resume' : '--session-id';
 
     // Build the claude command. Interactive mode (no -p), no --output-format
     // (we read from JSONL files instead). --dangerously-skip-permissions is
@@ -398,8 +400,9 @@ export class TmuxPool {
 
     log.debug(`[${agentName}] starting claude with ${sessionFlag} ${sessionId} in ${agentCwd}`);
 
-    // JSONL path - use existing if found, otherwise compute expected path
-    const jsonlPath = existingJsonl || this.findJsonlPath(agentName, sessionId);
+    // JSONL path - the expected location regardless of whether the file
+    // exists yet (claude will create it on first message)
+    const jsonlPath = expectedJsonl;
 
     // Initialize agent state - booted=false until CLI is ready for input
     const state: TmuxAgentState = {
@@ -855,9 +858,13 @@ export class TmuxPool {
   private findJsonlPath(agentName: string, sessionId: string): string {
     const home = os.homedir();
     const agentCwd = path.join(home, '.atrophy', 'agents', agentName);
-    // Convert cwd to Claude CLI project slug: /Users/foo -> -Users-foo
-    // Consecutive slashes become single hyphens, but the path uses path.join so no doubles
-    const slug = agentCwd.split(path.sep).join('-');
+    // Convert cwd to Claude CLI project slug. Claude Code uses a custom
+    // sanitization: every non-alphanumeric character becomes `-`. So:
+    //   /Users/will/.atrophy/agents/general_montgomery
+    // becomes:
+    //   -Users-will--atrophy-agents-general-montgomery
+    // (path separators -> -, dots -> -, underscores -> -)
+    const slug = agentCwd.replace(/[^A-Za-z0-9]/g, '-');
     const jsonlPath = path.join(home, '.claude', 'projects', slug, `${sessionId}.jsonl`);
     return jsonlPath;
   }
