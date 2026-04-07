@@ -67,6 +67,41 @@ api() {
   fi
 }
 
+# Resolve an agent's directory, checking both flat (~/.atrophy/agents/<name>/)
+# and org-nested (~/.atrophy/agents/<org>/<name>/) layouts.
+agent_dir() {
+  local name="$1"
+  # Flat layout
+  if [ -d "$ATROPHY_DIR/agents/$name/data" ]; then
+    echo "$ATROPHY_DIR/agents/$name"
+    return 0
+  fi
+  # Org-nested layout
+  for entry in "$ATROPHY_DIR"/agents/*/; do
+    local nested="${entry}$name/data"
+    if [ -d "$nested" ]; then
+      echo "${entry}$name"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Iterate over every agent directory (flat + nested), one path per line.
+all_agent_dirs() {
+  for top in "$ATROPHY_DIR"/agents/*/; do
+    if [ -d "${top}data" ]; then
+      echo "${top%/}"
+    else
+      for sub in "${top}"*/; do
+        if [ -d "${sub}data" ]; then
+          echo "${sub%/}"
+        fi
+      done
+    fi
+  done
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # AGENT COMMANDS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -139,12 +174,19 @@ cmd_restart() {
   local mcp_config="$ATROPHY_DIR/mcp/$name.config.json"
   [ ! -f "$mcp_config" ] && echo "No MCP config at $mcp_config" && exit 1
 
+  local dir
+  dir=$(agent_dir "$name")
+  if [ -z "$dir" ]; then
+    echo "Agent '$name' not found in $ATROPHY_DIR/agents/ (flat or nested)"
+    exit 1
+  fi
+
   local session_id
   if [ "$flag" = "--fresh" ]; then
     session_id=$(python3 -c "import uuid; print(uuid.uuid4())")
     echo "Fresh session: $session_id"
   else
-    session_id=$(sqlite3 "$ATROPHY_DIR/agents/$name/data/memory.db" \
+    session_id=$(sqlite3 "$dir/data/memory.db" \
       "SELECT cli_session_id FROM sessions WHERE cli_session_id IS NOT NULL ORDER BY started_at DESC LIMIT 1;" 2>/dev/null)
     [ -z "$session_id" ] && session_id=$(python3 -c "import uuid; print(uuid.uuid4())")
     echo "Session: $session_id"
@@ -155,7 +197,7 @@ cmd_restart() {
   tmux kill-window -t "$SESSION:$name" 2>/dev/null; sleep 1
 
   # Start new
-  tmux new-window -t "$SESSION" -n "$name" -c "$ATROPHY_DIR/agents/$name"
+  tmux new-window -t "$SESSION" -n "$name" -c "$dir"
   sleep 1
 
   local cmd="claude"
@@ -202,22 +244,28 @@ cmd_kill() {
 
 cmd_list() {
   echo ""
-  echo "  Agents in $ATROPHY_DIR/agents/:"
+  echo "  Agents in $ATROPHY_DIR/agents/ (flat + org-nested):"
   echo ""
-  for dir in "$ATROPHY_DIR"/agents/*/; do
-    local name
+  printf "  %-25s %-20s %-12s %s\n" "NAME" "DISPLAY" "CHANNELS" "LOCATION"
+  printf "  %-25s %-20s %-12s %s\n" "----" "-------" "--------" "--------"
+  while read -r dir; do
+    local name display desktop telegram channels rel
     name=$(basename "$dir")
     local manifest="$dir/data/agent.json"
     if [ -f "$manifest" ]; then
-      local display
       display=$(python3 -c "import json; d=json.load(open('$manifest')); print(d.get('display_name','$name'))" 2>/dev/null)
-      local desktop
-      desktop=$(python3 -c "import json; d=json.load(open('$manifest')); print('yes' if d.get('channels',{}).get('desktop',{}).get('enabled') else 'no')" 2>/dev/null)
-      local telegram
-      telegram=$(python3 -c "import json; d=json.load(open('$manifest')); print('yes' if d.get('channels',{}).get('telegram',{}).get('enabled') else 'no')" 2>/dev/null)
-      printf "  %-25s %-20s desktop=%-5s telegram=%s\n" "$name" "$display" "$desktop" "$telegram"
+      desktop=$(python3 -c "import json; d=json.load(open('$manifest')); print('1' if d.get('channels',{}).get('desktop',{}).get('enabled') else '0')" 2>/dev/null)
+      telegram=$(python3 -c "import json; d=json.load(open('$manifest')); print('1' if d.get('channels',{}).get('telegram',{}).get('enabled') else '0')" 2>/dev/null)
+      channels=""
+      [ "$desktop" = "1" ] && channels="${channels}d"
+      [ "$telegram" = "1" ] && channels="${channels}t"
+      [ -z "$channels" ] && channels="-"
+      rel="${dir#$ATROPHY_DIR/agents/}"
+      printf "  %-25s %-20s %-12s %s\n" "$name" "$display" "$channels" "$rel"
     fi
-  done
+  done < <(all_agent_dirs)
+  echo ""
+  echo "  Channels: d=desktop, t=telegram"
   echo ""
 }
 
@@ -234,14 +282,13 @@ cmd_boot() {
   tmux new-session -d -s "$SESSION" -x 200 -y 50
   echo "Created tmux session: $SESSION"
 
-  # Boot primary agents (desktop or telegram enabled)
-  for dir in "$ATROPHY_DIR"/agents/*/; do
-    local name
+  # Boot primary agents (desktop or telegram enabled), walking flat + nested
+  while read -r dir; do
+    local name manifest is_primary mcp_config session_id
     name=$(basename "$dir")
-    local manifest="$dir/data/agent.json"
+    manifest="$dir/data/agent.json"
     [ ! -f "$manifest" ] && continue
 
-    local is_primary
     is_primary=$(python3 -c "
 import json
 d=json.load(open('$manifest'))
@@ -252,10 +299,9 @@ print('yes' if desktop or telegram else 'no')
 
     [ "$is_primary" != "yes" ] && continue
 
-    local mcp_config="$ATROPHY_DIR/mcp/$name.config.json"
+    mcp_config="$ATROPHY_DIR/mcp/$name.config.json"
     [ ! -f "$mcp_config" ] && continue
 
-    local session_id
     session_id=$(sqlite3 "$dir/data/memory.db" \
       "SELECT cli_session_id FROM sessions WHERE cli_session_id IS NOT NULL ORDER BY started_at DESC LIMIT 1;" 2>/dev/null)
     [ -z "$session_id" ] && session_id=$(python3 -c "import uuid; print(uuid.uuid4())")
@@ -265,7 +311,7 @@ print('yes' if desktop or telegram else 'no')
     tmux send-keys -t "$SESSION:$name" "claude --resume $session_id --dangerously-skip-permissions --mcp-config $mcp_config" Enter
     echo "  Started $name ($session_id)"
     sleep 1
-  done
+  done < <(all_agent_dirs)
 
   echo ""
   echo "All primary agents booted. Run: agent-ctl status"
@@ -372,7 +418,10 @@ cmd_turns() {
   local count="${2:-10}"
   [ -z "$name" ] && echo "Usage: agent-ctl turns <name> [N]" && exit 1
 
-  local db="$ATROPHY_DIR/agents/$name/data/memory.db"
+  local dir
+  dir=$(agent_dir "$name")
+  [ -z "$dir" ] && echo "Agent '$name' not found" && exit 1
+  local db="$dir/data/memory.db"
   [ ! -f "$db" ] && echo "No database at $db" && exit 1
 
   echo ""
@@ -386,7 +435,10 @@ cmd_sessions() {
   local count="${2:-5}"
   [ -z "$name" ] && echo "Usage: agent-ctl sessions <name> [N]" && exit 1
 
-  local db="$ATROPHY_DIR/agents/$name/data/memory.db"
+  local dir
+  dir=$(agent_dir "$name")
+  [ -z "$dir" ] && echo "Agent '$name' not found" && exit 1
+  local db="$dir/data/memory.db"
   [ ! -f "$db" ] && echo "No database at $db" && exit 1
 
   echo ""
@@ -400,7 +452,10 @@ cmd_threads() {
   local count="${2:-10}"
   [ -z "$name" ] && echo "Usage: agent-ctl threads <name> [N]" && exit 1
 
-  local db="$ATROPHY_DIR/agents/$name/data/memory.db"
+  local dir
+  dir=$(agent_dir "$name")
+  [ -z "$dir" ] && echo "Agent '$name' not found" && exit 1
+  local db="$dir/data/memory.db"
   [ ! -f "$db" ] && echo "No database at $db" && exit 1
 
   echo ""

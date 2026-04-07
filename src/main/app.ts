@@ -27,7 +27,7 @@ import { sendCronNotification } from './notify';
 import { cronOutputEmitter } from './channels/telegram/daemon';
 import { registerAudioHandlers } from './audio';
 import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
-import { discoverAgents, syncBundledPrompts, cycleAgent, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, checkAskRequest, cleanupAskFiles } from './agent-manager';
+import { discoverAgents, getAgentDir, syncBundledPrompts, cycleAgent, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, checkAskRequest, cleanupAskFiles } from './agent-manager';
 import { runCoherenceCheck } from './sentinel';
 import { drainAllAgentQueues } from './queue';
 import { startServer, stopServer, startMeridianServer, stopMeridianServer } from './server';
@@ -794,18 +794,24 @@ app.whenReady().then(() => {
   // 2. Wire all discovered agents through switchboard
   {
     const agents = discoverAgents();
+    let wiredCount = 0;
     for (const agent of agents) {
       try {
-        const manifestPath = path.join(USER_DATA, 'agents', agent.name, 'data', 'agent.json');
+        // Use getAgentDir() so we find both flat (~/.atrophy/agents/<name>/)
+        // and org-nested (~/.atrophy/agents/<org>/<name>/) layouts.
+        const manifestPath = path.join(getAgentDir(agent.name), 'data', 'agent.json');
         if (fs.existsSync(manifestPath)) {
           const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
           wireAgent(agent.name, manifest);
+          wiredCount++;
+        } else {
+          log.warn(`Manifest not found for "${agent.name}" at ${manifestPath}`);
         }
       } catch (e) {
         log.warn(`Failed to wire agent "${agent.name}": ${e}`);
       }
     }
-    log.info(`Switchboard: ${agents.length} agent(s) wired`);
+    log.info(`Switchboard: ${wiredCount}/${agents.length} agent(s) wired`);
     markBootComplete();
 
     // Initialize persistent tmux sessions for primary agents
@@ -814,7 +820,7 @@ app.whenReady().then(() => {
       pool.ensureSession();
       const primaryAgents = agents.filter(a => {
         try {
-          const mp = path.join(USER_DATA, 'agents', a.name, 'data', 'agent.json');
+          const mp = path.join(getAgentDir(a.name), 'data', 'agent.json');
           const m = JSON.parse(fs.readFileSync(mp, 'utf-8'));
           return m.channels?.desktop?.enabled || m.channels?.telegram?.enabled;
         } catch { return false; }
