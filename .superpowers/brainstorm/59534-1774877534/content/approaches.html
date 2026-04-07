@@ -1,0 +1,82 @@
+<h2>Panorama Image: 3 Approaches</h2>
+<p class="subtitle">How to get the general's tent interior for the 3D environment</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>AI-Generated Equirectangular Panorama</h3>
+      <p>Generate a 360&deg; panorama using an AI image tool (Midjourney, DALL-E, Skybox AI). Map it onto the inside of a sphere in Three.js. Gives a photorealistic, immersive tent interior with canvas walls, lanterns, campaign maps pinned to fabric, etc.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Most immersive - full 360&deg; environment</li>
+            <li>Single image file (~2-4MB), no 3D modeling needed</li>
+            <li>Easy to swap for a different scene later</li>
+            <li>Skybox AI / Blockade Labs can generate these directly</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>Requires external tool to generate the image</li>
+            <li>Quality depends on the prompt + tool</li>
+            <li>Static - no parallax on desk objects</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin-top:12px;color:rgba(100,200,120,0.8);font-size:13px"><strong>&#9733; Recommended</strong> - best quality-to-effort ratio. One image gives you the full tent atmosphere.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>HDRI Environment Map</h3>
+      <p>Use an HDR environment map for the tent scene. Same sphere projection as Option A but with high dynamic range lighting data. Could source from Poly Haven or similar, though finding a "general's tent" specifically would be hard - you'd likely need to generate one.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Proper lighting/reflections on 3D objects</li>
+            <li>Industry-standard format</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>Larger files (10-30MB for quality HDRI)</li>
+            <li>No stock "general's tent" HDRI exists - still need to generate</li>
+            <li>Overkill unless you add reflective 3D objects</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>6-Face Cubemap from AI Images</h3>
+      <p>Generate 6 separate images (front, back, left, right, top, bottom) and map them onto a cube. More control over each face but harder to get seamless edges. Three.js has native cubemap support.</p>
+      <div class="pros-cons">
+        <div class="pros">
+          <h4>Pros</h4>
+          <ul>
+            <li>Can art-direct each wall of the tent individually</li>
+            <li>Native Three.js CubeTextureLoader</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h4>Cons</h4>
+          <ul>
+            <li>6 images to generate and align</li>
+            <li>Seam artifacts at edges if not careful</li>
+            <li>More work than a single equirectangular image</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
