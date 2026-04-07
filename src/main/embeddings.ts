@@ -9,7 +9,6 @@
  * Vectors stored as Float32Array blobs in SQLite.
  */
 
-import * as path from 'path';
 import { getConfig } from './config';
 import { createLogger } from './logger';
 
@@ -27,18 +26,37 @@ export const EMBEDDING_DIM = 384;
 
 let _pipeline: unknown = null;
 let _loading: Promise<unknown> | null = null;
+// Track failures to avoid log spam from a permanently broken model setup
+let _failureCount = 0;
+let _failureLoggedAt = 0;
+const MAX_FAILURES_BEFORE_GIVE_UP = 3;
+const FAILURE_LOG_INTERVAL_MS = 60 * 60 * 1000; // log once per hour after giving up
+let _disabled = false;
 
 async function loadPipeline(): Promise<unknown> {
   if (_pipeline) return _pipeline;
+  if (_disabled) {
+    // Throttle "still disabled" log to once per hour
+    const now = Date.now();
+    if (now - _failureLoggedAt > FAILURE_LOG_INTERVAL_MS) {
+      log.warn(`Embeddings disabled after ${_failureCount} consecutive failures - semantic search degraded. Run 'agent-ctl health' for details.`);
+      _failureLoggedAt = now;
+    }
+    throw new Error('embeddings disabled (consecutive failures)');
+  }
   if (_loading) return _loading;
 
   _loading = (async () => {
     try {
       const config = getConfig();
-      const modelName = config.EMBEDDING_MODEL;
-      const cacheDir = path.join(config.MODELS_DIR, modelName);
+      // Use the Xenova-prefixed model name which has ONNX weights for Transformers.js.
+      // The plain `all-MiniLM-L6-v2` is the PyTorch/safetensors version which won't load.
+      const modelName = config.EMBEDDING_MODEL.startsWith('Xenova/')
+        ? config.EMBEDDING_MODEL
+        : `Xenova/${config.EMBEDDING_MODEL}`;
+      const cacheDir = config.MODELS_DIR;
 
-      log.info(`Loading ${modelName} via Transformers.js...`);
+      log.info(`Loading ${modelName} via Transformers.js (cache: ${cacheDir})...`);
 
       // Dynamic import - @xenova/transformers is ESM
       const { pipeline, env } = await import('@xenova/transformers');
@@ -50,10 +68,16 @@ async function loadPipeline(): Promise<unknown> {
       });
 
       log.info(`Model loaded (${EMBEDDING_DIM}-dim, WASM)`);
+      _failureCount = 0;
       return _pipeline;
     } catch (err) {
-      // Clear _loading so a transient failure doesn't permanently poison future calls
       _loading = null;
+      _failureCount++;
+      if (_failureCount >= MAX_FAILURES_BEFORE_GIVE_UP) {
+        _disabled = true;
+        _failureLoggedAt = Date.now();
+        log.error(`Embedding model failed to load ${_failureCount} times - disabling. Last error:`, err);
+      }
       throw err;
     }
   })();

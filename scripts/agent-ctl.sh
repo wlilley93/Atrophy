@@ -348,6 +348,62 @@ cmd_cron() {
   echo ""
 }
 
+cmd_cron_state() {
+  local state_file="$ATROPHY_DIR/cron-state.json"
+  if [ ! -f "$state_file" ]; then
+    echo "No cron state file at $state_file"
+    return
+  fi
+  echo ""
+  echo "  Cron state ($state_file):"
+  echo ""
+  python3 -c "
+import json
+try:
+    with open('$state_file') as f:
+        d = json.load(f)
+    if not d:
+        print('  (empty - no jobs in failure state)')
+    else:
+        for k, v in sorted(d.items()):
+            disabled = 'DISABLED' if v.get('disabled') else 'ok'
+            fails = v.get('consecutiveFailures', 0)
+            since = v.get('disabledAt', '')
+            print(f'  {k:50s} {disabled:10s} fails={fails}{\" since \" + since if since else \"\"}')
+except Exception as e:
+    print(f'  error reading state: {e}')
+"
+  echo ""
+}
+
+cmd_cron_reset() {
+  local state_file="$ATROPHY_DIR/cron-state.json"
+  local target="${1:-}"
+  if [ -z "$target" ] || [ "$target" = "all" ]; then
+    echo "[]" > /dev/null # noop
+    echo "{}" > "$state_file"
+    echo "Reset all cron job circuit breakers (state file emptied)"
+    echo "Restart the app to re-enable disabled jobs."
+  else
+    python3 -c "
+import json
+try:
+    with open('$state_file') as f:
+        d = json.load(f)
+    if '$target' in d:
+        del d['$target']
+        with open('$state_file', 'w') as f:
+            json.dump(d, f, indent=2)
+        print('Reset $target')
+    else:
+        print('$target not in state file (already enabled)')
+except Exception as e:
+    print(f'error: {e}')
+"
+    echo "Restart the app to re-enable the job."
+  fi
+}
+
 cmd_errors() {
   local count="${1:-20}"
   echo ""
@@ -496,11 +552,13 @@ case "${1:-}" in
   list)     cmd_list ;;
 
   # System
-  boot)     cmd_boot ;;
-  shutdown) cmd_shutdown ;;
-  health)   cmd_health ;;
-  cron)     cmd_cron "${2:-}" ;;
-  errors)   cmd_errors "${2:-}" ;;
+  boot)         cmd_boot ;;
+  shutdown)     cmd_shutdown ;;
+  health)       cmd_health ;;
+  cron)         cmd_cron "${2:-}" ;;
+  cron-state)   cmd_cron_state ;;
+  cron-reset)   cmd_cron_reset "${2:-}" ;;
+  errors)       cmd_errors "${2:-}" ;;
 
   # Inference
   chat)     shift; cmd_chat "$@" ;;
@@ -534,6 +592,8 @@ SYSTEM
   shutdown                     Stop everything
   health                       HTTP API health check
   cron [N]                     Recent cron activity
+  cron-state                   Show circuit breaker state for all jobs
+  cron-reset [job|all]         Reset circuit breaker (re-enable disabled jobs)
   errors [N]                   Recent errors
 
 INFERENCE

@@ -280,6 +280,16 @@ export function readNewEntries(filePath: string, byteOffset: number): ReadResult
 export class TmuxPool {
   private sessionName: string;
   private agents: Map<string, TmuxAgentState> = new Map();
+  // Cache the WindowConfig for each agent so we can recreate the window
+  // on death without the caller needing to provide it again.
+  private configs: Map<string, WindowConfig> = new Map();
+  // Health-check timer for auto-reboot. Polls all agent windows every 30s
+  // and recreates any that have died (window missing or no claude process).
+  private healthTimer: ReturnType<typeof setInterval> | null = null;
+  private static HEALTH_CHECK_INTERVAL_MS = 30_000;
+  // Track restart count + window per agent to bound auto-reboot loops
+  private restartHistory: Map<string, number[]> = new Map();
+  private static MAX_RESTARTS_PER_HOUR = 6;
 
   constructor(sessionName = 'atrophy') {
     this.sessionName = sessionName;
@@ -315,32 +325,81 @@ export class TmuxPool {
 
   /**
    * Create a new tmux window for an agent and start the Claude CLI in it.
+   * If a window with the same name already exists (from a previous boot
+   * that didn't shut down cleanly), it is killed first to prevent tmux
+   * from auto-renaming the new window with a `-` suffix.
+   * Also ensures the parent session exists - critical for auto-reboot
+   * after the user manually killed the session.
    */
   createWindow(agentName: string, config: WindowConfig): void {
     const { sessionId, claudeBin, mcpConfigPath } = config;
     const target = `${this.sessionName}:${agentName}`;
 
-    // Create the window
+    // Cache config for auto-reboot
+    this.configs.set(agentName, config);
+
+    // Ensure the parent session exists (it may have been killed externally)
+    this.ensureSession();
+
+    // Kill ALL windows whose name matches this agent (including dash-suffixed
+    // duplicates from prior boots). tmux auto-renames new windows with `-`
+    // when there's a name collision, so a stale `general_montgomery-` won't
+    // be matched by `kill-window -t atrophy:general_montgomery` - we have to
+    // list windows and target each duplicate explicitly.
+    try {
+      const list = execFileSync(
+        'tmux', ['list-windows', '-t', this.sessionName, '-F', '#{window_id} #{window_name}'],
+        TMUX_EXEC_OPTS,
+      );
+      for (const line of list.split('\n')) {
+        const [winId, ...nameParts] = line.trim().split(/\s+/);
+        const winName = nameParts.join(' ');
+        if (!winId || !winName) continue;
+        // Match exact name OR name with trailing `-` characters (tmux dedup suffix)
+        if (winName === agentName || winName.replace(/-+$/, '') === agentName) {
+          try {
+            execFileSync('tmux', ['kill-window', '-t', winId], TMUX_EXEC_OPTS);
+            log.debug(`killed existing window ${winId} (${winName}) for ${agentName}`);
+          } catch { /* race - window may have died between list and kill */ }
+        }
+      }
+    } catch {
+      // list-windows failed - session may not exist yet
+    }
+
+    // Create the window with the agent's data dir as cwd, so the JSONL file
+    // gets written to ~/.claude/projects/-Users-...-atrophy-agents-<name>/
+    // (which is what findJsonlPath expects).
+    const agentCwd = path.join(os.homedir(), '.atrophy', 'agents', agentName);
     execFileSync('tmux', [
-      'new-window', '-t', this.sessionName, '-n', agentName,
+      'new-window', '-t', this.sessionName, '-n', agentName, '-c', agentCwd,
     ], TMUX_EXEC_OPTS);
 
-    // Build the claude command
-    const claudeCmd = [
+    // Determine if the session already exists (resume) or is new (--session-id).
+    // A session is "existing" if its JSONL file is on disk.
+    const existingJsonl = this.findJsonlPath(agentName, sessionId);
+    const sessionFlag = existingJsonl ? '--resume' : '--session-id';
+
+    // Build the claude command. Interactive mode (no -p), no --output-format
+    // (we read from JSONL files instead). --dangerously-skip-permissions is
+    // required so the agent can use its tools without prompting.
+    const claudeArgs = [
       claudeBin,
-      '--session-id', sessionId,
-      '--output-format', 'stream-json',
+      sessionFlag, sessionId,
+      '--dangerously-skip-permissions',
       '--mcp-config', mcpConfigPath,
-      '--verbose',
-    ].join(' ');
+    ];
+    const claudeCmd = claudeArgs.join(' ');
 
     // Send the command to start Claude CLI
     execFileSync('tmux', [
       'send-keys', '-t', target, claudeCmd, 'Enter',
     ], TMUX_EXEC_OPTS);
 
-    // Derive JSONL path
-    const jsonlPath = this.findJsonlPath(agentName, sessionId);
+    log.debug(`[${agentName}] starting claude with ${sessionFlag} ${sessionId} in ${agentCwd}`);
+
+    // JSONL path - use existing if found, otherwise compute expected path
+    const jsonlPath = existingJsonl || this.findJsonlPath(agentName, sessionId);
 
     // Initialize agent state - booted=false until CLI is ready for input
     const state: TmuxAgentState = {
@@ -359,19 +418,13 @@ export class TmuxPool {
     };
     this.agents.set(agentName, state);
 
-    // Poll terminal for boot completion (CLI shows input prompt when ready)
+    // Poll for boot completion: check if claude is running as a child process
+    // of the tmux pane shell. This is the same check as isWindowAlive() and
+    // is more reliable than terminal-character matching (which gets confused
+    // by the active-window indicator `*`, hook output, etc.).
     state.bootTimer = setInterval(() => {
       try {
-        const pane = this.capturePane(agentName);
-        // Claude CLI shows a > prompt or an empty line with cursor when ready.
-        // During boot, it shows spinner chars or hook output.
-        // Check last few lines for absence of spinner and presence of prompt.
-        const lines = pane.split('\n').filter(l => l.trim());
-        const lastLine = lines[lines.length - 1] || '';
-        const hasSpinner = /[*+\u2022\u2023\u25cf\u25cb\u2219\u00b7\u2713\u2717\u23f3\u2026]/.test(lastLine);
-        const isReady = !hasSpinner && lines.length > 0 && pane.length > 50;
-
-        if (isReady) {
+        if (this.isWindowAlive(agentName)) {
           clearInterval(state.bootTimer!);
           state.bootTimer = null;
           state.booted = true;
@@ -390,22 +443,24 @@ export class TmuxPool {
           }
         }
       } catch {
-        // capturePane failed - keep polling
+        // isWindowAlive failed - keep polling
       }
     }, 1000);
 
-    // Safety: mark as booted after 30s regardless (boot shouldn't take that long)
+    // Safety: mark as booted after 90s regardless. Claude CLI boot with all
+    // MCP servers + hooks can take 30-60s the first time, so 30s was too
+    // aggressive. The health check loop will detect a real death later.
     setTimeout(() => {
       if (!state.booted) {
         if (state.bootTimer) { clearInterval(state.bootTimer); state.bootTimer = null; }
         state.booted = true;
-        log.warn(`[${agentName}] boot timeout - marking as ready anyway`);
+        log.warn(`[${agentName}] boot timeout (90s) - marking as ready anyway`);
         if (state.queue.length > 0 && !state.busy) {
           const next = state.queue.shift()!;
           this.startMessage(state, next.text, next.source, next.senderName, next.emitter);
         }
       }
-    }, 30_000);
+    }, 90_000);
 
     log.info(`created tmux window for agent "${agentName}" (session: ${sessionId})`);
   }
@@ -433,13 +488,46 @@ export class TmuxPool {
   }
 
   /**
-   * Check if an agent's tmux window is still alive.
+   * Check if an agent's tmux window exists and has a running claude process.
+   * Returns false if the window is missing OR if the window has only a shell
+   * (claude crashed and dropped to the prompt). Treats `name-` (dash suffix
+   * from tmux dedup) as the same window for matching purposes.
    */
   isWindowAlive(agentName: string): boolean {
     try {
-      const target = `${this.sessionName}:${agentName}`;
-      execFileSync('tmux', ['has-session', '-t', target], TMUX_EXEC_OPTS);
-      return true;
+      // List all windows and find the one that matches this agent name.
+      // We can't use `list-panes -t atrophy:name` directly because tmux may
+      // have renamed our window with a `-` suffix during a duplicate-create.
+      const list = execFileSync(
+        'tmux', ['list-windows', '-t', this.sessionName, '-F', '#{window_id} #{window_name}'],
+        TMUX_EXEC_OPTS,
+      );
+      let winId: string | null = null;
+      for (const line of list.split('\n')) {
+        const [id, ...nameParts] = line.trim().split(/\s+/);
+        const winName = nameParts.join(' ');
+        if (!id || !winName) continue;
+        if (winName === agentName || winName.replace(/-+$/, '') === agentName) {
+          winId = id;
+          break;
+        }
+      }
+      if (!winId) return false;
+
+      // Get the pane PID for this window
+      const panePid = execFileSync(
+        'tmux', ['list-panes', '-t', winId, '-F', '#{pane_pid}'],
+        TMUX_EXEC_OPTS,
+      ).trim().split('\n')[0];
+      if (!panePid) return false;
+
+      // Check if the pane has any child processes (claude lives as child of shell)
+      try {
+        const children = execFileSync('pgrep', ['-P', panePid], TMUX_EXEC_OPTS).trim();
+        return children.length > 0;
+      } catch {
+        return false;
+      }
     } catch {
       return false;
     }
@@ -485,6 +573,7 @@ export class TmuxPool {
    * Stop all agent windows and kill the tmux session.
    */
   stopAll(): void {
+    this.stopHealthCheck();
     for (const agentName of this.agentNames()) {
       const state = this.agents.get(agentName);
       if (state?.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
@@ -495,11 +584,91 @@ export class TmuxPool {
       }
     }
     this.agents.clear();
+    this.configs.clear();
+    this.restartHistory.clear();
     try {
       execFileSync('tmux', ['kill-session', '-t', this.sessionName], TMUX_EXEC_OPTS);
       log.info(`killed tmux session "${this.sessionName}"`);
     } catch {
       // Session may already be gone
+    }
+  }
+
+  /**
+   * Start the auto-reboot health check. Polls all agent windows every 30s
+   * and recreates any that have died, using the cached WindowConfig.
+   * Bounded by MAX_RESTARTS_PER_HOUR per agent to prevent crash loops.
+   * Skips agents that haven't finished booting (state.booted === false) so
+   * it doesn't restart agents during their initial boot sequence.
+   */
+  startHealthCheck(): void {
+    if (this.healthTimer) return;
+    log.info(`Starting tmux health check (interval: ${TmuxPool.HEALTH_CHECK_INTERVAL_MS / 1000}s)`);
+    this.healthTimer = setInterval(() => {
+      for (const agentName of this.configs.keys()) {
+        try {
+          // Skip agents that haven't finished booting yet - the boot timer
+          // is still running and will mark them ready or fail-safe at 90s
+          const state = this.agents.get(agentName);
+          if (!state?.booted) continue;
+
+          if (!this.isWindowAlive(agentName)) {
+            this.handleDeadAgent(agentName);
+          }
+        } catch (err) {
+          log.warn(`health check failed for ${agentName}:`, err);
+        }
+      }
+    }, TmuxPool.HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  /** Stop the auto-reboot health check */
+  stopHealthCheck(): void {
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = null;
+    }
+  }
+
+  /** Handle a dead agent: check restart budget, then recreate */
+  private handleDeadAgent(agentName: string): void {
+    const now = Date.now();
+    const oneHourAgo = now - 3600_000;
+    const history = (this.restartHistory.get(agentName) || []).filter(t => t > oneHourAgo);
+
+    if (history.length >= TmuxPool.MAX_RESTARTS_PER_HOUR) {
+      // Already restarted MAX times in the last hour - log once per cycle
+      log.error(`[${agentName}] dead but restart budget exhausted (${history.length}/${TmuxPool.MAX_RESTARTS_PER_HOUR} in last hour) - manual intervention required`);
+      return;
+    }
+
+    const config = this.configs.get(agentName);
+    if (!config) {
+      log.warn(`[${agentName}] dead but no cached config - cannot auto-restart`);
+      return;
+    }
+
+    log.warn(`[${agentName}] tmux window dead - auto-restarting (restart ${history.length + 1}/${TmuxPool.MAX_RESTARTS_PER_HOUR} this hour)`);
+    history.push(now);
+    this.restartHistory.set(agentName, history);
+
+    // Clean up old state then recreate
+    const state = this.agents.get(agentName);
+    if (state?.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+    if (state?.bootTimer) { clearInterval(state.bootTimer); state.bootTimer = null; }
+    if (state?.currentEmitter) {
+      state.currentEmitter.emit('event', { type: 'StreamError', message: 'tmux window died - restarting' });
+    }
+    this.agents.delete(agentName);
+
+    try {
+      this.createWindow(agentName, config);
+      // Press Enter after 1s so the CLI starts processing
+      setTimeout(() => {
+        try { this.pressEnter(agentName); } catch (e) { log.warn(`[${agentName}] pressEnter failed: ${e}`); }
+      }, 1000);
+    } catch (err) {
+      log.error(`[${agentName}] auto-restart failed:`, err);
     }
   }
 

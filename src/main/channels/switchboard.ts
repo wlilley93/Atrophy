@@ -65,7 +65,9 @@ class Switchboard {
    */
   register(address: string, handler: MessageHandler, meta?: Partial<ServiceEntry>): void {
     if (this.handlers.has(address)) {
-      log.warn(`Overwriting existing handler for ${address}`);
+      // Re-registration is expected when AgentRouter replaces the placeholder
+      // installed by create-agent.ts at boot. Demote to debug to avoid noise.
+      log.debug(`Re-registering handler for ${address}`);
     }
     this.handlers.set(address, handler);
 
@@ -297,10 +299,15 @@ class Switchboard {
         }
         if (envelopes.length === 0) return;
 
-        // Process each envelope - only allow mcp:* and cron:* origins from queue
+        // Process each envelope. Accepted origins from the queue file:
+        //   - mcp:*    (memory MCP server writing on behalf of any source)
+        //   - cron:*   (cron runners writing job results)
+        //   - agent:*  (agents calling the switchboard MCP tool from their session)
+        // Anything else is rejected because the queue is a writable file and we
+        // don't trust arbitrary origins to forge envelopes.
         for (const env of envelopes) {
-          if (env.from && !env.from.startsWith('mcp:') && !env.from.startsWith('cron:')) {
-            log.warn(`Queue: rejected envelope with non-MCP origin: ${env.from}`);
+          if (env.from && !env.from.startsWith('mcp:') && !env.from.startsWith('cron:') && !env.from.startsWith('agent:')) {
+            log.warn(`Queue: rejected envelope with non-allowed origin: ${env.from}`);
             continue;
           }
           log.info(`Queue: ${env.from} -> ${env.to} "${env.text?.slice(0, 60)}"`);

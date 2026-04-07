@@ -423,9 +423,11 @@ describe('TmuxPool', () => {
       expect(state!.busy).toBe(false);
       expect(state!.queue).toEqual([]);
 
-      // Should have called new-window and send-keys
+      // Should have called new-window with -c (cwd) and send-keys
       expect(mockExecFileSync).toHaveBeenCalledWith(
-        'tmux', ['new-window', '-t', 'test', '-n', 'xan'], expect.any(Object),
+        'tmux',
+        expect.arrayContaining(['new-window', '-t', 'test', '-n', 'xan', '-c']),
+        expect.any(Object),
       );
       expect(mockExecFileSync).toHaveBeenCalledWith(
         'tmux', expect.arrayContaining(['send-keys', '-t', 'test:xan']), expect.any(Object),

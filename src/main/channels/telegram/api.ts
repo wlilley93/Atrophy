@@ -91,7 +91,16 @@ async function _post(method: string, payload: Record<string, unknown>, timeoutMs
         return data.result ?? {};
       }
 
-      log.error(`API error: ${data.description || JSON.stringify(data)}`);
+      // Markdown parse failures are expected when agent output contains
+      // unbalanced markdown. The caller (postWithMarkdownFallback) will retry
+      // without parse_mode, so this is recoverable noise, not a real error.
+      const desc = data.description || '';
+      if (desc.includes("can't parse entities") || desc.includes('Bad Request: can\'t parse')) {
+        log.debug(`Markdown parse failed (will retry plain): ${desc.slice(0, 100)}`);
+        return null;
+      }
+
+      log.error(`API error: ${desc || JSON.stringify(data)}`);
       return null;
     } catch (e) {
       if (attempt < MAX_RETRIES - 1) {

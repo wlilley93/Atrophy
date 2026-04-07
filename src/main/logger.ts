@@ -189,30 +189,48 @@ function fmt(tag: string, msg: string): string {
   return tag ? `[${tag}] ${msg}` : msg;
 }
 
+/** Serialize trailing args into the message string so they reach the log file.
+ *  Errors get their message + first stack line; objects get JSON; primitives get String(). */
+function joinArgs(msg: string, args: unknown[]): string {
+  if (args.length === 0) return msg;
+  const parts = args.map((a) => {
+    if (a instanceof Error) {
+      const stackLine = (a.stack || '').split('\n').slice(0, 2).join(' | ').trim();
+      return stackLine || a.message || String(a);
+    }
+    if (a === null || a === undefined) return String(a);
+    if (typeof a === 'object') {
+      try { return JSON.stringify(a); } catch { return String(a); }
+    }
+    return String(a);
+  });
+  return `${msg} ${parts.join(' ')}`.trim();
+}
+
 export function createLogger(tag: string) {
   return {
     debug(msg: string, ...args: unknown[]) {
       if (shouldLog('debug')) {
         console.debug(fmt(tag, msg), ...args);
-        pushEntry('debug', tag, msg);
+        pushEntry('debug', tag, joinArgs(msg, args));
       }
     },
     info(msg: string, ...args: unknown[]) {
       if (shouldLog('info')) {
         console.log(fmt(tag, msg), ...args);
-        pushEntry('info', tag, msg);
+        pushEntry('info', tag, joinArgs(msg, args));
       }
     },
     warn(msg: string, ...args: unknown[]) {
       if (shouldLog('warn')) {
         console.warn(fmt(tag, msg), ...args);
-        pushEntry('warn', tag, msg);
+        pushEntry('warn', tag, joinArgs(msg, args));
       }
     },
     error(msg: string, ...args: unknown[]) {
       if (shouldLog('error')) {
         console.error(fmt(tag, msg), ...args);
-        pushEntry('error', tag, msg);
+        pushEntry('error', tag, joinArgs(msg, args));
       }
     },
   };

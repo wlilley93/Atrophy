@@ -195,27 +195,17 @@ export function buildStatusDisplay(state: StreamState): string {
     parts.push('');
   }
 
-  // Completed tool calls with stats
+  // Completed tool calls - show name only, hide arguments to keep messages
+  // clean. Examples: "using Bash", "using Read", "using ontology_search".
   for (const tool of state.completedTools) {
     const name = formatToolName(tool.name);
-    const inputDisplay = formatToolInput(tool.name, tool.input);
-    const resultDisplay = tool.result ? formatToolResult(tool.name, tool.input, tool.result) : 'done';
-
-    let line = `\u2705 \`${name}\``;
-    // inputDisplay already contains backtick-formatted spans - don't double-escape
-    if (inputDisplay) line += ` ${inputDisplay}`;
-    line += ` - ${escapeMarkdown(resultDisplay)}`;
-    parts.push(line);
+    parts.push(`\u2705 used \`${name}\``);
   }
 
-  // Active tool call (in progress)
+  // Active tool call (in progress) - same minimal format
   if (state.activeTool) {
     const name = formatToolName(state.activeTool.name);
-    const inputDisplay = formatToolInput(state.activeTool.name, state.activeTool.input);
-    let line = `\u23f3 \`${name}\``;
-    if (inputDisplay) line += ` ${inputDisplay}`;
-    else line += '\u2026';
-    parts.push(line);
+    parts.push(`\u23f3 using \`${name}\`\u2026`);
   }
 
   // Compacting indicator

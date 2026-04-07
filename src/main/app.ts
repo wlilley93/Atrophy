@@ -859,6 +859,9 @@ app.whenReady().then(() => {
       initDb();
 
       log.info(`Tmux pool: ${pool.agentNames().length} agent(s) ready`);
+
+      // Start health check loop - auto-restarts dead tmux windows
+      pool.startHealthCheck();
     } else {
       log.info('Tmux not available - using one-shot spawn for inference');
     }

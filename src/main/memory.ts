@@ -171,7 +171,9 @@ function embedAsync(table: string, rowId: number, text: string, dbPath?: string)
       db.prepare(`UPDATE ${table} SET embedding = ? WHERE id = ?`).run(blob, rowId);
     })
     .catch((err) => {
-      log.error(`embed-async failed for ${table}:${rowId}:`, err);
+      // Embedding failures are tracked + throttled by embeddings.ts itself.
+      // Log at debug here to avoid spam when the model is permanently broken.
+      log.debug(`embed-async failed for ${table}:${rowId}:`, err);
     });
 }
 

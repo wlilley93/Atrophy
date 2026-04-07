@@ -545,13 +545,21 @@ class CronScheduler {
       return;
     }
 
-    // Time-based dedup for calendar jobs - prevent re-fire within 60s of last run
-    // (covers app restarts near fire time and timer drift races)
-    const MIN_REFIRE_MS = 60_000;
+    // Time-based dedup - prevent re-fire from app restart races and timer drift.
+    // Default 30s window catches calendar-job double-fires from boot races.
+    // For interval jobs we cap at half the interval so a 60s alert_watch loop
+    // never blocks itself (cap = 30s for >=60s interval, smaller for shorter).
+    let minRefireMs = 30_000;
+    const def = job.definition as { type?: string; interval_seconds?: number };
+    if (def.type === 'interval' && typeof def.interval_seconds === 'number') {
+      minRefireMs = Math.min(minRefireMs, Math.floor(def.interval_seconds * 1000 / 2));
+    }
     if (job.lastRun) {
       const sinceLast = Date.now() - job.lastRun.getTime();
-      if (sinceLast < MIN_REFIRE_MS) {
-        log.warn(`Job '${key}' ran ${Math.round(sinceLast / 1000)}s ago - skipping (min refire: ${MIN_REFIRE_MS / 1000}s)`);
+      if (sinceLast < minRefireMs) {
+        // Demoted to debug for normal interval drift; only warn on calendar jobs
+        const level = def.type === 'interval' ? 'debug' : 'warn';
+        log[level](`Job '${key}' ran ${Math.round(sinceLast / 1000)}s ago - skipping (min refire: ${minRefireMs / 1000}s)`);
         return;
       }
     }
