@@ -21,7 +21,9 @@ import { stopAllInference, stopInference, resetMcpConfig, prefetchContext, inval
 import { loadSystemPrompt } from './context';
 import { Session } from './session';
 import { setActive, setAway, isAway, isMacIdle, getStatus, IDLE_TIMEOUT_SECS } from './status';
-import { setPlaybackCallbacks, clearAudioQueue } from './tts';
+import { setPlaybackCallbacks, clearAudioQueue, synthesise, playAudio } from './tts';
+import { sendCronNotification } from './notify';
+import { cronOutputEmitter } from './channels/telegram/daemon';
 import { registerAudioHandlers } from './audio';
 import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
 import { discoverAgents, syncBundledPrompts, cycleAgent, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, checkAskRequest, cleanupAskFiles } from './agent-manager';
@@ -824,6 +826,36 @@ app.whenReady().then(() => {
     } catch (e) {
       log.warn(`Cron scheduler start failed (non-fatal): ${e}`);
     }
+
+    // Listen for dispatched cron output - show notification with Play button
+    cronOutputEmitter.on('output', async (data: { agentName: string; agentDisplayName: string; jobName: string; text: string }) => {
+      if (isAway()) return;
+
+      const jobLabel = data.jobName.charAt(0).toUpperCase() + data.jobName.slice(1);
+      const played = await sendCronNotification(data.agentDisplayName, jobLabel, data.text);
+
+      if (played) {
+        log.info(`[cron-notify] Playing TTS for ${data.agentName}.${data.jobName}`);
+        try {
+          const cfg = getConfig();
+          const prevAgent = cfg.AGENT_NAME;
+          if (cfg.AGENT_NAME !== data.agentName) {
+            cfg.reloadForAgent(data.agentName);
+          }
+
+          const audioPath = await synthesise(data.text);
+          if (audioPath) {
+            await playAudio(audioPath);
+          }
+
+          if (cfg.AGENT_NAME !== prevAgent) {
+            cfg.reloadForAgent(prevAgent);
+          }
+        } catch (err) {
+          log.error(`[cron-notify] TTS failed: ${err}`);
+        }
+      }
+    });
   }
 
   // 4b. Reconcile launchd jobs - ensures scheduled jobs run even when the
