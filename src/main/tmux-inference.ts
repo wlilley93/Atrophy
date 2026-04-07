@@ -41,6 +41,8 @@ export interface TmuxAgentState {
   jsonlPath: string | null;
   byteOffset: number;
   busy: boolean;
+  booted: boolean;          // true once claude CLI is ready for input
+  bootTimer: ReturnType<typeof setInterval> | null;
   queue: QueuedMessage[];
   previousText: string;
   currentEmitter: EventEmitter | null;
@@ -339,19 +341,70 @@ export class TmuxPool {
     // Derive JSONL path
     const jsonlPath = this.findJsonlPath(agentName, sessionId);
 
-    // Initialize agent state
-    this.agents.set(agentName, {
+    // Initialize agent state - booted=false until CLI is ready for input
+    const state: TmuxAgentState = {
       agentName,
       sessionId,
       jsonlPath,
       byteOffset: 0,
       busy: false,
+      booted: false,
+      bootTimer: null,
       queue: [],
       previousText: '',
       currentEmitter: null,
       pollTimer: null,
       sentenceIndex: 0,
-    });
+    };
+    this.agents.set(agentName, state);
+
+    // Poll terminal for boot completion (CLI shows input prompt when ready)
+    state.bootTimer = setInterval(() => {
+      try {
+        const pane = this.capturePane(agentName);
+        // Claude CLI shows a > prompt or an empty line with cursor when ready.
+        // During boot, it shows spinner chars or hook output.
+        // Check last few lines for absence of spinner and presence of prompt.
+        const lines = pane.split('\n').filter(l => l.trim());
+        const lastLine = lines[lines.length - 1] || '';
+        const hasSpinner = /[*+\u2022\u2023\u25cf\u25cb\u2219\u00b7\u2713\u2717\u23f3\u2026]/.test(lastLine);
+        const isReady = !hasSpinner && lines.length > 0 && pane.length > 50;
+
+        if (isReady) {
+          clearInterval(state.bootTimer!);
+          state.bootTimer = null;
+          state.booted = true;
+
+          // Discover JSONL path now that session is active
+          if (!state.jsonlPath) {
+            state.jsonlPath = this.findJsonlPath(agentName, sessionId);
+          }
+
+          log.info(`[${agentName}] tmux agent booted and ready`);
+
+          // Drain any messages that queued during boot
+          if (state.queue.length > 0 && !state.busy) {
+            const next = state.queue.shift()!;
+            this.startMessage(state, next.text, next.source, next.senderName, next.emitter);
+          }
+        }
+      } catch {
+        // capturePane failed - keep polling
+      }
+    }, 1000);
+
+    // Safety: mark as booted after 30s regardless (boot shouldn't take that long)
+    setTimeout(() => {
+      if (!state.booted) {
+        if (state.bootTimer) { clearInterval(state.bootTimer); state.bootTimer = null; }
+        state.booted = true;
+        log.warn(`[${agentName}] boot timeout - marking as ready anyway`);
+        if (state.queue.length > 0 && !state.busy) {
+          const next = state.queue.shift()!;
+          this.startMessage(state, next.text, next.source, next.senderName, next.emitter);
+        }
+      }
+    }, 30_000);
 
     log.info(`created tmux window for agent "${agentName}" (session: ${sessionId})`);
   }
@@ -411,10 +464,8 @@ export class TmuxPool {
    */
   killWindow(agentName: string): void {
     const state = this.agents.get(agentName);
-    if (state?.pollTimer) {
-      clearInterval(state.pollTimer);
-      state.pollTimer = null;
-    }
+    if (state?.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+    if (state?.bootTimer) { clearInterval(state.bootTimer); state.bootTimer = null; }
     if (state?.currentEmitter) {
       state.currentEmitter.emit('error', new Error('window killed'));
       state.currentEmitter = null;
@@ -435,10 +486,8 @@ export class TmuxPool {
   stopAll(): void {
     for (const agentName of this.agentNames()) {
       const state = this.agents.get(agentName);
-      if (state?.pollTimer) {
-        clearInterval(state.pollTimer);
-        state.pollTimer = null;
-      }
+      if (state?.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+      if (state?.bootTimer) { clearInterval(state.bootTimer); state.bootTimer = null; }
       if (state?.currentEmitter) {
         state.currentEmitter.emit('error', new Error('pool stopped'));
         state.currentEmitter = null;
@@ -471,9 +520,9 @@ export class TmuxPool {
       return emitter;
     }
 
-    if (state.busy) {
+    if (!state.booted || state.busy) {
       state.queue.push({ text, source, senderName, emitter });
-      log.debug(`queued message for "${agentName}" (queue depth: ${state.queue.length})`);
+      log.debug(`queued message for "${agentName}" (${!state.booted ? 'booting' : 'busy'}, queue depth: ${state.queue.length})`);
       return emitter;
     }
 

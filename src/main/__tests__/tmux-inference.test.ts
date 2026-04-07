@@ -454,9 +454,12 @@ describe('TmuxPool', () => {
         mcpConfigPath: '/tmp/mcp.json',
       });
 
+      // Mark as booted so send() doesn't queue for boot
+      const state = pool.get('xan')!;
+      state.booted = true;
+
       // First send - makes agent busy
       pool.send('xan', 'first', 'test');
-      const state = pool.get('xan')!;
       expect(state.busy).toBe(true);
 
       // Second send - should queue
