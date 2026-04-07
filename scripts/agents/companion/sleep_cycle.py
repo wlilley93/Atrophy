@@ -252,7 +252,7 @@ def _store_identity_flags(flags: list[str]):
 
 # ── Reflection storage ──
 
-def _store_reflection(text: str, response: str):
+def _store_reflection(response: str):
     """Extract and store the [REFLECTION] section as a high-weight observation."""
     pattern = r'\[REFLECTION\]\s*\n(.*?)(?=\n\[(?:FACTS|THREADS|PATTERNS|TRUST|IDENTITY)\]|\Z)'
     match = re.search(pattern, response, re.DOTALL)
@@ -335,7 +335,7 @@ def sleep_cycle():
     _store_identity_flags(identity_flags)
 
     # Store the reflection - the unstructured pass
-    _store_reflection(material, response)
+    _store_reflection(response)
 
     # Score existing memories
     _score_existing_memories()

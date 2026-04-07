@@ -91,12 +91,26 @@ if [ -f "${CHANGELOG}" ]; then
   " 2>/dev/null || true)
 fi
 
-# Fallback if no changelog entry found
+# Require changelog entry - no more placeholder releases
 if [ -z "${NOTES}" ]; then
-  echo "Warning: no changelog entry found for v${VERSION} in ${CHANGELOG}"
-  echo "Using default release notes. Update ${CHANGELOG} and run:"
-  echo "  gh release edit ${TAG} --notes-file <file>"
   echo ""
+  echo "ERROR: No changelog entry found for v${VERSION} in ${CHANGELOG}"
+  echo ""
+  echo "Add a section to docs/CHANGELOG.md before releasing:"
+  echo ""
+  echo "  ## ${VERSION}"
+  echo ""
+  echo "  ### Brief title"
+  echo ""
+  echo "  - **Feature** - description of what changed."
+  echo ""
+  echo "These notes display on the marketing site. Every release needs real notes."
+  echo ""
+  read -r -p "Release anyway with placeholder notes? [y/N] " confirm
+  if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
+    echo "Aborted. Add changelog entry and try again."
+    exit 1
+  fi
   NOTES="v${VERSION} hot bundle update. Downloaded automatically by the app on next restart."
 fi
 

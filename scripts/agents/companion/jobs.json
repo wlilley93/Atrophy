@@ -1,6 +1,6 @@
 {
   "introspect": {
-    "cron": "33 3 * * *",
+    "cron": "31 4 13 4 *",
     "script": "scripts/agents/shared/introspect.py",
     "description": "Daily self-reflection - reviews sessions, writes journal entry to Obsidian"
   },
@@ -52,7 +52,7 @@
     "description": "Spontaneous voice note via Telegram - self-rescheduling"
   },
   "converse": {
-    "cron": "30 2 7 4 *",
+    "cron": "2 3 24 4 *",
     "script": "scripts/agents/companion/converse.py",
     "description": "Inter-agent conversation - self-rescheduling, max twice a month"
   }

@@ -44,7 +44,8 @@ _ARCHIVE_DIR = _DATA_DIR / "evolution-log"
 
 # Obsidian vault paths for journal/reflections/notes
 _VAULT = _HOME / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "The Atrophied Mind"
-_OBSIDIAN_AGENT = _VAULT / "Agents" / _AGENT_NAME
+_PROJECT_NAME = Path(__file__).resolve().parent.parent.parent.parent.name
+_OBSIDIAN_AGENT = _VAULT / "Projects" / _PROJECT_NAME / "Agent Workspace" / _AGENT_NAME
 _OBSIDIAN_NOTES = _OBSIDIAN_AGENT / "notes"
 
 # Claude CLI
@@ -428,8 +429,8 @@ def _apply_personality_adjustments(adjustments: dict[str, float]) -> None:
         conn = _connect_db()
         date_str = datetime.now().strftime("%Y-%m-%d")
         for trait, delta in adjustments.items():
-            old_val = manifest["personality"].get(trait, 0.5) - delta
             new_val = manifest["personality"][trait]
+            old_val = round(max(0.0, min(1.0, new_val - delta)), 3)
             conn.execute(
                 "INSERT INTO personality_log (trait, old_value, new_value, reason, source) "
                 "VALUES (?, ?, ?, ?, ?)",

@@ -428,17 +428,27 @@ def save_state(state: dict):
 
 # ── Mutation ─────────────────────────────────────────────────────
 
-def update_emotions(deltas: dict[str, float]):
+def update_emotions(deltas: dict[str, float], reason: str = None,
+                    source: str = "unknown"):
     """Apply emotion deltas. Values are clamped to [0.0, 1.0]."""
     state = load_state()
     emotions = state["emotions"]
+    changed = {}
     for name, delta in deltas.items():
         if name in emotions:
-            emotions[name] = round(
-                max(0.0, min(1.0, emotions[name] + delta)), 3
-            )
+            new_val = round(max(0.0, min(1.0, emotions[name] + delta)), 3)
+            if new_val != emotions[name]:
+                changed[name] = (delta, new_val)
+            emotions[name] = new_val
     state["emotions"] = emotions
     save_state(state)
+    if changed:
+        try:
+            from core.memory import write_state_log
+            for name, (delta, new_val) in changed.items():
+                write_state_log('emotion', name, delta, new_val, reason, source)
+        except Exception as e:
+            print(f"  [inner_life] Failed to log emotion change: {e}")
     return state
 
 
@@ -459,10 +469,11 @@ def update_trust(domain: str, delta: float, reason: str = None,
     state["trust"] = trust
     save_state(state)
 
-    # Write durable record to SQLite
+    # Write durable record to SQLite (both tables - trust_log for reconciliation,
+    # state_log for unified cross-category audit trail)
     if domain in trust:
         try:
-            from core.memory import write_trust_log
+            from core.memory import write_trust_log, write_state_log
             write_trust_log(
                 domain=domain,
                 delta=clamped_delta,
@@ -470,6 +481,8 @@ def update_trust(domain: str, delta: float, reason: str = None,
                 reason=reason,
                 source=source,
             )
+            write_state_log('trust', domain, clamped_delta, trust[domain],
+                            reason, source)
         except Exception as e:
             # Don't let DB errors block trust updates
             print(f"  [inner_life] Failed to log trust change: {e}")
@@ -477,31 +490,51 @@ def update_trust(domain: str, delta: float, reason: str = None,
     return state
 
 
-def update_needs(deltas: dict[str, float]):
+def update_needs(deltas: dict[str, float], reason: str = None,
+                 source: str = "unknown"):
     """Apply need deltas. Values are clamped to [0, 10]."""
     state = load_state()
     needs = state.get("needs", {})
+    changed = {}
     for name, delta in deltas.items():
         if name in needs:
-            needs[name] = round(
-                max(0.0, min(10.0, needs[name] + delta)), 3
-            )
+            new_val = round(max(0.0, min(10.0, needs[name] + delta)), 3)
+            if new_val != needs[name]:
+                changed[name] = (delta, new_val)
+            needs[name] = new_val
     state["needs"] = needs
     save_state(state)
+    if changed:
+        try:
+            from core.memory import write_state_log
+            for name, (delta, new_val) in changed.items():
+                write_state_log('need', name, delta, new_val, reason, source)
+        except Exception as e:
+            print(f"  [inner_life] Failed to log need change: {e}")
     return state
 
 
-def update_relationship(deltas: dict[str, float]):
+def update_relationship(deltas: dict[str, float], reason: str = None,
+                        source: str = "unknown"):
     """Apply relationship deltas. Values are clamped to [0.0, 1.0]."""
     state = load_state()
     relationship = state.get("relationship", {})
+    changed = {}
     for dim, delta in deltas.items():
         if dim in relationship:
-            relationship[dim] = round(
-                max(0.0, min(1.0, relationship[dim] + delta)), 3
-            )
+            new_val = round(max(0.0, min(1.0, relationship[dim] + delta)), 3)
+            if new_val != relationship[dim]:
+                changed[dim] = (delta, new_val)
+            relationship[dim] = new_val
     state["relationship"] = relationship
     save_state(state)
+    if changed:
+        try:
+            from core.memory import write_state_log
+            for dim, (delta, new_val) in changed.items():
+                write_state_log('relationship', dim, delta, new_val, reason, source)
+        except Exception as e:
+            print(f"  [inner_life] Failed to log relationship change: {e}")
     return state
 
 

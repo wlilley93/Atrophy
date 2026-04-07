@@ -206,12 +206,11 @@ def heartbeat():
     print(f"[heartbeat] Response: {response[:120]}...")
 
     # Parse severity score and decision
-    import re as _re
     response_stripped = response.strip()
 
     # Extract severity score from first line
     severity = 50  # default if not found
-    severity_match = _re.match(r"\[SEVERITY:(\d+)\]", response_stripped)
+    severity_match = re.match(r"\[SEVERITY:(\d+)\]", response_stripped)
     if severity_match:
         severity = min(100, max(0, int(severity_match.group(1))))
         # Remove severity line for further parsing

@@ -4,6 +4,50 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.9.5
+
+### DB session fix
+
+- **Cross-agent FK violation** - `session.end()` now pins the DB path at session start, preventing a foreign key violation when an agent switch changes the active database mid-session.
+
+---
+
+## 1.9.4
+
+### Horizon intelligence + crash loop fix
+
+- **Horizon intelligence** - Research Fellow agents now include a "Looking Ahead" section in their briefs, pulling from a new `horizon_events` schema and calendar poller to surface upcoming events relevant to each agent's domain.
+- **Crash loop fix** - resolved a crash loop caused by voice cross-contamination between agents and CSP font blocking. Only the primary instance now records crashes, preventing false crash loop detection from secondary processes.
+- **Telegram lock fix** - daemon lock was using the wrong `O_NONBLOCK` value on macOS, causing potential deadlocks.
+- **Config fix** - `.env` path resolution made dynamic in `saveEnvVar` to support relocatable installs.
+
+---
+
+## 1.9.3
+
+### Agent switch loading screen
+
+- **Loading screen** - switching agents now shows a brief loading overlay instead of a jarring instant swap. Prevents UI flicker during config reload.
+
+---
+
+## 1.9.2
+
+### Test coverage
+
+- **22 startup/boot regression tests** - comprehensive test suite covering the boot sequence, update checks, config loading, and agent discovery. Total tests: 390 to 559.
+
+---
+
+## 1.9.1
+
+### Federation MCP tools + dev fixes
+
+- **Federation MCP tools** - agents can now set up federation links via MCP tools, enabling agent-driven cross-instance pairing without manual config editing.
+- **Dev mode fix** - resolved a boot hang in dev mode caused by test environment variables poisoning the main process.
+
+---
+
 ## 1.9.0
 
 ### Federation + security hardening
@@ -18,17 +62,83 @@ All notable changes to Atrophy.
 
 ---
 
-## 1.8.5 - 1.8.8
+## 1.8.11
 
-### Boot diagnostics, update fixes, and channel awareness
+### Update banner polish
+
+- **Download progress** - update banner now shows download progress instead of just "checking...". Graceful quit during install no longer leaves a corrupted bundle.
+
+---
+
+## 1.8.10
+
+### Meridian Eye rebrand + ontology integration
+
+- **Meridian Eye rebrand** - "Meridian Institute" renamed to "Meridian Eye" across all code, docs, and agent prompts.
+- **Ontology wired into MCP** - the knowledge graph ontology is now accessible via the MCP memory server. Entity extraction dual-writes to both the memory DB and the ontology.
+- **Ontology in briefs** - three-hour intelligence updates now pull context from the ontology graph, giving agents awareness of entity relationships.
+- **Auto-ingestion** - WorldMonitor ontology ingestors seed the knowledge graph from harvested articles automatically.
+- **Evolve script rewrite** - monthly personality evolution now boosts relationship signal strength, making long-term relationship growth more responsive.
+- **Distributed emotional memory** - emotional vectors now write to and read from the distributed state layer correctly.
+- **Logger fix** - rotation recovery and console tab race condition resolved.
+
+---
+
+## 1.8.9
+
+### Ontology schema + prediction ledger
+
+- **Ontology schema** - new migration adds CRUD operations for the knowledge graph. Relationship extraction script builds edges between entities automatically.
+- **Prediction ledger** - extracts and reviews forecasts from intelligence briefs, tracking prediction accuracy over time.
+- **Commission sync** - new script synchronises open commissions with the Meridian platform.
+- **Window fix** - aspect ratio locked and max window size capped to prevent oversized windows on external displays.
+- **Three bugs** from code review addressed.
+
+---
+
+## 1.8.8
+
+### Meridian intelligence pipeline
+
+- **Channel source injection** - agents now know which channel each message came from (desktop GUI, Telegram, or cron). Previously, agents would guess based on manifest context.
+- **Cross-domain synthesis** - nightly job synthesises intelligence across all Research Fellow domains, identifying cross-cutting themes.
+- **Agent performance metrics** - monthly metrics track each agent's brief quality, timeliness, and coverage.
+- **TTS for briefs** - intelligence briefs can now be delivered as audio via ElevenLabs.
+- **Geofencing and alerting** - Meridian watch zones trigger alerts when new intelligence matches a geographic area of interest.
+- **Temporal tracking** - conflict situations tracked over time with phase detection and escalation signals.
+- **Red team review** - systematic adversarial review applied to intelligence products before delivery.
+- **Multi-source verification** - pipeline cross-references claims across multiple sources before inclusion in briefs.
+- **Intelligence templates** - structured product templates for different brief types (flash, assessment, weekly digest).
+- **Entity resolution** - entities in briefs are resolved against the knowledge graph and linked for cross-referencing.
+
+---
+
+## 1.8.7
+
+### Build infrastructure
+
+- Build infrastructure alignment between CI and local release pipeline.
+
+---
+
+## 1.8.6
+
+### Update banner fix + source health dashboard
+
+- **Update banner fix** - false positive "Restart to update" banner resolved. CI version drift no longer causes the banner to appear when already running the latest version.
+- **Source health dashboard** - new Meridian dashboard showing harvester health, source freshness, and ingestion statistics.
+
+---
+
+## 1.8.5
+
+### Boot diagnostics and logging
 
 - **Persistent file logging** - all log entries now write to `~/.atrophy/logs/app.log` (2MB rotation with one prev file). Replaces the old `boot.log` with a unified logger. Diagnostics survive crashes.
 - **Renderer boot instrumentation** - every boot phase (update check, config load, brain frames, opening line) logs to the main process file. Uncaught errors and unhandled rejections in the renderer are forwarded to the log file.
 - **Console tab upgrade** - three source tabs: Live (streaming), Log file (current session from disk), Prev boot (previous session). Filter works across all sources.
 - **Renderer load diagnostics** - main process now captures `did-fail-load`, `render-process-gone`, `unresponsive`, and renderer `console.error` events to the log file.
-- **Update banner fix** - the "Restart to update" banner no longer appears when already running the latest version via hot bundle. electron-updater was comparing against the frozen DMG version, ignoring the active hot bundle.
 - **CI version sync** - CI no longer auto-bumps the version on every push. Only `pnpm release` bumps versions. CI and local releases now use the same `bundle-v` tag prefix.
-- **Channel source injection** - agents now know which channel each message came from (desktop GUI, Telegram, or cron). Previously, the agent had no way to tell and would guess based on manifest context.
 
 ---
 
@@ -45,29 +155,139 @@ All notable changes to Atrophy.
 
 ---
 
-## 1.7.0 - 1.7.5
+## 1.7.5
 
-### Auto-update and distribution
+### Agent and MCP updates
 
-- **electron-updater integration** - full app updates via GitHub Releases. Checks for updates during boot sequence, auto-downloads in background, shows banner when ready.
-- **Boot update check** - update check runs as part of the splash screen sequence with a 20-second timeout. Bundle updates checked first (fast), then full app updates.
-- **Icon fix** - generated icons were being written into the signed app bundle, breaking code signatures and causing crash loops. Icons now write to `~/.atrophy/` instead.
-- **Notarization** - DMG is signed and notarized with Apple Developer credentials. Keychain profile `atrophy` for `xcrun notarytool`.
+- Latest agent manifest, MCP configuration, and shared script updates bundled.
 
 ---
 
-## 1.6.0 - 1.6.10
+## 1.7.4
+
+### Auto-update integration
+
+- **electron-updater integration** - full app updates via GitHub Releases. Checks for updates during boot sequence, auto-downloads in background, shows banner when ready.
+- **Boot update check** - update check runs as part of the splash screen sequence with a 20-second timeout. Bundle updates checked first (fast), then full app updates.
+
+---
+
+## 1.7.3
+
+### Build fix
+
+- Build infrastructure alignment.
+
+---
+
+## 1.7.2
+
+### Icon fix
+
+- **Icon fix** - generated icons were being written into the signed app bundle, breaking code signatures and causing crash loops. Icons now write to `~/.atrophy/` instead.
+
+---
+
+## 1.7.1
+
+### Build fix
+
+- Build infrastructure alignment.
+
+---
+
+## 1.7.0
+
+### Distribution and notarization
+
+- **Notarization** - DMG is signed and notarized with Apple Developer credentials. Keychain profile `atrophy` for `xcrun notarytool`.
+- **Upgrade UX** - brain degradation animation during bundle download, auto-restart on install.
+
+---
+
+## 1.6.10
+
+### Entity auto-filing
+
+- **Entity auto-filing** - entity extraction hook files people, places, and organisations from conversations automatically.
+- **Telegram username mapping** - maps Telegram usernames to real names for context injection.
+
+---
+
+## 1.6.9
+
+### Build fix
+
+- Build infrastructure alignment.
+
+---
+
+## 1.6.8
+
+### Upgrade UX
+
+- **Upgrade UX** - brain degradation animation plays during bundle download. Auto-restart after install completes.
+
+---
+
+## 1.6.7
+
+### System tab + settings refinements
+
+- **System tab** - new Settings tab showing system diagnostics, service health, and runtime info.
+- **Settings refinements** - layout and styling improvements across all Settings tabs.
+- **Dynamic require fix** - `require()` with relative paths breaks in Vite bundles. Converted to static imports.
+
+---
+
+## 1.6.6
+
+### Settings layout fixes
+
+- **SystemMap fix** - removed embedded mode remnants that broke the renderer build.
+- **Settings form** - single-column layout on narrow windows, content overflow constrained.
+
+---
+
+## 1.6.5
+
+### Setup wizard fixes
+
+- **15 setup wizard fixes** - key verification, state management, service card UX, concurrent submit guard.
+
+---
+
+## 1.6.4
+
+### Settings polish
+
+- **Settings fit** - settings panel fits the window correctly. Orb avatar has soft faded edges.
+
+---
+
+## 1.6.3
+
+### Boot timeout
+
+- **Boot update timeout** - 15-second timeout on boot update check to prevent endless hang.
+
+---
+
+## 1.6.2
+
+### Dynamic require fix
+
+- **Dynamic require fix** - `require()` with relative paths breaks in Vite bundles. App failed to start. Converted to static imports.
+
+---
+
+## 1.6.1
 
 ### Organisation management and Settings overhaul
 
 - **Full-window Settings** - Settings redesigned from modal to full-window with sidebar navigation. Six tabs: Settings, Usage, Activity, Jobs, Updates, Console.
 - **Org management UI** - `OrgTree`, `OrgDetail`, `AgentDetail`, `AgentCreateForm`, `JobEditor` components for managing agent hierarchies, MCP servers, jobs, and channels from the UI.
 - **System Map as Settings tab** - the `Cmd+Shift+M` overlay is now also accessible as an inline Settings tab with editable MCP toggles.
-- **Entity auto-filing** - entity extraction hook files people, places, and organisations from conversations automatically.
-- **Telegram username mapping** - maps Telegram usernames to real names for context injection.
-- **15 setup wizard fixes** - key verification, state management, service card UX, concurrent submit guard.
-- **Dynamic require fix** - `require()` with relative paths breaks in Vite bundles. Converted to static imports.
-- **Boot update timeout** - 15-second timeout on boot update check to prevent endless hang.
 - **Per-agent delivery mode** - `NOTIFY_VIA` field for routing cron output to telegram, desktop, or both.
 - **Defence Bureau** - 10 tier-2 sub-agents activated with 16 registered jobs and shared utilities.
 
