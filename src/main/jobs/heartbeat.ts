@@ -186,7 +186,7 @@ function runHeartbeatInference(
     let fullText = '';
     const toolsUsed: string[] = [];
 
-    const emitter: EventEmitter = streamInference(prompt, system, cliSessionId);
+    const emitter: EventEmitter = streamInference(prompt, system, cliSessionId, { source: 'cron', processKey: `heartbeat:${getConfig().AGENT_NAME}` });
 
     emitter.on('event', (event: InferenceEvent) => {
       switch (event.type) {

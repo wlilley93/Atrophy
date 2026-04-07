@@ -106,12 +106,17 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
         },
       ));
 
-      // Stream inference (existing logic - unchanged)
+      // Ensure config is loaded for the desktop agent before inference.
+      // Concurrent telegram/cron dispatches can reload the singleton.
+      if (getConfig().AGENT_NAME !== agentName) {
+        getConfig().reloadForAgent(agentName);
+      }
+
       const emitter = streamInference(
         text,
         ctx.systemPrompt,
         ctx.currentSession.cliSessionId,
-        { source: 'desktop' },
+        { source: 'desktop', processKey: `desktop:${agentName}` },
       );
 
       let fullText = '';

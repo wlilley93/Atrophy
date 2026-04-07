@@ -178,7 +178,7 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse): 
     let errored = false;
 
     await new Promise<void>((resolve) => {
-      const emitter = streamInference(message, systemPrompt, session!.cliSessionId);
+      const emitter = streamInference(message, systemPrompt, session!.cliSessionId, { source: 'server', processKey: `server:${getConfig().AGENT_NAME}` });
 
       // Timeout: if no response after 10 minutes, give up
       let settled = false;
@@ -287,7 +287,7 @@ async function handleChatStream(req: http.IncomingMessage, res: http.ServerRespo
 
   let emitter: ReturnType<typeof streamInference>;
   try {
-    emitter = streamInference(message, systemPrompt, session.cliSessionId);
+    emitter = streamInference(message, systemPrompt, session.cliSessionId, { source: 'server', processKey: `server:${getConfig().AGENT_NAME}:sse` });
   } catch (err) {
     inferLock = false;
     res.write(`data: ${JSON.stringify({ type: 'error', message: String(err) })}\n\n`);
@@ -403,7 +403,7 @@ async function handleChatStreamJson(req: http.IncomingMessage, res: http.ServerR
 
   let emitter: ReturnType<typeof streamInference>;
   try {
-    emitter = streamInference(message, systemPrompt, session.cliSessionId);
+    emitter = streamInference(message, systemPrompt, session.cliSessionId, { source: 'server', processKey: `server:${getConfig().AGENT_NAME}:ndjson` });
   } catch (err) {
     inferLock = false;
     res.write(JSON.stringify({ type: 'error', error: String(err) }) + '\n');
@@ -790,6 +790,7 @@ async function handleMeridianChat(req: http.IncomingMessage, res: http.ServerRes
     emitter = streamInference(prompt, system, agentSession.cliSessionId, {
       senderName: 'Meridian Web User',
       source: 'server',
+      processKey: `meridian:${agentName}`,
     });
   } catch (err) {
     finalize();

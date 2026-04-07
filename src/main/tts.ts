@@ -166,18 +166,19 @@ function processProsody(text: string): ProsodyResult {
 // ElevenLabs streaming (primary)
 // ---------------------------------------------------------------------------
 
-async function synthesiseElevenLabsStream(text: string): Promise<string> {
-  // Snapshot all voice config as values NOW, before any async work.
-  // The config singleton is mutated by reloadForAgent() when the Telegram
-  // daemon dispatches to other agents. If we read properties after an await,
-  // we might get a different agent's voice.
-  const config = getConfig();
-  const voiceId = config.ELEVENLABS_VOICE_ID;
-  const apiKey = config.ELEVENLABS_API_KEY;
-  const model = config.ELEVENLABS_MODEL;
-  const baseStab = config.ELEVENLABS_STABILITY;
-  const baseSim = config.ELEVENLABS_SIMILARITY;
-  const baseSty = config.ELEVENLABS_STYLE;
+interface ElevenLabsVoiceSnapshot {
+  voiceId: string;
+  apiKey: string;
+  model: string;
+  baseStab: number;
+  baseSim: number;
+  baseSty: number;
+}
+
+async function synthesiseElevenLabsStream(text: string, snap: ElevenLabsVoiceSnapshot): Promise<string> {
+  // Config values are pre-snapshotted by the caller before any await,
+  // so reloadForAgent() mutations during acquireTtsSlot() cannot contaminate this call.
+  const { voiceId, apiKey, model, baseStab, baseSim, baseSty } = snap;
 
   const { text: cleanedText, overrides } = processProsody(text);
 
@@ -265,8 +266,8 @@ async function synthesiseElevenLabsStream(text: string): Promise<string> {
 // Fal TTS (fallback - fal.ai hosted ElevenLabs v3)
 // ---------------------------------------------------------------------------
 
-async function synthesiseFal(text: string): Promise<string> {
-  const config = getConfig();
+async function synthesiseFal(text: string, falEndpoint?: string): Promise<string> {
+  const endpoint = falEndpoint || getConfig().FAL_TTS_ENDPOINT;
   const { text: cleanedText } = processProsody(text);
 
   if (!cleanedText || !cleanedText.trim()) {
@@ -274,7 +275,7 @@ async function synthesiseFal(text: string): Promise<string> {
   }
 
   // fal.ai REST API - submit and poll for result
-  const submitUrl = `https://queue.fal.run/${config.FAL_TTS_ENDPOINT}`;
+  const submitUrl = `https://queue.fal.run/${endpoint}`;
 
   const submitResponse = await fetch(submitUrl, {
     method: 'POST',
@@ -306,7 +307,7 @@ async function synthesiseFal(text: string): Promise<string> {
     audioUrl = submitResult.audio.url;
   } else if (submitResult.request_id) {
     // Poll for result
-    const resultUrl = `https://queue.fal.run/${config.FAL_TTS_ENDPOINT}/requests/${submitResult.request_id}`;
+    const resultUrl = `https://queue.fal.run/${endpoint}/requests/${submitResult.request_id}`;
     const maxAttempts = 30;
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 1000));
@@ -455,15 +456,27 @@ export async function synthesise(text: string): Promise<string | null> {
   }
 
   const config = getConfig();
+  // Snapshot voice config synchronously - reloadForAgent() can mutate the singleton
+  // during the acquireTtsSlot() await below, causing cross-agent voice contamination.
+  const elevenSnap: ElevenLabsVoiceSnapshot = {
+    voiceId: config.ELEVENLABS_VOICE_ID,
+    apiKey: config.ELEVENLABS_API_KEY,
+    model: config.ELEVENLABS_MODEL,
+    baseStab: config.ELEVENLABS_STABILITY,
+    baseSim: config.ELEVENLABS_SIMILARITY,
+    baseSty: config.ELEVENLABS_STYLE,
+  };
+  const falVoiceId = config.FAL_VOICE_ID;
+  const falEndpoint = config.FAL_TTS_ENDPOINT;
 
   // Primary: ElevenLabs streaming (with concurrency limit)
-  if (!config.ELEVENLABS_API_KEY) log.debug('ElevenLabs skipped: no API key');
-  else if (!config.ELEVENLABS_VOICE_ID) log.debug('ElevenLabs skipped: no voice ID');
+  if (!elevenSnap.apiKey) log.debug('ElevenLabs skipped: no API key');
+  else if (!elevenSnap.voiceId) log.debug('ElevenLabs skipped: no voice ID');
   else if (isElevenLabsExhausted()) log.debug('ElevenLabs skipped: credits exhausted (cooldown active)');
-  if (config.ELEVENLABS_API_KEY && config.ELEVENLABS_VOICE_ID && !isElevenLabsExhausted()) {
+  if (elevenSnap.apiKey && elevenSnap.voiceId && !isElevenLabsExhausted()) {
     await acquireTtsSlot();
     try {
-      return await synthesiseElevenLabsStream(text);
+      return await synthesiseElevenLabsStream(text, elevenSnap);
     } catch (e) {
       // Only mark exhausted for genuine credit/auth issues, not transient rate limits
       const errMsg = String(e);
@@ -477,9 +490,9 @@ export async function synthesise(text: string): Promise<string | null> {
   }
 
   // Fallback: Fal (fal.ai hosted ElevenLabs v3)
-  if (config.FAL_VOICE_ID) {
+  if (falVoiceId) {
     try {
-      return await synthesiseFal(text);
+      return await synthesiseFal(text, falEndpoint);
     } catch (e) {
       log.warn(`Fal failed (${e}), trying macOS say...`);
     }
@@ -528,29 +541,57 @@ export function playAudio(audioPath: string, rate?: number, cleanupFile = true):
     const config = getConfig();
     const playbackRate = rate || config.TTS_PLAYBACK_RATE;
 
-    const proc = spawn('afplay', ['-r', String(playbackRate), audioPath], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-    });
-    _activeAfplay = proc;
+    // EQ: reduce room reverb/echo from ElevenLabs, add bass warmth
+    // - highshelf cut at 4kHz: tame reverb tail brightness
+    // - peaking cut at 2kHz: narrow room resonance removal
+    // - lowshelf boost at 200Hz: add vocal warmth/presence
+    const eqPath = audioPath.replace(/\.(mp3|wav|m4a)$/, '-eq.$1');
+    // EQ chain + fade-in for smooth audio start (150ms)
+    const eqChain = 'highpass=f=40,lowshelf=f=350:g=4,equalizer=f=80:t=q:w=0.7:g=3,equalizer=f=160:t=q:w=0.8:g=2,equalizer=f=250:t=q:w=1:g=2,equalizer=f=2000:t=q:w=2:g=-4,highshelf=f=4000:g=-3,volume=0.85,afade=t=in:d=0.15';
+    const ffmpegProc = spawn('ffmpeg', [
+      '-y', '-i', audioPath,
+      '-af', eqChain,
+      eqPath,
+    ], { stdio: ['ignore', 'ignore', 'ignore'] });
 
-    proc.on('close', (code) => {
-      if (_activeAfplay === proc) _activeAfplay = null;
-      // Clean up temp file (skip for permanent bundle files)
-      if (cleanupFile) {
-        try { fs.unlinkSync(audioPath); } catch { /* noop */ }
-      }
-      if (code !== 0 && code !== null) {
-        log.warn(`afplay exited ${code} for ${path.basename(audioPath)}`);
-      }
-      resolve();
-    });
-    proc.on('error', (err) => {
-      if (_activeAfplay === proc) _activeAfplay = null;
-      if (cleanupFile) {
-        try { fs.unlinkSync(audioPath); } catch { /* noop */ }
-      }
-      reject(err);
-    });
+    // Must handle error or Node.js throws unhandled exception if ffmpeg is missing.
+    // close fires after error so the fallback path below still runs.
+    ffmpegProc.on('error', () => { /* non-fatal - close fires next, falls back to original */ });
+
+    ffmpegProc.on('close', (ffCode) => {
+      // Use EQ'd file if ffmpeg succeeded, otherwise fall back to original
+      const playPath = ffCode === 0 ? eqPath : audioPath;
+      const cleanupEq = () => {
+        if (ffCode === 0) {
+          try { fs.unlinkSync(eqPath); } catch { /* noop */ }
+        }
+      };
+
+      const proc = spawn('afplay', ['-r', String(playbackRate), playPath], {
+        stdio: ['ignore', 'ignore', 'ignore'],
+      });
+      _activeAfplay = proc;
+
+      proc.on('close', (code) => {
+        if (_activeAfplay === proc) _activeAfplay = null;
+        if (cleanupFile) {
+          try { fs.unlinkSync(audioPath); } catch { /* noop */ }
+        }
+        cleanupEq();
+        if (code !== 0 && code !== null) {
+          log.warn(`afplay exited ${code} for ${path.basename(audioPath)}`);
+        }
+        resolve();
+      });
+      proc.on('error', (err) => {
+        if (_activeAfplay === proc) _activeAfplay = null;
+        if (cleanupFile) {
+          try { fs.unlinkSync(audioPath); } catch { /* noop */ }
+        }
+        cleanupEq();
+        reject(err);
+      });
+    }); // end ffmpegProc.on('close')
   });
 }
 
@@ -630,6 +671,25 @@ export function ttsGeneration(): number { return _ttsGeneration; }
 /**
  * Clear all pending audio and stop the currently playing clip.
  */
+/** Returns true if audio is currently playing or queued */
+export function isAudioBusy(): boolean {
+  return _playing || _queue.length > 0 || _activeAfplay !== null;
+}
+
+/** Wait for any in-flight audio to finish (up to timeoutMs). */
+export function waitForAudioIdle(timeoutMs = 10_000): Promise<void> {
+  return new Promise((resolve) => {
+    if (!isAudioBusy()) { resolve(); return; }
+    const start = Date.now();
+    const check = setInterval(() => {
+      if (!isAudioBusy() || Date.now() - start > timeoutMs) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 100);
+  });
+}
+
 export function clearAudioQueue(): void {
   _ttsGeneration++;
   // Clean up temp files from pending queue items

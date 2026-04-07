@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-
   interface Props {
     name: string;
     direction: number;
@@ -9,7 +7,7 @@
     onCycleDown: () => void;
   }
 
-  let { name, direction, canCycle = true, onCycleUp, onCycleDown }: Props = $props();
+  let props: Props = $props();
 
   // Rolodex animation state
   let displayName = $state('');
@@ -18,29 +16,25 @@
   let prevName = '';
   let activeRafId = 0;
 
-  // Initialize on first render
-  $effect(() => {
-    if (!prevName) {
-      displayName = name;
-      prevName = name;
-    }
-  });
-
   // Track direction separately so the animation effect doesn't re-run when direction changes
   let lastDirection = 0;
-  $effect(() => { lastDirection = direction; });
+  $effect(() => { lastDirection = props.direction; });
 
   $effect(() => {
-    if (name !== prevName) {
+    // Read props.name reactively (destructured props lose reactivity in Svelte 5)
+    const currentName = props.name;
+    if (currentName && currentName !== prevName) {
+      const wasEmpty = !prevName;
+      prevName = currentName;
+      displayName = currentName;
+
+      // Skip animation on initial population (async config load)
+      if (wasEmpty) return;
+
       // Cancel any in-flight animation and start fresh
       if (activeRafId) cancelAnimationFrame(activeRafId);
 
-      const targetName = name;
-      prevName = targetName;
       animating = true;
-      // Set displayName immediately so it's never blank if the animation
-      // gets cancelled before the midpoint swap
-      displayName = targetName;
       offset = lastDirection > 0 ? 30 : -30;
 
       const start = performance.now();
@@ -74,8 +68,8 @@
 
 <div class="agent-name" data-no-drag>
   <!-- Up chevron -->
-  {#if canCycle}
-    <button class="chevron chevron-up" onclick={onCycleUp} aria-label="Previous agent">
+  {#if props.canCycle}
+    <button class="chevron chevron-up" onclick={props.onCycleUp} aria-label="Previous agent">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="18 15 12 9 6 15"/>
       </svg>
@@ -90,8 +84,8 @@
   </div>
 
   <!-- Down chevron -->
-  {#if canCycle}
-    <button class="chevron chevron-down" onclick={onCycleDown} aria-label="Next agent">
+  {#if props.canCycle}
+    <button class="chevron chevron-down" onclick={props.onCycleDown} aria-label="Next agent">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="6 9 12 15 18 9"/>
       </svg>

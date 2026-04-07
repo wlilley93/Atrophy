@@ -114,6 +114,10 @@ export function registerSystemHandlers(ctx: IpcContext): void {
     cronScheduler.resetJob(agentName, jobName);
   });
 
+  ipcMain.handle('cron:resetAll', () => {
+    return cronScheduler.resetAllDisabled();
+  });
+
   ipcMain.handle('cron:schedulerStatus', () => {
     return {
       schedule: cronScheduler.getSchedule(),

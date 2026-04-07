@@ -372,6 +372,26 @@ class CronScheduler {
   }
 
   /**
+   * Reset all disabled jobs at once. Returns count of jobs reset.
+   */
+  resetAllDisabled(): number {
+    let count = 0;
+    for (const [key, job] of this.jobs) {
+      if (job.disabled) {
+        job.disabled = false;
+        job.consecutiveFailures = 0;
+        if (this.started) {
+          this.scheduleJob(job);
+        }
+        log.info(`Circuit breaker reset for '${key}'`);
+        count++;
+      }
+    }
+    if (count > 0) this.persistState();
+    return count;
+  }
+
+  /**
    * Immediately trigger a job by name.
    */
   async runNow(agentName: string, jobName: string): Promise<void> {
@@ -482,7 +502,7 @@ class CronScheduler {
         const remainingMs = job.nextRun ? job.nextRun.getTime() - now : 0;
 
         if (remainingMs <= 5000) {
-          // Within 5s of intended fire time (or past it) - execute
+          // Within 5s of intended fire time, or past it (clock drift/DST) - execute
           this.executeJob(job)
             .catch((err) => {
               log.error(`Calendar job '${key}' failed: ${err}`);

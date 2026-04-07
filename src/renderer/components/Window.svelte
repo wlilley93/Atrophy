@@ -160,6 +160,8 @@
   $effect(() => {
     if (session.inferenceState === 'thinking') {
       inferenceStartTime = Date.now();
+      // Dismiss silence prompt whenever inference starts (user sent a message)
+      if (silencePromptVisible) resetSilenceTimer();
     } else if (session.inferenceState === 'idle' && inferenceStartTime > 0) {
       lastResponseMs = Date.now() - inferenceStartTime;
       inferenceStartTime = 0;
@@ -830,13 +832,30 @@
 
   let agentSwitchLabel = $state('');
 
+  let _switchMinTimeMet = false;
+
   function playAgentSwitchAnimation() {
     agentSwitchLabel = agents.displayName;
     agentSwitchActive = true;
-    // Fade out after the name has been visible long enough for the
-    // orb/video to reload in the background
-    setTimeout(() => { agentSwitchActive = false; }, 800);
+    _switchMinTimeMet = false;
+    // Minimum display time so the overlay doesn't flash
+    setTimeout(() => {
+      _switchMinTimeMet = true;
+      // If inference already produced output or no message was sent, dismiss
+      if (session.inferenceState === 'idle' || session.inferenceState === 'streaming') {
+        agentSwitchActive = false;
+      }
+    }, 800);
+    // Safety: dismiss after 5s regardless (user may not send a message)
+    setTimeout(() => { agentSwitchActive = false; }, 5000);
   }
+
+  // Dismiss switch overlay when inference starts streaming (first text arrives)
+  $effect(() => {
+    if (agentSwitchActive && _switchMinTimeMet && session.inferenceState === 'streaming') {
+      agentSwitchActive = false;
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Agent deferral (codec-style handoff)
@@ -1812,20 +1831,26 @@
     transform: translateX(-50%);
     z-index: 12;
     cursor: pointer;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 6px 16px;
     animation: silenceFadeIn 1.5s ease forwards;
   }
 
   .silence-text {
     font-family: var(--font-sans);
-    font-size: 13px;
-    color: var(--text-dim);
+    font-size: 12px;
+    color: var(--text-secondary);
     letter-spacing: 1px;
-    opacity: 0.6;
-    transition: opacity 0.3s;
+    text-transform: uppercase;
+    transition: color 0.3s;
   }
 
   .silence-prompt:hover .silence-text {
-    opacity: 1;
+    color: var(--text-primary);
   }
 
   @keyframes silenceFadeIn {

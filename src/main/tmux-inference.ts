@@ -65,10 +65,10 @@ export interface WindowConfig {
 // Shared tmux exec options
 // ---------------------------------------------------------------------------
 
-const TMUX_EXEC_OPTS: { encoding: BufferEncoding; timeout: number; stdio: [string, string, string] } = {
-  encoding: 'utf-8' as BufferEncoding,
+const TMUX_EXEC_OPTS = {
+  encoding: 'utf-8' as const,
   timeout: 10000,
-  stdio: ['pipe', 'pipe', 'pipe'],
+  stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
 };
 
 // ---------------------------------------------------------------------------

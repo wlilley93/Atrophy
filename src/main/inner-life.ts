@@ -373,6 +373,7 @@ export function updateTrust(
   saveState(updated);
   try {
     writeTrustLog(domain, clamped, trust[domain], reason, source);
+    writeStateLog('trust', domain, clamped, trust[domain], reason, source);
   } catch (err) {
     if (typeof console !== 'undefined') {
       console.warn(`[inner-life] trust_log write failed for ${domain}: ${err}`);

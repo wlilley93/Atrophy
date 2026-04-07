@@ -64,6 +64,7 @@ function loadEnvFile(): void {
       // Reject everything else to prevent arbitrary env var injection.
       const isAllowed = ALLOWED_ENV_KEYS.has(key)
         || /^[A-Z][A-Z0-9_]*_TELEGRAM_(BOT_TOKEN|CHAT_ID|DM_CHAT_ID)$/.test(key)
+        || /^TELEGRAM_(BOT_TOKEN|CHAT_ID|DM_CHAT_ID)_[A-Z][A-Z0-9_]*$/.test(key)
         || /^[A-Z][A-Z0-9_]*_ELEVENLABS_(API_KEY|VOICE_ID)$/.test(key);
       if (key && !process.env[key] && isAllowed) {
         process.env[key] = val;
@@ -97,6 +98,7 @@ export function isAllowedEnvKey(key: string): boolean {
 export function saveEnvVar(key: string, value: string): boolean {
   const isAllowed = ALLOWED_ENV_KEYS.has(key)
     || /^[A-Z][A-Z0-9_]*_TELEGRAM_(BOT_TOKEN|CHAT_ID|DM_CHAT_ID)$/.test(key)
+    || /^TELEGRAM_(BOT_TOKEN|CHAT_ID|DM_CHAT_ID)_[A-Z][A-Z0-9_]*$/.test(key)
     || /^[A-Z][A-Z0-9_]*_ELEVENLABS_(API_KEY|VOICE_ID)$/.test(key);
   if (!isAllowed) return false;
   // Strip newlines to prevent env injection
@@ -740,7 +742,7 @@ export class Config {
   }
 
   private _resolveVersion(): void {
-    // Check for hot bundle version first, then fall back to app version
+    // Check for hot bundle version first, then fall back to VERSION file, then app version
     const manifestPath = path.join(USER_DATA, 'bundle', 'bundle-manifest.json');
     try {
       if (fs.existsSync(manifestPath)) {
@@ -750,6 +752,12 @@ export class Config {
           return;
         }
       }
+    } catch { /* fall through */ }
+    // VERSION file supports 4-part versions (e.g. 1.9.5.1) that semver rejects
+    const versionFile = path.join(BUNDLE_ROOT, 'VERSION');
+    try {
+      const v = fs.readFileSync(versionFile, 'utf-8').trim();
+      if (v) { this.VERSION = v; return; }
     } catch { /* fall through */ }
     this.VERSION = app.getVersion() || '0.0.0';
   }

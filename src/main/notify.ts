@@ -1,12 +1,11 @@
 /**
  * macOS native notification helper.
- * Port of core/notify.py.
  *
- * Uses AppleScript (osascript) for reliability.
+ * Uses Electron's Notification API so notifications show the Atrophy
+ * app icon instead of the generic Script Editor icon.
  * Gated by NOTIFICATIONS_ENABLED config.
  */
 
-import { execSync } from 'child_process';
 import { Notification } from 'electron';
 import { getConfig } from './config';
 import { createLogger } from './logger';
@@ -21,29 +20,14 @@ export function sendNotification(
   const config = getConfig();
   if (!config.NOTIFICATIONS_ENABLED) return;
 
-  // Escape for AppleScript string literals
-  const escape = (s: string) =>
-    s.replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, ' ')
-      .replace(/\r/g, ' ');
-
-  const t = escape(title);
-  const b = escape(body);
-  const s = escape(subtitle);
-
-  const script = subtitle
-    ? `display notification "${b}" with title "${t}" subtitle "${s}"`
-    : `display notification "${b}" with title "${t}"`;
-
   try {
-    // Pass script via stdin using osascript's '-' flag to avoid
-    // shell injection from quotes in notification text
-    execSync('osascript -', {
-      input: script,
-      timeout: 5000,
-      stdio: ['pipe', 'pipe', 'pipe'],
+    const notification = new Notification({
+      title,
+      subtitle: subtitle || undefined,
+      body: body.replace(/\n/g, ' ').slice(0, 200),
+      silent: false,
     });
+    notification.show();
   } catch (e) {
     log.error(`failed: ${e}`);
   }

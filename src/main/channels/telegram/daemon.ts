@@ -752,11 +752,9 @@ async function dispatchToAgent(
       emitter.on('event', async (evt: InferenceEvent) => {
         switch (evt.type) {
           case 'ThinkingDelta':
-            // Accumulate thinking text for streaming display
-            state.thinkingText += evt.text;
+            // Don't show thinking in Telegram - just maintain typing indicator
             if (isTelegramOrigin) {
               await sendChatAction('typing', chatId, botToken);
-              await doEdit();
             }
             break;
 
@@ -888,17 +886,20 @@ async function dispatchToAgent(
 
     // Replace the thinking/progress message with the final response
     if (finalText && isTelegramOrigin) {
-      if (msgId) {
-        // Edit the existing message to show the final text (clean, no thinking artifacts)
-        const edited = await editMessage(msgId, `${header}${finalText}`, chatId, botToken);
-        // If edit failed (message too old, deleted, etc.), send as new message
+      const fullMsg = `${header}${finalText}`;
+      if (msgId && fullMsg.length <= 4096) {
+        // Short enough to edit in place
+        const edited = await editMessage(msgId, fullMsg, chatId, botToken);
         if (!edited) {
-          // Clean up orphaned thinking message
           try { await deleteMessage(msgId, chatId, botToken); } catch { /* best effort */ }
-          await sendMessage(`${header}${finalText}`, chatId, false, botToken);
+          await sendMessage(fullMsg, chatId, false, botToken);
         }
       } else {
-        await sendMessage(`${header}${finalText}`, chatId, false, botToken);
+        // Too long for edit (4096 char limit) or no thinking message - send as new (auto-splits)
+        if (msgId) {
+          try { await deleteMessage(msgId, chatId, botToken); } catch { /* best effort */ }
+        }
+        await sendMessage(fullMsg, chatId, false, botToken);
       }
 
       // Auto-upload files mentioned in the response (e.g. generated docs)

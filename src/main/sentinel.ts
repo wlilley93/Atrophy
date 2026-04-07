@@ -12,6 +12,7 @@
  */
 
 import * as memory from './memory';
+import { getConfig } from './config';
 import { streamInference, InferenceEvent } from './inference';
 import { createLogger } from './logger';
 
@@ -256,7 +257,7 @@ export function runCoherenceCheck(
     let newSessionId: string | null = null;
     const toolsUsed: string[] = [];
 
-    const emitter = streamInference(reanchorPrompt, system, cliSessionId);
+    const emitter = streamInference(reanchorPrompt, system, cliSessionId, { processKey: `sentinel:${getConfig().AGENT_NAME}` });
 
     emitter.on('event', (event: InferenceEvent) => {
       switch (event.type) {
