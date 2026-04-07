@@ -669,7 +669,9 @@ export function streamInference(
   }
 
   const agencyContext = buildAgencyContext(userMessage, options?.senderName, options?.source);
-  let sessionId = cliSessionId || `atrophy-${config.AGENT_NAME}-${uuidv4()}`;
+  // Claude CLI requires session IDs to be valid UUIDs - the previous
+  // `atrophy-<agent>-<uuid>` format was rejected with "Invalid session ID".
+  let sessionId = cliSessionId || uuidv4();
   // All tools permitted - agents run with --dangerously-skip-permissions
   // and need full access (WebSearch, Read, Write, Bash, etc.) plus MCP tools.
   const allowedTools = '*';

@@ -91,6 +91,13 @@ export async function runJob(
   definition: JobDefinition,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<JobResult> {
+  // Allow per-job timeout override via manifest (`timeout_seconds`).
+  // Long-running data sync jobs (ontology_sync, harvest_articles) need
+  // more than the default 2 minutes.
+  const def = definition as { timeout_seconds?: number };
+  if (typeof def.timeout_seconds === 'number' && def.timeout_seconds > 0) {
+    timeoutMs = def.timeout_seconds * 1000;
+  }
   const config = getConfig();
   // Check personal scripts dir first (~/.atrophy/scripts/), fall back to bundle.
   // Validate resolved paths stay within their expected directories to prevent traversal.
