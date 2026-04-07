@@ -18,6 +18,7 @@ import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
 import { getConfig, USER_DATA } from './config';
+import { TmuxPool } from './tmux-inference';
 import { classifyEffort, EffortLevel } from './thinking';
 import {
   timeOfDayContext,
@@ -37,6 +38,20 @@ import * as memory from './memory';
 import { createLogger } from './logger';
 
 const log = createLogger('inference');
+
+// ---------------------------------------------------------------------------
+// Tmux pool singleton
+// ---------------------------------------------------------------------------
+
+let _tmuxPool: TmuxPool | null = null;
+
+/** Get or create the tmux pool. Returns null if tmux is not available. */
+export function getTmuxPool(): TmuxPool | null {
+  if (_tmuxPool) return _tmuxPool;
+  if (!TmuxPool.isAvailable()) return null;
+  _tmuxPool = new TmuxPool();
+  return _tmuxPool;
+}
 
 // ---------------------------------------------------------------------------
 // Per-agent working directory for Claude CLI
@@ -571,18 +586,30 @@ const _allProcesses = new Set<ChildProcess>();
 /** Stop inference for a specific agent (or the current config agent). */
 export function stopInference(agentName?: string): void {
   const name = agentName || getConfig().AGENT_NAME;
-  const proc = _activeProcesses.get(name);
+
+  // Cancel via tmux pool
+  const pool = getTmuxPool();
+  if (pool?.get(name)) {
+    pool.cancel(name);
+    return;
+  }
+
+  // Fallback: kill by process key (ephemeral processes)
+  const desktopKey = `desktop:${name}`;
+  const proc = _activeProcesses.get(desktopKey) || _activeProcesses.get(name);
   if (proc) {
     try { proc.kill(); } catch { /* already dead */ }
+    _activeProcesses.delete(desktopKey);
     _activeProcesses.delete(name);
-    // Also clean up from _allProcesses to prevent stale refs when
-    // concurrent callers (GUI + Telegram) both call stopInference.
     _allProcesses.delete(proc);
   }
 }
 
 /** Kill all tracked inference processes (for shutdown). */
 export function stopAllInference(): void {
+  const pool = getTmuxPool();
+  if (pool) pool.stopAll();
+
   for (const proc of _allProcesses) {
     try { proc.kill(); } catch { /* already dead */ }
   }
@@ -597,6 +624,27 @@ export function streamInference(
   options?: { senderName?: string; source?: 'desktop' | 'telegram' | 'cron' | 'server' | 'other'; processKey?: string; mcpConfigPath?: string },
 ): EventEmitter {
   const emitter = new EventEmitter();
+
+  // Route interactive channels through persistent tmux sessions.
+  // Falls back to one-shot spawn if tmux is unavailable.
+  const source = options?.source || 'desktop';
+  const isInteractive = source === 'desktop' || source === 'telegram' || source === 'server';
+  const pool = getTmuxPool();
+
+  if (isInteractive && pool) {
+    const agentName = options?.processKey?.includes(':')
+      ? options.processKey.split(':')[1]
+      : getConfig().AGENT_NAME;
+
+    const agentState = pool.get(agentName);
+    if (agentState) {
+      const agencyContext = buildAgencyContext(userMessage, options?.senderName, source);
+      const contextPrefix = `[Current context: ${agencyContext}]\n\n`;
+      return pool.send(agentName, contextPrefix + userMessage, source, options?.senderName);
+    }
+  }
+
+  // --- One-shot spawn path (cron, federation, no tmux, agent not in pool) ---
   const config = getConfig();
   const mcpConfig = options?.mcpConfigPath || getMcpConfigPath();
 

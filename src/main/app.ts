@@ -16,12 +16,13 @@ const bootLogger = createLogger('boot');
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 app.commandLine.appendSwitch('enable-features', 'V8ConcurrentSparkplug');
 import { ensureUserData, getConfig, isValidAgentName, BUNDLE_ROOT, USER_DATA } from './config';
-import { initDb, closeAll as closeAllDbs, closeForPath, closeStaleOpenSessions, endSession } from './memory';
-import { stopAllInference, stopInference, resetMcpConfig, prefetchContext, invalidateContextCache } from './inference';
+import { initDb, closeAll as closeAllDbs, closeForPath, closeStaleOpenSessions, endSession, getLastCliSessionId } from './memory';
+import { stopAllInference, stopInference, resetMcpConfig, prefetchContext, invalidateContextCache, getTmuxPool } from './inference';
+import { v4 as uuidv4 } from 'uuid';
 import { loadSystemPrompt } from './context';
 import { Session } from './session';
 import { setActive, setAway, isAway, isMacIdle, getStatus, IDLE_TIMEOUT_SECS } from './status';
-import { setPlaybackCallbacks, clearAudioQueue, synthesise, playAudio } from './tts';
+import { setPlaybackCallbacks, clearAudioQueue, synthesise, playAudio, waitForAudioIdle } from './tts';
 import { sendCronNotification } from './notify';
 import { cronOutputEmitter } from './channels/telegram/daemon';
 import { registerAudioHandlers } from './audio';
@@ -806,6 +807,52 @@ app.whenReady().then(() => {
     }
     log.info(`Switchboard: ${agents.length} agent(s) wired`);
     markBootComplete();
+
+    // Initialize persistent tmux sessions for primary agents
+    const pool = getTmuxPool();
+    if (pool) {
+      pool.ensureSession();
+      const primaryAgents = agents.filter(a => {
+        try {
+          const mp = path.join(USER_DATA, 'agents', a.name, 'data', 'agent.json');
+          const m = JSON.parse(fs.readFileSync(mp, 'utf-8'));
+          return m.channels?.desktop?.enabled || m.channels?.telegram?.enabled;
+        } catch { return false; }
+      });
+
+      for (const agent of primaryAgents) {
+        try {
+          config.reloadForAgent(agent.name);
+          initDb();
+          const lastSession = getLastCliSessionId() || uuidv4();
+          const mcpConfig = mcpRegistry.buildConfigForAgent(agent.name);
+
+          pool.createWindow(agent.name, {
+            sessionId: lastSession,
+            claudeBin: config.CLAUDE_BIN,
+            mcpConfigPath: mcpConfig,
+          });
+
+          // Press Enter after 1s to start claude
+          setTimeout(() => {
+            try { pool.pressEnter(agent.name); } catch (e) {
+              log.warn(`[${agent.name}] tmux Enter failed: ${e}`);
+            }
+          }, 1000);
+        } catch (e) {
+          log.warn(`[${agent.name}] tmux window creation failed: ${e}`);
+        }
+      }
+
+      // Restore config to the last active agent
+      const lastAgent = getLastActiveAgent() || 'xan';
+      config.reloadForAgent(lastAgent);
+      initDb();
+
+      log.info(`Tmux pool: ${pool.agentNames().length} agent(s) ready`);
+    } else {
+      log.info('Tmux not available - using one-shot spawn for inference');
+    }
   }
 
   // 3. Crash rate check - if too many recent crashes, skip cron and daemon
@@ -837,6 +884,9 @@ app.whenReady().then(() => {
       if (played) {
         log.info(`[cron-notify] Playing TTS for ${data.agentName}.${data.jobName}`);
         try {
+          // Wait for any current desktop TTS to finish before playing
+          await waitForAudioIdle();
+
           const cfg = getConfig();
           const prevAgent = cfg.AGENT_NAME;
           if (cfg.AGENT_NAME !== data.agentName) {
