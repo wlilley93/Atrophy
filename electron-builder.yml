@@ -10,6 +10,13 @@ files:
   - out/**/*
   - "!out/**/*.map"
 
+asarUnpack:
+  # Native .node binaries for onnxruntime - must live outside asar to load at runtime.
+  # Transformers.js dynamically imports onnxruntime-node; if it's inside asar, the
+  # module resolver can't find it and embeddings silently disable themselves.
+  - "node_modules/onnxruntime-node/**/*"
+  - "node_modules/@xenova/transformers/**/*"
+
 mac:
   category: public.app-category.utilities
   target:
