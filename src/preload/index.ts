@@ -75,6 +75,8 @@ export interface AtrophyAPI {
   toggleAlwaysOnTop: () => Promise<void>;
   minimizeWindow: () => Promise<void>;
   closeWindow: () => Promise<void>;
+  getWindowSize: () => Promise<{ width: number; height: number }>;
+  setWindowSize: (width: number, height: number, animate?: boolean) => Promise<void>;
 
   // Queue messages (from background jobs)
   onQueueMessage: (cb: (msg: { text: string; source: string }) => void) => () => void;
@@ -359,6 +361,8 @@ const api: AtrophyAPI = {
   toggleAlwaysOnTop: () => ipcRenderer.invoke('window:toggleAlwaysOnTop'),
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
+  getWindowSize: () => ipcRenderer.invoke('window:getSize'),
+  setWindowSize: (width, height, animate = true) => ipcRenderer.invoke('window:setSize', width, height, animate),
 
   // Queue messages
   onQueueMessage: createListener('queue:message') as AtrophyAPI['onQueueMessage'],

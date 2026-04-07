@@ -3,6 +3,7 @@
   import { api } from '../../api';
 
   interface Props {
+    page: 'general' | 'voice' | 'input' | 'engine' | 'telegram' | 'connections' | 'about';
     agentList: { name: string; display_name: string; description: string; role: string }[];
     userName: string;
     agentDisplayName: string;
@@ -66,6 +67,7 @@
   }
 
   let {
+    page,
     agentList = $bindable(),
     userName = $bindable(),
     agentDisplayName = $bindable(),
@@ -128,6 +130,7 @@
     onResetSetup,
   }: Props = $props();
 
+  // ── Toggleable tools list ─────────────────────────────────
   const toggleableTools = [
     ['mcp__memory__defer_to_agent', 'Agent deferral'],
     ['mcp__memory__send_telegram', 'Telegram messaging'],
@@ -144,826 +147,857 @@
     ['mcp__fal__*', 'Media generation (fal)'],
   ] as const;
 
-  // Password visibility toggles
+  // ── Accordion state ───────────────────────────────────────
+  let collapsed = $state<Set<string>>(new Set());
+  function toggleSection(id: string) {
+    const next = new Set(collapsed);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    collapsed = next;
+  }
+
+  // ── Password visibility ───────────────────────────────────
   let showElevenlabsKey = $state(false);
   let showFalKey = $state(false);
   let showTelegramToken = $state(false);
 
-  // Telegram discovery
+  // ── Telegram discovery ────────────────────────────────────
   let telegramDiscovering = $state(false);
   let telegramDiscoverStatus = $state('');
 
+  // ── Page titles ───────────────────────────────────────────
+  const PAGE_TITLES: Record<string, string> = {
+    general: 'General',
+    voice: 'Voice & TTS',
+    input: 'Input & Audio',
+    engine: 'Inference & Memory',
+    telegram: 'Telegram',
+    connections: 'Services & Paths',
+    about: 'About',
+  };
 </script>
 
-<div class="settings-form">
+<div class="settings-page">
 
-<!-- YOU -->
-<div class="section full-width">
-  <div class="section-header">You</div>
-  <div class="section-line"></div>
-  <label class="field">
-    <span class="field-label">Your Name</span>
-    <input type="text" bind:value={userName} class="field-input" />
-  </label>
-</div>
+  <h2 class="page-title">{PAGE_TITLES[page] ?? ''}</h2>
 
-<!-- AGENT IDENTITY -->
-<div class="section">
-  <div class="section-header">Agent Identity</div>
-  <div class="section-line"></div>
-  <div class="field">
-    <span class="field-label">Agent Slug</span>
-    <span class="field-info">{agents.current}</span>
-  </div>
-  <label class="field">
-    <span class="field-label">Display Name</span>
-    <input type="text" bind:value={agentDisplayName} class="field-input" />
-  </label>
-  <label class="field">
-    <span class="field-label">Wake Words</span>
-    <input type="text" bind:value={wakeWords} class="field-input" placeholder="hey xan, xan" />
-  </label>
-</div>
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- GENERAL PAGE                                            -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  {#if page === 'general'}
 
-<!-- TOOLS -->
-<div class="section">
-  <div class="section-header">Tools</div>
-  <div class="section-line"></div>
-  {#each toggleableTools as [toolId, label]}
-    <label class="checkbox-row">
-      <input
-        type="checkbox"
-        checked={!disabledTools.has(toolId)}
-        onchange={() => {
-          const next = new Set(disabledTools);
-          if (next.has(toolId)) next.delete(toolId);
-          else next.add(toolId);
-          disabledTools = next;
-        }}
-      />
-      <span>{label}</span>
-    </label>
-  {/each}
-</div>
-
-<!-- WINDOW -->
-<div class="section">
-  <div class="section-header">Window</div>
-  <div class="section-line"></div>
-  <label class="field">
-    <span class="field-label">Width</span>
-    <input type="number" min="300" max="1920" bind:value={windowWidth} class="field-input short" />
-    <span class="field-suffix">px</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Height</span>
-    <input type="number" min="400" max="1080" bind:value={windowHeight} class="field-input short" />
-    <span class="field-suffix">px</span>
-  </label>
-  <label class="checkbox-row">
-    <input type="checkbox" bind:checked={avatarEnabled} />
-    <span>Avatar Enabled</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Avatar Resolution</span>
-    <input type="number" min="128" max="1024" bind:value={avatarResolution} class="field-input short" />
-  </label>
-  <label class="checkbox-row">
-    <input type="checkbox" bind:checked={eyeModeDefault} />
-    <span>Eye Mode by default (hide transcript)</span>
-  </label>
-  <label class="checkbox-row">
-    <input type="checkbox" bind:checked={silenceTimerEnabled} />
-    <span>Silence timer ("Still here?" prompt)</span>
-  </label>
-  {#if silenceTimerEnabled}
-    <label class="field">
-      <span class="field-label">Silence Timeout</span>
-      <input type="number" min="1" max="60" bind:value={silenceTimerMinutes} class="field-input short" />
-      <span class="field-suffix">min</span>
-    </label>
-  {/if}
-</div>
-
-<!-- VOICE & TTS -->
-<div class="section full-width">
-  <div class="section-header">Voice & TTS</div>
-  <div class="section-line"></div>
-  <label class="checkbox-row">
-    <input type="checkbox" bind:checked={muteByDefault} />
-    <span>Mute TTS by default</span>
-  </label>
-  <label class="field">
-    <span class="field-label">TTS Backend</span>
-    <select bind:value={ttsBackend} class="field-select">
-      <option value="elevenlabs">ElevenLabs</option>
-      <option value="fal">Fal</option>
-      <option value="none">None</option>
-    </select>
-  </label>
-  <div class="field">
-    <span class="field-label">ElevenLabs API Key</span>
-    <div class="input-eye-wrap">
-      <input type={showElevenlabsKey ? 'text' : 'password'} bind:value={elevenlabsApiKey} class="field-input has-eye" />
-      <button class="eye-toggle" type="button" onclick={() => showElevenlabsKey = !showElevenlabsKey} aria-label={showElevenlabsKey ? 'Hide' : 'Show'}>
-        {#if showElevenlabsKey}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
-        {:else}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-        {/if}
+    <!-- You -->
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('you')}>
+        <span>You</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('you')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
-    </div>
-  </div>
-  <label class="field">
-    <span class="field-label">ElevenLabs Voice ID</span>
-    <input type="text" bind:value={elevenlabsVoiceId} class="field-input" />
-  </label>
-  <label class="field">
-    <span class="field-label">ElevenLabs Model</span>
-    <select bind:value={elevenlabsModel} class="field-select">
-      <option value="eleven_v3">eleven_v3</option>
-      <option value="eleven_v2">eleven_v2</option>
-      <option value="eleven_multilingual_v2">eleven_multilingual_v2</option>
-      <option value="eleven_turbo_v2_5">eleven_turbo_v2_5</option>
-      <option value="eleven_flash_v2_5">eleven_flash_v2_5</option>
-    </select>
-  </label>
-  <label class="field">
-    <span class="field-label">Stability</span>
-    <input type="range" min="0" max="1" step="0.05" bind:value={elevenlabsStability} class="field-slider" />
-    <span class="field-value">{elevenlabsStability.toFixed(2)}</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Similarity</span>
-    <input type="range" min="0" max="1" step="0.05" bind:value={elevenlabsSimilarity} class="field-slider" />
-    <span class="field-value">{elevenlabsSimilarity.toFixed(2)}</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Style</span>
-    <input type="range" min="0" max="1" step="0.05" bind:value={elevenlabsStyle} class="field-slider" />
-    <span class="field-value">{elevenlabsStyle.toFixed(2)}</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Playback Rate</span>
-    <input type="range" min="0.5" max="2.0" step="0.01" bind:value={ttsPlaybackRate} class="field-slider" />
-    <span class="field-value">{ttsPlaybackRate.toFixed(2)}x</span>
-  </label>
-  <div class="field">
-    <span class="field-label">Fal API Key</span>
-    <div class="input-eye-wrap">
-      <input type={showFalKey ? 'text' : 'password'} bind:value={falApiKey} class="field-input has-eye" />
-      <button class="eye-toggle" type="button" onclick={() => showFalKey = !showFalKey} aria-label={showFalKey ? 'Hide' : 'Show'}>
-        {#if showFalKey}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
-        {:else}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-        {/if}
+      {#if !collapsed.has('you')}
+        <div class="section-body">
+          <div class="field-group">
+            <label class="field-label" for="user-name">Your Name</label>
+            <input id="user-name" type="text" bind:value={userName} class="field-input" />
+          </div>
+        </div>
+      {/if}
+    </section>
+
+    <!-- Agent Identity -->
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('identity')}>
+        <span>Agent Identity</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('identity')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
-    </div>
-  </div>
-  <label class="field">
-    <span class="field-label">Fal Voice ID</span>
-    <input type="text" bind:value={falVoiceId} class="field-input" />
-  </label>
-</div>
+      {#if !collapsed.has('identity')}
+        <div class="section-body">
+          <div class="field-group">
+            <span class="field-label">Agent Slug</span>
+            <span class="field-info">{agents.current}</span>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="display-name">Display Name</label>
+            <input id="display-name" type="text" bind:value={agentDisplayName} class="field-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="wake-words">Wake Words</label>
+            <input id="wake-words" type="text" bind:value={wakeWords} class="field-input" placeholder="hey xan, xan" />
+          </div>
+        </div>
+      {/if}
+    </section>
 
-<!-- INPUT -->
-<div class="section">
-  <div class="section-header">Input</div>
-  <div class="section-line"></div>
-  <label class="field">
-    <span class="field-label">Input Mode</span>
-    <select bind:value={inputMode} class="field-select">
-      <option value="dual">Dual</option>
-      <option value="voice">Voice</option>
-      <option value="text">Text</option>
-    </select>
-  </label>
-  <label class="field">
-    <span class="field-label">Push-to-Talk Key</span>
-    <input type="text" bind:value={pttKey} class="field-input" />
-  </label>
-  <label class="checkbox-row">
-    <input type="checkbox" bind:checked={wakeWordEnabled} />
-    <span>Wake Word Detection</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Wake Chunk Duration</span>
-    <input type="number" min="1" max="10" bind:value={wakeChunkSeconds} class="field-input short" />
-    <span class="field-suffix">sec</span>
-  </label>
-</div>
-
-<!-- KEEP AWAKE -->
-<div class="section">
-  <div class="section-header">Keep Awake</div>
-  <div class="section-line"></div>
-  <div class="field row">
-    <span class="field-label">Prevent Sleep</span>
-    <div class="daemon-control">
-      <span class="daemon-status" class:active={keepAwakeActive}>
-        {keepAwakeActive ? 'Active' : 'Off'}
-      </span>
-      <button
-        class="daemon-btn"
-        onclick={async () => {
-          const result = await api?.toggleKeepAwake();
-          keepAwakeActive = !!result;
-        }}
-      >
-        {keepAwakeActive ? 'Disable' : 'Enable'}
+    <!-- Tools -->
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('tools')}>
+        <span>Tools</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('tools')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
-    </div>
-  </div>
-  <div class="section-hint">Prevents display and system sleep while the app is running.</div>
-</div>
+      {#if !collapsed.has('tools')}
+        <div class="section-body">
+          {#each toggleableTools as [toolId, label]}
+            <label class="toggle-row">
+              <span class="toggle-label">{label}</span>
+              <button
+                class="toggle-switch"
+                class:on={!disabledTools.has(toolId)}
+                onclick={() => {
+                  const next = new Set(disabledTools);
+                  if (next.has(toolId)) next.delete(toolId);
+                  else next.add(toolId);
+                  disabledTools = next;
+                }}
+                role="switch"
+                aria-checked={!disabledTools.has(toolId)}
+              >
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </button>
+            </label>
+          {/each}
+        </div>
+      {/if}
+    </section>
 
-<!-- NOTIFICATIONS -->
-<div class="section">
-  <div class="section-header">Notifications</div>
-  <div class="section-line"></div>
-  <label class="checkbox-row">
-    <input type="checkbox" bind:checked={notificationsEnabled} />
-    <span>macOS Notifications</span>
-  </label>
-</div>
-
-<!-- AUDIO CAPTURE -->
-<div class="section">
-  <div class="section-header">Audio Capture</div>
-  <div class="section-line"></div>
-  <label class="field">
-    <span class="field-label">Sample Rate</span>
-    <input type="number" min="8000" max="48000" bind:value={sampleRate} class="field-input short" />
-    <span class="field-suffix">Hz</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Max Record Duration</span>
-    <input type="number" min="10" max="300" bind:value={maxRecordSec} class="field-input short" />
-    <span class="field-suffix">sec</span>
-  </label>
-</div>
-
-<!-- INFERENCE -->
-<div class="section">
-  <div class="section-header">Inference</div>
-  <div class="section-line"></div>
-  <label class="field">
-    <span class="field-label">Claude Binary</span>
-    <input type="text" bind:value={claudeBin} class="field-input" />
-  </label>
-  <label class="field">
-    <span class="field-label">Model</span>
-    <select bind:value={claudeModel} class="field-select">
-      <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-      <option value="claude-opus-4-6">Opus 4.6</option>
-      <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-      <option value="claude-sonnet-4-5-20241022">Sonnet 4.5</option>
-    </select>
-  </label>
-  <label class="field">
-    <span class="field-label">Effort</span>
-    <select bind:value={claudeEffort} class="field-select">
-      <option value="low">Low</option>
-      <option value="medium">Medium</option>
-      <option value="high">High</option>
-    </select>
-  </label>
-  <label class="checkbox-row">
-    <input type="checkbox" bind:checked={adaptiveEffort} />
-    <span>Adaptive Effort</span>
-  </label>
-</div>
-
-<!-- MEMORY & CONTEXT -->
-<div class="section full-width">
-  <div class="section-header">Memory & Context</div>
-  <div class="section-line"></div>
-  <label class="field">
-    <span class="field-label">Context Summaries</span>
-    <input type="number" min="0" max="20" bind:value={contextSummaries} class="field-input short" />
-  </label>
-  <label class="field">
-    <span class="field-label">Max Context Tokens</span>
-    <input type="number" min="10000" max="500000" step="10000" bind:value={maxContextTokens} class="field-input short" />
-  </label>
-  <label class="field">
-    <span class="field-label">Vector Search Weight</span>
-    <input type="range" min="0" max="1" step="0.05" bind:value={vectorSearchWeight} class="field-slider" />
-    <span class="field-value">{vectorSearchWeight.toFixed(2)}</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Embedding Model</span>
-    <input type="text" bind:value={embeddingModel} class="field-input" />
-  </label>
-  <label class="field">
-    <span class="field-label">Embedding Dimensions</span>
-    <input type="number" min="64" max="2048" bind:value={embeddingDim} class="field-input short" />
-  </label>
-</div>
-
-<!-- SESSION -->
-<div class="section">
-  <div class="section-header">Session</div>
-  <div class="section-line"></div>
-  <label class="field">
-    <span class="field-label">Soft Limit</span>
-    <input type="number" min="10" max="480" bind:value={sessionSoftLimitMins} class="field-input short" />
-    <span class="field-suffix">min</span>
-  </label>
-</div>
-
-<!-- HEARTBEAT -->
-<div class="section">
-  <div class="section-header">Heartbeat</div>
-  <div class="section-line"></div>
-  <label class="field">
-    <span class="field-label">Active Start Hour</span>
-    <input type="number" min="0" max="23" bind:value={heartbeatActiveStart} class="field-input short" />
-    <span class="field-suffix">h</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Active End Hour</span>
-    <input type="number" min="0" max="23" bind:value={heartbeatActiveEnd} class="field-input short" />
-    <span class="field-suffix">h</span>
-  </label>
-  <label class="field">
-    <span class="field-label">Interval</span>
-    <input type="number" min="5" max="120" bind:value={heartbeatIntervalMins} class="field-input short" />
-    <span class="field-suffix">min</span>
-  </label>
-</div>
-
-<!-- PATHS -->
-<div class="section full-width">
-  <div class="section-header">Paths</div>
-  <div class="section-line"></div>
-  <label class="field">
-    <span class="field-label">Obsidian Vault</span>
-    <input type="text" bind:value={obsidianVault} class="field-input" />
-  </label>
-  <div class="field">
-    <span class="field-label">Database</span>
-    <span class="field-info mono">{dbPath}</span>
-  </div>
-  <div class="field">
-    <span class="field-label">Whisper Binary</span>
-    <span class="field-info mono">{whisperBin}</span>
-  </div>
-</div>
-
-<!-- GOOGLE -->
-<div class="section">
-  <div class="section-header">Google</div>
-  <div class="section-line"></div>
-  <div class="field">
-    <span class="field-label">Status</span>
-    <span class="field-info" class:connected={googleConfigured}>
-      {googleConfigured ? 'Connected' : 'Not connected'}
-    </span>
-  </div>
-  {#if googleAuthStatus}
-    <div class="field">
-      <span class="field-label"></span>
-      <span class="field-info">{googleAuthStatus}</span>
-    </div>
-  {/if}
-</div>
-
-<!-- TELEGRAM -->
-<div class="section full-width">
-  <div class="section-header">Telegram</div>
-  <div class="section-line"></div>
-  <div class="field">
-    <span class="field-label">Bot Token</span>
-    <div class="input-eye-wrap">
-      <input type={showTelegramToken ? 'text' : 'password'} bind:value={telegramBotToken} class="field-input has-eye" />
-      <button class="eye-toggle" type="button" onclick={() => showTelegramToken = !showTelegramToken} aria-label={showTelegramToken ? 'Hide' : 'Show'}>
-        {#if showTelegramToken}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
-        {:else}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-        {/if}
+    <!-- Window & Display -->
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('window')}>
+        <span>Window & Display</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('window')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
-    </div>
-  </div>
-  <label class="field">
-    <span class="field-label">Chat ID</span>
-    <input type="text" bind:value={telegramChatId} class="field-input" />
-  </label>
-  <label class="field">
-    <span class="field-label">Your Telegram Name</span>
-    <input type="text" bind:value={telegramUsername} class="field-input" placeholder="e.g. fellowear" />
-    <span class="field-hint">Your Telegram display name or @username - maps to your name in conversations</span>
-  </label>
-  {#if telegramBotToken && telegramBotToken !== '***' && !telegramChatId}
-    <div class="field row">
-      <span class="field-label"></span>
-      <div class="daemon-control">
-        <span class="field-info">{telegramDiscoverStatus || 'Send any message to the bot to link'}</span>
-        <button
-          class="daemon-btn"
-          disabled={telegramDiscovering}
-          onclick={async () => {
-            telegramDiscovering = true;
-            telegramDiscoverStatus = 'Waiting for message...';
-            const result = await api?.discoverTelegramChatId(telegramBotToken);
-            telegramDiscovering = false;
-            if (result) {
-              telegramChatId = result.chatId;
-              telegramDiscoverStatus = `Linked${result.username ? ` (@${result.username})` : ''}`;
-            } else {
-              telegramDiscoverStatus = 'Timed out - try again';
-            }
-          }}
-        >
-          {telegramDiscovering ? 'Listening...' : 'Auto-detect'}
+      {#if !collapsed.has('window')}
+        <div class="section-body">
+          <div class="field-row-inline">
+            <div class="field-group compact">
+              <label class="field-label" for="win-w">Width</label>
+              <div class="input-with-suffix">
+                <input id="win-w" type="number" min="300" max="1920" bind:value={windowWidth} class="field-input" />
+                <span class="input-suffix">px</span>
+              </div>
+            </div>
+            <div class="field-group compact">
+              <label class="field-label" for="win-h">Height</label>
+              <div class="input-with-suffix">
+                <input id="win-h" type="number" min="400" max="1080" bind:value={windowHeight} class="field-input" />
+                <span class="input-suffix">px</span>
+              </div>
+            </div>
+          </div>
+          <label class="toggle-row">
+            <span class="toggle-label">Avatar</span>
+            <button class="toggle-switch" class:on={avatarEnabled} onclick={() => avatarEnabled = !avatarEnabled} role="switch" aria-checked={avatarEnabled}>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </button>
+          </label>
+          {#if avatarEnabled}
+            <div class="field-group">
+              <label class="field-label" for="avatar-res">Avatar Resolution</label>
+              <div class="input-with-suffix">
+                <input id="avatar-res" type="number" min="128" max="1024" bind:value={avatarResolution} class="field-input" />
+                <span class="input-suffix">px</span>
+              </div>
+            </div>
+          {/if}
+          <label class="toggle-row">
+            <span class="toggle-label">Eye Mode by default</span>
+            <button class="toggle-switch" class:on={eyeModeDefault} onclick={() => eyeModeDefault = !eyeModeDefault} role="switch" aria-checked={eyeModeDefault}>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </button>
+          </label>
+          <label class="toggle-row">
+            <span class="toggle-label">Silence timer</span>
+            <button class="toggle-switch" class:on={silenceTimerEnabled} onclick={() => silenceTimerEnabled = !silenceTimerEnabled} role="switch" aria-checked={silenceTimerEnabled}>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </button>
+          </label>
+          {#if silenceTimerEnabled}
+            <div class="field-group">
+              <label class="field-label" for="silence-min">Silence Timeout</label>
+              <div class="input-with-suffix">
+                <input id="silence-min" type="number" min="1" max="60" bind:value={silenceTimerMinutes} class="field-input" />
+                <span class="input-suffix">min</span>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </section>
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- VOICE PAGE                                              -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  {:else if page === 'voice'}
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('tts-general')}>
+        <span>General</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('tts-general')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('tts-general')}
+        <div class="section-body">
+          <label class="toggle-row">
+            <span class="toggle-label">Mute TTS by default</span>
+            <button class="toggle-switch" class:on={muteByDefault} onclick={() => muteByDefault = !muteByDefault} role="switch" aria-checked={muteByDefault}>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </button>
+          </label>
+          <div class="field-group">
+            <span class="field-label">TTS Backend</span>
+            <div class="segmented-control">
+              <button class:active={ttsBackend === 'elevenlabs'} onclick={() => ttsBackend = 'elevenlabs'}>ElevenLabs</button>
+              <button class:active={ttsBackend === 'fal'} onclick={() => ttsBackend = 'fal'}>Fal</button>
+              <button class:active={ttsBackend === 'none'} onclick={() => ttsBackend = 'none'}>None</button>
+            </div>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="playback-rate">Playback Rate</label>
+            <div class="slider-row">
+              <input id="playback-rate" type="range" min="0.5" max="2.0" step="0.01" bind:value={ttsPlaybackRate} class="field-slider" />
+              <span class="slider-value">{ttsPlaybackRate.toFixed(2)}x</span>
+            </div>
+          </div>
+        </div>
+      {/if}
+    </section>
+
+    <!-- ElevenLabs config - only when backend is elevenlabs -->
+    {#if ttsBackend === 'elevenlabs'}
+      <section class="section">
+        <button class="section-toggle" onclick={() => toggleSection('elevenlabs')}>
+          <span>ElevenLabs</span>
+          <svg class="section-chevron" class:collapsed={collapsed.has('elevenlabs')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
-      </div>
-    </div>
-  {/if}
-  <div class="field row">
-    <span class="field-label">Polling Daemon</span>
-    <div class="daemon-control">
-      <span class="daemon-status" class:active={telegramDaemonRunning}>
-        {telegramDaemonRunning ? 'Running' : 'Stopped'}
-      </span>
-      <button
-        class="daemon-btn"
-        onclick={async () => {
-          if (telegramDaemonRunning) {
-            await api?.stopTelegramDaemon();
-            telegramDaemonRunning = false;
-          } else {
-            const ok = await api?.startTelegramDaemon();
-            telegramDaemonRunning = !!ok;
-          }
-        }}
-      >
-        {telegramDaemonRunning ? 'Stop' : 'Start'}
+        {#if !collapsed.has('elevenlabs')}
+          <div class="section-body">
+            <div class="field-group">
+              <span class="field-label">API Key</span>
+              <div class="input-eye-wrap">
+                <input type={showElevenlabsKey ? 'text' : 'password'} bind:value={elevenlabsApiKey} class="field-input has-eye" />
+                <button class="eye-toggle" type="button" onclick={() => showElevenlabsKey = !showElevenlabsKey} aria-label={showElevenlabsKey ? 'Hide' : 'Show'}>
+                  {#if showElevenlabsKey}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                  {:else}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  {/if}
+                </button>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="el-voice">Voice ID</label>
+              <input id="el-voice" type="text" bind:value={elevenlabsVoiceId} class="field-input" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="el-model">Model</label>
+              <select id="el-model" bind:value={elevenlabsModel} class="field-select">
+                <option value="eleven_v3">eleven_v3</option>
+                <option value="eleven_v2">eleven_v2</option>
+                <option value="eleven_multilingual_v2">eleven_multilingual_v2</option>
+                <option value="eleven_turbo_v2_5">eleven_turbo_v2_5</option>
+                <option value="eleven_flash_v2_5">eleven_flash_v2_5</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="el-stability">Stability</label>
+              <div class="slider-row">
+                <input id="el-stability" type="range" min="0" max="1" step="0.05" bind:value={elevenlabsStability} class="field-slider" />
+                <span class="slider-value">{elevenlabsStability.toFixed(2)}</span>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="el-similarity">Similarity</label>
+              <div class="slider-row">
+                <input id="el-similarity" type="range" min="0" max="1" step="0.05" bind:value={elevenlabsSimilarity} class="field-slider" />
+                <span class="slider-value">{elevenlabsSimilarity.toFixed(2)}</span>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="el-style">Style</label>
+              <div class="slider-row">
+                <input id="el-style" type="range" min="0" max="1" step="0.05" bind:value={elevenlabsStyle} class="field-slider" />
+                <span class="slider-value">{elevenlabsStyle.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        {/if}
+      </section>
+    {/if}
+
+    <!-- Fal config - only when backend is fal -->
+    {#if ttsBackend === 'fal'}
+      <section class="section">
+        <button class="section-toggle" onclick={() => toggleSection('fal')}>
+          <span>Fal</span>
+          <svg class="section-chevron" class:collapsed={collapsed.has('fal')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        {#if !collapsed.has('fal')}
+          <div class="section-body">
+            <div class="field-group">
+              <span class="field-label">API Key</span>
+              <div class="input-eye-wrap">
+                <input type={showFalKey ? 'text' : 'password'} bind:value={falApiKey} class="field-input has-eye" />
+                <button class="eye-toggle" type="button" onclick={() => showFalKey = !showFalKey} aria-label={showFalKey ? 'Hide' : 'Show'}>
+                  {#if showFalKey}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                  {:else}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  {/if}
+                </button>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="fal-voice">Voice ID</label>
+              <input id="fal-voice" type="text" bind:value={falVoiceId} class="field-input" />
+            </div>
+          </div>
+        {/if}
+      </section>
+    {/if}
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- INPUT PAGE                                              -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  {:else if page === 'input'}
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('input-mode')}>
+        <span>Input</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('input-mode')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
-    </div>
-  </div>
-</div>
+      {#if !collapsed.has('input-mode')}
+        <div class="section-body">
+          <div class="field-group">
+            <span class="field-label">Input Mode</span>
+            <div class="segmented-control">
+              <button class:active={inputMode === 'dual'} onclick={() => inputMode = 'dual'}>Dual</button>
+              <button class:active={inputMode === 'voice'} onclick={() => inputMode = 'voice'}>Voice</button>
+              <button class:active={inputMode === 'text'} onclick={() => inputMode = 'text'}>Text</button>
+            </div>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="ptt-key">Push-to-Talk Key</label>
+            <input id="ptt-key" type="text" bind:value={pttKey} class="field-input" />
+          </div>
+          <label class="toggle-row">
+            <span class="toggle-label">Wake Word Detection</span>
+            <button class="toggle-switch" class:on={wakeWordEnabled} onclick={() => wakeWordEnabled = !wakeWordEnabled} role="switch" aria-checked={wakeWordEnabled}>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </button>
+          </label>
+          {#if wakeWordEnabled}
+            <div class="field-group">
+              <label class="field-label" for="wake-chunk">Wake Chunk Duration</label>
+              <div class="input-with-suffix">
+                <input id="wake-chunk" type="number" min="1" max="10" bind:value={wakeChunkSeconds} class="field-input" />
+                <span class="input-suffix">sec</span>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </section>
 
-<!-- ABOUT -->
-<div class="section full-width">
-  <div class="section-header">About</div>
-  <div class="section-line"></div>
-  <div class="field">
-    <span class="field-label">Version</span>
-    <span class="field-info">{version}</span>
-  </div>
-  <div class="field">
-    <span class="field-label">Install Path</span>
-    <span class="field-info mono">{bundleRoot}</span>
-  </div>
-</div>
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('audio-capture')}>
+        <span>Audio Capture</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('audio-capture')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('audio-capture')}
+        <div class="section-body">
+          <div class="field-group">
+            <label class="field-label" for="sample-rate">Sample Rate</label>
+            <div class="input-with-suffix">
+              <input id="sample-rate" type="number" min="8000" max="48000" bind:value={sampleRate} class="field-input" />
+              <span class="input-suffix">Hz</span>
+            </div>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="max-record">Max Record Duration</label>
+            <div class="input-with-suffix">
+              <input id="max-record" type="number" min="10" max="300" bind:value={maxRecordSec} class="field-input" />
+              <span class="input-suffix">sec</span>
+            </div>
+          </div>
+        </div>
+      {/if}
+    </section>
 
-<!-- APP -->
-<div class="section">
-  <div class="section-header">App</div>
-  <div class="section-line"></div>
-  <div class="field row">
-    <span class="field-label">Reset Setup Wizard</span>
-    <button
-      class="small-btn danger-btn"
-      onclick={onResetSetup}
-    >Reset Setup</button>
-  </div>
-</div>
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('system-toggles')}>
+        <span>System</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('system-toggles')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('system-toggles')}
+        <div class="section-body">
+          <label class="toggle-row">
+            <span class="toggle-label">Prevent Sleep</span>
+            <button class="toggle-switch" class:on={keepAwakeActive}
+              onclick={async () => { const result = await api?.toggleKeepAwake(); keepAwakeActive = !!result; }}
+              role="switch" aria-checked={keepAwakeActive}>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </button>
+          </label>
+          <span class="field-hint">Prevents display and system sleep while the app is running.</span>
+          <label class="toggle-row">
+            <span class="toggle-label">macOS Notifications</span>
+            <button class="toggle-switch" class:on={notificationsEnabled} onclick={() => notificationsEnabled = !notificationsEnabled} role="switch" aria-checked={notificationsEnabled}>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </button>
+          </label>
+        </div>
+      {/if}
+    </section>
 
-<!-- ACTIONS -->
-<div class="actions full-width">
-  {#if saveStatus}
-    <span class="save-status">{saveStatus}</span>
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- ENGINE PAGE                                             -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  {:else if page === 'engine'}
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('inference')}>
+        <span>Inference</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('inference')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('inference')}
+        <div class="section-body">
+          <div class="field-group">
+            <label class="field-label" for="claude-bin">Claude Binary</label>
+            <input id="claude-bin" type="text" bind:value={claudeBin} class="field-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="claude-model">Model</label>
+            <select id="claude-model" bind:value={claudeModel} class="field-select">
+              <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+              <option value="claude-opus-4-6">Opus 4.6</option>
+              <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+              <option value="claude-sonnet-4-5-20241022">Sonnet 4.5</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <span class="field-label">Effort</span>
+            <div class="segmented-control">
+              <button class:active={claudeEffort === 'low'} onclick={() => claudeEffort = 'low'}>Low</button>
+              <button class:active={claudeEffort === 'medium'} onclick={() => claudeEffort = 'medium'}>Medium</button>
+              <button class:active={claudeEffort === 'high'} onclick={() => claudeEffort = 'high'}>High</button>
+            </div>
+          </div>
+          <label class="toggle-row">
+            <span class="toggle-label">Adaptive Effort</span>
+            <button class="toggle-switch" class:on={adaptiveEffort} onclick={() => adaptiveEffort = !adaptiveEffort} role="switch" aria-checked={adaptiveEffort}>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </button>
+          </label>
+        </div>
+      {/if}
+    </section>
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('memory')}>
+        <span>Memory & Context</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('memory')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('memory')}
+        <div class="section-body">
+          <div class="field-row-inline">
+            <div class="field-group compact">
+              <label class="field-label" for="ctx-sum">Context Summaries</label>
+              <input id="ctx-sum" type="number" min="0" max="20" bind:value={contextSummaries} class="field-input" />
+            </div>
+            <div class="field-group compact">
+              <label class="field-label" for="max-tokens">Max Context Tokens</label>
+              <input id="max-tokens" type="number" min="10000" max="500000" step="10000" bind:value={maxContextTokens} class="field-input" />
+            </div>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="vec-weight">Vector Search Weight</label>
+            <div class="slider-row">
+              <input id="vec-weight" type="range" min="0" max="1" step="0.05" bind:value={vectorSearchWeight} class="field-slider" />
+              <span class="slider-value">{vectorSearchWeight.toFixed(2)}</span>
+            </div>
+          </div>
+          <div class="field-row-inline">
+            <div class="field-group compact">
+              <label class="field-label" for="emb-model">Embedding Model</label>
+              <input id="emb-model" type="text" bind:value={embeddingModel} class="field-input" />
+            </div>
+            <div class="field-group compact">
+              <label class="field-label" for="emb-dim">Dimensions</label>
+              <input id="emb-dim" type="number" min="64" max="2048" bind:value={embeddingDim} class="field-input" />
+            </div>
+          </div>
+        </div>
+      {/if}
+    </section>
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('session')}>
+        <span>Session & Heartbeat</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('session')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('session')}
+        <div class="section-body">
+          <div class="field-group">
+            <label class="field-label" for="session-limit">Session Soft Limit</label>
+            <div class="input-with-suffix">
+              <input id="session-limit" type="number" min="10" max="480" bind:value={sessionSoftLimitMins} class="field-input" />
+              <span class="input-suffix">min</span>
+            </div>
+          </div>
+          <div class="field-group">
+            <span class="field-label">Active Hours</span>
+            <div class="inline-range">
+              <input type="number" min="0" max="23" bind:value={heartbeatActiveStart} class="field-input compact-num" />
+              <span class="range-separator">to</span>
+              <input type="number" min="0" max="23" bind:value={heartbeatActiveEnd} class="field-input compact-num" />
+              <span class="input-suffix">h</span>
+            </div>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="hb-interval">Heartbeat Interval</label>
+            <div class="input-with-suffix">
+              <input id="hb-interval" type="number" min="5" max="120" bind:value={heartbeatIntervalMins} class="field-input" />
+              <span class="input-suffix">min</span>
+            </div>
+          </div>
+        </div>
+      {/if}
+    </section>
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- TELEGRAM PAGE                                           -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  {:else if page === 'telegram'}
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('telegram-config')}>
+        <span>Configuration</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('telegram-config')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('telegram-config')}
+        <div class="section-body">
+          <div class="field-group">
+            <span class="field-label">Bot Token</span>
+            <div class="input-eye-wrap">
+              <input type={showTelegramToken ? 'text' : 'password'} bind:value={telegramBotToken} class="field-input has-eye" />
+              <button class="eye-toggle" type="button" onclick={() => showTelegramToken = !showTelegramToken} aria-label={showTelegramToken ? 'Hide' : 'Show'}>
+                {#if showTelegramToken}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                {:else}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                {/if}
+              </button>
+            </div>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="tg-chat">Chat ID</label>
+            <input id="tg-chat" type="text" bind:value={telegramChatId} class="field-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="tg-user">Your Telegram Name</label>
+            <input id="tg-user" type="text" bind:value={telegramUsername} class="field-input" placeholder="e.g. fellowear" />
+            <span class="field-hint">Maps to your name in conversations</span>
+          </div>
+        </div>
+      {/if}
+    </section>
+
+    <!-- Auto-detect + daemon controls -->
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('telegram-daemon')}>
+        <span>Daemon</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('telegram-daemon')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('telegram-daemon')}
+        <div class="section-body">
+          {#if telegramBotToken && telegramBotToken !== '***' && !telegramChatId}
+            <div class="daemon-row">
+              <span class="field-info">{telegramDiscoverStatus || 'Send any message to the bot to link'}</span>
+              <button
+                class="small-btn"
+                disabled={telegramDiscovering}
+                onclick={async () => {
+                  telegramDiscovering = true;
+                  telegramDiscoverStatus = 'Waiting for message...';
+                  const result = await api?.discoverTelegramChatId(telegramBotToken);
+                  telegramDiscovering = false;
+                  if (result) {
+                    telegramChatId = result.chatId;
+                    telegramDiscoverStatus = `Linked${result.username ? ` (@${result.username})` : ''}`;
+                  } else {
+                    telegramDiscoverStatus = 'Timed out - try again';
+                  }
+                }}
+              >
+                {telegramDiscovering ? 'Listening...' : 'Auto-detect'}
+              </button>
+            </div>
+          {/if}
+          <div class="daemon-row">
+            <span class="toggle-label">Polling Daemon</span>
+            <div class="daemon-control">
+              <span class="daemon-status" class:active={telegramDaemonRunning}>
+                {telegramDaemonRunning ? 'Running' : 'Stopped'}
+              </span>
+              <button
+                class="small-btn"
+                onclick={async () => {
+                  if (telegramDaemonRunning) {
+                    await api?.stopTelegramDaemon();
+                    telegramDaemonRunning = false;
+                  } else {
+                    const ok = await api?.startTelegramDaemon();
+                    telegramDaemonRunning = !!ok;
+                  }
+                }}
+              >
+                {telegramDaemonRunning ? 'Stop' : 'Start'}
+              </button>
+            </div>
+          </div>
+        </div>
+      {/if}
+    </section>
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- CONNECTIONS PAGE                                        -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  {:else if page === 'connections'}
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('google')}>
+        <span>Google</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('google')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('google')}
+        <div class="section-body">
+          <div class="field-group">
+            <span class="field-label">Status</span>
+            <span class="field-info" class:connected={googleConfigured}>
+              {googleConfigured ? 'Connected' : 'Not connected'}
+            </span>
+          </div>
+          {#if googleAuthStatus}
+            <div class="field-group">
+              <span class="field-info">{googleAuthStatus}</span>
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </section>
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('paths')}>
+        <span>Paths</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('paths')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('paths')}
+        <div class="section-body">
+          <div class="field-group">
+            <label class="field-label" for="obsidian-vault">Obsidian Vault</label>
+            <input id="obsidian-vault" type="text" bind:value={obsidianVault} class="field-input" />
+          </div>
+          <div class="field-group">
+            <span class="field-label">Database</span>
+            <span class="field-info mono">{dbPath}</span>
+          </div>
+          <div class="field-group">
+            <span class="field-label">Whisper Binary</span>
+            <span class="field-info mono">{whisperBin}</span>
+          </div>
+        </div>
+      {/if}
+    </section>
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- ABOUT PAGE                                              -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  {:else if page === 'about'}
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('about-info')}>
+        <span>About</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('about-info')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('about-info')}
+        <div class="section-body">
+          <div class="field-group">
+            <span class="field-label">Version</span>
+            <span class="field-info">{version}</span>
+          </div>
+          <div class="field-group">
+            <span class="field-label">Install Path</span>
+            <span class="field-info mono">{bundleRoot}</span>
+          </div>
+        </div>
+      {/if}
+    </section>
+
+    <section class="section">
+      <button class="section-toggle" onclick={() => toggleSection('app-actions')}>
+        <span>App</span>
+        <svg class="section-chevron" class:collapsed={collapsed.has('app-actions')} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {#if !collapsed.has('app-actions')}
+        <div class="section-body">
+          <div class="daemon-row">
+            <span class="toggle-label">Reset Setup Wizard</span>
+            <button class="small-btn danger" onclick={onResetSetup}>Reset Setup</button>
+          </div>
+        </div>
+      {/if}
+    </section>
   {/if}
-  <button class="action-btn" onclick={onApply}>Apply</button>
-  <button class="action-btn primary" onclick={onSave}>Save</button>
-</div>
 
-</div><!-- end settings-form -->
+</div>
 
 <style>
-  .settings-form {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0;
-    align-items: start;
+  .settings-page {
+    max-width: 640px;
   }
 
-  @media (min-width: 700px) {
-    .settings-form {
-      grid-template-columns: 1fr 1fr;
-      gap: 0 24px;
-    }
+  /* ── Page title ──────────────────────────────────────────── */
+
+  .page-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.9);
+    margin: 0 0 20px;
+    letter-spacing: -0.01em;
   }
+
+  /* ── Sections with accordion ─────────────────────────────── */
 
   .section {
-    margin-bottom: 20px;
-  }
-
-  .section.full-width,
-  .actions.full-width {
-    grid-column: 1 / -1;
-  }
-
-  .section-header {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 11px;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding-bottom: 4px;
-  }
-
-  .section-line {
-    height: 1px;
-    background: rgba(255, 255, 255, 0.08);
-    margin-bottom: 10px;
-  }
-
-  .section-hint {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.3);
-    margin-top: 2px;
-  }
-
-  .agent-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .agent-row {
-    display: flex;
-    flex-direction: column;
-    padding: 8px 12px;
+    margin-bottom: 4px;
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.02);
+    overflow: hidden;
   }
 
-  .agent-row.current {
-    background: rgba(100, 140, 255, 0.08);
-  }
-
-  .agent-row-main {
+  .section-toggle {
     display: flex;
     align-items: center;
     justify-content: space-between;
-  }
-
-  .agent-detail-btn {
-    font-size: 11px;
-    padding: 2px 8px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-
-  .agent-detail-btn:hover {
-    background: var(--accent);
-  }
-
-  .agent-detail-btn.active {
-    background: var(--accent);
-    border-color: rgba(100, 140, 255, 0.4);
-    color: rgba(255, 255, 255, 0.8);
-  }
-
-  .agent-detail-panel {
-    padding: 8px 0 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .detail-group {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .detail-label {
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 10px;
-    font-weight: bold;
+    width: 100%;
+    padding: 10px 14px;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-sans);
     text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .detail-value {
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 12px;
-  }
-
-  .detail-dim {
-    color: rgba(255, 255, 255, 0.25);
-    font-size: 11px;
-    font-style: italic;
-  }
-
-  .detail-pills {
-    display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-
-  .detail-pill {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.04);
-    color: rgba(255, 255, 255, 0.3);
-  }
-
-  .detail-pill.active {
-    background: rgba(92, 224, 214, 0.1);
-    color: rgba(92, 224, 214, 0.6);
-  }
-
-  .detail-jobs {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .detail-job-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .detail-job-name {
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 11px;
-  }
-
-  .detail-job-schedule {
-    color: rgba(255, 255, 255, 0.25);
-    font-size: 10px;
-    font-family: var(--font-mono);
-  }
-
-  .agent-telegram-btn {
-    font-size: 11px;
-    padding: 2px 8px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-secondary);
+    letter-spacing: 0.04em;
     cursor: pointer;
-    transition: background 0.15s;
+    text-align: left;
+    transition: color 0.15s;
   }
 
-  .agent-telegram-btn:hover {
-    background: var(--accent);
-  }
-
-  .agent-telegram-btn.active {
-    background: var(--accent);
-    border-color: rgba(100, 140, 255, 0.4);
-    color: rgba(255, 255, 255, 0.8);
-  }
-
-  .agent-telegram-config {
-    padding: 8px 0 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .agent-telegram-config .field-input {
-    font-size: 12px;
-  }
-
-  .agent-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .agent-name-label {
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.6);
-  }
-
-  .agent-name-label.bold {
-    color: rgba(255, 255, 255, 0.95);
-    font-weight: bold;
-  }
-
-  .agent-role {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.3);
-  }
-
-  .agent-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .notify-via-select {
-    height: 24px;
-    padding: 0 6px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 11px;
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-    cursor: pointer;
-  }
-
-  .notify-via-select:focus {
-    border-color: rgba(255, 255, 255, 0.25);
-  }
-
-  .notify-via-select option {
-    background: rgb(30, 30, 35);
+  .section-toggle:hover {
     color: rgba(255, 255, 255, 0.85);
   }
 
-  .agent-active-label {
-    color: rgba(255, 255, 255, 0.3);
-    font-size: 11px;
+  .section-chevron {
+    transition: transform 0.2s ease;
+    opacity: 0.4;
   }
 
-  .small-btn {
-    padding: 4px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 11px;
-    cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
+  .section-chevron.collapsed {
+    transform: rotate(-90deg);
   }
 
-  .small-btn:hover {
-    border-color: rgba(255, 255, 255, 0.25);
-    color: var(--text-primary);
+  .section-body {
+    padding: 2px 14px 14px;
   }
 
-  .danger-btn {
-    border-color: rgba(255, 80, 80, 0.3);
-    color: rgba(255, 80, 80, 0.7);
+  /* ── Field groups (stacked label-above-input) ────────────── */
+
+  .field-group {
+    margin-bottom: 12px;
   }
 
-  .danger-btn:hover {
-    border-color: rgba(255, 80, 80, 0.5);
-    color: rgba(255, 80, 80, 0.9);
-    background: rgba(255, 80, 80, 0.08);
-  }
-
-  .field {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+  .field-group.compact {
     margin-bottom: 8px;
-    min-width: 0;
-    max-width: 100%;
   }
 
   .field-label {
-    min-width: 140px;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.7);
+    display: block;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.45);
+    margin-bottom: 4px;
+    letter-spacing: 0.01em;
   }
 
   .field-input {
-    flex: 1;
-    min-width: 0;
-    height: 30px;
+    width: 100%;
+    height: 32px;
     padding: 0 10px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 6px;
     color: var(--text-primary);
     font-family: var(--font-sans);
-    font-size: 12px;
+    font-size: 13px;
     outline: none;
     transition: border-color 0.15s;
     box-sizing: border-box;
   }
 
   .field-input:focus {
-    border-color: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .field-input.has-eye {
     padding-right: 36px;
   }
 
+  .field-input.compact-num {
+    width: 64px;
+    text-align: center;
+  }
+
+  /* ── Inline field rows ───────────────────────────────────── */
+
+  .field-row-inline {
+    display: flex;
+    gap: 12px;
+  }
+
+  .field-row-inline .field-group {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .inline-range {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .range-separator {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  /* ── Input with suffix ───────────────────────────────────── */
+
+  .input-with-suffix {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .input-with-suffix .field-input {
+    width: 120px;
+    flex: 0 0 auto;
+  }
+
+  .input-suffix {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  /* ── Eye toggle (password visibility) ────────────────────── */
+
   .input-eye-wrap {
     position: relative;
-    flex: 1;
   }
 
   .input-eye-wrap .field-input {
@@ -994,10 +1028,193 @@
     background: rgba(255, 255, 255, 0.06);
   }
 
-  .field.row {
+  /* ── Select ──────────────────────────────────────────────── */
+
+  .field-select {
+    width: 100%;
+    height: 32px;
+    padding: 0 28px 0 10px;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='rgba(255,255,255,0.4)' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+
+  .field-select:focus {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .field-select option {
+    background: rgb(30, 30, 35);
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  /* ── Slider ──────────────────────────────────────────────── */
+
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .field-slider {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  .field-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+  }
+
+  .slider-value {
+    min-width: 40px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: rgba(255, 255, 255, 0.5);
+    text-align: right;
+  }
+
+  /* ── Toggle switches ─────────────────────────────────────── */
+
+  .toggle-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding: 6px 0;
+    min-height: 32px;
+  }
+
+  .toggle-label {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 38px;
+    height: 22px;
+    flex-shrink: 0;
+    border: none;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .toggle-track {
+    display: block;
+    width: 38px;
+    height: 22px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.12);
+    transition: background 0.2s;
+    position: relative;
+  }
+
+  .toggle-switch.on .toggle-track {
+    background: rgba(100, 140, 255, 0.45);
+  }
+
+  .toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.75);
+    transition: transform 0.2s ease;
+  }
+
+  .toggle-switch.on .toggle-thumb {
+    transform: translateX(16px);
+    background: rgba(255, 255, 255, 0.95);
+  }
+
+  /* ── Segmented controls ──────────────────────────────────── */
+
+  .segmented-control {
+    display: flex;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 7px;
+    padding: 2px;
+    gap: 2px;
+  }
+
+  .segmented-control button {
+    flex: 1;
+    padding: 5px 12px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.4);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .segmented-control button:hover {
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .segmented-control button.active {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  /* ── Info text + hints ───────────────────────────────────── */
+
+  .field-info {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+    user-select: text;
+  }
+
+  .field-info.mono {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    word-break: break-all;
+  }
+
+  .field-info.connected {
+    color: rgba(100, 220, 100, 0.7);
+  }
+
+  .field-hint {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.25);
+    margin-top: 3px;
+    display: block;
+  }
+
+  /* ── Daemon controls + buttons ───────────────────────────── */
+
+  .daemon-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    min-height: 32px;
   }
 
   .daemon-control {
@@ -1015,161 +1232,31 @@
     color: rgba(80, 200, 120, 0.9);
   }
 
-  .daemon-btn {
-    padding: 4px 14px;
+  .small-btn {
+    padding: 5px 14px;
     font-size: 11px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 5px;
-    color: rgba(255, 255, 255, 0.7);
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-
-  .daemon-btn:hover {
-    background: rgba(255, 255, 255, 0.14);
-  }
-
-  .field-input.short {
-    flex: 0;
-    width: 100px;
-  }
-
-  .field-select {
-    height: 30px;
-    min-width: 140px;
-    padding: 0 10px;
-    background: rgba(255, 255, 255, 0.08);
+    font-weight: 500;
+    font-family: var(--font-sans);
+    background: rgba(255, 255, 255, 0.07);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    color: var(--text-primary);
-    font-family: var(--font-sans);
-    font-size: 12px;
-    outline: none;
-    cursor: pointer;
-    -webkit-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='rgba(255,255,255,0.4)' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 10px center;
-    padding-right: 28px;
-  }
-
-  .field-select:focus {
-    border-color: rgba(255, 255, 255, 0.25);
-  }
-
-  .field-select option {
-    background: rgb(30, 30, 35);
-    color: rgba(255, 255, 255, 0.85);
-  }
-
-  .field-suffix {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.4);
-    min-width: 24px;
-  }
-
-  .field-info {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
-    user-select: text;
-  }
-
-  .field-info.mono {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    word-break: break-all;
-  }
-
-  .field-info.connected {
-    color: rgba(100, 220, 100, 0.7);
-  }
-
-  .field-slider {
-    flex: 1;
-    height: 4px;
-    -webkit-appearance: none;
-    appearance: none;
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 2px;
-    outline: none;
-  }
-
-  .field-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.8);
-    cursor: pointer;
-  }
-
-  .field-value {
-    min-width: 40px;
-    font-size: 11px;
-    font-family: var(--font-mono);
-    color: rgba(255, 255, 255, 0.6);
-    text-align: right;
-  }
-
-  .checkbox-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.7);
-    padding-left: 4px;
-  }
-
-  .checkbox-row input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    accent-color: rgba(100, 140, 255, 0.6);
-    cursor: pointer;
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 8px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-    margin-top: 8px;
-  }
-
-  .save-status {
-    font-size: 12px;
-    color: rgba(100, 220, 100, 0.7);
-    margin-right: auto;
-  }
-
-  .action-btn {
-    padding: 8px 20px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.9);
-    font-family: var(--font-sans);
-    font-size: 13px;
-    font-weight: bold;
+    border-radius: 5px;
+    color: rgba(255, 255, 255, 0.65);
     cursor: pointer;
     transition: background 0.15s;
   }
 
-  .action-btn:hover {
-    background: rgba(255, 255, 255, 0.18);
+  .small-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
   }
 
-  .action-btn.primary {
-    background: rgba(100, 140, 255, 0.15);
-    border-color: rgba(100, 140, 255, 0.3);
+  .small-btn.danger {
+    border-color: rgba(255, 80, 80, 0.3);
+    color: rgba(255, 80, 80, 0.7);
   }
 
-  .action-btn.primary:hover {
-    background: rgba(100, 140, 255, 0.25);
+  .small-btn.danger:hover {
+    border-color: rgba(255, 80, 80, 0.5);
+    color: rgba(255, 80, 80, 0.9);
+    background: rgba(255, 80, 80, 0.08);
   }
 </style>

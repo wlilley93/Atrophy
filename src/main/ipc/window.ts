@@ -45,6 +45,25 @@ export function registerWindowHandlers(ctx: IpcContext): void {
     }
   });
 
+  ipcMain.handle('window:getSize', () => {
+    if (!ctx.mainWindow) return { width: 622, height: 830 };
+    const [width, height] = ctx.mainWindow.getSize();
+    return { width, height };
+  });
+
+  ipcMain.handle('window:setSize', (_e: Electron.IpcMainInvokeEvent, width: number, height: number, animate: boolean = true) => {
+    if (!ctx.mainWindow) return;
+    const bounds = ctx.mainWindow.getBounds();
+    const cx = bounds.x + bounds.width / 2;
+    const cy = bounds.y + bounds.height / 2;
+    ctx.mainWindow.setBounds({
+      x: Math.round(cx - width / 2),
+      y: Math.round(cy - height / 2),
+      width,
+      height,
+    }, animate);
+  });
+
   // -- Setup wizard --
 
   ipcMain.handle('setup:check', () => {
