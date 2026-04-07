@@ -18,6 +18,7 @@ import { loadState as loadEmotionalState } from '../inner-life';
 import { createLogger } from '../logger';
 import { switchboard, type Envelope } from '../channels/switchboard';
 import { discoverAgents } from '../agent-manager';
+import { fileEntities } from '../entity-extract';
 import type { IpcContext } from '../ipc-handlers';
 
 const log = createLogger('ipc:inference');
@@ -176,6 +177,13 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
             // Record agent turn (full text including artifact blocks for history)
             if (ctx.currentSession && fullText) {
               ctx.currentSession.addTurn('agent', fullText);
+            }
+
+            // Auto-extract entities from response into intelligence.db
+            // (no-op for agents without intelligence.db, e.g. xan/companion)
+            if (fullText) {
+              const agentName = ctx.currentAgentName || getConfig().AGENT_NAME;
+              try { fileEntities(agentName, fullText); } catch { /* best effort */ }
             }
 
             // Parse inline artifacts from response

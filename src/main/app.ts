@@ -27,7 +27,7 @@ import { sendCronNotification } from './notify';
 import { cronOutputEmitter } from './channels/telegram/daemon';
 import { registerAudioHandlers } from './audio';
 import { registerWakeWordHandlers, pauseWakeWord, resumeWakeWord, stopWakeWordListener } from './wake-word';
-import { discoverAgents, getAgentDir, syncBundledPrompts, cycleAgent, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, checkAskRequest, cleanupAskFiles } from './agent-manager';
+import { discoverAgents, discoverUiAgents, getAgentDir, syncBundledPrompts, cycleAgent, setLastActiveAgent, getLastActiveAgent, checkDeferralRequest, validateDeferralRequest, checkAskRequest, cleanupAskFiles } from './agent-manager';
 import { runCoherenceCheck } from './sentinel';
 import { drainAllAgentQueues } from './queue';
 import { startServer, stopServer, startMeridianServer, stopMeridianServer } from './server';
@@ -264,10 +264,13 @@ function toggleKeepAwake(): void {
 // Tray (menu bar mode)
 // ---------------------------------------------------------------------------
 
-// Cache agent list for tray menu - refreshed on agent switch, not every rebuild
-let _cachedAgents: ReturnType<typeof discoverAgents> | null = null;
-function getCachedAgents(): ReturnType<typeof discoverAgents> {
-  if (!_cachedAgents) _cachedAgents = discoverAgents();
+// Cache agent list for tray menu - refreshed on agent switch, not every rebuild.
+// Tray switcher excludes tier 2+ org agents (research fellows, ambassadors,
+// specialists) since they are headless background workers - the user only ever
+// chats with the principal agents (xan, companion, montgomery, mirror).
+let _cachedAgents: ReturnType<typeof discoverUiAgents> | null = null;
+function getCachedAgents(): ReturnType<typeof discoverUiAgents> {
+  if (!_cachedAgents) _cachedAgents = discoverUiAgents();
   return _cachedAgents;
 }
 function invalidateAgentCache(): void { _cachedAgents = null; }

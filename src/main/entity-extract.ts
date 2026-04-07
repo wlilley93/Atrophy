@@ -11,8 +11,8 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import Database from 'better-sqlite3';
-import { USER_DATA } from './config';
 import { createLogger } from './logger';
+import { getAgentDir } from './agent-manager';
 
 const log = createLogger('entity-extract');
 
@@ -172,7 +172,9 @@ const ENTITY_TYPE_TO_OBJECT_TYPE: Record<string, string> = {
  * Only runs for agents that have an intelligence.db.
  */
 export function fileEntities(agentName: string, text: string): number {
-  const dbPath = path.join(USER_DATA, 'agents', agentName, 'data', 'intelligence.db');
+  // Use getAgentDir() to find both flat (~/.atrophy/agents/<name>/) and
+  // org-nested (~/.atrophy/agents/<org>/<name>/) intelligence databases.
+  const dbPath = path.join(getAgentDir(agentName), 'data', 'intelligence.db');
   if (!fs.existsSync(dbPath)) return 0;
 
   const wordCount = text.split(/\s+/).length;

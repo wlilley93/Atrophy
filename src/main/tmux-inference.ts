@@ -15,6 +15,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { EventEmitter } from 'events';
 import { createLogger } from './logger';
+import { fileEntities } from './entity-extract';
 
 const log = createLogger('tmux');
 
@@ -642,6 +643,11 @@ export class TmuxPool {
           state.currentEmitter.emit('event', event);
 
           if (event.type === 'StreamDone') {
+            // Auto-extract entities from final response into intelligence.db
+            const finalText = (event.fullText as string) || state.previousText;
+            if (finalText) {
+              try { fileEntities(state.agentName, finalText); } catch { /* best effort */ }
+            }
             this.completeMessage(state);
             return;
           }
