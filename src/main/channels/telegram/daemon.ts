@@ -34,6 +34,11 @@ import { AgentRouter, defaultConfigForAgent } from '../agent-router';
 import { Session } from '../../session';
 import { fileEntities } from '../../entity-extract';
 import { getFederationGroupIds } from '../federation/config';
+import { EventEmitter } from 'events';
+
+// Emitted when a dispatched cron job's inference completes with output.
+// Listeners receive: { agentName, agentDisplayName, jobName, text }
+export const cronOutputEmitter = new EventEmitter();
 
 // ---------------------------------------------------------------------------
 // Per-agent session persistence with idle rotation
@@ -685,7 +690,10 @@ async function dispatchToAgent(
       if (isTelegramOrigin) { try { setActive(); } catch { /* non-critical */ } }
 
       const source = isCronDispatch ? 'cron' as const : 'telegram' as const;
-      return streamInference(prompt, system, sessionId, { senderName, source });
+      const processKey = isCronDispatch
+        ? `cron:${agentName}:${Date.now()}`
+        : `telegram:${agentName}`;
+      return streamInference(prompt, system, sessionId, { senderName, source, processKey });
     });
 
     let fullText = '';
@@ -865,6 +873,18 @@ async function dispatchToAgent(
     }
 
     log.info(`[${agentName}] completed in ${elapsed}`);
+
+    // Notify desktop if this was a cron dispatch with output
+    if (isCronDispatch && finalText) {
+      const jobMatch = sourceLabel?.match(/cron:[\w]+\.([\w_]+)/);
+      const jobName = jobMatch ? jobMatch[1].replace(/_/g, ' ') : 'Scheduled job';
+      cronOutputEmitter.emit('output', {
+        agentName,
+        agentDisplayName: display,
+        jobName,
+        text: finalText,
+      });
+    }
 
     // Replace the thinking/progress message with the final response
     if (finalText && isTelegramOrigin) {
