@@ -1,6 +1,6 @@
 {
   "name": "atrophy",
-  "version": "1.9.64",
+  "version": "1.9.65",
   "description": "A companion agent system - voice-enabled, memory-bearing, self-evolving",
   "main": "./out/main/index.js",
   "scripts": {
@@ -59,7 +59,8 @@
     "overrides": {
       "picomatch": ">=4.0.4",
       "brace-expansion": ">=5.0.5",
-      "sharp": "^0.33.5"
+      "sharp": "^0.33.5",
+      "kokoro-js>@huggingface/transformers": "$@huggingface/transformers"
     },
     "onlyBuiltDependencies": [
       "better-sqlite3",
