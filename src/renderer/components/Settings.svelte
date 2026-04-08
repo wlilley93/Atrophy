@@ -210,14 +210,13 @@
     if (!api) return;
 
     // Store original window size and expand for settings.
-    // Settings is a wide two-column layout (nav + content) and 920x700 was
-    // cramped for the larger Activity, Console, and Agents tabs. Going to
-    // 1280x960 gives the content panes proper breathing room, especially
-    // with the new larger main-window default (800x1066).
+    // Settings is a wide two-column layout (nav + content). 1600x1200 gives
+    // Activity logs, Console streams, and the Agents/Org tabs proper room
+    // to breathe alongside the larger main-window default (1100x1466).
     try {
       const size = await api.getWindowSize();
       originalWindowSize = size;
-      await api.setWindowSize(1280, 960);
+      await api.setWindowSize(1600, 1200);
     } catch { /* pre-existing window, skip resize */ }
 
     try {

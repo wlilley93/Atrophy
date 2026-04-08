@@ -111,20 +111,21 @@ const SESSION_IDLE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 function createWindow(): BrowserWindow {
   const config = getConfig();
 
-  // Default window size matches the aspect of the agent avatar videos (1244x1660,
-  // ratio 0.749) so portrait avatar loops fill the orb cleanly without
-  // letterboxing. Max grows to native video resolution so power users can
-  // size up to lossless.
-  const winWidth = config.WINDOW_WIDTH || 800;
-  const winHeight = config.WINDOW_HEIGHT || 1066;
+  // Default window size matches the aspect of the agent avatar videos
+  // (1244x1660, ratio 0.749) so portrait avatar loops fill the orb cleanly
+  // without letterboxing. Default sits a touch under native resolution so
+  // the window comfortably fits on a 16" MacBook Pro at default scale, and
+  // max grows beyond native so power users on Studio Displays can scale up.
+  const winWidth = config.WINDOW_WIDTH || 1100;
+  const winHeight = config.WINDOW_HEIGHT || 1466;
 
   const win = new BrowserWindow({
     width: winWidth,
     height: winHeight,
     minWidth: 360,
     minHeight: 480,
-    maxWidth: 1500,
-    maxHeight: 1660,
+    maxWidth: 1660,
+    maxHeight: 2213,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
     vibrancy: 'under-window',
