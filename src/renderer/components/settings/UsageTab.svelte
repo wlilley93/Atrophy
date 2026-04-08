@@ -1,8 +1,13 @@
 <script lang="ts">
   import { api } from '../../api';
 
-  let usagePeriod = $state<number | null>(null);
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
+
+  let usagePeriod = $state<number>(14);
   let usageData = $state<any[]>([]);
+  let dailyData = $state<any[]>([]);
   let usageLoading = $state(false);
 
   // Expandable detail state
@@ -10,21 +15,35 @@
   let detailData = $state<any[]>([]);
   let detailLoading = $state(false);
 
+  // ---------------------------------------------------------------------------
+  // Public load method (called by parent)
+  // ---------------------------------------------------------------------------
+
   export async function load(days?: number | null) {
-    if (days !== undefined) usagePeriod = days;
+    if (days !== undefined && days !== null) usagePeriod = days;
     await loadUsage(usagePeriod);
   }
 
-  async function loadUsage(days: number | null) {
+  // ---------------------------------------------------------------------------
+  // Data loading
+  // ---------------------------------------------------------------------------
+
+  async function loadUsage(days: number) {
     usagePeriod = days;
     if (!api) return;
     usageLoading = true;
     expandedAgent = null;
     detailData = [];
     try {
-      usageData = await api.getUsage(days ?? undefined) || [];
+      const [summary, daily] = await Promise.all([
+        api.getUsage(days) as Promise<any[]>,
+        api.getUsageDaily(days) as Promise<any[]>,
+      ]);
+      usageData = summary || [];
+      dailyData = daily || [];
     } catch {
       usageData = [];
+      dailyData = [];
     }
     usageLoading = false;
   }
@@ -38,17 +57,172 @@
     expandedAgent = agentName;
     detailLoading = true;
     try {
-      detailData = await api.getUsageDetail(agentName, usagePeriod ?? undefined) || [];
+      detailData = await api!.getUsageDetail(agentName, usagePeriod) as any[] || [];
     } catch {
       detailData = [];
     }
     detailLoading = false;
   }
 
+  // ---------------------------------------------------------------------------
+  // Colour generation (deterministic from agent name)
+  // ---------------------------------------------------------------------------
+
+  function hashStr(s: string): number {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    }
+    return Math.abs(h);
+  }
+
+  function agentColour(name: string): string {
+    const palette = [
+      '#7c6ef0', '#e06090', '#50b8d0', '#e8a040', '#60c878',
+      '#c878d0', '#d07050', '#50a0e0', '#b0b040', '#e07088',
+      '#40c0a0', '#a080e0', '#d0a070', '#70b0d0', '#c06090',
+    ];
+    return palette[hashStr(name) % palette.length];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Derived data
+  // ---------------------------------------------------------------------------
+
+  const activeAgents = $derived(
+    usageData.filter((a: any) => a.total_calls > 0)
+  );
+
+  const totalTokens = $derived(
+    usageData.reduce((s: number, a: any) => s + (a.total_tokens || 0), 0)
+  );
+
+  const totalTokensIn = $derived(
+    usageData.reduce((s: number, a: any) => s + (a.total_tokens_in || 0), 0)
+  );
+
+  const totalTokensOut = $derived(
+    usageData.reduce((s: number, a: any) => s + (a.total_tokens_out || 0), 0)
+  );
+
+  const avgTokensPerDay = $derived(
+    usagePeriod > 0 ? Math.round(totalTokens / usagePeriod) : 0
+  );
+
+  const mostActiveAgent = $derived(
+    activeAgents.length > 0
+      ? activeAgents.reduce((best: any, a: any) =>
+          (a.total_tokens || 0) > (best.total_tokens || 0) ? a : best
+        )
+      : null
+  );
+
+  const costEstimate = $derived.by(() => {
+    // Rough: $3/M input, $15/M output
+    const inputCost = (totalTokensIn / 1_000_000) * 3;
+    const outputCost = (totalTokensOut / 1_000_000) * 15;
+    return inputCost + outputCost;
+  });
+
+  // ---------------------------------------------------------------------------
+  // Chart data
+  // ---------------------------------------------------------------------------
+
+  // Generate all dates in the period
+  const dateRange = $derived.by(() => {
+    const dates: string[] = [];
+    const now = new Date();
+    for (let i = usagePeriod - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    return dates;
+  });
+
+  // Unique agent names in daily data
+  const dailyAgentNames = $derived.by(() => {
+    const names = new Set<string>();
+    for (const row of dailyData) {
+      names.add(row.agent_name);
+    }
+    return Array.from(names);
+  });
+
+  // Build stacked data: for each date, per-agent tokens
+  const stackedData = $derived.by(() => {
+    const agents = dailyAgentNames;
+    const lookup = new Map<string, number>(); // "date|agent" -> tokens
+    for (const row of dailyData) {
+      lookup.set(`${row.date}|${row.agent_name}`, row.tokens || 0);
+    }
+
+    // For each date, compute stacked segments
+    return dateRange.map(date => {
+      const segments: { agent: string; displayName: string; tokens: number; y0: number; y1: number }[] = [];
+      let cum = 0;
+      for (const agent of agents) {
+        const tokens = lookup.get(`${date}|${agent}`) || 0;
+        if (tokens > 0) {
+          const displayRow = dailyData.find(r => r.agent_name === agent);
+          segments.push({
+            agent,
+            displayName: displayRow?.display_name || agent,
+            tokens,
+            y0: cum,
+            y1: cum + tokens,
+          });
+          cum += tokens;
+        }
+      }
+      return { date, total: cum, segments };
+    });
+  });
+
+  const maxDayTokens = $derived(
+    Math.max(1, ...stackedData.map(d => d.total))
+  );
+
+  // Per-agent daily data for sparklines
+  const agentDailyMap = $derived.by(() => {
+    const map = new Map<string, number[]>();
+    for (const agent of activeAgents) {
+      const values = dateRange.map(date => {
+        const row = dailyData.find(
+          (r: any) => r.date === date && r.agent_name === agent.agent_name
+        );
+        return row ? row.tokens : 0;
+      });
+      map.set(agent.agent_name, values);
+    }
+    return map;
+  });
+
+  // ---------------------------------------------------------------------------
+  // Formatters
+  // ---------------------------------------------------------------------------
+
   function formatTokens(n: number): string {
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
     if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
     return String(n);
+  }
+
+  function formatCost(n: number): string {
+    if (n >= 100) return '$' + Math.round(n);
+    if (n >= 1) return '$' + n.toFixed(2);
+    if (n >= 0.01) return '$' + n.toFixed(2);
+    return '<$0.01';
+  }
+
+  function formatDateLabel(dateStr: string): string {
+    const d = new Date(dateStr + 'T12:00:00');
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const diff = Math.round((today.getTime() - d.getTime()) / (24 * 60 * 60 * 1000));
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Yest.';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
   function formatDuration(ms: number): string {
@@ -78,14 +252,59 @@
       return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
     } catch { return ''; }
   }
+
+  // Y-axis tick values
+  function yTicks(max: number): number[] {
+    if (max <= 0) return [0];
+    const magnitude = Math.pow(10, Math.floor(Math.log10(max)));
+    let step = magnitude;
+    if (max / step < 3) step = magnitude / 2;
+    if (max / step > 8) step = magnitude * 2;
+    const ticks: number[] = [];
+    for (let v = 0; v <= max * 1.05; v += step) {
+      ticks.push(Math.round(v));
+    }
+    if (ticks.length < 2) ticks.push(Math.round(max));
+    return ticks;
+  }
+
+  // Sparkline path
+  function sparklinePath(values: number[], w: number, h: number): string {
+    if (!values.length || values.every(v => v === 0)) return '';
+    const max = Math.max(1, ...values);
+    const step = w / Math.max(1, values.length - 1);
+    return values
+      .map((v, i) => {
+        const x = i * step;
+        const y = h - (v / max) * (h - 2) - 1;
+        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chart constants
+  // ---------------------------------------------------------------------------
+
+  const CHART_H = 220;
+  const CHART_PADDING_LEFT = 52;
+  const CHART_PADDING_RIGHT = 12;
+  const CHART_PADDING_TOP = 12;
+  const CHART_PADDING_BOTTOM = 32;
+
+  // Tooltip state
+  let tooltipBar = $state<number | null>(null);
+  let tooltipX = $state(0);
+  let tooltipY = $state(0);
 </script>
 
+<!-- Period picker -->
 <div class="filter-row">
-  {#each [['Today', 1], ['7 days', 7], ['30 days', 30], ['All', null]] as [label, days]}
+  {#each [[7, '7 days'], [14, '14 days'], [30, '30 days']] as [days, label]}
     <button
       class="filter-pill"
       class:active={usagePeriod === days}
-      onclick={() => loadUsage(days as number | null)}
+      onclick={() => loadUsage(days as number)}
     >{label}</button>
   {/each}
 </div>
@@ -95,102 +314,237 @@
 {:else if usageData.length === 0 || usageData.every((a: any) => a.total_calls === 0)}
   <p class="placeholder">No usage data yet. Stats will appear after inference calls.</p>
 {:else}
-  <!-- Totals bar -->
-  {@const totalCalls = usageData.reduce((s: number, a: any) => s + (a.total_calls || 0), 0)}
-  {@const totalTokens = usageData.reduce((s: number, a: any) => s + (a.total_tokens || 0), 0)}
-  {@const totalDuration = usageData.reduce((s: number, a: any) => s + (a.total_duration_ms || 0), 0)}
-  {@const totalTools = usageData.reduce((s: number, a: any) => s + (a.total_tools || 0), 0)}
 
-  <div class="totals-bar">
-    <div class="total-stat">
-      <span class="total-value">{totalCalls}</span>
-      <span class="total-label">Inferences</span>
+  <!-- ====== Summary cards ====== -->
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="summary-value">{formatTokens(totalTokens)}</div>
+      <div class="summary-label">Total tokens</div>
     </div>
-    <div class="total-stat">
-      <span class="total-value">{formatTokens(totalTokens)}</span>
-      <span class="total-label">Tokens (est.)</span>
+    <div class="summary-card">
+      <div class="summary-value">{formatTokens(avgTokensPerDay)}</div>
+      <div class="summary-label">Avg / day</div>
     </div>
-    <div class="total-stat">
-      <span class="total-value">{formatDuration(totalDuration)}</span>
-      <span class="total-label">Time</span>
+    <div class="summary-card">
+      <div class="summary-value">{mostActiveAgent?.display_name || mostActiveAgent?.agent_name || '-'}</div>
+      <div class="summary-label">Most active</div>
     </div>
-    <div class="total-stat">
-      <span class="total-value">{totalTools}</span>
-      <span class="total-label">Tool Calls</span>
+    <div class="summary-card">
+      <div class="summary-value">{formatCost(costEstimate)}</div>
+      <div class="summary-label">Cost (est.)</div>
     </div>
   </div>
 
-  <!-- Per-agent cards -->
-  {#each usageData.filter((a: any) => a.total_calls > 0) as agent}
-    <div class="usage-card" class:expanded={expandedAgent === agent.agent_name}>
-      <button class="usage-card-header" onclick={() => toggleDetail(agent.agent_name)}>
-        <span class="usage-agent-name">{agent.display_name || agent.agent}</span>
-        <span class="usage-right">
-          <span class="usage-tokens">{formatTokens(agent.total_tokens)} tokens</span>
-          <span class="expand-arrow" class:open={expandedAgent === agent.agent_name}>&#9662;</span>
-        </span>
-      </button>
-      <div class="usage-stats-row">
-        <span>{agent.total_calls} calls</span>
-        <span>in: {formatTokens(agent.total_tokens_in || 0)}</span>
-        <span>out: {formatTokens(agent.total_tokens_out || 0)}</span>
-        <span>{formatDuration(agent.total_duration_ms || 0)}</span>
-        <span>{agent.total_tools || 0} tools</span>
-      </div>
-      {#if agent.by_source?.length}
-        <div class="usage-sources">
-          {#each agent.by_source.slice(0, 5) as src}
-            <span class="source-pill">{src.source} ({src.calls})</span>
-          {/each}
-        </div>
-      {/if}
+  <!-- ====== Bar chart ====== -->
+  {@const data = stackedData}
+  {@const max = maxDayTokens}
+  {@const ticks = yTicks(max)}
+  {@const barAreaW = 600 - CHART_PADDING_LEFT - CHART_PADDING_RIGHT}
+  {@const barAreaH = CHART_H - CHART_PADDING_TOP - CHART_PADDING_BOTTOM}
+  {@const barCount = data.length}
+  {@const barGap = Math.max(2, Math.min(6, barAreaW / barCount * 0.2))}
+  {@const barW = Math.max(4, (barAreaW - barGap * barCount) / barCount)}
 
-      <!-- Expanded detail view -->
-      {#if expandedAgent === agent.agent_name}
-        <div class="detail-panel">
-          {#if detailLoading}
-            <p class="detail-loading">Loading entries...</p>
-          {:else if detailData.length === 0}
-            <p class="detail-loading">No entries found.</p>
-          {:else}
-            {#each detailData as entry}
-              <div class="detail-entry">
-                <div class="detail-meta">
-                  <span class="detail-source">{entry.source}</span>
-                  <span class="detail-tokens">{formatTokens(entry.tokens_in + entry.tokens_out)} tok</span>
-                  <span class="detail-time">{formatDate(entry.timestamp)} {formatTime(entry.timestamp)}</span>
-                  {#if entry.duration_ms}
-                    <span class="detail-dur">{formatDuration(entry.duration_ms)}</span>
-                  {/if}
-                  {#if entry.tool_count}
-                    <span class="detail-tools">{entry.tool_count} tools</span>
+  <div class="chart-container">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <svg
+      viewBox="0 0 600 {CHART_H}"
+      preserveAspectRatio="xMidYMid meet"
+      class="chart-svg"
+      onmouseleave={() => { tooltipBar = null; }}
+    >
+      <!-- Y axis gridlines and labels -->
+      {#each ticks as tick}
+        {@const y = CHART_PADDING_TOP + barAreaH - (tick / max) * barAreaH}
+        <line
+          x1={CHART_PADDING_LEFT}
+          y1={y}
+          x2={600 - CHART_PADDING_RIGHT}
+          y2={y}
+          stroke="rgba(255,255,255,0.06)"
+          stroke-width="1"
+        />
+        <text
+          x={CHART_PADDING_LEFT - 6}
+          y={y + 3.5}
+          text-anchor="end"
+          fill="rgba(255,255,255,0.3)"
+          font-size="9"
+          font-family="var(--font-sans)"
+        >{formatTokens(tick)}</text>
+      {/each}
+
+      <!-- Bars -->
+      {#each data as day, i}
+        {@const x = CHART_PADDING_LEFT + i * (barW + barGap) + barGap / 2}
+        <!-- Invisible hit area -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <rect
+          x={x}
+          y={CHART_PADDING_TOP}
+          width={barW}
+          height={barAreaH}
+          fill="transparent"
+          onmouseenter={(e) => { tooltipBar = i; tooltipX = x + barW / 2; tooltipY = CHART_PADDING_TOP; }}
+          onmouseleave={() => { tooltipBar = null; }}
+        />
+        {#each day.segments as seg}
+          {@const segH = (seg.tokens / max) * barAreaH}
+          {@const segY = CHART_PADDING_TOP + barAreaH - (seg.y1 / max) * barAreaH}
+          <rect
+            x={x}
+            y={segY}
+            width={barW}
+            height={Math.max(1, segH)}
+            rx="2"
+            fill={agentColour(seg.agent)}
+            opacity={tooltipBar === i ? 1 : 0.8}
+            style="transition: opacity 0.15s; pointer-events: none;"
+          />
+        {/each}
+
+        <!-- X-axis date label (show every Nth to avoid overlap) -->
+        {#if barCount <= 14 || i % Math.ceil(barCount / 10) === 0 || i === barCount - 1}
+          <text
+            x={x + barW / 2}
+            y={CHART_H - 6}
+            text-anchor="middle"
+            fill="rgba(255,255,255,0.35)"
+            font-size="8.5"
+            font-family="var(--font-sans)"
+          >{formatDateLabel(day.date)}</text>
+        {/if}
+      {/each}
+
+      <!-- Tooltip -->
+      {#if tooltipBar !== null && data[tooltipBar]}
+        {@const tip = data[tooltipBar]}
+        {@const tw = 130}
+        {@const th = 14 + tip.segments.length * 14 + 6}
+        {@const tx = Math.min(Math.max(tooltipX - tw / 2, 4), 600 - tw - 4)}
+        {@const ty = Math.max(4, tooltipY - th - 8)}
+        <rect
+          x={tx}
+          y={ty}
+          width={tw}
+          height={th}
+          rx="4"
+          fill="rgba(20,20,24,0.95)"
+          stroke="rgba(255,255,255,0.12)"
+          stroke-width="0.5"
+        />
+        <text x={tx + 6} y={ty + 12} fill="rgba(255,255,255,0.7)" font-size="9" font-family="var(--font-sans)">
+          {formatDateLabel(tip.date)} - {formatTokens(tip.total)}
+        </text>
+        {#each tip.segments as seg, si}
+          <circle cx={tx + 10} cy={ty + 22 + si * 14} r="3" fill={agentColour(seg.agent)} />
+          <text x={tx + 18} y={ty + 25 + si * 14} fill="rgba(255,255,255,0.6)" font-size="8.5" font-family="var(--font-sans)">
+            {seg.displayName}: {formatTokens(seg.tokens)}
+          </text>
+        {/each}
+      {/if}
+    </svg>
+
+    <!-- Legend -->
+    {#if dailyAgentNames.length > 1}
+      <div class="chart-legend">
+        {#each dailyAgentNames as agent}
+          {@const displayRow = dailyData.find((r: any) => r.agent_name === agent)}
+          <span class="legend-item">
+            <span class="legend-dot" style="background: {agentColour(agent)}"></span>
+            {displayRow?.display_name || agent}
+          </span>
+        {/each}
+      </div>
+    {/if}
+  </div>
+
+  <!-- ====== Per-agent breakdown table ====== -->
+  <div class="breakdown-header">Per-agent breakdown</div>
+  <div class="breakdown-table">
+    {#each activeAgents
+      .slice()
+      .sort((a: any, b: any) => (b.total_tokens || 0) - (a.total_tokens || 0)) as agent}
+      {@const pct = totalTokens > 0 ? ((agent.total_tokens || 0) / totalTokens * 100) : 0}
+      {@const tokIn = agent.total_tokens_in || 0}
+      {@const tokOut = agent.total_tokens_out || 0}
+      {@const inOutRatio = tokOut > 0 ? (tokIn / tokOut).toFixed(1) : '-'}
+      {@const sparkVals = agentDailyMap.get(agent.agent_name) || []}
+      {@const colour = agentColour(agent.agent_name)}
+
+      <div class="breakdown-row" class:expanded={expandedAgent === agent.agent_name}>
+        <button class="breakdown-row-btn" onclick={() => toggleDetail(agent.agent_name)}>
+          <span class="br-colour" style="background: {colour}"></span>
+          <span class="br-name">{agent.display_name || agent.agent_name}</span>
+          <span class="br-sparkline">
+            {#if sparkVals.length > 1}
+              <svg viewBox="0 0 60 16" class="sparkline-svg">
+                <path
+                  d={sparklinePath(sparkVals, 60, 16)}
+                  fill="none"
+                  stroke={colour}
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            {/if}
+          </span>
+          <span class="br-tokens">{formatTokens(agent.total_tokens || 0)}</span>
+          <span class="br-pct">{pct.toFixed(1)}%</span>
+          <span class="br-ratio" title="Input:Output ratio">{inOutRatio}:1</span>
+          <span class="br-expand" class:open={expandedAgent === agent.agent_name}>&#9662;</span>
+        </button>
+
+        <!-- Expanded detail view -->
+        {#if expandedAgent === agent.agent_name}
+          <div class="detail-panel">
+            {#if detailLoading}
+              <p class="detail-loading">Loading entries...</p>
+            {:else if detailData.length === 0}
+              <p class="detail-loading">No entries found.</p>
+            {:else}
+              {#each detailData as entry}
+                <div class="detail-entry">
+                  <div class="detail-meta">
+                    <span class="detail-source">{entry.source}</span>
+                    <span class="detail-tokens">{formatTokens(entry.tokens_in + entry.tokens_out)} tok</span>
+                    <span class="detail-time">{formatDate(entry.timestamp)} {formatTime(entry.timestamp)}</span>
+                    {#if entry.duration_ms}
+                      <span class="detail-dur">{formatDuration(entry.duration_ms)}</span>
+                    {/if}
+                    {#if entry.tool_count}
+                      <span class="detail-tools">{entry.tool_count} tools</span>
+                    {/if}
+                  </div>
+                  {#if entry.context?.length}
+                    <div class="detail-context">
+                      {#each entry.context as turn}
+                        <div class="context-turn" class:agent-turn={turn.role === 'agent'}>
+                          <span class="turn-role">{turn.role === 'agent' ? 'Agent' : 'Will'}</span>
+                          <span class="turn-content">{turn.content}</span>
+                        </div>
+                      {/each}
+                    </div>
                   {/if}
                 </div>
-                {#if entry.context?.length}
-                  <div class="detail-context">
-                    {#each entry.context as turn}
-                      <div class="context-turn" class:agent-turn={turn.role === 'agent'}>
-                        <span class="turn-role">{turn.role === 'agent' ? 'Agent' : 'Will'}</span>
-                        <span class="turn-content">{turn.content}</span>
-                      </div>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            {/each}
-          {/if}
-        </div>
-      {/if}
-    </div>
-  {/each}
+              {/each}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {/each}
+  </div>
 {/if}
 
 <style>
+  /* ── Period picker ── */
+
   .filter-row {
     display: flex;
     gap: 6px;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
     flex-wrap: wrap;
   }
 
@@ -203,6 +557,7 @@
     font-size: 11px;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
+    font-family: var(--font-sans);
   }
 
   .filter-pill:hover {
@@ -222,115 +577,198 @@
     padding: 40px 0;
   }
 
-  .totals-bar {
-    display: flex;
-    justify-content: space-around;
-    background: rgba(255, 255, 255, 0.04);
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 12px;
+  /* ── Summary cards ── */
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
   }
 
-  .total-stat {
+  .summary-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 12px 10px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
   }
 
-  .total-value {
-    color: rgba(255, 255, 255, 0.95);
-    font-size: 20px;
-    font-weight: bold;
+  .summary-value {
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 18px;
+    font-weight: 700;
+    font-family: var(--font-sans);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
-  .total-label {
-    color: rgba(255, 255, 255, 0.4);
+  .summary-label {
+    color: rgba(255, 255, 255, 0.35);
     font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: var(--font-sans);
   }
 
-  .usage-card {
-    background: rgba(255, 255, 255, 0.03);
+  /* ── Bar chart ── */
+
+  .chart-container {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 8px;
-    padding: 12px 14px;
+    padding: 8px 4px 4px;
+    margin-bottom: 16px;
+  }
+
+  .chart-svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .chart-legend {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding: 6px 0 4px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 10px;
+    font-family: var(--font-sans);
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Breakdown table ── */
+
+  .breakdown-header {
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
     margin-bottom: 8px;
+    font-family: var(--font-sans);
+  }
+
+  .breakdown-table {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .breakdown-row {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
     transition: background 0.15s;
   }
 
-  .usage-card.expanded {
+  .breakdown-row.expanded {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
-  .usage-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-    width: 100%;
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .usage-agent-name {
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 14px;
-    font-weight: bold;
-  }
-
-  .usage-right {
+  .breakdown-row-btn {
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--font-sans);
   }
 
-  .usage-tokens {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 12px;
+  .breakdown-row-btn:hover {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
   }
 
-  .expand-arrow {
-    color: rgba(255, 255, 255, 0.3);
+  .br-colour {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .br-name {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12.5px;
+    font-weight: 600;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .br-sparkline {
+    width: 60px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .sparkline-svg {
+    width: 60px;
+    height: 16px;
+    display: block;
+  }
+
+  .br-tokens {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    min-width: 48px;
+    text-align: right;
+  }
+
+  .br-pct {
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 10px;
+    min-width: 36px;
+    text-align: right;
+  }
+
+  .br-ratio {
+    color: rgba(255, 255, 255, 0.25);
+    font-size: 10px;
+    min-width: 32px;
+    text-align: right;
+  }
+
+  .br-expand {
+    color: rgba(255, 255, 255, 0.25);
     font-size: 10px;
     transition: transform 0.2s;
+    flex-shrink: 0;
   }
 
-  .expand-arrow.open {
+  .br-expand.open {
     transform: rotate(180deg);
   }
 
-  .usage-stats-row {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
+  /* ── Detail panel (expanded row) ── */
 
-  .usage-stats-row span {
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 11px;
-  }
-
-  .usage-sources {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-top: 6px;
-  }
-
-  .source-pill {
-    color: rgba(255, 255, 255, 0.35);
-    font-size: 10px;
-    background: rgba(255, 255, 255, 0.04);
-    border-radius: 4px;
-    padding: 1px 6px;
-  }
-
-  /* Detail panel */
   .detail-panel {
-    margin-top: 10px;
+    margin: 0 10px 10px;
     border-top: 1px solid rgba(255, 255, 255, 0.06);
     padding-top: 10px;
     max-height: 400px;
@@ -391,7 +829,6 @@
     font-size: 10px;
   }
 
-  /* Conversation context */
   .detail-context {
     margin-top: 4px;
     padding-left: 8px;
