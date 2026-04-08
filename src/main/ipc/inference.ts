@@ -257,6 +257,29 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
 
   // -- Opening line --
 
+  // Persist the opening line as an `agent` turn in this session's memory.db
+  // so the agent's own future context contains a record of having said it.
+  // Without this, cached and pre-generated openings appear to the user but
+  // never enter the conversation history, leaving the agent with a blind
+  // spot when asked "what was your last message?". Idempotency is enforced
+  // per session via _openingRecorded so callers can fire opening:get more
+  // than once safely (e.g. soft reloads).
+  const _openingRecorded = new WeakSet<Session>();
+  const recordOpening = (text: string): void => {
+    try {
+      if (!ctx.currentSession) {
+        ctx.currentSession = new Session();
+        ctx.currentSession.start();
+        ctx.currentSession.inheritCliSessionId();
+      }
+      if (_openingRecorded.has(ctx.currentSession)) return;
+      ctx.currentSession.addTurn('agent', text);
+      _openingRecorded.add(ctx.currentSession);
+    } catch (err) {
+      log.warn('[opening] failed to persist opening turn:', err);
+    }
+  };
+
   ipcMain.handle('opening:get', async () => {
     const shouldSpeak = getConfig().TTS_BACKEND !== 'off' && !isMuted();
 
@@ -264,6 +287,7 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
     const cached = loadCachedOpening();
     if (cached) {
       log.info('[opening] Using cached opening');
+      recordOpening(cached.text);
       // Play pre-synthesised audio if available
       if (shouldSpeak && cached.audioPath) {
         playAudio(cached.audioPath).catch(() => { /* non-fatal */ });
@@ -291,6 +315,7 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
           ctx.systemPrompt,
           ctx.currentSession?.cliSessionId ?? undefined,
         );
+        recordOpening(result.text);
         // Cache next opening in background for next launch
         cacheNextOpening(ctx.systemPrompt, ctx.currentSession?.cliSessionId ?? undefined);
         // Speak it
@@ -308,6 +333,7 @@ export function registerInferenceHandlers(ctx: IpcContext): void {
     // 4. Fall back to a varied static line (not just the agent name)
     const fallback = getStaticFallback();
     log.info(`[opening] Using static fallback: "${fallback}"`);
+    recordOpening(fallback);
     if (shouldSpeak) {
       synthesise(fallback).then((p) => { if (p) playAudio(p).catch(() => {}); }).catch(() => {});
     }
