@@ -361,7 +361,7 @@ function synthesiseMacOS(text: string): Promise<string> {
     // Daniel (en_GB) for British agents, Samantha (en_US) for others.
     // Users can override via MACOS_VOICE config key.
     const config = getConfig();
-    const customVoice = (config as Record<string, unknown>).MACOS_VOICE as string | undefined;
+    const customVoice = (config as unknown as Record<string, unknown>).MACOS_VOICE as string | undefined;
     let voice = customVoice || 'Samantha';
     if (!customVoice) {
       // Agent-aware voice selection: if the agent's voice config or
