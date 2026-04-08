@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { session } from '../stores/session.svelte';
 
   // Brain frames via Vite glob import (00=healthy, 09=decayed)
   const brainFramePaths: string[] = [];
@@ -15,6 +16,11 @@
   let currentFrame = $state(0);
   let opacity = $state(0.5);
   let tick = 0;
+
+  // Reactive label - reads from the session store. Empty string hides the
+  // label entirely so the default 'thinking' brain pulse is unchanged when
+  // the renderer hasn't received any tool/thinking events yet.
+  const label = $derived(session.currentActivity);
 
   onMount(() => {
     const interval = setInterval(() => {
@@ -36,6 +42,9 @@
       class="brain-frame"
       draggable="false"
     />
+    {#if label}
+      <span class="activity-label">{label}</span>
+    {/if}
   </div>
 {/if}
 
@@ -44,6 +53,7 @@
     display: flex;
     align-items: center;
     justify-content: flex-start;
+    gap: 8px;
     padding: 4px 0;
     will-change: opacity;
   }
@@ -55,5 +65,15 @@
     filter: grayscale(0.3) brightness(0.85);
     pointer-events: none;
     user-select: none;
+  }
+
+  .activity-label {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    user-select: none;
+    /* Soft fade so the label doesn't pop in jarringly when activity flips */
+    transition: opacity 120ms ease-out;
   }
 </style>

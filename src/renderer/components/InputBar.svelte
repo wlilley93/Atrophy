@@ -74,6 +74,7 @@
     addMessage('user', text);
     addMessage('agent', '');
     session.inferenceState = 'thinking';
+    session.currentActivity = 'thinking';
     setEmotion('thinking');
 
     if (api) {
@@ -89,6 +90,7 @@
           completeLast();
         }
         session.inferenceState = 'idle';
+        session.currentActivity = '';
         revertToDefault();
       } finally {
         _submitting = false;
@@ -356,6 +358,9 @@
     const unsubs = [
       api.onTextDelta((text: string) => {
         session.inferenceState = 'streaming';
+        // Once tokens are arriving the activity label is no longer needed:
+        // the visible streaming text is itself the indicator of progress.
+        if (session.currentActivity) session.currentActivity = '';
         streamBuffer += text;
 
         // Check if buffer might contain a partial <artifact tag
@@ -412,9 +417,33 @@
           revealAll();
         }
       }),
+      api.onToolUse((name: string) => {
+        // While we're still in the pre-stream phase, surface the tool name
+        // next to the brain so the user can see what the agent is reaching
+        // for ("using Bash" / "using Read") instead of an opaque pulse.
+        // Lowercase the verb because the brain icon already conveys agency.
+        session.currentActivity = `using ${name}`;
+      }),
+      api.onToolResult(() => {
+        // Tool finished but more may follow before any text - show that
+        // the agent is back to thinking through the result rather than
+        // freezing on the previous tool name.
+        if (session.inferenceState === 'thinking') {
+          session.currentActivity = 'thinking';
+        }
+      }),
+      api.onThinkingDelta(() => {
+        // Thinking blocks land before the first text token. Show the
+        // generic 'thinking' label for these so the user knows the model
+        // is reasoning rather than waiting on something external.
+        if (session.inferenceState === 'thinking') {
+          session.currentActivity = 'thinking';
+        }
+      }),
       api.onDone((fullText: string) => {
         flushBuffer();
         streamDone = true;
+        session.currentActivity = '';
 
         if (!syncMode) {
           revealAll();
@@ -449,6 +478,7 @@
         resetSyncState();
         completeLast();
         session.inferenceState = 'idle';
+        session.currentActivity = '';
         revertToDefault();
         if (msg) {
           addMessage('system', `Error: ${msg}`);
