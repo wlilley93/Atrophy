@@ -126,8 +126,10 @@
   let wakeWords = $state('');
   let disabledTools = $state<Set<string>>(new Set());
 
-  let windowWidth = $state(622);
-  let windowHeight = $state(830);
+  let windowWidth = $state(900);
+  let windowHeight = $state(960);
+  let settingsWindowWidth = $state(1700);
+  let settingsWindowHeight = $state(900);
   let avatarEnabled = $state(false);
   let avatarResolution = $state(512);
 
@@ -210,13 +212,17 @@
     if (!api) return;
 
     // Store original window size and expand for settings.
-    // Settings is a wide two-column layout (nav + content). 1600x1200 gives
-    // Activity logs, Console streams, and the Agents/Org tabs proper room
-    // to breathe alongside the larger main-window default (1100x1466).
+    // Settings is a wide two-column layout (nav + content). The expansion
+    // dimensions are user-configurable via Settings > Window & Display so
+    // people on big monitors can go bigger and people on small displays
+    // can keep it tight.
     try {
       const size = await api.getWindowSize();
       originalWindowSize = size;
-      await api.setWindowSize(1600, 1200);
+      const cfgPreview = await api.getConfig();
+      const w = (cfgPreview.settingsWindowWidth as number) || 1700;
+      const h = (cfgPreview.settingsWindowHeight as number) || 900;
+      await api.setWindowSize(w, h);
     } catch { /* pre-existing window, skip resize */ }
 
     try {
@@ -231,8 +237,10 @@
       wakeWords = (cfg.wakeWords ?? []).join(', ');
       disabledTools = new Set(cfg.disabledTools ?? []);
 
-      windowWidth = cfg.windowWidth ?? 622;
-      windowHeight = cfg.windowHeight ?? 830;
+      windowWidth = cfg.windowWidth || 900;
+      windowHeight = cfg.windowHeight || 960;
+      settingsWindowWidth = (cfg.settingsWindowWidth as number) || 1700;
+      settingsWindowHeight = (cfg.settingsWindowHeight as number) || 900;
       avatarEnabled = cfg.avatarEnabled ?? false;
       avatarResolution = cfg.avatarResolution ?? 512;
 
@@ -312,6 +320,8 @@
       DISABLED_TOOLS: [...disabledTools],
       WINDOW_WIDTH: windowWidth,
       WINDOW_HEIGHT: windowHeight,
+      SETTINGS_WINDOW_WIDTH: settingsWindowWidth,
+      SETTINGS_WINDOW_HEIGHT: settingsWindowHeight,
       AVATAR_ENABLED: avatarEnabled,
       AVATAR_RESOLUTION: avatarResolution,
       TTS_BACKEND: ttsBackend,
@@ -493,6 +503,8 @@
         bind:disabledTools
         bind:windowWidth
         bind:windowHeight
+        bind:settingsWindowWidth
+        bind:settingsWindowHeight
         bind:avatarEnabled
         bind:avatarResolution
         bind:ttsBackend

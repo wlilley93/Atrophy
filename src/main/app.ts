@@ -111,29 +111,16 @@ const SESSION_IDLE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 function createWindow(): BrowserWindow {
   const config = getConfig();
 
-  // Default window size matches the aspect of the agent avatar videos
-  // (1244x1660, ratio 0.749) so portrait avatar loops fill the orb cleanly
-  // without letterboxing.
-  //
-  // When the user has not saved an explicit override (config.WINDOW_WIDTH
-  // is 0 or unset), compute the largest 0.749-aspect window that fits on
-  // the current display's work area (excludes menu bar + dock). This means
-  // the app launches at the maximum useful size for whatever screen it
-  // happens to be on - 1080p laptops, 4K externals, Studio Displays,
-  // multi-monitor rigs - without ever clipping below the dock.
-  const ASPECT = 1244 / 1660;
+  // Default window size. User-saved values from config win; otherwise we
+  // pick a sane default that fits on common laptop screens (1366x768 and
+  // up) without being uncomfortably tall. The previous auto-fit-to-screen
+  // approach made the window too tall on small displays.
   let winWidth = config.WINDOW_WIDTH;
   let winHeight = config.WINDOW_HEIGHT;
   if (!winWidth || !winHeight) {
     const { workAreaSize } = screen.getPrimaryDisplay();
-    let fitH = workAreaSize.height;
-    let fitW = Math.round(fitH * ASPECT);
-    if (fitW > workAreaSize.width) {
-      fitW = workAreaSize.width;
-      fitH = Math.round(fitW / ASPECT);
-    }
-    winWidth = fitW;
-    winHeight = fitH;
+    winWidth = Math.min(900, workAreaSize.width - 40);
+    winHeight = Math.min(960, workAreaSize.height - 40);
     bootLogger.info(`auto-fit window: ${winWidth}x${winHeight} (workArea ${workAreaSize.width}x${workAreaSize.height})`);
   }
 
@@ -142,8 +129,8 @@ function createWindow(): BrowserWindow {
     height: winHeight,
     minWidth: 360,
     minHeight: 480,
-    maxWidth: 1660,
-    maxHeight: 2213,
+    maxWidth: 2000,
+    maxHeight: 1400,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
     vibrancy: 'under-window',
@@ -162,8 +149,9 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  // Lock aspect ratio so the window scales proportionally like a phone
-  win.setAspectRatio(winWidth / winHeight);
+  // Aspect ratio is intentionally NOT locked. Users adjust width and
+  // height independently from Settings, and the avatar's CSS mask
+  // tolerates aspect drift gracefully via radial fade.
 
   // Content Security Policy
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {

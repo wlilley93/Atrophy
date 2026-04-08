@@ -616,6 +616,8 @@ export class Config {
   CANVAS_TEMPLATES: string;
   WINDOW_WIDTH: number;
   WINDOW_HEIGHT: number;
+  SETTINGS_WINDOW_WIDTH!: number;
+  SETTINGS_WINDOW_HEIGHT!: number;
 
   // Avatar
   AVATAR_ENABLED: boolean;
@@ -707,11 +709,14 @@ export class Config {
     this.EYE_MODE_DEFAULT = false;
     this.MUTE_BY_DEFAULT = false;
     this.CANVAS_TEMPLATES = path.join(BUNDLE_ROOT, 'display', 'templates');
-    // 0 = auto-fit current display in createWindow(). User-saved overrides
-    // win, otherwise app.ts picks the largest 0.749-aspect window that
-    // fits the active screen's work area.
+    // 0 = let createWindow() pick a sane default for the current display.
+    // User-saved overrides win.
     this.WINDOW_WIDTH = 0;
     this.WINDOW_HEIGHT = 0;
+    // Size used when Settings expands the main window to show its tabs.
+    // 0 = use Settings.svelte's hardcoded default (1700x900).
+    this.SETTINGS_WINDOW_WIDTH = 0;
+    this.SETTINGS_WINDOW_HEIGHT = 0;
     this.AVATAR_ENABLED = false;
     this.AVATAR_RESOLUTION = 512;
     this.AVATAR_DIR = '';
@@ -901,6 +906,8 @@ export class Config {
     const disp = (_agentManifest.display as Record<string, unknown>) || {};
     this.WINDOW_WIDTH = (disp.window_width as number) ?? cfg('WINDOW_WIDTH', 0);
     this.WINDOW_HEIGHT = (disp.window_height as number) ?? cfg('WINDOW_HEIGHT', 0);
+    this.SETTINGS_WINDOW_WIDTH = (disp.settings_window_width as number) ?? cfg('SETTINGS_WINDOW_WIDTH', 0);
+    this.SETTINGS_WINDOW_HEIGHT = (disp.settings_window_height as number) ?? cfg('SETTINGS_WINDOW_HEIGHT', 0);
 
     // Avatar (user data > bundled fallback)
     this.AVATAR_ENABLED = cfg('AVATAR_ENABLED', false);
@@ -975,6 +982,8 @@ const AGENT_KEY_NESTING: Record<string, { object: string; key: string }> = {
   HEARTBEAT_INTERVAL_MINS: { object: 'heartbeat', key: 'interval_mins' },
   WINDOW_WIDTH: { object: 'display', key: 'window_width' },
   WINDOW_HEIGHT: { object: 'display', key: 'window_height' },
+  SETTINGS_WINDOW_WIDTH: { object: 'display', key: 'settings_window_width' },
+  SETTINGS_WINDOW_HEIGHT: { object: 'display', key: 'settings_window_height' },
 };
 
 // Maps flat Config keys to their root-level manifest key names.

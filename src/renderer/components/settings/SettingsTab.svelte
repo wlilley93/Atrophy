@@ -11,6 +11,8 @@
     disabledTools: Set<string>;
     windowWidth: number;
     windowHeight: number;
+    settingsWindowWidth: number;
+    settingsWindowHeight: number;
     avatarEnabled: boolean;
     avatarResolution: number;
     ttsBackend: string;
@@ -75,6 +77,8 @@
     disabledTools = $bindable(),
     windowWidth = $bindable(),
     windowHeight = $bindable(),
+    settingsWindowWidth = $bindable(),
+    settingsWindowHeight = $bindable(),
     avatarEnabled = $bindable(),
     avatarResolution = $bindable(),
     ttsBackend = $bindable(),
@@ -267,16 +271,32 @@
         <div class="section-body">
           <div class="field-row-inline">
             <div class="field-group compact">
-              <label class="field-label" for="win-w">Width</label>
+              <label class="field-label" for="win-w">Main Width</label>
               <div class="input-with-suffix">
-                <input id="win-w" type="number" min="300" max="1920" bind:value={windowWidth} class="field-input" />
+                <input id="win-w" type="number" min="300" max="2560" bind:value={windowWidth} class="field-input" />
                 <span class="input-suffix">px</span>
               </div>
             </div>
             <div class="field-group compact">
-              <label class="field-label" for="win-h">Height</label>
+              <label class="field-label" for="win-h">Main Height</label>
               <div class="input-with-suffix">
-                <input id="win-h" type="number" min="400" max="1080" bind:value={windowHeight} class="field-input" />
+                <input id="win-h" type="number" min="400" max="1600" bind:value={windowHeight} class="field-input" />
+                <span class="input-suffix">px</span>
+              </div>
+            </div>
+          </div>
+          <div class="field-row-inline">
+            <div class="field-group compact">
+              <label class="field-label" for="set-w">Settings Width</label>
+              <div class="input-with-suffix">
+                <input id="set-w" type="number" min="600" max="2560" bind:value={settingsWindowWidth} class="field-input" />
+                <span class="input-suffix">px</span>
+              </div>
+            </div>
+            <div class="field-group compact">
+              <label class="field-label" for="set-h">Settings Height</label>
+              <div class="input-with-suffix">
+                <input id="set-h" type="number" min="500" max="1600" bind:value={settingsWindowHeight} class="field-input" />
                 <span class="input-suffix">px</span>
               </div>
             </div>

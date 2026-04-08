@@ -561,8 +561,11 @@
     object-fit: contain;
     opacity: 0;
     transition: opacity 0.8s ease;
-    mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, black 40%, transparent 72%);
-    -webkit-mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, black 40%, transparent 72%);
+    /* Mask shifted down to 55% vertical and enlarged to 88%/88% so the
+       shoulders and upper chest are visible through the radial fade.
+       Earlier 70%/65% at 50%/45% was cropped tight on the face. */
+    mask-image: radial-gradient(ellipse 88% 88% at 50% 55%, black 55%, transparent 88%);
+    -webkit-mask-image: radial-gradient(ellipse 88% 88% at 50% 55%, black 55%, transparent 88%);
   }
 
   .avatar-video.visible {

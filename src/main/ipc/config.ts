@@ -17,6 +17,7 @@ const agentKeys = new Set([
   'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
   'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
   'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
+  'SETTINGS_WINDOW_WIDTH', 'SETTINGS_WINDOW_HEIGHT',
   'DISABLED_TOOLS', 'WAKE_WORDS',
 ]);
 const userKeys = new Set([
@@ -100,6 +101,8 @@ export function registerConfigHandlers(ctx: IpcContext): void {
       // Window
       windowWidth: c.WINDOW_WIDTH,
       windowHeight: c.WINDOW_HEIGHT,
+      settingsWindowWidth: c.SETTINGS_WINDOW_WIDTH,
+      settingsWindowHeight: c.SETTINGS_WINDOW_HEIGHT,
       avatarEnabled: c.AVATAR_ENABLED,
       avatarResolution: c.AVATAR_RESOLUTION,
       // Paths
