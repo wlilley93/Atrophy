@@ -17,6 +17,7 @@
   },
   "include": [
     "src/renderer/**/*.ts",
-    "src/renderer/**/*.svelte"
+    "src/renderer/**/*.svelte",
+    "src/preload/index.ts"
   ]
 }

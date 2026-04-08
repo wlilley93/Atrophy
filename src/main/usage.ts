@@ -9,7 +9,8 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
-import { USER_DATA, BUNDLE_ROOT } from './config';
+import { BUNDLE_ROOT } from './config';
+import { discoverAgents, getAgentDir } from './agent-manager';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,32 +104,27 @@ export function getUsageSummary(dbPath: string, days?: number): Omit<UsageSummar
 // ---------------------------------------------------------------------------
 
 export function getAllAgentsUsage(days?: number): UsageSummary[] {
-  const agentsDir = path.join(USER_DATA, 'agents');
-  if (!fs.existsSync(agentsDir)) return [];
-
   const results: UsageSummary[] = [];
-  for (const name of fs.readdirSync(agentsDir).sort()) {
-    const dbPath = path.join(agentsDir, name, 'data', 'memory.db');
+  for (const agent of discoverAgents()) {
+    const dbPath = path.join(getAgentDir(agent.name), 'data', 'memory.db');
     if (!fs.existsSync(dbPath)) continue;
 
-    // Load display name (check user data then bundle)
-    let displayName = name.charAt(0).toUpperCase() + name.slice(1);
-    const manifestPaths = [
-      path.join(agentsDir, name, 'data', 'agent.json'),
-      path.join(BUNDLE_ROOT, 'agents', name, 'data', 'agent.json'),
-    ];
-    for (const mp of manifestPaths) {
+    // discoverAgents already resolved the display name from the manifest,
+    // but fall back to bundle manifest if the agent is bundle-only.
+    let displayName = agent.display_name;
+    if (!displayName || displayName === agent.name.charAt(0).toUpperCase() + agent.name.slice(1)) {
+      const bundleManifest = path.join(BUNDLE_ROOT, 'agents', agent.name, 'data', 'agent.json');
       try {
-        if (fs.existsSync(mp)) {
-          const manifest = JSON.parse(fs.readFileSync(mp, 'utf-8'));
-          if (manifest.display_name) { displayName = manifest.display_name; break; }
+        if (fs.existsSync(bundleManifest)) {
+          const manifest = JSON.parse(fs.readFileSync(bundleManifest, 'utf-8'));
+          if (manifest.display_name) displayName = manifest.display_name;
         }
       } catch { /* use default */ }
     }
 
     const summary = getUsageSummary(dbPath, days);
     results.push({
-      agent_name: name,
+      agent_name: agent.name,
       display_name: displayName,
       ...summary,
     });
@@ -145,11 +141,9 @@ export function getAllActivity(days = 7, limit = 500): ActivityItem[] {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const allItems: ActivityItem[] = [];
 
-  const agentsDir = path.join(USER_DATA, 'agents');
-  if (!fs.existsSync(agentsDir)) return [];
-
-  for (const name of fs.readdirSync(agentsDir)) {
-    const dbPath = path.join(agentsDir, name, 'data', 'memory.db');
+  for (const agent of discoverAgents()) {
+    const name = agent.name;
+    const dbPath = path.join(getAgentDir(name), 'data', 'memory.db');
     if (!fs.existsSync(dbPath)) continue;
 
     let db: Database.Database;
@@ -241,7 +235,7 @@ export interface UsageDetailEntry {
 }
 
 export function getAgentUsageDetail(agentName: string, days?: number, limit = 50): UsageDetailEntry[] {
-  const dbPath = path.join(USER_DATA, 'agents', agentName, 'data', 'memory.db');
+  const dbPath = path.join(getAgentDir(agentName), 'data', 'memory.db');
   if (!fs.existsSync(dbPath)) return [];
 
   const db = new Database(dbPath, { readonly: true });

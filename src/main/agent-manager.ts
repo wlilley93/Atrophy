@@ -488,12 +488,12 @@ function safeAgentDataPath(agentName: string, filename: string): string {
 
 function askRequestPath(): string {
   const config = getConfig();
-  return path.join(USER_DATA, 'agents', config.AGENT_NAME, 'data', '.ask_request.json');
+  return path.join(getAgentDir(config.AGENT_NAME), 'data', '.ask_request.json');
 }
 
 function askResponsePath(): string {
   const config = getConfig();
-  return path.join(USER_DATA, 'agents', config.AGENT_NAME, 'data', '.ask_response.json');
+  return path.join(getAgentDir(config.AGENT_NAME), 'data', '.ask_response.json');
 }
 
 /** Check for pending ask_user requests across ALL agents (called periodically by main process). */
@@ -602,7 +602,7 @@ export function deleteAgent(name: string): void {
   if (!isValidAgentName(name)) {
     throw new Error(`Invalid agent name: "${name}"`);
   }
-  const agentDir = path.join(USER_DATA, 'agents', name);
+  const agentDir = getAgentDir(name);
   if (!fs.existsSync(agentDir)) {
     throw new Error(`Agent directory for "${name}" not found`);
   }

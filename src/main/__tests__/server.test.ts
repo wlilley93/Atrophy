@@ -123,11 +123,11 @@ function makeRequest(
     };
 
     if (options.token !== null) {
-      reqOptions.headers!['Authorization'] = `Bearer ${options.token || TEST_TOKEN}`;
+      (reqOptions.headers as Record<string, string>)['Authorization'] = `Bearer ${options.token || TEST_TOKEN}`;
     }
 
     if (options.body) {
-      reqOptions.headers!['Content-Type'] = 'application/json';
+      (reqOptions.headers as Record<string, string>)['Content-Type'] = 'application/json';
     }
 
     const req = http.request(reqOptions, (res) => {

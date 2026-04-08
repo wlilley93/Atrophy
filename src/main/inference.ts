@@ -18,7 +18,9 @@ import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
 import { getConfig, USER_DATA } from './config';
+import { getAgentDir } from './agent-manager';
 import { TmuxPool } from './tmux-inference';
+import { SENTENCE_RE, CLAUSE_RE, CLAUSE_SPLIT_THRESHOLD } from './sentence';
 import { classifyEffort, EffortLevel } from './thinking';
 import {
   timeOfDayContext,
@@ -60,7 +62,7 @@ export function getTmuxPool(): TmuxPool | null {
 function agentCwd(): string {
   const name = getConfig().AGENT_NAME;
   if (name) {
-    const dir = path.join(USER_DATA, 'agents', name);
+    const dir = getAgentDir(name);
     if (fs.existsSync(dir)) return dir;
   }
   // Fallback to Atrophy data root, NOT homedir
@@ -185,17 +187,6 @@ const TOOL_BLACKLIST = [
   'Bash(cat*credentials.json:*)',
   'Bash(cat*.google*:*)',
 ];
-
-// ---------------------------------------------------------------------------
-// Sentence boundary detection
-// ---------------------------------------------------------------------------
-
-// Period/question/exclamation followed by space or end
-const SENTENCE_RE = /(?<=[.!?])\s+|(?<=[.!?])$/;
-// Clause boundary: comma/semicolon/dash followed by space
-const CLAUSE_RE = /(?<=[,; \u2013\-])\s+/;
-// Min chars before clause-level split
-const CLAUSE_SPLIT_THRESHOLD = 120;
 
 // ---------------------------------------------------------------------------
 // Environment sanitization

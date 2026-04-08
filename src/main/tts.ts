@@ -285,8 +285,8 @@ async function synthesiseFal(text: string, falEndpoint?: string): Promise<string
     },
     body: JSON.stringify({
       text: cleanedText,
-      voice: config.FAL_VOICE_ID,
-      stability: config.ELEVENLABS_STABILITY,
+      voice: getConfig().FAL_VOICE_ID,
+      stability: getConfig().ELEVENLABS_STABILITY,
     }),
   });
 

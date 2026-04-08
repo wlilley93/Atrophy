@@ -11,6 +11,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { BrowserWindow } from 'electron';
 import { BUNDLE_ROOT, USER_DATA } from './config';
+import { getAgentDir } from './agent-manager';
 import { createLogger } from './logger';
 
 const log = createLogger('avatar-downloader');
@@ -24,7 +25,7 @@ const AMBIENT_MARKER = '.ambient-complete';
 
 /** Check if avatar assets are already present for the given agent. */
 export function isAvatarComplete(agentName: string): boolean {
-  const avatarDir = path.join(USER_DATA, 'agents', agentName, 'avatar');
+  const avatarDir = path.join(getAgentDir(agentName), 'avatar');
   if (fs.existsSync(path.join(avatarDir, MARKER))) return true;
   // Also accept if loops dir exists with at least one mp4
   const loopsDir = path.join(avatarDir, 'loops');
@@ -43,8 +44,11 @@ export function isAvatarComplete(agentName: string): boolean {
  */
 function resolveAssetUrl(agentName: string): string | null {
   // Check agent manifests (user data first, then bundle)
-  for (const base of [USER_DATA, BUNDLE_ROOT]) {
-    const jsonPath = path.join(base, 'agents', agentName, 'data', 'agent.json');
+  const candidates = [
+    path.join(getAgentDir(agentName), 'data', 'agent.json'),
+    path.join(BUNDLE_ROOT, 'agents', agentName, 'data', 'agent.json'),
+  ];
+  for (const jsonPath of candidates) {
     try {
       if (!fs.existsSync(jsonPath)) continue;
       const manifest = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
@@ -78,7 +82,7 @@ export async function ensureAvatarAssets(
     return;
   }
 
-  const agentDir = path.join(USER_DATA, 'agents', agentName);
+  const agentDir = getAgentDir(agentName);
   fs.mkdirSync(agentDir, { recursive: true });
   const tarPath = path.join(agentDir, `${agentName}-avatar.tar.gz`);
 

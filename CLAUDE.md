@@ -55,7 +55,7 @@ src/
   cli.ts                         # CLI entry point
   main/                          # Electron main process
     index.ts                     # Entry point, window creation, tray
-    app.ts                       # Boot orchestrator (48k lines - the big one)
+    app.ts                       # Boot orchestrator (~1500 lines - the big one)
     config.ts                    # Three-tier config resolution (env > user > agent > defaults)
     bootstrap.ts                 # First-launch bootstrapping
     ipc-handlers.ts              # IPC orchestrator (delegates to ipc/ modules)

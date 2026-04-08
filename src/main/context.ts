@@ -12,12 +12,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig, BUNDLE_ROOT, USER_DATA } from './config';
+import { getConfig, BUNDLE_ROOT } from './config';
 import { loadPrompt } from './prompts';
 import * as memory from './memory';
+import { discoverUiAgents, getAgentDir, getAgentState } from './agent-manager';
 
 // ---------------------------------------------------------------------------
-// Agent roster (inline - avoids circular dep with agent-manager)
+// Agent roster
 // ---------------------------------------------------------------------------
 
 interface RosterEntry {
@@ -27,65 +28,16 @@ interface RosterEntry {
 }
 
 function getAgentRoster(exclude?: string): RosterEntry[] {
-  const config = getConfig();
-  const agentsDirs: string[] = [];
-
-  const userAgents = path.join(USER_DATA, 'agents');
-  const bundleAgents = path.join(BUNDLE_ROOT, 'agents');
-
-  if (fs.existsSync(userAgents)) agentsDirs.push(userAgents);
-  if (fs.existsSync(bundleAgents) && path.resolve(bundleAgents) !== path.resolve(userAgents)) {
-    agentsDirs.push(bundleAgents);
-  }
-
-  const seen = new Set<string>();
   const agents: RosterEntry[] = [];
-
-  for (const agentsDir of agentsDirs) {
-    let entries: string[];
-    try {
-      entries = fs.readdirSync(agentsDir).sort();
-    } catch {
-      continue;
-    }
-
-    for (const name of entries) {
-      if (seen.has(name)) continue;
-      const manifestPath = path.join(agentsDir, name, 'data', 'agent.json');
-      if (!fs.existsSync(manifestPath)) continue;
-      seen.add(name);
-
-      if (name === exclude) continue;
-
-      try {
-        const data = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-        if (!data) continue;
-
-        // Skip tier 2+ agents (headless workers not addressable by other principals)
-        const orgSection = data.org as Record<string, unknown> | undefined;
-        if (orgSection?.tier && (orgSection.tier as number) > 1) continue;
-
-        // Check enabled state
-        const statesFile = getConfig().AGENT_STATES_FILE;
-        if (fs.existsSync(statesFile)) {
-          try {
-            const states = JSON.parse(fs.readFileSync(statesFile, 'utf-8'));
-            const state = states[name];
-            if (state && state.enabled === false) continue;
-          } catch { /* include by default */ }
-        }
-
-        agents.push({
-          name,
-          display_name: data.display_name || name.charAt(0).toUpperCase() + name.slice(1),
-          description: data.description || '',
-        });
-      } catch {
-        continue;
-      }
-    }
+  for (const agent of discoverUiAgents()) {
+    if (agent.name === exclude) continue;
+    if (!getAgentState(agent.name).enabled) continue;
+    agents.push({
+      name: agent.name,
+      display_name: agent.display_name,
+      description: agent.description,
+    });
   }
-
   return agents;
 }
 
@@ -136,7 +88,7 @@ export function loadSystemPrompt(): string {
     path.join(BUNDLE_ROOT, 'docs', 'agent-reference.md');
 
   // Org owner guidelines - injected for agents that can provision
-  const manifestPath = path.join(USER_DATA, 'agents', config.AGENT_NAME, 'data', 'agent.json');
+  const manifestPath = path.join(getAgentDir(config.AGENT_NAME), 'data', 'agent.json');
   try {
     if (fs.existsSync(manifestPath)) {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));

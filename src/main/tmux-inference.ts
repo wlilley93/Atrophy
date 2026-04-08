@@ -16,16 +16,18 @@ import { execFileSync } from 'child_process';
 import { EventEmitter } from 'events';
 import { createLogger } from './logger';
 import { fileEntities } from './entity-extract';
+import { splitSentences } from './sentence';
+import type {
+  InferenceEvent,
+  TextDeltaEvent,
+  SentenceReadyEvent,
+  ToolUseEvent,
+  StreamDoneEvent,
+} from './inference';
 
 const log = createLogger('tmux');
 
-// ---------------------------------------------------------------------------
-// Sentence boundary detection (matching inference.ts)
-// ---------------------------------------------------------------------------
-
-const SENTENCE_RE = /(?<=[.!?])\s+|(?<=[.!?])$/;
-const CLAUSE_RE = /(?<=[,; \u2013\-])\s+/;
-const CLAUSE_SPLIT_THRESHOLD = 120;
+export { splitSentences };
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -96,38 +98,6 @@ export function parseJsonlEntry(line: string): Record<string, unknown> | null {
 }
 
 /**
- * Split text into sentences using sentence and clause boundary regexes.
- * Matches the logic in inference.ts.
- */
-export function splitSentences(text: string): string[] {
-  const sentences: string[] = [];
-  let buffer = text;
-
-  // Split on sentence boundaries first
-  const parts = buffer.split(SENTENCE_RE);
-  for (let i = 0; i < parts.length; i++) {
-    let segment = parts[i].trim();
-    if (!segment) continue;
-
-    // For long segments, try clause-level splitting
-    if (segment.length >= CLAUSE_SPLIT_THRESHOLD) {
-      const cparts = segment.split(CLAUSE_RE);
-      if (cparts.length > 1) {
-        // Emit all but the last clause segment joined together, then the last separately
-        const toEmit = cparts.slice(0, -1).join(' ').trim();
-        const remainder = cparts[cparts.length - 1].trim();
-        if (toEmit) sentences.push(toEmit);
-        if (remainder) sentences.push(remainder);
-        continue;
-      }
-    }
-    sentences.push(segment);
-  }
-
-  return sentences;
-}
-
-/**
  * Map a parsed JSONL entry to inference events.
  *
  * Only processes `type: 'assistant'` entries. Computes text deltas from
@@ -136,7 +106,7 @@ export function splitSentences(text: string): string[] {
 export function mapToEvents(
   entry: Record<string, unknown>,
   previousText: string,
-): Array<Record<string, unknown>> {
+): InferenceEvent[] {
   if (entry.type !== 'assistant') return [];
 
   const message = entry.message as Record<string, unknown> | undefined;
@@ -145,19 +115,20 @@ export function mapToEvents(
   const content = message.content as Array<Record<string, unknown>> | undefined;
   if (!Array.isArray(content)) return [];
 
-  const events: Array<Record<string, unknown>> = [];
+  const events: InferenceEvent[] = [];
   let fullText = '';
 
   for (const block of content) {
     if (block.type === 'text') {
       fullText += (block.text as string) || '';
     } else if (block.type === 'tool_use') {
-      events.push({
+      const toolUse: ToolUseEvent = {
         type: 'ToolUse',
         name: (block.name as string) || '',
         toolId: (block.id as string) || '',
         inputJson: JSON.stringify(block.input || {}),
-      });
+      };
+      events.push(toolUse);
     }
     // type: 'thinking' - skip
   }
@@ -166,11 +137,13 @@ export function mapToEvents(
   if (fullText.length > previousText.length && fullText.startsWith(previousText)) {
     const delta = fullText.slice(previousText.length);
     if (delta) {
-      events.unshift({ type: 'TextDelta', text: delta });
+      const textDelta: TextDeltaEvent = { type: 'TextDelta', text: delta };
+      events.unshift(textDelta);
     }
   } else if (fullText && fullText !== previousText) {
     // Text changed in a non-incremental way - emit the full text as delta
-    events.unshift({ type: 'TextDelta', text: fullText });
+    const textDelta: TextDeltaEvent = { type: 'TextDelta', text: fullText };
+    events.unshift(textDelta);
   }
 
   // Check for stop_reason: end_turn
@@ -178,17 +151,19 @@ export function mapToEvents(
     // Split full text into sentences and emit SentenceReady events
     const sentences = splitSentences(fullText);
     for (let i = 0; i < sentences.length; i++) {
-      events.push({
+      const sentenceReady: SentenceReadyEvent = {
         type: 'SentenceReady',
         sentence: sentences[i],
         index: i,
-      });
+      };
+      events.push(sentenceReady);
     }
-    events.push({
+    const streamDone: StreamDoneEvent = {
       type: 'StreamDone',
       fullText,
       sessionId: '',
-    });
+    };
+    events.push(streamDone);
   }
 
   return events;
@@ -810,13 +785,13 @@ export class TmuxPool {
 
         for (const event of events) {
           if (event.type === 'TextDelta') {
-            state.previousText += event.text as string;
+            state.previousText += event.text;
           }
           state.currentEmitter.emit('event', event);
 
           if (event.type === 'StreamDone') {
             // Auto-extract entities from final response into intelligence.db
-            const finalText = (event.fullText as string) || state.previousText;
+            const finalText = event.fullText || state.previousText;
             if (finalText) {
               try { fileEntities(state.agentName, finalText); } catch { /* best effort */ }
             }

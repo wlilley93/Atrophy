@@ -12,6 +12,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { getConfig, BUNDLE_ROOT, USER_DATA, saveAgentConfig, isValidAgentName } from './config';
+import { getAgentDir } from './agent-manager';
 import { createLogger } from './logger';
 
 const log = createLogger('mcp-registry');
@@ -189,7 +190,7 @@ function findPythonPath(): string {
  */
 export function readAgentManifest(agentName: string): Record<string, unknown> {
   for (const base of [
-    path.join(USER_DATA, 'agents', agentName),
+    getAgentDir(agentName),
     path.join(BUNDLE_ROOT, 'agents', agentName),
   ]) {
     const mpath = path.join(base, 'data', 'agent.json');

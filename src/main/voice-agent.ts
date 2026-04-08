@@ -33,7 +33,8 @@ import { streamInference, InferenceEvent } from './inference';
 import { loadSystemPrompt } from './context';
 import { loadPrompt } from './prompts';
 import * as memory from './memory';
-import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
+import { getConfig } from './config';
+import { getAgentDir } from './agent-manager';
 import { sendMessage as sendTelegramMessage } from './channels/telegram';
 import { createLogger } from './logger';
 
@@ -512,7 +513,7 @@ function buildRoutingPrompt(agentName: string): string {
  * Get the cached agent ID file path for a given agent name.
  */
 function agentIdCachePath(agentName: string): string {
-  return path.join(USER_DATA, 'agents', agentName, 'data', '.voice_agent_id');
+  return path.join(getAgentDir(agentName), 'data', '.voice_agent_id');
 }
 
 /**

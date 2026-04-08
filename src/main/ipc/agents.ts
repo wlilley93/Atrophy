@@ -335,7 +335,7 @@ export function registerAgentHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('agent:create', async (_event, opts: Record<string, unknown>) => {
     const { createAgent } = await import('../create-agent');
-    return createAgent(opts as Parameters<typeof createAgent>[0]);
+    return createAgent(opts as unknown as Parameters<typeof createAgent>[0]);
   });
 
   ipcMain.handle('agent:delete', (_event, name: string) => {
