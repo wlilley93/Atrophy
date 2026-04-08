@@ -75,6 +75,12 @@
   let hoveredId = $state<string | null>(null);
   let selectedNode = $state<MapNode | null>(null);
   let toggling = $state(false);
+  // Single-agent focus. Defaults to the first agent found; picker in the
+  // header lets users switch. Only this agent's channels, MCP servers, and
+  // cron jobs are rendered - everything else in the quadrants is hidden so
+  // the map answers "what does THIS agent's topology look like" instead
+  // of drowning in every agent's edges at once.
+  let selectedAgentName = $state<string>('');
 
   // Element refs for SVG line computation
   let canvasEl = $state<HTMLDivElement | null>(null);
@@ -122,6 +128,10 @@
       const topo = await api.getTopology();
       allAgents = topo.agents;
       allServers = topo.servers;
+      // Default to the first agent if nothing is selected yet
+      if (!selectedAgentName && topo.agents.length > 0) {
+        selectedAgentName = topo.agents[0].name;
+      }
       // Load avatars in parallel
       for (const agent of topo.agents) {
         loadAvatar(agent.name);
@@ -149,47 +159,32 @@
   // Derived: build all map nodes from topology
   // ---------------------------------------------------------------------------
 
+  const focusedAgent = $derived(
+    allAgents.find((a) => a.name === selectedAgentName) || allAgents[0] || null,
+  );
+
   const nodes = $derived.by((): MapNode[] => {
     const list: MapNode[] = [];
+    const agent = focusedAgent;
+    if (!agent) return list;
 
-    // Collect all unique channels across all agents
-    const channelSet = new Map<string, { name: string; agentCount: number }>();
-    for (const agent of allAgents) {
-      for (const ch of Object.keys(agent.channels)) {
-        const existing = channelSet.get(ch);
-        if (existing) {
-          existing.agentCount++;
-        } else {
-          channelSet.set(ch, { name: ch, agentCount: 1 });
-        }
-      }
-    }
-
-    // Also check for federation in router config
-    let hasFederation = false;
-    for (const agent of allAgents) {
-      const router = agent.router as Record<string, unknown>;
-      if (router.federation || router.federated_links) {
-        hasFederation = true;
-        break;
-      }
-    }
-
-    // TOP: Channels
-    for (const [name, info] of channelSet) {
-      const channelType = name === 'telegram' ? 'TELEGRAM' : name === 'desktop' ? 'DESKTOP' : name.toUpperCase();
+    // TOP: Channels - only those used by the focused agent
+    for (const ch of Object.keys(agent.channels)) {
+      const channelType = ch === 'telegram' ? 'TELEGRAM' : ch === 'desktop' ? 'DESKTOP' : ch.toUpperCase();
       list.push({
-        id: `ch-${name}`,
-        label: name,
+        id: `ch-${ch}`,
+        label: ch,
         type: channelType,
         quadrant: 'top',
-        meta: `${info.agentCount} agent${info.agentCount !== 1 ? 's' : ''}`,
+        meta: 'input channel',
         active: true,
         error: false,
       });
     }
 
-    if (hasFederation) {
+    // Federation, if this agent is federated
+    const router = agent.router as Record<string, unknown>;
+    if (router.federation || router.federated_links) {
       list.push({
         id: 'ch-federation',
         label: 'federation',
@@ -201,55 +196,51 @@
       });
     }
 
-    // LEFT: Agents
-    for (const agent of allAgents) {
-      const jobCount = Object.keys(agent.jobs).length;
-      const toolCount = agent.mcp.active.length;
-      const channelCount = Object.keys(agent.channels).length;
-      list.push({
-        id: `agent-${agent.name}`,
-        label: agent.displayName,
-        type: agent.role ? agent.role.toUpperCase() : 'AGENT',
-        quadrant: 'left',
-        meta: `${toolCount} tools, ${channelCount} ch, ${jobCount} jobs`,
-        active: true,
-        error: false,
-        avatarUrl: avatarCache[agent.name],
-        agent,
-      });
-    }
+    // LEFT: Only the focused agent itself
+    const jobCount = Object.keys(agent.jobs).length;
+    const toolCount = agent.mcp.active.length;
+    const channelCount = Object.keys(agent.channels).length;
+    list.push({
+      id: `agent-${agent.name}`,
+      label: agent.displayName,
+      type: agent.role ? agent.role.toUpperCase() : 'AGENT',
+      quadrant: 'left',
+      meta: `${toolCount} tools, ${channelCount} ch, ${jobCount} jobs`,
+      active: true,
+      error: false,
+      avatarUrl: avatarCache[agent.name],
+      agent,
+    });
 
-    // RIGHT: MCP Servers
+    // RIGHT: MCP Servers - only those the focused agent uses
+    const agentMcpNames = new Set([...agent.mcp.active, ...agent.mcp.include]);
     for (const server of allServers) {
-      const usedByCount = allAgents.filter(
-        (a) => a.mcp.active.includes(server.name) || a.mcp.include.includes(server.name),
-      ).length;
+      if (!agentMcpNames.has(server.name)) continue;
+      const isActive = agent.mcp.active.includes(server.name);
       list.push({
         id: `mcp-${server.name}`,
         label: server.name,
         type: server.bundled ? 'BUNDLED' : 'EXTERNAL',
         quadrant: 'right',
         meta: server.available
-          ? `${server.capabilities.length} caps, ${usedByCount} agent${usedByCount !== 1 ? 's' : ''}`
+          ? `${server.capabilities.length} caps${isActive ? '' : ' (inactive)'}`
           : server.missingKey
             ? 'missing API key'
             : 'unavailable',
-        active: server.available,
+        active: server.available && isActive,
         error: server.missingKey || server.missingCommand,
         server,
       });
     }
 
-    // BOTTOM: Internal sources
-    // Cron scheduler
-    const totalJobs = allAgents.reduce((sum, a) => sum + Object.keys(a.jobs).length, 0);
-    if (totalJobs > 0) {
+    // BOTTOM: Cron scheduler - only if this agent has jobs
+    if (jobCount > 0) {
       list.push({
         id: 'internal-cron',
         label: 'cron scheduler',
         type: 'CRON',
         quadrant: 'bottom',
-        meta: `${totalJobs} jobs across ${allAgents.filter((a) => Object.keys(a.jobs).length > 0).length} agents`,
+        meta: `${jobCount} job${jobCount !== 1 ? 's' : ''}`,
         active: true,
         error: false,
       });
@@ -499,9 +490,18 @@
   <header class="panel-header">
     <div class="title-block">
       <span class="title">System Map</span>
-      <span class="title-sub">Switchboard Topology</span>
+      <span class="title-sub">
+        {focusedAgent ? focusedAgent.displayName : 'Switchboard Topology'}
+      </span>
     </div>
     <div class="header-right">
+      {#if allAgents.length > 0}
+        <select class="agent-picker" bind:value={selectedAgentName}>
+          {#each allAgents as agent}
+            <option value={agent.name}>{agent.displayName}</option>
+          {/each}
+        </select>
+      {/if}
       <span class="node-count">{nodes.length} nodes</span>
       {#if !inline}
         <button class="close-btn" onclick={onClose} aria-label="Close">
@@ -832,10 +832,15 @@
     position: relative;
     width: 100%;
     height: 100%;
+    max-width: none;
+    max-height: none;
+    min-height: 500px;
     border: none;
     border-radius: 0;
     box-shadow: none;
     background: transparent;
+    display: flex;
+    flex-direction: column;
   }
 
   .overlay {
@@ -905,6 +910,23 @@
     font-size: 12px;
   }
 
+  .agent-picker {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 12px;
+    font-family: inherit;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    min-width: 160px;
+  }
+
+  .agent-picker:focus {
+    outline: none;
+    border-color: rgba(120, 160, 255, 0.5);
+  }
+
   .close-btn {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -960,8 +982,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 24px 28px;
+    justify-content: flex-start;
+    padding: 40px 28px 28px;
     overflow: auto;
     gap: 0;
   }

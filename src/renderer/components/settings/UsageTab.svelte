@@ -366,10 +366,10 @@
         />
         <text
           x={CHART_PADDING_LEFT - 6}
-          y={y + 3.5}
+          y={y + 2}
           text-anchor="end"
           fill="rgba(255,255,255,0.3)"
-          font-size="9"
+          font-size="5"
           font-family="var(--font-sans)"
         >{formatTokens(tick)}</text>
       {/each}
@@ -407,10 +407,10 @@
         {#if barCount <= 14 || i % Math.ceil(barCount / 10) === 0 || i === barCount - 1}
           <text
             x={x + barW / 2}
-            y={CHART_H - 6}
+            y={CHART_H - 4}
             text-anchor="middle"
             fill="rgba(255,255,255,0.35)"
-            font-size="8.5"
+            font-size="5"
             font-family="var(--font-sans)"
           >{formatDateLabel(day.date)}</text>
         {/if}
@@ -419,26 +419,26 @@
       <!-- Tooltip -->
       {#if tooltipBar !== null && data[tooltipBar]}
         {@const tip = data[tooltipBar]}
-        {@const tw = 130}
-        {@const th = 14 + tip.segments.length * 14 + 6}
+        {@const tw = 90}
+        {@const th = 9 + tip.segments.length * 8 + 4}
         {@const tx = Math.min(Math.max(tooltipX - tw / 2, 4), 600 - tw - 4)}
-        {@const ty = Math.max(4, tooltipY - th - 8)}
+        {@const ty = Math.max(4, tooltipY - th - 5)}
         <rect
           x={tx}
           y={ty}
           width={tw}
           height={th}
-          rx="4"
+          rx="3"
           fill="rgba(20,20,24,0.95)"
           stroke="rgba(255,255,255,0.12)"
-          stroke-width="0.5"
+          stroke-width="0.3"
         />
-        <text x={tx + 6} y={ty + 12} fill="rgba(255,255,255,0.7)" font-size="9" font-family="var(--font-sans)">
+        <text x={tx + 4} y={ty + 7} fill="rgba(255,255,255,0.7)" font-size="5" font-family="var(--font-sans)">
           {formatDateLabel(tip.date)} - {formatTokens(tip.total)}
         </text>
         {#each tip.segments as seg, si}
-          <circle cx={tx + 10} cy={ty + 22 + si * 14} r="3" fill={agentColour(seg.agent)} />
-          <text x={tx + 18} y={ty + 25 + si * 14} fill="rgba(255,255,255,0.6)" font-size="8.5" font-family="var(--font-sans)">
+          <circle cx={tx + 6} cy={ty + 13 + si * 8} r="1.5" fill={agentColour(seg.agent)} />
+          <text x={tx + 11} y={ty + 15 + si * 8} fill="rgba(255,255,255,0.6)" font-size="5" font-family="var(--font-sans)">
             {seg.displayName}: {formatTokens(seg.tokens)}
           </text>
         {/each}
@@ -599,7 +599,7 @@
 
   .summary-value {
     color: rgba(255, 255, 255, 0.92);
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 700;
     font-family: var(--font-sans);
     white-space: nowrap;
@@ -610,7 +610,7 @@
 
   .summary-label {
     color: rgba(255, 255, 255, 0.35);
-    font-size: 10px;
+    font-size: 9px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-family: var(--font-sans);
