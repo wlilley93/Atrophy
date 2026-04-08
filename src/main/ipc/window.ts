@@ -472,22 +472,33 @@ Output EXACTLY this format - a single fenced JSON block:
 
   // -- Avatar video --
 
-  // Return path to the agent's ambient video (e.g. xan_ambient.mp4)
+  // Return path to the agent's ambient video.
+  // Search order covers all naming conventions across agents:
+  //   1. Config IDLE_LOOP (set from avatar_dir/ambient_loop.mp4 - the canonical path)
+  //   2. {agentName}_ambient.mp4 (xan-style named ambient)
+  //   3. ambient_loop.mp4 at avatar root (montgomery-style)
+  //   4. ambient.mp4 at avatar root
+  //   5. loops/ambient_loop.mp4
+  //   6. Downloaded xan_ambient.mp4 (first-boot asset download)
+  //   7. Dev fallback
   ipcMain.handle('avatar:getAmbientPath', () => {
     const c = getConfig();
     const avatarDir = c.AVATAR_DIR;
-    // Try {agentName}_ambient.mp4 first, then ambient.mp4
-    for (const name of [`${c.AGENT_NAME}_ambient.mp4`, 'ambient.mp4']) {
+    // Config's IDLE_LOOP is the most authoritative source
+    if (c.IDLE_LOOP && fs.existsSync(c.IDLE_LOOP)) return c.IDLE_LOOP;
+    // Walk through naming variants
+    for (const name of [
+      `${c.AGENT_NAME}_ambient.mp4`,
+      'ambient_loop.mp4',
+      'ambient.mp4',
+    ]) {
       const p = path.join(avatarDir, name);
       if (fs.existsSync(p)) return p;
     }
-    // Also check loops/ambient_loop.mp4 as fallback
     const loopAmbient = path.join(avatarDir, 'loops', 'ambient_loop.mp4');
     if (fs.existsSync(loopAmbient)) return loopAmbient;
-    // Downloaded ambient video (first-boot download to ~/.atrophy/assets/)
     const downloaded = getAmbientVideoPath();
     if (fs.existsSync(downloaded)) return downloaded;
-    // Dev fallback - resources/xan_ambient.mp4 (not bundled in production)
     const devFallback = path.join(BUNDLE_ROOT, 'resources', 'xan_ambient.mp4');
     if (fs.existsSync(devFallback)) return devFallback;
     return null;
