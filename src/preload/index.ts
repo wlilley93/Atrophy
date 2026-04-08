@@ -102,6 +102,10 @@ export interface AtrophyAPI {
   getAvatarAmbientPath: () => Promise<string | null>;
   getAvatarVideoPath: (colour?: string, clip?: string) => Promise<string | null>;
   listAvatarLoops: () => Promise<string[]>;
+  // Returns a file:// URL for the still avatar of any agent (by name).
+  // Used by Settings > Agents card-style modal header. Falls back through:
+  // source/face.png -> first endframe in loops/ -> null.
+  getAgentAvatarStill: (agentName: string) => Promise<string | null>;
   onAvatarDownloadStart: (cb: () => void) => () => void;
   onAvatarDownloadProgress: (cb: (data: { percent: number; transferred: number; total: number }) => void) => () => void;
   onAvatarDownloadComplete: (cb: () => void) => () => void;
@@ -388,6 +392,7 @@ const api: AtrophyAPI = {
   getAvatarAmbientPath: () => ipcRenderer.invoke('avatar:getAmbientPath'),
   getAvatarVideoPath: (colour, clip) => ipcRenderer.invoke('avatar:getVideoPath', colour, clip),
   listAvatarLoops: () => ipcRenderer.invoke('avatar:listLoops'),
+  getAgentAvatarStill: (agentName) => ipcRenderer.invoke('avatar:getAgentStill', agentName),
   onAvatarDownloadStart: createListener('avatar:download-start') as AtrophyAPI['onAvatarDownloadStart'],
   onAvatarDownloadProgress: createListener('avatar:download-progress') as AtrophyAPI['onAvatarDownloadProgress'],
   onAvatarDownloadComplete: createListener('avatar:download-complete') as AtrophyAPI['onAvatarDownloadComplete'],

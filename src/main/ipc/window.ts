@@ -598,4 +598,39 @@ Output EXACTLY this format - a single fenced JSON block:
       return null;
     }
   });
+
+  // Return a file:// URL pointing at the still avatar image for any agent
+  // (by name). Used by the Settings > Agents card-style edit modal.
+  // Falls through avatar/source/face.png -> first endframe in avatar/loops/.
+  ipcMain.handle('avatar:getAgentStill', (_event, agentName: string) => {
+    if (typeof agentName !== 'string' || !/^[a-z0-9_-]+$/i.test(agentName)) return null;
+    // Walk both top-level and nested-under-org locations to support the
+    // defence/<subagent>/avatar layout used by Montgomery's research fellows
+    // and ambassadors.
+    const candidateDirs = [
+      path.join(USER_DATA, 'agents', agentName, 'avatar'),
+    ];
+    try {
+      const orgsRoot = path.join(USER_DATA, 'agents');
+      for (const entry of fs.readdirSync(orgsRoot)) {
+        const nested = path.join(orgsRoot, entry, agentName, 'avatar');
+        if (fs.existsSync(nested)) candidateDirs.push(nested);
+      }
+    } catch { /* user data not yet provisioned */ }
+
+    for (const dir of candidateDirs) {
+      // 1) Canonical source face
+      const facePng = path.join(dir, 'source', 'face.png');
+      if (fs.existsSync(facePng)) return `file://${facePng}`;
+      // 2) First end-frame jpg from any loop
+      const loopsDir = path.join(dir, 'loops');
+      if (fs.existsSync(loopsDir)) {
+        try {
+          const files = fs.readdirSync(loopsDir).filter((f) => f.endsWith('endframe.jpg'));
+          if (files.length > 0) return `file://${path.join(loopsDir, files[0])}`;
+        } catch { /* unreadable */ }
+      }
+    }
+    return null;
+  });
 }

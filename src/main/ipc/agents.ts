@@ -283,15 +283,25 @@ export function registerAgentHandlers(ctx: IpcContext): void {
     }
     // Read directly from agent's prompts directory without mutating config singleton.
     // This avoids the TOCTOU race where reloadForAgent corrupts config for concurrent callers.
-    const filename = promptName.endsWith('.md') ? promptName : `${promptName}.md`;
+    const stem = promptName.endsWith('.md') ? promptName.slice(0, -3) : promptName;
+    // The on-disk convention is `<name>_prompt.md` for the system prompt and
+    // plain `<name>.md` for everything else (soul.md, heartbeat.md). Callers
+    // historically pass either `system` or `system_prompt` - try both stems
+    // so neither breaks. Order matters: prefer the underscore form first
+    // since that's what the bootstrap actually writes.
+    const candidates = stem === 'system'
+      ? ['system_prompt.md', 'system.md']
+      : [`${stem}.md`];
     const searchDirs = [
       path.join(USER_DATA, 'agents', name, 'prompts'),
       path.join(BUNDLE_ROOT, 'agents', name, 'prompts'),
     ];
     for (const dir of searchDirs) {
-      const fp = path.join(dir, filename);
-      if (fs.existsSync(fp)) {
-        return fs.readFileSync(fp, 'utf-8');
+      for (const filename of candidates) {
+        const fp = path.join(dir, filename);
+        if (fs.existsSync(fp)) {
+          return fs.readFileSync(fp, 'utf-8');
+        }
       }
     }
     return '';
@@ -303,7 +313,13 @@ export function registerAgentHandlers(ctx: IpcContext): void {
     if (!/^[a-zA-Z0-9_-]+$/.test(promptName.replace(/\.md$/, ''))) {
       throw new Error('Invalid prompt name');
     }
-    const filename = promptName.endsWith('.md') ? promptName : `${promptName}.md`;
+    // Mirror the read-side aliasing: callers may pass `system` but the
+    // canonical on-disk filename is `system_prompt.md`. Without this
+    // remapping, saving from the editor would create a stale `system.md`
+    // alongside the real `system_prompt.md` that the boot path actually
+    // loads, and edits would silently never take effect.
+    const stem = promptName.endsWith('.md') ? promptName.slice(0, -3) : promptName;
+    const filename = stem === 'system' ? 'system_prompt.md' : `${stem}.md`;
     const promptsDir = path.join(USER_DATA, 'agents', name, 'prompts');
     fs.mkdirSync(promptsDir, { recursive: true });
     const promptPath = path.join(promptsDir, filename);
