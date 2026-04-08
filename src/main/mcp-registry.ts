@@ -18,6 +18,95 @@ import { createLogger } from './logger';
 const log = createLogger('mcp-registry');
 
 // ---------------------------------------------------------------------------
+// Tool categories for dynamic loading
+// ---------------------------------------------------------------------------
+
+export type ToolCategory = 'memory' | 'calendar' | 'contacts' | 'email' | 'shell' | 'github' | 'browser' | 'intel' | 'meta';
+
+/**
+ * Maps MCP tool name prefixes to categories. Order matters - first match wins.
+ * Covers tools from all bundled MCP servers.
+ */
+const TOOL_CATEGORY_RULES: Array<{ prefix: RegExp; category: ToolCategory }> = [
+  // meta - escape hatch
+  { prefix: /^request_tools$/, category: 'meta' },
+
+  // memory - memory_server.py grouped tools + switchboard + mcp management
+  { prefix: /^(memory|threads|reflect|notes|interact|switchboard|display|tools|mcp|org|org_memory|federation|review_audit|self_status|diagnose)$/, category: 'memory' },
+  { prefix: /^(memory_|recall_|store_|search_memory|write_observation|switchboard_|mcp_)/, category: 'memory' },
+
+  // calendar & email & contacts - google_server.py (gws, youtube, google_photos, search_console)
+  { prefix: /^(gws|google_calendar_|calendar_)/, category: 'calendar' },
+  { prefix: /^(google_contacts_|contacts_)/, category: 'contacts' },
+  { prefix: /^(google_gmail_|gmail_|email_)/, category: 'email' },
+
+  // shell
+  { prefix: /^(run_command|list_allowed_commands|shell_|execute)$/, category: 'shell' },
+
+  // github
+  { prefix: /^(github|git_)/, category: 'github' },
+
+  // browser
+  { prefix: /^(browser_|navigate|screenshot|puppeteer_)/, category: 'browser' },
+
+  // intel - worldmonitor + defence sources + ontology
+  { prefix: /^(worldmonitor_|defence_sources_|intel_|ontology_|signal_|maritime_)/, category: 'intel' },
+
+  // google compound tools - youtube, photos, search console go to memory (general)
+  { prefix: /^(youtube|google_photos|search_console)$/, category: 'memory' },
+];
+
+/**
+ * Classify a single tool name into a category.
+ * Returns 'memory' as the default if no rule matches.
+ */
+export function categoriseTool(toolName: string): ToolCategory {
+  for (const rule of TOOL_CATEGORY_RULES) {
+    if (rule.prefix.test(toolName)) return rule.category;
+  }
+  return 'memory';
+}
+
+/**
+ * Filter a tool array to only include tools whose category is in the allowed set.
+ */
+export function filterToolsByCategories(
+  tools: Array<{ name: string; [key: string]: unknown }>,
+  categories: Set<ToolCategory>,
+): Array<{ name: string; [key: string]: unknown }> {
+  return tools.filter(t => categories.has(categoriseTool(t.name)));
+}
+
+/**
+ * Maps MCP server names (as registered in the registry) to tool categories.
+ * Used to determine which servers to include in filtered MCP configs.
+ */
+export const SERVER_CATEGORY_MAP: Record<string, ToolCategory[]> = {
+  memory: ['memory', 'meta'],
+  google: ['calendar', 'contacts', 'email'],
+  shell: ['shell'],
+  github: ['github'],
+  puppeteer: ['browser'],
+  worldmonitor: ['intel'],
+  defence_sources: ['intel'],
+  elevenlabs: ['memory'], // voice tools always available
+  fal: ['memory'],        // generation tools always available
+};
+
+/**
+ * Return the set of MCP server names that serve at least one of the given categories.
+ */
+export function serversForCategories(categories: Set<ToolCategory>): Set<string> {
+  const result = new Set<string>();
+  for (const [server, cats] of Object.entries(SERVER_CATEGORY_MAP)) {
+    if (cats.some(c => categories.has(c))) {
+      result.add(server);
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -722,6 +811,59 @@ export class McpRegistry {
     }
 
     return env;
+  }
+
+  // -------------------------------------------------------------------------
+  // Filtered config for tool-category-based loading
+  // -------------------------------------------------------------------------
+
+  /**
+   * Build an MCP config that only includes servers matching the given categories.
+   * Writes to a per-agent temp file alongside the main config.
+   * Returns the path to the filtered config.
+   */
+  buildFilteredConfigForAgent(agentName: string, categories: Set<ToolCategory>): string {
+    const neededServers = serversForCategories(categories);
+    const fullServers = this.getForAgent(agentName);
+    const pythonPath = this.getPythonPath();
+
+    const servers: Record<string, unknown> = {};
+    let included = 0;
+    let excluded = 0;
+
+    for (const server of fullServers) {
+      // Always include servers not in the category map (custom/unknown)
+      const mapped = SERVER_CATEGORY_MAP[server.name];
+      if (mapped && !neededServers.has(server.name)) {
+        excluded++;
+        continue;
+      }
+
+      let command = server.command;
+      if (server.args.length > 0 && server.args[0].endsWith('.py')) {
+        command = pythonPath;
+      }
+
+      const env = server.bundled !== false
+        ? this.buildServerEnv(server.name, agentName, server.env)
+        : { ...(server.env || {}) };
+
+      const entry: Record<string, unknown> = { command, args: [...server.args] };
+      if (env && Object.keys(env).length > 0) entry.env = env;
+      servers[server.name] = entry;
+      included++;
+    }
+
+    const configPath = path.join(USER_DATA, 'mcp', `${agentName}.filtered.config.json`);
+    const configContent = { mcpServers: servers };
+
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    const tmpPath = configPath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(configContent, null, 2), { mode: 0o600 });
+    fs.renameSync(tmpPath, configPath);
+
+    log.info(`[tool-filter] filtered config for "${agentName}": ${included} servers included, ${excluded} excluded`);
+    return configPath;
   }
 
   // -------------------------------------------------------------------------

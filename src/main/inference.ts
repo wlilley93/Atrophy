@@ -222,7 +222,8 @@ function cleanEnv(): NodeJS.ProcessEnv {
 // MCP config generation - delegates to McpRegistry for per-agent configs
 // ---------------------------------------------------------------------------
 
-import { mcpRegistry } from './mcp-registry';
+import { mcpRegistry, serversForCategories, SERVER_CATEGORY_MAP } from './mcp-registry';
+import { predictToolCategories } from './tool-classifier';
 
 let _mcpConfigPath: string | null = null;
 
@@ -637,7 +638,28 @@ export function streamInference(
 
   // --- One-shot spawn path (cron, federation, no tmux, agent not in pool) ---
   const config = getConfig();
-  const mcpConfig = options?.mcpConfigPath || getMcpConfigPath();
+
+  // Tool category filtering - predict which MCP servers are needed
+  let mcpConfig: string;
+  if (options?.mcpConfigPath) {
+    mcpConfig = options.mcpConfigPath;
+  } else {
+    const categories = predictToolCategories(userMessage);
+    const agentForFilter = config.AGENT_NAME;
+    const allServers = mcpRegistry.getForAgent(agentForFilter);
+    const neededServers = serversForCategories(categories);
+    const wouldExclude = allServers.filter(s =>
+      SERVER_CATEGORY_MAP[s.name] && !neededServers.has(s.name),
+    ).length;
+
+    if (wouldExclude > 0) {
+      mcpConfig = mcpRegistry.buildFilteredConfigForAgent(agentForFilter, categories);
+      log.info(`[tool-filter] "${userMessage.slice(0, 50)}..." -> categories: ${[...categories].join(', ')} (${allServers.length - wouldExclude}/${allServers.length} servers)`);
+    } else {
+      mcpConfig = getMcpConfigPath();
+      log.debug(`[tool-filter] all categories needed, using full config`);
+    }
+  }
 
   // Adaptive effort
   let effort: EffortLevel = config.CLAUDE_EFFORT as EffortLevel;

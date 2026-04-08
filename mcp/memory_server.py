@@ -600,6 +600,27 @@ TOOLS = [
             "required": ["action"],
         },
     },
+    # ── Meta: dynamic tool loading escape hatch ──
+    {
+        "name": "request_tools",
+        "description": (
+            "Request additional tool categories to be loaded. Available categories: "
+            "memory, calendar, contacts, email, shell, github, browser, intel. "
+            "Use this when you need tools that were not included in your initial set. "
+            "The tools will be available on your next turn."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "categories": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of tool categories to load",
+                },
+            },
+            "required": ["categories"],
+        },
+    },
 ]
 
 # ── Custom tool loading ──
@@ -5766,6 +5787,25 @@ def _route_grouped(group, args):
     return handler(args)
 
 
+_VALID_TOOL_CATEGORIES = {"memory", "calendar", "contacts", "email", "shell", "github", "browser", "intel"}
+
+
+def handle_request_tools(args):
+    """Acknowledge a request for additional tool categories."""
+    categories = args.get("categories", [])
+    valid = [c for c in categories if c in _VALID_TOOL_CATEGORIES]
+    invalid = [c for c in categories if c not in _VALID_TOOL_CATEGORIES]
+    parts = []
+    if valid:
+        parts.append(f"Categories {valid} will be available on your next response.")
+    if invalid:
+        parts.append(f"Unknown categories ignored: {invalid}. Valid: {sorted(_VALID_TOOL_CATEGORIES)}")
+    if not valid and not invalid:
+        parts.append(f"No categories specified. Valid: {sorted(_VALID_TOOL_CATEGORIES)}")
+    parts.append("Proceed with your answer using the tools you currently have, or wait for the next turn to use the new tools.")
+    return " ".join(parts)
+
+
 HANDLERS = {
     # Grouped tools
     "memory": lambda args: _route_grouped("memory", args),
@@ -5785,6 +5825,7 @@ HANDLERS = {
     "review_audit": handle_review_audit,
     "self_status": handle_self_status,
     "diagnose": handle_diagnose,
+    "request_tools": handle_request_tools,
 }
 
 # Load custom tools now that HANDLERS is defined
