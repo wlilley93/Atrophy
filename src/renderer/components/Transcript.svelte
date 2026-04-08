@@ -10,6 +10,7 @@
   let container: HTMLDivElement;
   let revealTimers = new Map<number, ReturnType<typeof setInterval>>();
   let copiedBlockId: string | null = $state(null);
+  let copiedMsgId: number | null = $state(null);
   let now = $state(Date.now());
 
   // Update relative timestamps every 30s
@@ -321,6 +322,18 @@
     }
   }
 
+  async function handleMsgCopy(msgId: number) {
+    const msg = transcript.messages.find((m) => m.id === msgId);
+    if (!msg) return;
+    // Copy raw content (strip prosody/audio tags)
+    const raw = displayText(msg.content, msg.content.length);
+    try {
+      await navigator.clipboard.writeText(raw);
+      copiedMsgId = msgId;
+      setTimeout(() => { if (copiedMsgId === msgId) copiedMsgId = null; }, 1500);
+    } catch { /* silent */ }
+  }
+
   // Update copy button text reactively
   $effect(() => {
     if (!container) return;
@@ -361,7 +374,14 @@
           {:else}
             <div class="message {msg.role}">
               <div class="message-text">{@html renderMessage(msg)}</div>
-              <span class="message-time">{relativeTime(msg.timestamp, now)}</span>
+              <div class="message-meta">
+                <span class="message-time">{relativeTime(msg.timestamp, now)}</span>
+                {#if msg.complete || msg.role === 'user'}
+                  <button class="msg-copy-btn" onclick={() => handleMsgCopy(msg.id)} aria-label="Copy message">
+                    {copiedMsgId === msg.id ? 'Copied' : 'Copy'}
+                  </button>
+                {/if}
+              </div>
             </div>
           {/if}
         {/if}
@@ -406,6 +426,7 @@
   .transcript-inner {
     flex-shrink: 0;
     margin-top: auto;
+    padding-top: 40px;
   }
 
   .message {
@@ -451,19 +472,41 @@
     font-style: italic;
   }
 
-  /* Timestamp */
-  .message-time {
-    display: block;
-    font-size: 10px;
-    color: var(--text-dim);
+  /* Message meta (timestamp + copy) */
+  .message-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-top: 2px;
-    font-family: var(--font-sans);
     opacity: 0;
     transition: opacity 0.2s ease;
   }
 
-  .message:hover .message-time {
+  .message:hover .message-meta {
     opacity: 1;
+  }
+
+  .message-time {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: var(--font-sans);
+  }
+
+  .msg-copy-btn {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 1px 6px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .msg-copy-btn:hover {
+    color: var(--text-secondary);
+    border-color: var(--border);
   }
 
   /* Markdown: inline code */
