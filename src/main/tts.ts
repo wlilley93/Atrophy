@@ -1,9 +1,10 @@
 /**
- * Text-to-speech - three-tier fallback.
+ * Text-to-speech - four-tier fallback.
  * Port of voice/tts.py.
  *
- * Chain: ElevenLabs streaming -> Fal -> macOS say.
+ * Chain: ElevenLabs streaming -> Fal -> Piper (local neural) -> macOS say.
  * ElevenLabs streaming is primary for lowest latency.
+ * Piper provides offline neural TTS when cloud backends are unavailable.
  */
 
 import { spawn, ChildProcess } from 'child_process';
@@ -13,6 +14,7 @@ import * as os from 'os';
 import * as crypto from 'crypto';
 import { getConfig } from './config';
 import { createLogger } from './logger';
+import { synthesisePiper as piperSynth, isPiperAvailable, getDefaultPiperVoice } from './piper';
 
 const log = createLogger('tts');
 
@@ -482,6 +484,8 @@ export async function synthesise(text: string): Promise<string | null> {
   };
   const falVoiceId = config.FAL_VOICE_ID;
   const falEndpoint = config.FAL_TTS_ENDPOINT;
+  const piperVoice = config.PIPER_VOICE;
+  const agentName = config.AGENT_NAME;
 
   // Primary: ElevenLabs streaming (with concurrency limit)
   if (!elevenSnap.apiKey) log.debug('ElevenLabs skipped: no API key');
@@ -508,7 +512,21 @@ export async function synthesise(text: string): Promise<string | null> {
     try {
       return await synthesiseFal(text, falEndpoint);
     } catch (e) {
-      log.warn(`Fal failed (${e}), trying macOS say...`);
+      log.warn(`Fal failed (${e}), trying Piper...`);
+    }
+  }
+
+  // Fallback: Piper (local neural TTS)
+  if (isPiperAvailable()) {
+    try {
+      const { text: piperText } = processProsody(text);
+      if (piperText && piperText.trim()) {
+        const voiceModel = piperVoice || getDefaultPiperVoice(agentName);
+        log.info(`Using Piper TTS with voice: ${voiceModel}`);
+        return await piperSynth(piperText, voiceModel, agentName);
+      }
+    } catch (e) {
+      log.warn(`Piper failed (${e}), trying macOS say...`);
     }
   }
 

@@ -559,6 +559,7 @@ export class Config {
   TTS_PLAYBACK_RATE: number;
   FAL_TTS_ENDPOINT: string;
   FAL_VOICE_ID: string;
+  PIPER_VOICE: string;
 
   // Audio
   PTT_KEY: string;
@@ -686,6 +687,7 @@ export class Config {
     this.TTS_PLAYBACK_RATE = 1.12;
     this.FAL_TTS_ENDPOINT = 'fal-ai/elevenlabs/tts/eleven-v3';
     this.FAL_VOICE_ID = '';
+    this.PIPER_VOICE = '';
     this.PTT_KEY = 'ctrl';
     this.INPUT_MODE = 'dual';
     this.SAMPLE_RATE = 16000;
@@ -843,6 +845,7 @@ export class Config {
     this.ELEVENLABS_STYLE = (voice.elevenlabs_style as number) ?? cfg('ELEVENLABS_STYLE', 0.35);
     this.TTS_PLAYBACK_RATE = (voice.playback_rate as number) ?? cfg('TTS_PLAYBACK_RATE', 1.12);
     this.FAL_VOICE_ID = (voice.fal_voice_id as string) || cfg('FAL_VOICE_ID', '');
+    this.PIPER_VOICE = (voice.piper_voice as string) || cfg('PIPER_VOICE', '');
 
     // Audio
     this.INPUT_MODE = cfg('INPUT_MODE', 'dual');
@@ -999,6 +1002,7 @@ const AGENT_KEY_NESTING: Record<string, { object: string; key: string }> = {
   ELEVENLABS_STYLE: { object: 'voice', key: 'elevenlabs_style' },
   TTS_PLAYBACK_RATE: { object: 'voice', key: 'playback_rate' },
   FAL_VOICE_ID: { object: 'voice', key: 'fal_voice_id' },
+  PIPER_VOICE: { object: 'voice', key: 'piper_voice' },
   HEARTBEAT_ACTIVE_START: { object: 'heartbeat', key: 'active_start' },
   HEARTBEAT_ACTIVE_END: { object: 'heartbeat', key: 'active_end' },
   HEARTBEAT_INTERVAL_MINS: { object: 'heartbeat', key: 'interval_mins' },

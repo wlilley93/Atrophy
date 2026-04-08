@@ -794,6 +794,16 @@ app.whenReady().then(() => {
     }).catch(() => { /* non-fatal */ });
   }, 10_000);
 
+  // Piper TTS setup (fire-and-forget). Downloads the binary via pip and
+  // the default voice models into ~/.atrophy/models/piper/. Hardware gate
+  // inside ensurePiperReady() skips this on machines below 8GB RAM.
+  // Delayed to 20s so it doesn't compete with opening pre-cache for CPU.
+  setTimeout(() => {
+    import('./piper').then(({ ensurePiperReady }) => {
+      ensurePiperReady().catch(() => { /* non-fatal */ });
+    }).catch(() => { /* non-fatal */ });
+  }, 20_000);
+
   // ── Switchboard v2 boot sequence ──
   // 1. Initialize MCP registry - discover available servers
   try {

@@ -8,13 +8,14 @@ import { getConfig, reloadConfig, saveUserConfig, saveAgentConfig } from '../con
 import { writeObservation } from '../memory';
 import { isDaemonRunning } from '../channels/telegram';
 import { BUNDLE_ROOT } from '../config';
+import { listDownloadedModels, isPiperAvailable } from '../piper';
 import type { IpcContext } from '../ipc-handlers';
 
 // Allowlist of keys safe to update from the renderer
 const agentKeys = new Set([
   'AGENT_DISPLAY_NAME', 'TTS_BACKEND', 'TTS_PLAYBACK_RATE',
   'ELEVENLABS_VOICE_ID', 'ELEVENLABS_MODEL', 'ELEVENLABS_STABILITY',
-  'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID',
+  'ELEVENLABS_SIMILARITY', 'ELEVENLABS_STYLE', 'FAL_VOICE_ID', 'PIPER_VOICE',
   'HEARTBEAT_ACTIVE_START', 'HEARTBEAT_ACTIVE_END', 'HEARTBEAT_INTERVAL_MINS',
   'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'WINDOW_WIDTH', 'WINDOW_HEIGHT',
   'SETTINGS_WINDOW_WIDTH', 'SETTINGS_WINDOW_HEIGHT',
@@ -58,6 +59,9 @@ export function registerConfigHandlers(ctx: IpcContext): void {
       ttsPlaybackRate: c.TTS_PLAYBACK_RATE,
       falApiKey: process.env.FAL_KEY ? '***' : '',
       falVoiceId: c.FAL_VOICE_ID,
+      piperVoice: c.PIPER_VOICE,
+      piperModels: listDownloadedModels(),
+      piperAvailable: isPiperAvailable(),
       // Input
       inputMode: c.INPUT_MODE,
       pttKey: c.PTT_KEY,
