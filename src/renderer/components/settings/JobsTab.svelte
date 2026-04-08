@@ -133,10 +133,10 @@
 
   // Current time tracking for the red line
   let nowMinutes = $state(new Date().getHours() * 60 + new Date().getMinutes());
-  let nowDay = $state(() => {
+  let nowDay = $state((() => {
     const d = new Date().getDay();
     return d === 0 ? 6 : d - 1; // Convert Sun=0 to Mon=0..Sun=6
-  });
+  })());
 
   $effect(() => {
     const interval = setInterval(() => {
@@ -664,7 +664,7 @@
 
             <!-- Current time line -->
             {#if isThisWeek}
-              {@const currentDay = typeof nowDay === 'function' ? nowDay() : nowDay}
+              {@const currentDay = nowDay}
               <div
                 class="now-line"
                 style="top: {(nowMinutes / 60) * HOUR_HEIGHT}px"
@@ -841,11 +841,11 @@
 
       <div class="modal-body">
         <div class="form-row">
-          <label class="form-label">Agent</label>
+          <label class="form-label" for="modal-agent">Agent</label>
           {#if modalMode === 'edit'}
             <div class="form-value">{modalAgent}</div>
           {:else}
-            <select class="field-input" bind:value={modalAgent}>
+            <select id="modal-agent" class="field-input" bind:value={modalAgent}>
               {#each agents as a}
                 <option value={a}>{a}</option>
               {/each}
@@ -854,30 +854,30 @@
         </div>
 
         <div class="form-row">
-          <label class="form-label">Job Name</label>
+          <label class="form-label" for="modal-job-name">Job Name</label>
           {#if modalMode === 'edit'}
             <div class="form-value">{modalJobName}</div>
           {:else}
-            <input class="field-input" type="text" bind:value={modalJobName} placeholder="morning_brief" />
+            <input id="modal-job-name" class="field-input" type="text" bind:value={modalJobName} placeholder="morning_brief" />
           {/if}
         </div>
 
         <div class="form-row">
-          <label class="form-label">Script Path</label>
-          <input class="field-input" type="text" bind:value={modalScript} placeholder="scripts/agents/xan/task.py" />
+          <label class="form-label" for="modal-script">Script Path</label>
+          <input id="modal-script" class="field-input" type="text" bind:value={modalScript} placeholder="scripts/agents/xan/task.py" />
         </div>
 
         <div class="form-row">
-          <label class="form-label">Cron Expression</label>
-          <input class="field-input mono" type="text" bind:value={modalCron} placeholder="0 9 * * *" />
+          <label class="form-label" for="modal-cron">Cron Expression</label>
+          <input id="modal-cron" class="field-input mono" type="text" bind:value={modalCron} placeholder="0 9 * * *" />
           {#if modalCron}
             <div class="cron-preview">{cronToEnglish(modalCron)}</div>
           {/if}
         </div>
 
         <div class="form-row">
-          <label class="form-label">Description</label>
-          <input class="field-input" type="text" bind:value={modalDescription} placeholder="Optional description" />
+          <label class="form-label" for="modal-description">Description</label>
+          <input id="modal-description" class="field-input" type="text" bind:value={modalDescription} placeholder="Optional description" />
         </div>
       </div>
 
