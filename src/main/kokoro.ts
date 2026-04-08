@@ -128,13 +128,19 @@ async function loadTTS(): Promise<any> {
       const config = getConfig();
       log.info(`Loading Kokoro TTS (${MODEL_ID})...`);
 
-      // Point transformers.js cache at our models dir so Kokoro downloads
-      // land alongside the embedding model and persist between launches.
-      // Env vars set before the dynamic import so kokoro-js's internal
-      // @huggingface/transformers picks them up during its first load.
-      // (HF_HOME is the standard location; TRANSFORMERS_CACHE is legacy.)
-      process.env.HF_HOME = config.MODELS_DIR;
-      process.env.TRANSFORMERS_CACHE = config.MODELS_DIR;
+      // Explicitly set transformers.js cache dir to a WRITABLE location
+      // before kokoro-js loads. Without this, transformers.js computes its
+      // default cache as `.cache/` inside its own module location, which
+      // ends up inside app.asar (read-only) in production builds. The
+      // result is an ENOTDIR mkdir error that silently kills Kokoro and
+      // drops through to macOS say.
+      //
+      // @huggingface/transformers is a direct dep so we can import it and
+      // mutate env.cacheDir before kokoro-js touches it internally.
+      const { env } = await import('@huggingface/transformers');
+      env.cacheDir = config.MODELS_DIR;
+      env.allowLocalModels = true;
+      env.useBrowserCache = false;
 
       const { KokoroTTS } = await import('kokoro-js');
       _tts = await KokoroTTS.from_pretrained(MODEL_ID, {
