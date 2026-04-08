@@ -707,8 +707,8 @@ export class Config {
     this.EYE_MODE_DEFAULT = false;
     this.MUTE_BY_DEFAULT = false;
     this.CANVAS_TEMPLATES = path.join(BUNDLE_ROOT, 'display', 'templates');
-    this.WINDOW_WIDTH = 622;
-    this.WINDOW_HEIGHT = 830;
+    this.WINDOW_WIDTH = 800;
+    this.WINDOW_HEIGHT = 1066;
     this.AVATAR_ENABLED = false;
     this.AVATAR_RESOLUTION = 512;
     this.AVATAR_DIR = '';
@@ -896,8 +896,8 @@ export class Config {
 
     // Display (per-agent from manifest display object)
     const disp = (_agentManifest.display as Record<string, unknown>) || {};
-    this.WINDOW_WIDTH = (disp.window_width as number) ?? cfg('WINDOW_WIDTH', 622);
-    this.WINDOW_HEIGHT = (disp.window_height as number) ?? cfg('WINDOW_HEIGHT', 830);
+    this.WINDOW_WIDTH = (disp.window_width as number) ?? cfg('WINDOW_WIDTH', 800);
+    this.WINDOW_HEIGHT = (disp.window_height as number) ?? cfg('WINDOW_HEIGHT', 1066);
 
     // Avatar (user data > bundled fallback)
     this.AVATAR_ENABLED = cfg('AVATAR_ENABLED', false);

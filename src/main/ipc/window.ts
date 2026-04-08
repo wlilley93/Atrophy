@@ -46,7 +46,7 @@ export function registerWindowHandlers(ctx: IpcContext): void {
   });
 
   ipcMain.handle('window:getSize', () => {
-    if (!ctx.mainWindow) return { width: 622, height: 830 };
+    if (!ctx.mainWindow) return { width: 800, height: 1066 };
     const [width, height] = ctx.mainWindow.getSize();
     return { width, height };
   });

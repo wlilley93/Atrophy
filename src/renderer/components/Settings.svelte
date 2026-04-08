@@ -209,11 +209,15 @@
   onMount(async () => {
     if (!api) return;
 
-    // Store original window size and expand for settings
+    // Store original window size and expand for settings.
+    // Settings is a wide two-column layout (nav + content) and 920x700 was
+    // cramped for the larger Activity, Console, and Agents tabs. Going to
+    // 1280x960 gives the content panes proper breathing room, especially
+    // with the new larger main-window default (800x1066).
     try {
       const size = await api.getWindowSize();
       originalWindowSize = size;
-      await api.setWindowSize(920, 700);
+      await api.setWindowSize(1280, 960);
     } catch { /* pre-existing window, skip resize */ }
 
     try {
