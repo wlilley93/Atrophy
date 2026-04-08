@@ -250,16 +250,23 @@ export function registerAgentHandlers(ctx: IpcContext): void {
   // -- Agent CRUD (for org management UI) --
 
   ipcMain.handle('agent:listAll', () => {
+    // We also expose `topLevel` so the Settings UI can split agents into
+    // "Primary Agents" (top-level standalone, lives at agents/<name>/data)
+    // and "Organisations" (nested at agents/<org>/<name>/data) without
+    // conflating with the org.slug label which is used for categorization
+    // even on standalone agents (e.g. xan has slug='system').
     return discoverAgents().map((a) => {
       const manifest = findManifest(a.name) || {};
       const org = manifest.org as Record<string, unknown> | undefined;
       const state = getAgentState(a.name);
+      const topLevel = fs.existsSync(path.join(USER_DATA, 'agents', a.name, 'data'));
       return {
         ...a,
         orgSlug: (org?.slug as string) ?? null,
         reportsTo: (org?.reports_to as string) ?? null,
         canAddressUser: (org?.can_address_user as boolean) ?? ((org?.tier as number) ?? 1) <= 1,
         enabled: state.enabled,
+        topLevel,
       };
     });
   });

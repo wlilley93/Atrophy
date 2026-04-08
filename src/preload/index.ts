@@ -44,7 +44,7 @@ export interface AtrophyAPI {
   updateAgentConfig: (agentName: string, updates: Record<string, unknown>) => Promise<void>;
 
   // Agent management (settings)
-  listAllAgents: () => Promise<{ name: string; display_name: string; description: string; role: string; tier: number; orgSlug: string | null; reportsTo: string | null; canAddressUser: boolean; enabled: boolean }[]>;
+  listAllAgents: () => Promise<{ name: string; display_name: string; description: string; role: string; tier: number; orgSlug: string | null; reportsTo: string | null; canAddressUser: boolean; enabled: boolean; topLevel: boolean }[]>;
   getAgentManifest: (name: string) => Promise<Record<string, unknown>>;
   updateAgentManifest: (name: string, updates: Record<string, unknown>) => Promise<void>;
   getAgentPrompt: (name: string, promptName: string) => Promise<string>;

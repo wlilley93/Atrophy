@@ -16,6 +16,7 @@
     reportsTo: string | null;
     canAddressUser: boolean;
     enabled: boolean;
+    topLevel: boolean;
   }
 
   interface Org {
@@ -44,8 +45,11 @@
   let loading = $state(false);
   let loadError = $state('');
 
-  // Derived: which agents are "primary" (top-level standalone, not part of any org)
-  const primaryAgents = $derived(allAgents.filter((a) => !a.orgSlug));
+  // Primary agents = top-level (live at agents/<name>/data, not nested
+  // under another agent's org). The orgSlug field is unreliable for this
+  // because standalone agents like xan and companion still set internal
+  // labels like 'system' or 'personal' on their org.slug.
+  const primaryAgents = $derived(allAgents.filter((a) => a.topLevel));
 
   // Derived: agents in the currently selected org
   const agentsInSelectedOrg = $derived(

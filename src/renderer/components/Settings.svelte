@@ -126,7 +126,7 @@
   let wakeWords = $state('');
   let disabledTools = $state<Set<string>>(new Set());
 
-  let windowWidth = $state(900);
+  let windowWidth = $state(640);
   let windowHeight = $state(960);
   let settingsWindowWidth = $state(1700);
   let settingsWindowHeight = $state(900);
@@ -237,7 +237,7 @@
       wakeWords = (cfg.wakeWords ?? []).join(', ');
       disabledTools = new Set(cfg.disabledTools ?? []);
 
-      windowWidth = cfg.windowWidth || 900;
+      windowWidth = cfg.windowWidth || 640;
       windowHeight = cfg.windowHeight || 960;
       settingsWindowWidth = (cfg.settingsWindowWidth as number) || 1700;
       settingsWindowHeight = (cfg.settingsWindowHeight as number) || 900;

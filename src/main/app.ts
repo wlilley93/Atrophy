@@ -111,15 +111,14 @@ const SESSION_IDLE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 function createWindow(): BrowserWindow {
   const config = getConfig();
 
-  // Default window size. User-saved values from config win; otherwise we
-  // pick a sane default that fits on common laptop screens (1366x768 and
-  // up) without being uncomfortably tall. The previous auto-fit-to-screen
-  // approach made the window too tall on small displays.
+  // Default window size - portrait 640x960. Sized so the avatar video shows
+  // head + shoulders + upper torso cleanly without dominating the desktop.
+  // Auto-fit caps to the screen work area on smaller displays.
   let winWidth = config.WINDOW_WIDTH;
   let winHeight = config.WINDOW_HEIGHT;
   if (!winWidth || !winHeight) {
     const { workAreaSize } = screen.getPrimaryDisplay();
-    winWidth = Math.min(900, workAreaSize.width - 40);
+    winWidth = Math.min(640, workAreaSize.width - 40);
     winHeight = Math.min(960, workAreaSize.height - 40);
     bootLogger.info(`auto-fit window: ${winWidth}x${winHeight} (workArea ${workAreaSize.width}x${workAreaSize.height})`);
   }
@@ -606,7 +605,7 @@ async function _generateDeferredSummary(
       // Write directly to the old agent's DB by path - avoids swapping
       // the config singleton which would race with the Telegram daemon.
       const Database = (await import('better-sqlite3')).default;
-      const dbPath = path.join(USER_DATA, 'agents', oldAgentName, 'data', 'memory.db');
+      const dbPath = path.join(getAgentDir(oldAgentName), 'data', 'memory.db');
       const db = new Database(dbPath);
       try {
         db.prepare(
@@ -1163,7 +1162,7 @@ app.whenReady().then(() => {
       if (data.file) {
         // Validate file path is within the agent's artefacts directory
         const c = getConfig();
-        const artefactsBase = path.resolve(path.join(USER_DATA, 'agents', c.AGENT_NAME, 'artefacts'));
+        const artefactsBase = path.resolve(path.join(getAgentDir(c.AGENT_NAME), 'artefacts'));
         let resolvedFile: string;
         try {
           resolvedFile = fs.realpathSync(path.resolve(data.file));
