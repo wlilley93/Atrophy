@@ -1,10 +1,22 @@
 <script lang="ts">
+  /**
+   * SystemMap - focused single-agent view in organagram style.
+   *
+   * Centred on one agent (the active one by default, or user-picked from
+   * the dropdown). Shows:
+   *   - INPUTS row at top: channels and switchboard sources flowing IN
+   *   - AGENT card in the middle (the focal point)
+   *   - TOOLS row below: MCP servers the agent can call OUT to
+   *   - SUBAGENTS row: tier 2+ agents this one can dispatch to (only
+   *     for tier-1 leaders with cans_provision)
+   *   - CRON row: scheduled jobs the agent runs autonomously
+   *
+   * Visual style matches the OrgChart component used in Settings > Agents:
+   * rounded cards, tier-coloured borders, vertical connector lines.
+   */
   import { onMount } from 'svelte';
   import { api } from '../api';
-
-  // ---------------------------------------------------------------------------
-  // Props
-  // ---------------------------------------------------------------------------
+  import { agents as agentsStore } from '../stores/agents.svelte';
 
   interface Props {
     onClose: () => void;
@@ -12,7 +24,7 @@
   let { onClose }: Props = $props();
 
   // ---------------------------------------------------------------------------
-  // Types (mirror the IPC response shapes)
+  // Topology types (mirror IPC shape)
   // ---------------------------------------------------------------------------
 
   interface TopologyAgent {
@@ -39,415 +51,345 @@
   // State
   // ---------------------------------------------------------------------------
 
-  let agents = $state<TopologyAgent[]>([]);
+  let allAgents = $state<TopologyAgent[]>([]);
   let servers = $state<TopologyServer[]>([]);
-  let selectedAgent = $state<string>('');
-  let searchQuery = $state('');
-  let searchFocused = $state(false);
-  let expandedGroups = $state<Record<string, Record<string, boolean>>>({});
-  let detailPill = $state<{ agent: string; server: string } | null>(null);
-  let pendingRestarts = $state<Set<string>>(new Set());
+  let selectedName = $state<string>('');
   let loading = $state(true);
+  let avatarUrl = $state<string | null>(null);
 
   // ---------------------------------------------------------------------------
   // Data fetching
   // ---------------------------------------------------------------------------
 
   async function fetchTopology() {
-    if (!api) { loading = false; return; }
+    if (!api) {
+      loading = false;
+      return;
+    }
     loading = true;
     try {
       const topo = await api.getTopology();
-      agents = topo.agents;
+      allAgents = topo.agents;
       servers = topo.servers;
-      if (!selectedAgent && agents.length > 0) {
-        selectedAgent = agents[0].name;
-      }
-      // Default expansion: MCP expanded, channels expanded, cron collapsed
-      for (const agent of agents) {
-        if (!expandedGroups[agent.name]) {
-          const jobCount = Object.keys(agent.jobs).length;
-          const mcpCount = agent.mcp.active.length;
-          expandedGroups[agent.name] = {
-            mcp: mcpCount < 10,
-            channels: true,
-            cron: jobCount < 5,
-          };
-        }
+      // Default to the currently active agent in the rolodex
+      const fallback = agentsStore.current || allAgents[0]?.name || '';
+      if (!selectedName) {
+        selectedName = allAgents.find((a) => a.name === fallback)?.name || allAgents[0]?.name || '';
       }
     } finally {
       loading = false;
     }
   }
 
-  onMount(() => {
-    fetchTopology();
+  async function loadAvatar(name: string) {
+    if (!api || !name) {
+      avatarUrl = null;
+      return;
+    }
+    try {
+      avatarUrl = await api.getAgentAvatarStill(name);
+    } catch {
+      avatarUrl = null;
+    }
+  }
+
+  // Re-fetch avatar when the selected agent changes
+  $effect(() => {
+    void loadAvatar(selectedName);
   });
 
+  onMount(fetchTopology);
+
   // ---------------------------------------------------------------------------
-  // Interactions
+  // Derived view of the focused agent
   // ---------------------------------------------------------------------------
 
-  async function toggleMcp(agentName: string, serverName: string) {
-    if (!api) return;
-    const agent = agents.find(a => a.name === agentName);
-    if (!agent) return;
+  const focused = $derived(allAgents.find((a) => a.name === selectedName) || null);
 
-    const isActive = agent.mcp.active.includes(serverName);
-    const result = await api.toggleConnection(agentName, serverName, !isActive);
+  // Channels are the inputs - things that send messages TO the agent.
+  // The switchboard also injects cron and federation envelopes addressed
+  // to the agent, so we represent those as virtual inputs whenever the
+  // agent has cron jobs / federation links configured.
+  const inputs = $derived.by(() => {
+    if (!focused) return [];
+    const list: Array<{ key: string; label: string; kind: string; meta?: string }> = [];
 
-    if (result.success) {
-      // Update local state immediately
-      const idx = agents.findIndex(a => a.name === agentName);
-      if (idx >= 0 && result.active) {
-        agents[idx].mcp.active = result.active;
-      }
-      if (result.needsRestart) {
-        pendingRestarts = new Set([...pendingRestarts, agentName]);
+    // Channels (telegram, desktop, etc.) come straight from the manifest
+    for (const [name, _cfg] of Object.entries(focused.channels)) {
+      list.push({ key: `ch-${name}`, label: name, kind: 'channel' });
+    }
+
+    // Cron implicitly creates an input pathway via cron:<agent> in the
+    // switchboard, even though jobs aren't channels in the strict sense.
+    if (Object.keys(focused.jobs).length > 0) {
+      list.push({
+        key: 'cron-source',
+        label: 'cron',
+        kind: 'cron-source',
+        meta: `${Object.keys(focused.jobs).length} jobs`,
+      });
+    }
+
+    // The switchboard itself is the universal input rail
+    list.push({ key: 'switchboard', label: 'switchboard', kind: 'system' });
+
+    return list;
+  });
+
+  // Tools are the MCP servers this agent can call. Active first, then any
+  // additional configured servers that aren't currently active.
+  const tools = $derived.by(() => {
+    if (!focused) return [];
+    const list: Array<{ name: string; active: boolean; server?: TopologyServer }> = [];
+    const active = new Set(focused.mcp.active);
+    for (const name of focused.mcp.active) {
+      list.push({ name, active: true, server: servers.find((s) => s.name === name) });
+    }
+    // Configured but not currently active
+    for (const name of focused.mcp.include) {
+      if (!active.has(name)) {
+        list.push({ name, active: false, server: servers.find((s) => s.name === name) });
       }
     }
-  }
+    return list;
+  });
 
-  function toggleGroup(agentName: string, group: string) {
-    if (!expandedGroups[agentName]) expandedGroups[agentName] = {};
-    expandedGroups[agentName][group] = !expandedGroups[agentName]?.[group];
-    // Force reactivity
-    expandedGroups = { ...expandedGroups };
-  }
-
-  function selectAgent(name: string) {
-    selectedAgent = name;
-    const el = document.getElementById(`agent-section-${name}`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  function toggleDetail(agentName: string, serverName: string, e: MouseEvent) {
-    if (e.metaKey || e.ctrlKey) {
-      e.preventDefault();
-      if (detailPill?.agent === agentName && detailPill?.server === serverName) {
-        detailPill = null;
-      } else {
-        detailPill = { agent: agentName, server: serverName };
+  // Cron jobs as a flat list for the auxiliary section
+  const cronJobs = $derived.by(() => {
+    if (!focused) return [];
+    return Object.entries(focused.jobs).map(([name, def]) => {
+      const d = (def || {}) as { cron?: string; interval_seconds?: number; description?: string };
+      let schedule = '';
+      if (d.cron) schedule = d.cron;
+      else if (d.interval_seconds) {
+        const s = d.interval_seconds;
+        if (s >= 3600) schedule = `every ${Math.round(s / 3600)}h`;
+        else if (s >= 60) schedule = `every ${Math.round(s / 60)}m`;
+        else schedule = `every ${s}s`;
       }
-    } else {
-      toggleMcp(agentName, serverName);
-    }
+      return { name, schedule, description: d.description || '' };
+    });
+  });
+
+  // Subagents this agent can dispatch to (other tier-1+ agents with the
+  // same org slug, when the focused agent has provisioning rights). For
+  // now, just list everyone in the same org slug who isn't the agent
+  // themselves.
+  const subagents = $derived.by(() => {
+    if (!focused) return [];
+    const focusedOrg = (focused.router as Record<string, unknown>).org_slug as string | undefined;
+    if (!focusedOrg) return [];
+    return allAgents
+      .filter((a) => a.name !== focused.name && (a.router as Record<string, unknown>).org_slug === focusedOrg)
+      .map((a) => ({ name: a.name, displayName: a.displayName, role: a.role }));
+  });
+
+  function inputKindColor(kind: string): string {
+    if (kind === 'channel') return 'rgba(120, 200, 255, 0.85)';
+    if (kind === 'cron-source') return 'rgba(220, 160, 100, 0.85)';
+    return 'rgba(180, 180, 200, 0.7)';
   }
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
-      if (searchFocused && searchQuery) {
-        searchQuery = '';
-      } else {
-        onClose();
-      }
+      onClose();
       e.preventDefault();
-    } else if (e.key === '/' && !searchFocused) {
-      e.preventDefault();
-      const input = document.getElementById('system-map-search') as HTMLInputElement;
-      input?.focus();
-    } else if (!searchFocused && e.key >= '1' && e.key <= '9') {
-      const idx = parseInt(e.key) - 1;
-      if (idx < agents.length) {
-        selectAgent(agents[idx].name);
-      }
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Derived
-  // ---------------------------------------------------------------------------
-
-  function matchesSearch(name: string): boolean {
-    if (!searchQuery) return true;
-    return name.toLowerCase().includes(searchQuery.toLowerCase());
-  }
-
-  function serverInfo(name: string): TopologyServer | undefined {
-    return servers.find(s => s.name === name);
-  }
-
-  function agentsUsing(serverName: string): string[] {
-    return agents.filter(a => a.mcp.active.includes(serverName)).map(a => a.displayName);
-  }
-
-  function allMcpForAgent(agent: TopologyAgent): Array<{ name: string; active: boolean; server?: TopologyServer }> {
-    const result: Array<{ name: string; active: boolean; server?: TopologyServer }> = [];
-    // Active servers first
-    for (const name of agent.mcp.active) {
-      result.push({ name, active: true, server: serverInfo(name) });
-    }
-    // Available but inactive servers
-    for (const s of servers) {
-      if (!agent.mcp.active.includes(s.name)) {
-        result.push({ name: s.name, active: false, server: s });
-      }
-    }
-    return result;
   }
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-<div class="overlay" onclick={onClose}>
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="panel" onclick={(e) => e.stopPropagation()}>
-    <div class="header">
-      <span class="title">System Map</span>
+<div class="overlay" onclick={onClose} role="presentation">
+  <div class="panel" onclick={(e) => e.stopPropagation()} role="presentation">
+    <header class="panel-header">
+      <div class="title-block">
+        <span class="title">System Map</span>
+        {#if focused}
+          <span class="title-sub">{focused.displayName}</span>
+        {/if}
+      </div>
       <div class="header-right">
-        <input
-          id="system-map-search"
-          type="text"
-          class="search-input"
-          placeholder="Filter services..."
-          bind:value={searchQuery}
-          onfocus={() => searchFocused = true}
-          onblur={() => searchFocused = false}
-        />
+        <select class="agent-picker" bind:value={selectedName}>
+          {#each allAgents as a}
+            <option value={a.name}>{a.displayName}</option>
+          {/each}
+        </select>
         <button class="close-btn" onclick={onClose} aria-label="Close">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
         </button>
       </div>
-    </div>
+    </header>
 
     {#if loading}
       <div class="loading">Loading topology...</div>
+    {:else if !focused}
+      <div class="loading">No agent selected</div>
     {:else}
-      <div class="columns">
-
-        <!-- Left: Agent cards -->
-        <div class="col-agents">
-          {#each agents as agent, i}
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-            <div
-              class="agent-card"
-              class:selected={selectedAgent === agent.name}
-              onclick={() => selectAgent(agent.name)}
-            >
-              <div class="agent-name">{agent.displayName}</div>
-              {#if agent.role}
-                <div class="agent-role">{agent.role}</div>
+      <div class="canvas">
+        <!-- Inputs row -->
+        <div class="tier-label" style="color: rgba(120, 200, 255, 0.85)">INPUTS</div>
+        <div class="tier-row">
+          {#each inputs as input (input.key)}
+            <div class="card input-card" style="--accent: {inputKindColor(input.kind)}">
+              <span class="card-badge" style="color: {inputKindColor(input.kind)}">
+                {input.kind.toUpperCase()}
+              </span>
+              <span class="card-name">{input.label}</span>
+              {#if input.meta}
+                <span class="card-meta">{input.meta}</span>
               {/if}
-              <div class="agent-meta">
-                <span class="meta-badge mcp">{agent.mcp.active.length}</span>
-                <span class="meta-badge channel">{Object.keys(agent.channels).length}</span>
-                <span class="meta-badge cron">{Object.keys(agent.jobs).length}</span>
-              </div>
             </div>
           {/each}
         </div>
 
-        <!-- Center: Switchboard rail -->
-        <div class="col-switchboard">
-          <div class="rail-line"></div>
-          <div class="rail-icon">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" opacity="0.3">
-              <circle cx="8" cy="4" r="2"/>
-              <circle cx="4" cy="12" r="2"/>
-              <circle cx="12" cy="12" r="2"/>
-              <line x1="8" y1="6" x2="4" y2="10" stroke="currentColor" stroke-width="1"/>
-              <line x1="8" y1="6" x2="12" y2="10" stroke="currentColor" stroke-width="1"/>
-            </svg>
+        <div class="connector"></div>
+
+        <!-- Agent (focal card) -->
+        <div class="agent-card">
+          <div class="agent-avatar">
+            {#if avatarUrl}
+              <img src={avatarUrl} alt="{focused.displayName} avatar"/>
+            {:else}
+              <svg viewBox="0 0 64 64" fill="none">
+                <circle cx="32" cy="22" r="11" fill="rgba(255,255,255,0.15)"/>
+                <path d="M10 56 C 10 42, 22 36, 32 36 C 42 36, 54 42, 54 56 Z" fill="rgba(255,255,255,0.15)"/>
+              </svg>
+            {/if}
+          </div>
+          <div class="agent-text">
+            <span class="agent-name">{focused.displayName}</span>
+            {#if focused.role}
+              <span class="agent-role">{focused.role}</span>
+            {/if}
+            <div class="agent-stats">
+              <span><strong>{Object.keys(focused.channels).length}</strong> channels</span>
+              <span><strong>{focused.mcp.active.length}</strong> tools</span>
+              <span><strong>{Object.keys(focused.jobs).length}</strong> jobs</span>
+              {#if subagents.length > 0}
+                <span><strong>{subagents.length}</strong> subagents</span>
+              {/if}
+            </div>
           </div>
         </div>
 
-        <!-- Right: Service sections -->
-        <div class="col-services">
-          {#each agents as agent}
-            <div class="agent-section" id="agent-section-{agent.name}" class:highlighted={selectedAgent === agent.name}>
+        <div class="connector"></div>
 
-              <div class="section-name">{agent.displayName}</div>
-
-              <!-- MCP group -->
-              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-              <div class="group-header" onclick={() => toggleGroup(agent.name, 'mcp')}>
-                <span class="group-arrow">{expandedGroups[agent.name]?.mcp ? 'v' : '>'}</span>
-                <span>MCP</span>
-                <span class="count-badge mcp">{agent.mcp.active.length}</span>
-              </div>
-
-              {#if expandedGroups[agent.name]?.mcp}
-                <div class="pill-grid">
-                  {#each allMcpForAgent(agent) as item}
-                    {#if matchesSearch(item.name)}
-                      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                      <div class="pill-wrap">
-                        <button
-                          class="pill mcp"
-                          class:active={item.active}
-                          class:unavailable={item.server && !item.server.available}
-                          class:missing-key={item.server?.missingKey}
-                          class:search-dim={searchQuery && !matchesSearch(item.name)}
-                          onclick={(e) => toggleDetail(agent.name, item.name, e)}
-                          title={item.server?.description || item.name}
-                        >
-                          {#if item.server?.missingKey}
-                            <span class="key-icon" title="API key not set">!</span>
-                          {:else if item.server?.missingCommand}
-                            <span class="warn-icon" title="Command not found (install required)">!</span>
-                          {/if}
-                          {item.name}
-                        </button>
-
-                        <!-- Detail card -->
-                        {#if detailPill?.agent === agent.name && detailPill?.server === item.name}
-                          <div class="detail-card">
-                            <div class="detail-header">
-                              <span>{item.name}</span>
-                              <button class="detail-close" onclick={() => detailPill = null}>x</button>
-                            </div>
-                            <div class="detail-line"></div>
-                            <div class="detail-body">
-                              <p>{item.server?.description || 'No description'}</p>
-                              <div class="detail-row">
-                                <span class="detail-label">Type</span>
-                                <span>{item.server?.bundled ? 'bundled' : 'custom'}</span>
-                              </div>
-                              <div class="detail-row">
-                                <span class="detail-label">Status</span>
-                                <span class="status-dot" class:available={item.server?.available} class:unavailable={!item.server?.available}></span>
-                                <span>{item.server?.available ? 'available' : 'unavailable'}</span>
-                              </div>
-                              {#if item.server?.capabilities?.length}
-                                <div class="detail-row">
-                                  <span class="detail-label">Capabilities</span>
-                                  <span>{item.server.capabilities.join(', ')}</span>
-                                </div>
-                              {/if}
-                              <div class="detail-row">
-                                <span class="detail-label">Used by</span>
-                                <span>{agentsUsing(item.name).join(', ') || 'none'}</span>
-                              </div>
-                            </div>
-                          </div>
-                        {/if}
-                      </div>
-                    {/if}
-                  {/each}
-                </div>
+        <!-- Tools row -->
+        <div class="tier-label" style="color: rgba(100, 220, 140, 0.85)">TOOLS</div>
+        <div class="tier-row">
+          {#if tools.length === 0}
+            <span class="empty-tier">No MCP tools configured</span>
+          {/if}
+          {#each tools as tool}
+            <div
+              class="card tool-card"
+              class:disabled={!tool.active}
+              class:warn={tool.server && (tool.server.missingKey || tool.server.missingCommand)}
+              title={tool.server?.description || tool.name}
+            >
+              <span class="card-badge tool-badge">
+                {#if tool.server?.missingKey}KEY{:else if tool.server?.missingCommand}MISSING{:else if tool.active}ACTIVE{:else}OFF{/if}
+              </span>
+              <span class="card-name">{tool.name}</span>
+              {#if tool.server?.capabilities?.length}
+                <span class="card-meta">{tool.server.capabilities.length} caps</span>
               {/if}
-
-              <!-- Channels group -->
-              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-              <div class="group-header" onclick={() => toggleGroup(agent.name, 'channels')}>
-                <span class="group-arrow">{expandedGroups[agent.name]?.channels ? 'v' : '>'}</span>
-                <span>Channels</span>
-                <span class="count-badge channel">{Object.keys(agent.channels).length}</span>
-              </div>
-
-              {#if expandedGroups[agent.name]?.channels}
-                <div class="pill-grid">
-                  {#each Object.entries(agent.channels) as [name, config]}
-                    {#if matchesSearch(name)}
-                      <button
-                        class="pill channel"
-                        class:active={true}
-                        class:search-dim={searchQuery && !matchesSearch(name)}
-                        title={name}
-                      >
-                        {name}
-                      </button>
-                    {/if}
-                  {/each}
-                </div>
-              {/if}
-
-              <!-- Cron group -->
-              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-              <div class="group-header" onclick={() => toggleGroup(agent.name, 'cron')}>
-                <span class="group-arrow">{expandedGroups[agent.name]?.cron ? 'v' : '>'}</span>
-                <span>Cron</span>
-                <span class="count-badge cron">{Object.keys(agent.jobs).length}</span>
-              </div>
-
-              {#if expandedGroups[agent.name]?.cron}
-                <div class="pill-grid">
-                  {#each Object.entries(agent.jobs) as [name, config]}
-                    {#if matchesSearch(name)}
-                      <button
-                        class="pill cron"
-                        class:active={true}
-                        class:search-dim={searchQuery && !matchesSearch(name)}
-                        title={name}
-                      >
-                        {name}
-                      </button>
-                    {/if}
-                  {/each}
-                </div>
-              {/if}
-
-              <div class="section-divider"></div>
             </div>
           {/each}
         </div>
 
+        <!-- Auxiliary sections -->
+        {#if cronJobs.length > 0}
+          <div class="aux-section">
+            <div class="aux-label" style="color: rgba(220, 160, 100, 0.85)">CRON JOBS · {cronJobs.length}</div>
+            <div class="aux-pills">
+              {#each cronJobs.slice(0, 60) as job}
+                <span class="pill" title={job.description || job.schedule}>
+                  <span class="pill-name">{job.name}</span>
+                  <span class="pill-meta">{job.schedule}</span>
+                </span>
+              {/each}
+              {#if cronJobs.length > 60}
+                <span class="pill more">+{cronJobs.length - 60} more</span>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        {#if subagents.length > 0}
+          <div class="aux-section">
+            <div class="aux-label" style="color: rgba(180, 180, 200, 0.85)">SUBAGENTS · {subagents.length}</div>
+            <div class="aux-pills">
+              {#each subagents as sub}
+                <span class="pill subagent-pill" title={sub.role}>
+                  <span class="pill-name">{sub.displayName}</span>
+                </span>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
     {/if}
-
-    <!-- Restart banner -->
-    {#if pendingRestarts.size > 0}
-      <div class="restart-banner">
-        <span>{pendingRestarts.size} change{pendingRestarts.size > 1 ? 's' : ''} pending - restart {[...pendingRestarts].join(', ')} to apply</span>
-        <div class="restart-buttons">
-          {#each [...pendingRestarts] as name}
-            <button class="restart-btn" onclick={async () => {
-              if (api) await api.switchAgent(name);
-              pendingRestarts.delete(name);
-              pendingRestarts = new Set(pendingRestarts);
-              await fetchTopology(); // refresh state
-            }}>
-              Restart {name}
-            </button>
-          {/each}
-        </div>
-      </div>
-    {/if}
-
   </div>
 </div>
 
 <style>
   .overlay {
-    position: absolute;
+    position: fixed;
     inset: 0;
-    z-index: 55; /* Below Settings (60) and ask-overlay (90) */
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 200;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui);
   }
 
   .panel {
-    width: 100%;
-    max-width: 680px;
-    max-height: 85vh;
-    background: var(--bg, #0C0C0E);
-    border: 1px solid var(--border, rgba(255,255,255,0.06));
-    border-radius: 16px;
+    width: min(1180px, calc(100% - 48px));
+    height: min(880px, calc(100vh - 60px));
+    background: rgba(20, 20, 24, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
 
-  .header {
+  .panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--border, rgba(255,255,255,0.06));
+    padding: 18px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     flex-shrink: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  }
+
+  .title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .title {
-    font-size: 14px;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 11px;
     font-weight: 600;
-    color: var(--text-primary, rgba(255,255,255,0.85));
-    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  .title-sub {
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 17px;
+    font-weight: 600;
   }
 
   .header-right {
@@ -456,382 +398,277 @@
     gap: 10px;
   }
 
-  .search-input {
-    width: 140px;
-    height: 28px;
-    background: var(--bg-secondary, rgba(255,255,255,0.04));
-    border: 1px solid var(--border, rgba(255,255,255,0.06));
-    border-radius: 6px;
-    color: var(--text-primary, rgba(255,255,255,0.85));
+  .agent-picker {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.92);
     font-size: 12px;
-    padding: 0 8px;
+    font-family: inherit;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    min-width: 180px;
+  }
+
+  .agent-picker:focus {
     outline: none;
-    transition: border-color 0.15s;
-  }
-  .search-input:focus {
-    border-color: var(--accent, rgba(100,140,255,0.3));
-  }
-  .search-input::placeholder {
-    color: var(--text-dim, rgba(255,255,255,0.3));
+    border-color: rgba(120, 160, 255, 0.5);
   }
 
   .close-btn {
-    background: none;
-    border: none;
-    color: var(--text-dim, rgba(255,255,255,0.3));
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
-    padding: 4px;
-    display: flex;
-    align-items: center;
-  }
-  .close-btn:hover { color: var(--text-primary, rgba(255,255,255,0.85)); }
-
-  .loading {
-    padding: 40px;
-    text-align: center;
-    color: var(--text-dim, rgba(255,255,255,0.3));
-    font-size: 13px;
+    padding: 6px;
+    border-radius: 6px;
+    display: inline-flex;
+    transition: color 0.15s, background 0.15s;
   }
 
-  /* Three-column layout */
-  .columns {
-    display: flex;
+  .close-btn:hover {
+    color: rgba(255, 255, 255, 0.95);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .canvas {
     flex: 1;
-    overflow: hidden;
     min-height: 0;
-  }
-
-  .col-agents {
-    width: 160px;
-    flex-shrink: 0;
-    padding: 12px;
     overflow-y: auto;
-    border-right: 1px solid var(--border, rgba(255,255,255,0.06));
-  }
-
-  .col-switchboard {
-    width: 48px;
-    flex-shrink: 0;
+    padding: 28px 32px 36px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    position: relative;
   }
 
-  .rail-line {
-    position: absolute;
-    top: 12px;
-    bottom: 12px;
-    width: 2px;
-    background: linear-gradient(
-      to bottom,
-      transparent,
-      rgba(100, 140, 255, 0.15) 15%,
-      rgba(100, 140, 255, 0.15) 85%,
-      transparent
-    );
-    border-radius: 1px;
+  .canvas::-webkit-scrollbar {
+    width: 6px;
   }
 
-  .rail-icon {
-    position: relative;
-    z-index: 1;
-    color: var(--text-dim, rgba(255,255,255,0.3));
+  .canvas::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
   }
 
-  .col-services {
+  .loading {
     flex: 1;
-    overflow-y: auto;
-    padding: 12px 16px;
-    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 13px;
   }
 
-  /* Agent cards */
-  .agent-card {
-    padding: 10px 12px;
+  .tier-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    margin-bottom: 10px;
+  }
+
+  .tier-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    max-width: 100%;
+  }
+
+  .empty-tier {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 12px;
+    padding: 12px 0;
+  }
+
+  .connector {
+    width: 1px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.18);
+    margin: 12px 0;
+  }
+
+  /* Generic card */
+  .card {
+    --accent: rgba(180, 180, 200, 0.7);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 130px;
+    max-width: 180px;
+    padding: 10px 12px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
-    cursor: pointer;
-    margin-bottom: 6px;
-    transition: background 0.15s, border-color 0.15s;
-    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
   }
-  .agent-card:hover {
-    background: var(--bg-secondary, rgba(255,255,255,0.04));
+
+  .card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--accent);
+    transform: translateY(-1px);
   }
-  .agent-card.selected {
-    border-color: var(--accent, rgba(100,140,255,0.3));
-    background: rgba(100, 140, 255, 0.06);
+
+  .input-card {
+    --accent: rgba(120, 200, 255, 0.85);
+  }
+
+  .tool-card {
+    --accent: rgba(100, 220, 140, 0.85);
+  }
+
+  .tool-card.disabled {
+    opacity: 0.45;
+  }
+
+  .tool-card.warn {
+    --accent: rgba(255, 200, 100, 0.85);
+  }
+
+  .card-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+  }
+
+  .tool-badge {
+    color: var(--accent);
+  }
+
+  .card-name {
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 12.5px;
+    font-weight: 600;
+    word-break: break-word;
+  }
+
+  .card-meta {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 10.5px;
+  }
+
+  /* Focal agent card - the centrepiece */
+  .agent-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 24px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 200, 100, 0.4);
+    border-radius: 14px;
+    box-shadow:
+      0 0 60px rgba(255, 200, 100, 0.08),
+      0 8px 24px rgba(0, 0, 0, 0.4);
+    min-width: 360px;
+  }
+
+  .agent-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.04);
+    border: 2px solid rgba(255, 200, 100, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .agent-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .agent-avatar svg {
+    width: 60%;
+    height: 60%;
+  }
+
+  .agent-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
   }
 
   .agent-name {
-    font-size: 13px;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 17px;
     font-weight: 600;
-    color: var(--text-primary, rgba(255,255,255,0.85));
   }
 
   .agent-role {
-    font-size: 11px;
-    color: var(--text-dim, rgba(255,255,255,0.3));
-    margin-top: 2px;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 12px;
   }
 
-  .agent-meta {
+  .agent-stats {
     display: flex;
-    gap: 4px;
+    gap: 14px;
     margin-top: 6px;
-  }
-
-  .meta-badge {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 8px;
-    font-weight: 500;
-  }
-  .meta-badge.mcp { background: rgba(100, 140, 255, 0.15); color: rgba(100, 140, 255, 0.8); }
-  .meta-badge.channel { background: rgba(120, 200, 120, 0.15); color: rgba(120, 200, 120, 0.8); }
-  .meta-badge.cron { background: rgba(255, 180, 80, 0.15); color: rgba(255, 180, 80, 0.8); }
-
-  /* Service sections */
-  .agent-section {
-    margin-bottom: 8px;
-    padding: 8px 0;
-    transition: background 0.2s;
-    border-radius: 8px;
-  }
-  .agent-section.highlighted {
-    background: rgba(100, 140, 255, 0.03);
-  }
-
-  .section-name {
+    color: rgba(255, 255, 255, 0.4);
     font-size: 11px;
+  }
+
+  .agent-stats strong {
+    color: rgba(255, 255, 255, 0.85);
     font-weight: 600;
-    color: var(--text-dim, rgba(255,255,255,0.3));
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding: 0 4px;
-    margin-bottom: 6px;
   }
 
-  .section-divider {
-    height: 1px;
-    background: var(--border, rgba(255,255,255,0.06));
-    margin: 8px 0;
+  /* Auxiliary sections (cron, subagents) below the main map */
+  .aux-section {
+    width: 100%;
+    margin-top: 32px;
+    padding: 16px 20px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
   }
 
-  /* Group headers */
-  .group-header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px;
-    cursor: pointer;
-    font-size: 11px;
-    color: var(--text-secondary, rgba(255,255,255,0.5));
-    user-select: none;
-  }
-  .group-header:hover {
-    color: var(--text-primary, rgba(255,255,255,0.85));
-  }
-
-  .group-arrow {
+  .aux-label {
     font-size: 10px;
-    width: 12px;
-    display: inline-block;
-    transition: transform 0.15s;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    margin-bottom: 10px;
   }
 
-  .count-badge {
-    font-size: 10px;
-    padding: 0 5px;
-    border-radius: 6px;
-    font-weight: 500;
-    margin-left: auto;
-  }
-  .count-badge.mcp { background: rgba(100, 140, 255, 0.1); color: rgba(100, 140, 255, 0.6); }
-  .count-badge.channel { background: rgba(120, 200, 120, 0.1); color: rgba(120, 200, 120, 0.6); }
-  .count-badge.cron { background: rgba(255, 180, 80, 0.1); color: rgba(255, 180, 80, 0.6); }
-
-  /* Pills */
-  .pill-grid {
+  .aux-pills {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
-    padding: 4px 4px 8px;
-  }
-
-  .pill-wrap {
-    position: relative;
+    gap: 6px;
   }
 
   .pill {
-    font-size: 11px;
-    padding: 3px 10px;
-    border-radius: 10px;
-    cursor: pointer;
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--text-dim, rgba(255,255,255,0.3));
-    transition: all 0.15s;
-    white-space: nowrap;
-  }
-
-  /* Active pills */
-  .pill.mcp.active {
-    background: rgba(100, 140, 255, 0.2);
-    color: rgba(180, 200, 255, 0.9);
-    border-color: rgba(100, 140, 255, 0.3);
-  }
-  .pill.channel.active {
-    background: rgba(120, 200, 120, 0.2);
-    color: rgba(180, 240, 180, 0.9);
-    border-color: rgba(120, 200, 120, 0.3);
-  }
-  .pill.cron.active {
-    background: rgba(255, 180, 80, 0.2);
-    color: rgba(255, 220, 160, 0.9);
-    border-color: rgba(255, 180, 80, 0.3);
-  }
-
-  /* Inactive pills */
-  .pill:not(.active) {
-    border-style: dashed;
-    border-color: rgba(255, 255, 255, 0.08);
-  }
-
-  /* Hover */
-  .pill.mcp:hover { background: rgba(100, 140, 255, 0.3); color: white; }
-  .pill.channel:hover { background: rgba(120, 200, 120, 0.3); color: white; }
-  .pill.cron:hover { background: rgba(255, 180, 80, 0.3); color: white; }
-
-  /* Unavailable / missing key */
-  .pill.unavailable {
-    text-decoration: line-through;
-    opacity: 0.4;
-  }
-  .pill.missing-key {
-    border-color: rgba(255, 100, 100, 0.3);
-  }
-
-  .key-icon, .warn-icon {
-    font-size: 9px;
-    margin-right: 3px;
-    color: rgba(255, 100, 100, 0.7);
-  }
-
-  /* Search dim */
-  .pill.search-dim {
-    opacity: 0.15;
-  }
-
-  /* Detail card */
-  .detail-card {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    width: 280px;
-    background: var(--bg, #0C0C0E);
-    border: 1px solid var(--border, rgba(255,255,255,0.1));
-    border-radius: 10px;
-    padding: 10px 12px;
-    z-index: 10;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  }
-
-  .detail-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-primary, rgba(255,255,255,0.85));
-  }
-
-  .detail-close {
-    background: none;
-    border: none;
-    color: var(--text-dim, rgba(255,255,255,0.3));
-    cursor: pointer;
-    font-size: 12px;
-  }
-
-  .detail-line {
-    height: 1px;
-    background: var(--border, rgba(255,255,255,0.06));
-    margin: 6px 0;
-  }
-
-  .detail-body {
-    font-size: 11px;
-    color: var(--text-secondary, rgba(255,255,255,0.5));
-  }
-  .detail-body p {
-    margin: 0 0 8px;
-    line-height: 1.4;
-  }
-
-  .detail-row {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 4px;
-    align-items: center;
-  }
-
-  .detail-label {
-    color: var(--text-dim, rgba(255,255,255,0.3));
-    min-width: 70px;
-    flex-shrink: 0;
-  }
-
-  .status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-  }
-  .status-dot.available { background: rgba(120, 200, 120, 0.8); }
-  .status-dot.unavailable { background: rgba(255, 100, 100, 0.6); }
-
-  /* Restart banner */
-  .restart-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 16px;
-    background: rgba(255, 180, 80, 0.08);
-    border-top: 1px solid rgba(255, 180, 80, 0.2);
-    font-size: 12px;
-    color: rgba(255, 200, 120, 0.9);
-    flex-shrink: 0;
-  }
-
-  .restart-buttons {
-    display: flex;
+    display: inline-flex;
+    align-items: baseline;
     gap: 6px;
-  }
-
-  .restart-btn {
+    padding: 4px 9px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
     font-size: 11px;
-    padding: 3px 10px;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 180, 80, 0.3);
-    background: rgba(255, 180, 80, 0.1);
-    color: rgba(255, 200, 120, 0.9);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .restart-btn:hover {
-    background: rgba(255, 180, 80, 0.2);
   }
 
-  /* Scrollbar styling */
-  .col-agents::-webkit-scrollbar,
-  .col-services::-webkit-scrollbar {
-    width: 4px;
+  .pill-name {
+    color: rgba(255, 255, 255, 0.78);
+    font-weight: 500;
   }
-  .col-agents::-webkit-scrollbar-thumb,
-  .col-services::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 2px;
+
+  .pill-meta {
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 10px;
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  }
+
+  .pill.more {
+    color: rgba(255, 255, 255, 0.4);
+    font-style: italic;
+  }
+
+  .subagent-pill {
+    border-color: rgba(120, 160, 255, 0.2);
+    background: rgba(120, 160, 255, 0.05);
   }
 </style>

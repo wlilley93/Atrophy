@@ -95,7 +95,22 @@ export function registerSystemHandlers(ctx: IpcContext): void {
   // -- Cron (in-process scheduler via switchboard) --
 
   ipcMain.handle('cron:schedule', () => {
-    return cronScheduler.getSchedule();
+    // Project ScheduledJob to a clone-safe shape. The raw struct holds a
+    // Node Timer object on `.timer` which can't be passed through electron
+    // IPC's structuredClone (it has native handles), so the previous
+    // pass-through made the renderer receive an empty array silently and
+    // the Jobs tab showed nothing. Date fields become ISO strings on the
+    // renderer side automatically.
+    return cronScheduler.getSchedule().map((j) => ({
+      name: j.name,
+      agent: j.agent,
+      definition: j.definition,
+      nextRun: j.nextRun ? j.nextRun.toISOString() : null,
+      lastRun: j.lastRun ? j.lastRun.toISOString() : null,
+      running: j.running,
+      disabled: j.disabled,
+      consecutiveFailures: j.consecutiveFailures,
+    }));
   });
 
   ipcMain.handle('cron:history', () => {
@@ -119,8 +134,18 @@ export function registerSystemHandlers(ctx: IpcContext): void {
   });
 
   ipcMain.handle('cron:schedulerStatus', () => {
+    // Same Timer-stripping projection as cron:schedule above.
     return {
-      schedule: cronScheduler.getSchedule(),
+      schedule: cronScheduler.getSchedule().map((j) => ({
+        name: j.name,
+        agent: j.agent,
+        definition: j.definition,
+        nextRun: j.nextRun ? j.nextRun.toISOString() : null,
+        lastRun: j.lastRun ? j.lastRun.toISOString() : null,
+        running: j.running,
+        disabled: j.disabled,
+        consecutiveFailures: j.consecutiveFailures,
+      })),
     };
   });
 
