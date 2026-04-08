@@ -707,8 +707,11 @@ export class Config {
     this.EYE_MODE_DEFAULT = false;
     this.MUTE_BY_DEFAULT = false;
     this.CANVAS_TEMPLATES = path.join(BUNDLE_ROOT, 'display', 'templates');
-    this.WINDOW_WIDTH = 1660;
-    this.WINDOW_HEIGHT = 2213;
+    // 0 = auto-fit current display in createWindow(). User-saved overrides
+    // win, otherwise app.ts picks the largest 0.749-aspect window that
+    // fits the active screen's work area.
+    this.WINDOW_WIDTH = 0;
+    this.WINDOW_HEIGHT = 0;
     this.AVATAR_ENABLED = false;
     this.AVATAR_RESOLUTION = 512;
     this.AVATAR_DIR = '';
@@ -896,8 +899,8 @@ export class Config {
 
     // Display (per-agent from manifest display object)
     const disp = (_agentManifest.display as Record<string, unknown>) || {};
-    this.WINDOW_WIDTH = (disp.window_width as number) ?? cfg('WINDOW_WIDTH', 1660);
-    this.WINDOW_HEIGHT = (disp.window_height as number) ?? cfg('WINDOW_HEIGHT', 2213);
+    this.WINDOW_WIDTH = (disp.window_width as number) ?? cfg('WINDOW_WIDTH', 0);
+    this.WINDOW_HEIGHT = (disp.window_height as number) ?? cfg('WINDOW_HEIGHT', 0);
 
     // Avatar (user data > bundled fallback)
     this.AVATAR_ENABLED = cfg('AVATAR_ENABLED', false);

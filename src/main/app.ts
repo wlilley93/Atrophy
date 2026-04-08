@@ -4,7 +4,7 @@
  * Port of main.py - two modes: menu bar (--app) and GUI (--gui).
  */
 
-import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, powerSaveBlocker, shell } from 'electron';
+import { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, ipcMain, powerSaveBlocker, shell, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -113,10 +113,29 @@ function createWindow(): BrowserWindow {
 
   // Default window size matches the aspect of the agent avatar videos
   // (1244x1660, ratio 0.749) so portrait avatar loops fill the orb cleanly
-  // without letterboxing. Default == max so the app launches at full size
-  // and the user only ever resizes downward from there.
-  const winWidth = config.WINDOW_WIDTH || 1660;
-  const winHeight = config.WINDOW_HEIGHT || 2213;
+  // without letterboxing.
+  //
+  // When the user has not saved an explicit override (config.WINDOW_WIDTH
+  // is 0 or unset), compute the largest 0.749-aspect window that fits on
+  // the current display's work area (excludes menu bar + dock). This means
+  // the app launches at the maximum useful size for whatever screen it
+  // happens to be on - 1080p laptops, 4K externals, Studio Displays,
+  // multi-monitor rigs - without ever clipping below the dock.
+  const ASPECT = 1244 / 1660;
+  let winWidth = config.WINDOW_WIDTH;
+  let winHeight = config.WINDOW_HEIGHT;
+  if (!winWidth || !winHeight) {
+    const { workAreaSize } = screen.getPrimaryDisplay();
+    let fitH = workAreaSize.height;
+    let fitW = Math.round(fitH * ASPECT);
+    if (fitW > workAreaSize.width) {
+      fitW = workAreaSize.width;
+      fitH = Math.round(fitW / ASPECT);
+    }
+    winWidth = fitW;
+    winHeight = fitH;
+    bootLogger.info(`auto-fit window: ${winWidth}x${winHeight} (workArea ${workAreaSize.width}x${workAreaSize.height})`);
+  }
 
   const win = new BrowserWindow({
     width: winWidth,
