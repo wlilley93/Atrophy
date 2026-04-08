@@ -113,11 +113,10 @@ function createWindow(): BrowserWindow {
 
   // Default window size matches the aspect of the agent avatar videos
   // (1244x1660, ratio 0.749) so portrait avatar loops fill the orb cleanly
-  // without letterboxing. Default sits a touch under native resolution so
-  // the window comfortably fits on a 16" MacBook Pro at default scale, and
-  // max grows beyond native so power users on Studio Displays can scale up.
-  const winWidth = config.WINDOW_WIDTH || 1100;
-  const winHeight = config.WINDOW_HEIGHT || 1466;
+  // without letterboxing. Default == max so the app launches at full size
+  // and the user only ever resizes downward from there.
+  const winWidth = config.WINDOW_WIDTH || 1660;
+  const winHeight = config.WINDOW_HEIGHT || 2213;
 
   const win = new BrowserWindow({
     width: winWidth,
