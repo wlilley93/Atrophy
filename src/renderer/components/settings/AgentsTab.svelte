@@ -102,6 +102,15 @@
 
   function handleSelect(sel: Selection) {
     selection = sel;
+    // Primary agents open the edit modal directly on click - no
+    // intermediate "single agent view" page. Org agents open via the
+    // OrgChart card click instead.
+    if (sel?.kind === 'agent') {
+      const agent = allAgents.find((a) => a.name === sel.name);
+      if (agent?.topLevel) {
+        editingAgent = sel.name;
+      }
+    }
   }
 
   function handleSelectAgent(name: string) {
