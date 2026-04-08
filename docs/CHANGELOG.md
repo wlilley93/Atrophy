@@ -4,6 +4,29 @@ All notable changes to Atrophy.
 
 ---
 
+## 1.9.59
+
+### Agent path refactor + copy button
+
+- **Org-nested agents fixed everywhere** - Usage, Activity, avatar, MCP, config, and 20+ other call sites now resolve org-nested subagent paths correctly. Previously only the 4 primary agents were visible in settings tabs.
+- **Copy button on messages** - hover any message to copy its text.
+- **Scroll-to-top fix** - transcript top padding prevents content from hiding behind the fade mask.
+- **Typecheck clean** - all 5 pre-existing errors fixed, web tsconfig coverage restored.
+- **Shared sentence module** - deduplicated sentence detection between inference paths.
+
+---
+
+## 1.9.58
+
+### Full app release - refactoring + dedupe pipeline
+
+- **Hardcoded agent paths swept** - 30+ sites replaced with getAgentDir(), resolveAgentDir() added to config.ts for circular dep avoidance.
+- **Hybrid dedupe pipeline** - deterministic + librarian-semantic review for intelligence.db. 513 country codes normalized, 109 merges applied.
+- **TTS fal.ai fix** - synthesiseFal was referencing undefined variable, causing runtime crash on fallback path.
+- **mapToEvents typed** - tmux inference path now returns InferenceEvent[] instead of untyped records.
+
+---
+
 ## 1.9.5
 
 ### DB session fix
