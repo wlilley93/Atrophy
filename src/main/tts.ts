@@ -357,7 +357,21 @@ function synthesiseMacOS(text: string): Promise<string> {
     const audioPath = secureTmp('.aiff');
     const clean = text.replace(/\[[\w\s]+\]/g, '').trim();
 
-    const proc = spawn('say', ['-v', 'Samantha', '-r', '175', '-o', audioPath, clean], {
+    // Pick the best available macOS voice for the current agent.
+    // Daniel (en_GB) for British agents, Samantha (en_US) for others.
+    // Users can override via MACOS_VOICE config key.
+    const config = getConfig();
+    const customVoice = (config as Record<string, unknown>).MACOS_VOICE as string | undefined;
+    let voice = customVoice || 'Samantha';
+    if (!customVoice) {
+      // Agent-aware voice selection: if the agent's voice config or
+      // system prompt suggests British English, use Daniel.
+      const agentName = config.AGENT_NAME?.toLowerCase() || '';
+      const isBritish = agentName.includes('montgomery') || agentName.includes('defence');
+      if (isBritish) voice = 'Daniel';
+    }
+
+    const proc = spawn('say', ['-v', voice, '-r', '185', '-o', audioPath, clean], {
       stdio: ['ignore', 'ignore', 'ignore'],
     });
 
