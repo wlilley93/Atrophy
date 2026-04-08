@@ -558,7 +558,11 @@
     width: 100%;
     height: 100%;
     pointer-events: none;
-    object-fit: contain;
+    /* `cover` so the video scales to fill the window at any aspect ratio
+       - no black letterbox bars when the user makes the window wider or
+       narrower than the video's native 0.749 aspect. The radial mask hides
+       the cropped edges so the over-flow is invisible. */
+    object-fit: cover;
     opacity: 0;
     transition: opacity 0.8s ease;
     /* Mask shifted down to 55% vertical and enlarged to 88%/88% so the
