@@ -4,7 +4,7 @@ All notable changes to Atrophy.
 
 ---
 
-## 1.9.59
+## 1.9.60
 
 ### Agent path refactor + copy button
 
