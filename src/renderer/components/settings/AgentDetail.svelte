@@ -110,9 +110,12 @@
       openingLine = (mf.opening_line as string) ?? '';
       const rawWake = mf.wake_words;
       wakeWords = Array.isArray(rawWake) ? rawWake.join(', ') : (rawWake as string) ?? '';
-      tier = ((mf.tier as number) ?? 1) as 1 | 2 | 3;
-
+      // Tier lives inside the org block, not at the manifest root. Reading
+      // mf.tier instead of mf.org.tier was the bug that made every agent
+      // show as tier 1 (Leadership) in the editor regardless of their
+      // actual position in the hierarchy.
       const orgCfg = (mf.org ?? {}) as Record<string, unknown>;
+      tier = ((orgCfg.tier as number) ?? 1) as 1 | 2 | 3;
       canAddressUser = (orgCfg.can_address_user as boolean) ?? false;
       canProvision = (orgCfg.can_provision as boolean) ?? false;
 
@@ -173,9 +176,9 @@
         description,
         opening_line: openingLine,
         wake_words: wakeWords.split(',').map((w) => w.trim()).filter(Boolean),
-        tier,
         org: {
           ...(((manifest.org ?? {}) as Record<string, unknown>)),
+          tier,
           can_address_user: canAddressUser,
           can_provision: canProvision,
         },
