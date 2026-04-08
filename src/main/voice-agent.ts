@@ -597,6 +597,14 @@ async function validateAgentId(agentId: string): Promise<boolean> {
  */
 async function createAgent(agentName: string): Promise<string | null> {
   const config = getConfig();
+
+  // Skip if no voice ID configured - the API will reject with invalid_uid
+  // and there's no point making a voice agent that can't speak
+  if (!config.ELEVENLABS_VOICE_ID || !config.ELEVENLABS_VOICE_ID.trim()) {
+    log.debug(`skipping ElevenLabs agent creation for ${agentName}: no voice_id configured`);
+    return null;
+  }
+
   const payload = buildAgentPayload(agentName);
 
   log.info(`creating ElevenLabs agent: atrophy-${agentName}`);
