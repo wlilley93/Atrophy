@@ -1,88 +1,83 @@
 <script lang="ts">
   import { api } from '../../api';
-  import OrgTree from './OrgTree.svelte';
-  import AgentDetail from './AgentDetail.svelte';
-  import OrgDetail from './OrgDetail.svelte';
-  import AgentCreateForm from './AgentCreateForm.svelte';
-
-  interface OrgNode {
-    slug: string;
-    name: string;
-    type: string;
-    agents: AgentNode[];
-  }
+  import AgentsSidebar from './AgentsSidebar.svelte';
+  import OrgChart from './OrgChart.svelte';
+  import AgentEditModal from './AgentEditModal.svelte';
+  import CreateOrgModal from './CreateOrgModal.svelte';
+  import AddAgentModal from './AddAgentModal.svelte';
 
   interface AgentNode {
     name: string;
     display_name: string;
+    description: string;
     role: string;
     tier: number;
     orgSlug: string | null;
+    reportsTo: string | null;
+    canAddressUser: boolean;
     enabled: boolean;
   }
 
+  interface Org {
+    name: string;
+    slug: string;
+    type: string;
+    purpose: string;
+    created: string;
+    principal: string | null;
+  }
+
+  type Selection =
+    | { kind: 'agent'; name: string }
+    | { kind: 'org'; slug: string }
+    | null;
+
   // Raw data
-  let orgs = $state<Array<{ name: string; slug: string; type: string; purpose: string; created: string; principal: string | null }>>([]);
-  let allAgents = $state<Array<{ name: string; display_name: string; description: string; role: string; tier: number; orgSlug: string | null; reportsTo: string | null; canAddressUser: boolean; enabled: boolean }>>([]);
+  let orgs = $state<Org[]>([]);
+  let allAgents = $state<AgentNode[]>([]);
   let schedule = $state<unknown[]>([]);
 
-  // Tree structure
-  let orgTree = $state<OrgNode[]>([]);
-  let standalone = $state<AgentNode[]>([]);
-
-  // Selection
-  let selectedId = $state<string | null>(null);
-  let selectedType = $state<'agent' | 'org' | 'create' | null>(null);
-
-  // Loading
+  // UI state
+  let selection = $state<Selection>(null);
+  let editingAgent = $state<string | null>(null);
+  let modal = $state<'createOrg' | { type: 'addAgent'; orgSlug: string } | null>(null);
   let loading = $state(false);
   let loadError = $state('');
 
-  function buildTree() {
-    const orgMap = new Map<string, OrgNode>();
-    for (const org of orgs) {
-      orgMap.set(org.slug, { slug: org.slug, name: org.name, type: org.type, agents: [] });
-    }
+  // Derived: which agents are "primary" (top-level standalone, not part of any org)
+  const primaryAgents = $derived(allAgents.filter((a) => !a.orgSlug));
 
-    const standaloneList: AgentNode[] = [];
-    for (const agent of allAgents) {
-      const node: AgentNode = {
-        name: agent.name,
-        display_name: agent.display_name,
-        role: agent.role,
-        tier: agent.tier,
-        orgSlug: agent.orgSlug,
-        enabled: agent.enabled,
-      };
-      if (agent.orgSlug && orgMap.has(agent.orgSlug)) {
-        orgMap.get(agent.orgSlug)!.agents.push(node);
-      } else {
-        standaloneList.push(node);
-      }
-    }
+  // Derived: agents in the currently selected org
+  const agentsInSelectedOrg = $derived(
+    selection?.kind === 'org'
+      ? allAgents.filter((a) => a.orgSlug === selection.slug)
+      : [],
+  );
 
-    orgTree = [...orgMap.values()];
-    standalone = standaloneList;
-  }
+  // Derived: the selected org object
+  const selectedOrg = $derived(
+    selection?.kind === 'org' ? orgs.find((o) => o.slug === selection.slug) ?? null : null,
+  );
+
+  // Derived: the selected primary agent (if any)
+  const selectedPrimaryAgent = $derived(
+    selection?.kind === 'agent' ? allAgents.find((a) => a.name === selection.name) ?? null : null,
+  );
 
   export async function load() {
     if (!api) return;
     loading = true;
     loadError = '';
     try {
-      // Fetch independently so one failure doesn't block all
       const [orgsResult, agentsResult, scheduleResult] = await Promise.all([
         api.listOrgs().catch((e: unknown) => { console.warn('listOrgs failed:', e); return []; }),
         api.listAllAgents().catch((e: unknown) => { console.warn('listAllAgents failed:', e); return []; }),
         api.getSchedule().catch((e: unknown) => { console.warn('getSchedule failed:', e); return []; }),
       ]);
       orgs = orgsResult || [];
-      allAgents = agentsResult || [];
+      allAgents = (agentsResult || []) as AgentNode[];
       schedule = scheduleResult || [];
-      buildTree();
-      if (allAgents.length === 0) {
-        loadError = 'No agents found';
-      }
+      if (allAgents.length === 0) loadError = 'No agents found';
     } catch (e) {
       loadError = `Failed to load: ${e}`;
       console.error('AgentsTab load error:', e);
@@ -91,106 +86,150 @@
     }
   }
 
-  function handleSelect(id: string, type: 'agent' | 'org') {
-    selectedId = id;
-    selectedType = type;
-  }
-
-  function handleCreateAgent() {
-    selectedId = null;
-    selectedType = 'create';
-  }
-
-  function handleCreateOrg() {
-    selectedId = '__new_org__';
-    selectedType = 'org';
-  }
-
   async function handleRefresh() {
     await load();
-    // Reset selection if the selected item no longer exists
-    if (selectedType === 'agent' && selectedId) {
-      const stillExists = allAgents.some((a) => a.name === selectedId);
-      if (!stillExists) {
-        selectedId = null;
-        selectedType = null;
-      }
-    } else if (selectedType === 'org' && selectedId && selectedId !== '__new_org__') {
-      const stillExists = orgs.some((o) => o.slug === selectedId);
-      if (!stillExists) {
-        selectedId = null;
-        selectedType = null;
-      }
+    // If the selected target no longer exists, clear selection.
+    if (selection?.kind === 'agent' && !allAgents.some((a) => a.name === selection.name)) {
+      selection = null;
+    } else if (selection?.kind === 'org' && !orgs.some((o) => o.slug === selection.slug)) {
+      selection = null;
     }
   }
 
-  // Org options for create form
-  const orgOptions = $derived(orgs.map((o) => ({ slug: o.slug, name: o.name })));
+  function handleSelect(sel: Selection) {
+    selection = sel;
+  }
 
-  // All agents for create form (reports-to)
-  const agentOptions = $derived(
-    allAgents.map((a) => ({
-      name: a.name,
-      display_name: a.display_name,
-      tier: a.tier,
-      orgSlug: a.orgSlug,
-    }))
-  );
+  function handleSelectAgent(name: string) {
+    editingAgent = name;
+  }
+
+  function handleAddOrg() {
+    modal = 'createOrg';
+  }
+
+  function handleAddAgentToOrg(orgSlug: string) {
+    modal = { type: 'addAgent', orgSlug };
+  }
+
+  async function handleOrgCreated(slug: string) {
+    modal = null;
+    await load();
+    // Focus the canvas on the new org so the user sees it immediately
+    selection = { kind: 'org', slug };
+  }
+
+  async function handleAgentCreated() {
+    modal = null;
+    await load();
+  }
+
+  async function handleAgentEdited() {
+    await load();
+  }
+
+  function closeEditModal() {
+    editingAgent = null;
+  }
+
+  function closeAddModal() {
+    modal = null;
+  }
 </script>
 
 <div class="agents-tab">
-  <!-- Left panel: tree -->
-  <div class="left-panel">
+  <!-- Sidebar -->
+  <aside class="sidebar">
     {#if loading}
-      <div class="loading-hint">Loading...</div>
+      <div class="loading">Loading...</div>
     {:else if loadError}
-      <div class="error-hint">{loadError}</div>
+      <div class="error">{loadError}</div>
     {:else}
-      <OrgTree
-        orgs={orgTree}
-        {standalone}
-        {selectedId}
-        {selectedType}
+      <AgentsSidebar
+        {primaryAgents}
+        {orgs}
+        {selection}
         onSelect={handleSelect}
-        onCreateAgent={handleCreateAgent}
-        onCreateOrg={handleCreateOrg}
+        onAddOrg={handleAddOrg}
+        onAddAgentToOrg={handleAddAgentToOrg}
       />
     {/if}
-  </div>
+  </aside>
 
-  <!-- Divider -->
-  <div class="panel-divider"></div>
+  <div class="divider"></div>
 
-  <!-- Right panel: detail or form -->
-  <div class="right-panel">
-    {#if selectedType === 'agent' && selectedId}
-      <AgentDetail
-        agentName={selectedId}
-        {schedule}
-        onDeleted={handleRefresh}
-        onSaved={handleRefresh}
+  <!-- Canvas -->
+  <main class="canvas">
+    {#if selection?.kind === 'org' && selectedOrg}
+      <OrgChart
+        org={selectedOrg}
+        agentsInOrg={agentsInSelectedOrg}
+        onSelectAgent={handleSelectAgent}
+        onAddAgent={() => handleAddAgentToOrg(selectedOrg.slug)}
       />
-    {:else if selectedType === 'org' && selectedId}
-      <OrgDetail
-        orgSlug={selectedId}
-        onDissolved={handleRefresh}
-        onSaved={handleRefresh}
-      />
-    {:else if selectedType === 'create'}
-      <AgentCreateForm
-        orgs={orgOptions}
-        allAgents={agentOptions}
-        onCreated={handleRefresh}
-        onCancel={() => { selectedType = null; selectedId = null; }}
-      />
+    {:else if selection?.kind === 'agent' && selectedPrimaryAgent}
+      <!-- Single primary agent: show one card with details + an inline
+           "convert to org" hint via the sidebar plus button. -->
+      <div class="single-agent-view">
+        <header class="single-header">
+          <div>
+            <span class="single-name">{selectedPrimaryAgent.display_name || selectedPrimaryAgent.name}</span>
+            {#if selectedPrimaryAgent.role}
+              <span class="single-role">{selectedPrimaryAgent.role}</span>
+            {/if}
+          </div>
+          <button class="edit-btn" onclick={() => handleSelectAgent(selectedPrimaryAgent.name)}>
+            Edit profile
+          </button>
+        </header>
+        {#if selectedPrimaryAgent.description}
+          <p class="single-desc">{selectedPrimaryAgent.description}</p>
+        {/if}
+        <div class="single-hint">
+          <p>This is a standalone primary agent.</p>
+          <p>To give them a team of subordinates, click <strong>+ New organisation</strong> in the sidebar to spin up an org around them.</p>
+        </div>
+      </div>
     {:else}
-      <div class="empty-state">
-        <p class="empty-title">Select an agent or organisation</p>
-        <p class="empty-hint">Use the tree on the left to navigate, or create something new.</p>
+      <div class="empty-canvas">
+        <h3>Pick an agent or organisation</h3>
+        <p>Use the sidebar on the left. Click a primary agent to view their profile, or an organisation to see its full org chart.</p>
       </div>
     {/if}
-  </div>
+  </main>
 </div>
+
+<!-- Modals (rendered outside the layout flow) -->
+{#if editingAgent}
+  <AgentEditModal
+    agentName={editingAgent}
+    {schedule}
+    onClose={closeEditModal}
+    onChanged={handleAgentEdited}
+  />
+{/if}
+
+{#if modal === 'createOrg'}
+  <CreateOrgModal
+    onCreated={handleOrgCreated}
+    onCancel={closeAddModal}
+  />
+{:else if modal && typeof modal === 'object' && modal.type === 'addAgent'}
+  {@const targetOrg = orgs.find((o) => o.slug === modal.orgSlug)}
+  {#if targetOrg}
+    <AddAgentModal
+      org={targetOrg}
+      existingAgents={allAgents.map((a) => ({
+        name: a.name,
+        display_name: a.display_name,
+        tier: a.tier,
+        orgSlug: a.orgSlug,
+      }))}
+      onCreated={handleAgentCreated}
+      onCancel={closeAddModal}
+    />
+  {/if}
+{/if}
 
 <style>
   .agents-tab {
@@ -201,92 +240,158 @@
     overflow: hidden;
   }
 
-  .left-panel {
-    width: 280px;
+  .sidebar {
+    width: 240px;
     flex-shrink: 0;
     overflow-y: auto;
-    padding: 8px 4px 8px 0;
+    padding: 8px 4px 8px 4px;
   }
 
-  .left-panel::-webkit-scrollbar {
+  .sidebar::-webkit-scrollbar {
     width: 4px;
   }
 
-  .left-panel::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .left-panel::-webkit-scrollbar-thumb {
+  .sidebar::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.08);
     border-radius: 2px;
   }
 
-  .panel-divider {
+  .divider {
     width: 1px;
     background: rgba(255, 255, 255, 0.08);
     flex-shrink: 0;
     margin: 0 4px;
   }
 
-  .right-panel {
+  .canvas {
     flex: 1;
     min-width: 0;
-    overflow-y: auto;
+    overflow: hidden;
     padding: 8px 0 8px 12px;
+    display: flex;
+    flex-direction: column;
   }
 
-  .right-panel::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  .right-panel::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .right-panel::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 2px;
-  }
-
-  .loading-hint {
-    color: rgba(255, 255, 255, 0.3);
+  .loading,
+  .error {
+    color: rgba(255, 255, 255, 0.4);
     font-size: 12px;
     text-align: center;
     padding: 24px 8px;
     font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui);
   }
 
-  .error-hint {
+  .error {
     color: rgba(255, 100, 100, 0.7);
-    font-size: 12px;
-    text-align: center;
-    padding: 24px 8px;
-    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui);
   }
 
-  .empty-state {
+  .empty-canvas {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
-    min-height: 200px;
-    padding: 32px 16px;
     text-align: center;
+    padding: 32px;
     font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui);
   }
 
-  .empty-title {
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 13px;
-    font-weight: 500;
+  .empty-canvas h3 {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 14px;
+    font-weight: 600;
     margin: 0 0 8px;
   }
 
-  .empty-hint {
-    color: rgba(255, 255, 255, 0.2);
+  .empty-canvas p {
+    color: rgba(255, 255, 255, 0.35);
     font-size: 12px;
     margin: 0;
     line-height: 1.5;
+    max-width: 380px;
+  }
+
+  /* Single primary agent view */
+  .single-agent-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 24px 32px;
+    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui);
+  }
+
+  .single-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 18px;
+  }
+
+  .single-name {
+    display: block;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 22px;
+    font-weight: 600;
+  }
+
+  .single-role {
+    display: block;
+    margin-top: 4px;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .edit-btn {
+    background: rgba(120, 160, 255, 0.12);
+    border: 1px solid rgba(120, 160, 255, 0.3);
+    color: rgba(170, 200, 255, 0.95);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .edit-btn:hover {
+    background: rgba(120, 160, 255, 0.2);
+    border-color: rgba(120, 160, 255, 0.5);
+  }
+
+  .single-desc {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0 0 24px;
+    max-width: 640px;
+  }
+
+  .single-hint {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 14px 18px;
+    max-width: 560px;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .single-hint p {
+    margin: 0 0 6px;
+  }
+
+  .single-hint p:last-child {
+    margin: 0;
+  }
+
+  .single-hint strong {
+    color: rgba(170, 200, 255, 0.85);
+    font-weight: 600;
   }
 </style>
