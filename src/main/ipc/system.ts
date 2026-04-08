@@ -9,7 +9,8 @@ import { app, ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile, execSync, spawn } from 'child_process';
-import { getConfig, USER_DATA } from '../config';
+import { getConfig } from '../config';
+import { getAgentDir } from '../agent-manager';
 import { getAllAgentsUsage, getAllActivity, getAgentUsageDetail } from '../usage';
 import { startServer, stopServer } from '../server';
 import { cronScheduler, getJobHistory } from '../channels/cron';
@@ -362,13 +363,13 @@ export function registerSystemHandlers(ctx: IpcContext): void {
   // -- Cron job CRUD --
 
   function readAgentManifestRaw(agentName: string): Record<string, unknown> {
-    const manifestPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+    const manifestPath = path.join(getAgentDir(agentName), 'data', 'agent.json');
     if (!fs.existsSync(manifestPath)) return {};
     return JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
   }
 
   function writeAgentManifestRaw(agentName: string, manifest: Record<string, unknown>): void {
-    const manifestPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+    const manifestPath = path.join(getAgentDir(agentName), 'data', 'agent.json');
     const tmp = manifestPath + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(manifest, null, 2) + '\n');
     fs.renameSync(tmp, manifestPath);

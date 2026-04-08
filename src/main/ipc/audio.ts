@@ -7,7 +7,8 @@
 import { ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getConfig, USER_DATA, BUNDLE_ROOT } from '../config';
+import { getConfig, BUNDLE_ROOT } from '../config';
+import { getAgentDir } from '../agent-manager';
 import { playAudio, clearAudioQueue, stopCurrentPlayback, setMuted, isMuted } from '../tts';
 import type { IpcContext } from '../ipc-handlers';
 
@@ -17,7 +18,7 @@ export function registerAudioHandlers(_ctx: IpcContext): void {
   ipcMain.handle('audio:playIntro', async () => {
     const c = getConfig();
     const introCandidates = [
-      path.join(USER_DATA, 'agents', c.AGENT_NAME, 'audio', 'intro.mp3'),
+      path.join(getAgentDir(c.AGENT_NAME), 'audio', 'intro.mp3'),
       path.join(BUNDLE_ROOT, 'agents', c.AGENT_NAME, 'audio', 'intro.mp3'),
     ];
     for (const introPath of introCandidates) {
@@ -37,7 +38,7 @@ export function registerAudioHandlers(_ctx: IpcContext): void {
     const c = getConfig();
     // Check user data first, then bundle
     const candidates = [
-      path.join(USER_DATA, 'agents', c.AGENT_NAME, 'audio', filename),
+      path.join(getAgentDir(c.AGENT_NAME), 'audio', filename),
       path.join(BUNDLE_ROOT, 'agents', c.AGENT_NAME, 'audio', filename),
     ];
     for (const audioPath of candidates) {

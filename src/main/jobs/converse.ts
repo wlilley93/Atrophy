@@ -16,6 +16,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig, BUNDLE_ROOT, USER_DATA } from '../config';
+import { getAgentDir } from '../agent-manager';
 import { runInferenceOneshot } from '../inference';
 import { editJobSchedule } from '../channels/cron';
 import { createLogger } from '../logger';
@@ -124,7 +125,7 @@ function loadAgentSoul(agentName: string): string {
 
   // Fallback: user data then bundle
   const soulPaths = [
-    path.join(USER_DATA, 'agents', agentName, 'prompts', 'soul.md'),
+    path.join(getAgentDir(agentName), 'prompts', 'soul.md'),
     path.join(BUNDLE_ROOT, 'agents', agentName, 'prompts', 'soul.md'),
   ];
   for (const p of soulPaths) {
@@ -140,7 +141,7 @@ function loadAgentManifest(agentName: string): Record<string, unknown> {
   // Check both bundle and user data, merge like config.ts does
   const paths = [
     path.join(BUNDLE_ROOT, 'agents', agentName, 'data', 'agent.json'),
-    path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json'),
+    path.join(getAgentDir(agentName), 'data', 'agent.json'),
   ];
   let result: Record<string, unknown> = {};
   for (const p of paths) {

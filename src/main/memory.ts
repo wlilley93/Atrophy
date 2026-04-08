@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig, USER_DATA, BUNDLE_ROOT } from './config';
+import { getAgentDir } from './agent-manager';
 import { embed, vectorToBlob as embVectorToBlob } from './embeddings';
 import { createLogger } from './logger';
 
@@ -1317,7 +1318,7 @@ export function searchOtherAgentMemory(
   query: string,
   limit = 10,
 ): CrossAgentSearchResult {
-  const dbPath = path.join(USER_DATA, 'agents', agentName, 'data', 'memory.db');
+  const dbPath = path.join(getAgentDir(agentName), 'data', 'memory.db');
   if (!fs.existsSync(dbPath)) {
     return { agent: agentName, turns: [], summaries: [], error: `Agent '${agentName}' has no memory database.` };
   }

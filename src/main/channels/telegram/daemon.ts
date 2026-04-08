@@ -23,7 +23,7 @@ import { getConfig, USER_DATA, BUNDLE_ROOT, saveAgentConfig } from '../../config
 import { setActive, getStatus } from '../../status';
 import { sendMessage, sendMessageGetId, editMessage, deleteMessage, post, downloadTelegramFile, setBotProfilePhoto, sendChatAction, sendDocument, sendPhoto } from './api';
 import { buildStatusDisplay, formatElapsed, type StreamState, type ToolCallState } from './formatter';
-import { discoverAgents, getAgentState } from '../../agent-manager';
+import { discoverAgents, getAgentDir, getAgentState } from '../../agent-manager';
 import { streamInference, stopInference, resetMcpConfig, InferenceEvent } from '../../inference';
 import { loadSystemPrompt } from '../../context';
 import { getReferenceImages } from '../../jobs/generate-avatar';
@@ -378,7 +378,7 @@ export function isLaunchdInstalled(): boolean {
 
 function getAgentManifest(agentName: string): Record<string, unknown> {
   for (const base of [
-    path.join(USER_DATA, 'agents', agentName),
+    getAgentDir(agentName),
     path.join(BUNDLE_ROOT, 'agents', agentName),
   ]) {
     const mpath = path.join(base, 'data', 'agent.json');
@@ -926,7 +926,7 @@ async function dispatchToAgent(
 
       // Auto-send artefacts created during this dispatch
       try {
-        const displayFile = path.join(USER_DATA, 'agents', agentName, 'data', '.artefact_display.json');
+        const displayFile = path.join(getAgentDir(agentName), 'data', '.artefact_display.json');
         if (fs.existsSync(displayFile)) {
           const artefact = JSON.parse(fs.readFileSync(displayFile, 'utf-8')) as {
             status?: string;
@@ -1179,7 +1179,7 @@ async function pollAgent(agent: TelegramAgent): Promise<void> {
 
     // Build the prompt from text and/or media
     const promptParts: string[] = [];
-    const mediaDir = path.join(USER_DATA, 'agents', agent.name, 'media');
+    const mediaDir = path.join(getAgentDir(agent.name), 'media');
 
     // Resolve sender name: check telegram_usernames map first (case-insensitive),
     // then fall back to Telegram first+last name.

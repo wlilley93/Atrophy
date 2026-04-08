@@ -88,6 +88,7 @@ vi.mock('../agent-manager', () => ({
     }
     return agents;
   }),
+  getAgentDir: (name: string) => path.join(AGENTS_DIR, name),
 }));
 
 // ---------------------------------------------------------------------------

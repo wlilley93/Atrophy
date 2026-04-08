@@ -7,9 +7,9 @@
 import { ipcMain, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getConfig, isValidAgentName, saveAgentConfig, saveUserConfig, saveEnvVar, USER_DATA, BUNDLE_ROOT } from '../config';
+import { getConfig, isValidAgentName, saveAgentConfig, saveUserConfig, saveEnvVar, BUNDLE_ROOT } from '../config';
 import {
-  discoverUiAgents, discoverAgents, cycleAgent, getAgentState, setAgentState,
+  discoverUiAgents, discoverAgents, cycleAgent, getAgentDir, getAgentState, setAgentState,
   suspendAgentSession, resumeAgentSession,
   writeAskResponse, findManifest, deleteAgent,
 } from '../agent-manager';
@@ -189,7 +189,7 @@ export function registerAgentHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('agent:getNotifyVia', (_event, agentName: string) => {
     if (!/^[a-zA-Z0-9_-]+$/.test(agentName)) return 'auto';
-    const agentJsonPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+    const agentJsonPath = path.join(getAgentDir(agentName), 'data', 'agent.json');
     try {
       const manifest = JSON.parse(fs.readFileSync(agentJsonPath, 'utf-8'));
       return (manifest.notify_via as string) || 'auto';
@@ -259,7 +259,7 @@ export function registerAgentHandlers(ctx: IpcContext): void {
       const manifest = findManifest(a.name) || {};
       const org = manifest.org as Record<string, unknown> | undefined;
       const state = getAgentState(a.name);
-      const topLevel = fs.existsSync(path.join(USER_DATA, 'agents', a.name, 'data'));
+      const topLevel = fs.existsSync(path.join(getAgentDir(a.name), 'data'));
       return {
         ...a,
         orgSlug: (org?.slug as string) ?? null,
@@ -300,7 +300,7 @@ export function registerAgentHandlers(ctx: IpcContext): void {
       ? ['system_prompt.md', 'system.md']
       : [`${stem}.md`];
     const searchDirs = [
-      path.join(USER_DATA, 'agents', name, 'prompts'),
+      path.join(getAgentDir(name), 'prompts'),
       path.join(BUNDLE_ROOT, 'agents', name, 'prompts'),
     ];
     for (const dir of searchDirs) {
@@ -327,7 +327,7 @@ export function registerAgentHandlers(ctx: IpcContext): void {
     // loads, and edits would silently never take effect.
     const stem = promptName.endsWith('.md') ? promptName.slice(0, -3) : promptName;
     const filename = stem === 'system' ? 'system_prompt.md' : `${stem}.md`;
-    const promptsDir = path.join(USER_DATA, 'agents', name, 'prompts');
+    const promptsDir = path.join(getAgentDir(name), 'prompts');
     fs.mkdirSync(promptsDir, { recursive: true });
     const promptPath = path.join(promptsDir, filename);
     fs.writeFileSync(promptPath, content, 'utf-8');

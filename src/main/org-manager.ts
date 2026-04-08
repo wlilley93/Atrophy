@@ -11,7 +11,7 @@ import * as path from 'path';
 import Database from 'better-sqlite3';
 import { USER_DATA, BUNDLE_ROOT, isValidAgentName, saveAgentConfig } from './config';
 import { readAgentManifest } from './mcp-registry';
-import { discoverAgents } from './agent-manager';
+import { discoverAgents, getAgentDir } from './agent-manager';
 import { createLogger } from './logger';
 
 const log = createLogger('org-manager');
@@ -381,7 +381,7 @@ export function removeAgentFromOrg(agentName: string): void {
   // Remove org section from agent - write manifest without org key
   // saveAgentConfig merges, so we need to explicitly set org to undefined
   // by reading and rewriting the full manifest
-  const agentJsonPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+  const agentJsonPath = path.join(getAgentDir(agentName), 'data', 'agent.json');
   if (fs.existsSync(agentJsonPath)) {
     const fullManifest = JSON.parse(fs.readFileSync(agentJsonPath, 'utf-8'));
     delete fullManifest.org;

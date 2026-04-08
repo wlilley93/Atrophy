@@ -12,6 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BUNDLE_ROOT, USER_DATA } from '../../config';
+import { getAgentDir } from '../../agent-manager';
 import { switchboard } from '../switchboard';
 import { runJob } from './runner';
 import { createLogger } from '../../logger';
@@ -318,7 +319,7 @@ class CronScheduler {
     }
 
     // Persist to agent manifest (source of truth) and jobs.json (fallback)
-    const manifestPath = path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json');
+    const manifestPath = path.join(getAgentDir(agentName), 'data', 'agent.json');
     try {
       if (fs.existsSync(manifestPath)) {
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));

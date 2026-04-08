@@ -179,6 +179,28 @@ export function isValidAgentName(name: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name) && !name.includes('..');
 }
 
+/**
+ * Resolve the user-data directory for an agent, checking org-nested
+ * paths before flat. Mirrors agent-manager.getAgentDir() but lives here
+ * to avoid a circular import (agent-manager imports from config).
+ */
+function resolveAgentDir(name: string): string {
+  const agentsRoot = path.join(USER_DATA, 'agents');
+  // 1. Check org-nested: agents/<org>/<name>/data/
+  if (fs.existsSync(agentsRoot)) {
+    try {
+      for (const entry of fs.readdirSync(agentsRoot)) {
+        const nested = path.join(agentsRoot, entry, name, 'data');
+        if (fs.existsSync(nested)) {
+          return path.join(agentsRoot, entry, name);
+        }
+      }
+    } catch { /* non-critical */ }
+  }
+  // 2. Flat: agents/<name>/
+  return path.join(agentsRoot, name);
+}
+
 function loadAgentManifest(name: string): void {
   if (!isValidAgentName(name)) {
     console.warn(`[config] Invalid agent name rejected: ${name}`);
@@ -189,7 +211,7 @@ function loadAgentManifest(name: string): void {
   // This ensures bundle defaults (voice, display, heartbeat, telegram)
   // are preserved unless the user explicitly overrides them.
   const bundlePath = path.join(BUNDLE_ROOT, 'agents', name, 'data', 'agent.json');
-  const userPath = path.join(USER_DATA, 'agents', name, 'data', 'agent.json');
+  const userPath = path.join(resolveAgentDir(name), 'data', 'agent.json');
 
   let bundle: Record<string, unknown> = {};
   let user: Record<string, unknown> = {};
@@ -368,7 +390,7 @@ function migrateAgentData(): void {
     // files only if they do not already exist at the destination.
     // This preserves any user modifications while filling in missing files.
     const bundleAvatar = path.join(agentDir, 'avatar');
-    const userAvatar = path.join(USER_DATA, 'agents', name, 'avatar');
+    const userAvatar = path.join(resolveAgentDir(name), 'avatar');
     if (fs.existsSync(bundleAvatar) && fs.statSync(bundleAvatar).isDirectory()) {
       copyTreeIfMissing(bundleAvatar, userAvatar);
     }
@@ -497,7 +519,7 @@ function obsidianAvailable(): boolean {
 // ---------------------------------------------------------------------------
 
 function avatarPath(agentName: string, rel: string): string {
-  const userPath = path.join(USER_DATA, 'agents', agentName, 'avatar', rel);
+  const userPath = path.join(resolveAgentDir(agentName), 'avatar', rel);
   if (fs.existsSync(userPath)) return userPath;
   const bundlePath = path.join(BUNDLE_ROOT, 'agents', agentName, 'avatar', rel);
   if (fs.existsSync(bundlePath)) return bundlePath;
@@ -872,7 +894,7 @@ export class Config {
       : path.join(USER_DATA, 'agents');
     this.OBSIDIAN_AGENT_DIR = this.OBSIDIAN_AVAILABLE
       ? path.join(this.OBSIDIAN_PROJECT_DIR, 'Agent Workspace', name)
-      : path.join(USER_DATA, 'agents', name);
+      : resolveAgentDir(name);
     this.OBSIDIAN_AGENT_NOTES = this.OBSIDIAN_AGENT_DIR;
 
     // Memory & context
@@ -912,7 +934,7 @@ export class Config {
     // Avatar (user data > bundled fallback)
     this.AVATAR_ENABLED = cfg('AVATAR_ENABLED', false);
     this.AVATAR_RESOLUTION = cfg('AVATAR_RESOLUTION', 512);
-    const userAvatarDir = path.join(USER_DATA, 'agents', name, 'avatar');
+    const userAvatarDir = path.join(resolveAgentDir(name), 'avatar');
     const bundleAvatarDir = path.join(BUNDLE_ROOT, 'agents', name, 'avatar');
     this.AVATAR_DIR = fs.existsSync(path.join(userAvatarDir, 'loops'))
       ? userAvatarDir

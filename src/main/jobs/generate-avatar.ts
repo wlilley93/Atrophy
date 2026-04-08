@@ -12,7 +12,8 @@
 import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig, USER_DATA } from '../config';
+import { getConfig } from '../config';
+import { getAgentDir } from '../agent-manager';
 import { createLogger } from '../logger';
 
 const log = createLogger('avatar');
@@ -67,7 +68,7 @@ export interface FalResult {
 
 export function loadAgentManifest(agentName: string): AgentManifest {
   const paths = [
-    path.join(USER_DATA, 'agents', agentName, 'data', 'agent.json'),
+    path.join(getAgentDir(agentName), 'data', 'agent.json'),
   ];
   for (const p of paths) {
     try {
@@ -90,7 +91,7 @@ export function getFalKey(): string {
 }
 
 function avatarDir(agentName: string): string {
-  return path.join(USER_DATA, 'agents', agentName, 'avatar');
+  return path.join(getAgentDir(agentName), 'avatar');
 }
 
 function referenceDir(agentName: string): string {

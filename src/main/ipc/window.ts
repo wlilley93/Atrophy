@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execFileSync, spawn } from 'child_process';
 import { getConfig, saveEnvVar, BUNDLE_ROOT, USER_DATA } from '../config';
+import { getAgentDir } from '../agent-manager';
 import { streamInference, type InferenceEvent } from '../inference';
 import { synthesise, playAudio, isMuted } from '../tts';
 import { createAgent } from '../create-agent';
@@ -608,7 +609,7 @@ Output EXACTLY this format - a single fenced JSON block:
     // defence/<subagent>/avatar layout used by Montgomery's research fellows
     // and ambassadors.
     const candidateDirs = [
-      path.join(USER_DATA, 'agents', agentName, 'avatar'),
+      path.join(getAgentDir(agentName), 'avatar'),
     ];
     try {
       const orgsRoot = path.join(USER_DATA, 'agents');

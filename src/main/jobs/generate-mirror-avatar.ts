@@ -8,7 +8,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { USER_DATA } from '../config';
+import { getAgentDir } from '../agent-manager';
 import { createLogger } from '../logger';
 
 const log = createLogger('mirror-avatar');
@@ -39,7 +39,7 @@ function getFalKey(): string {
 }
 
 function mirrorAvatarDir(agentName: string): string {
-  return path.join(USER_DATA, 'agents', agentName, 'avatar');
+  return path.join(getAgentDir(agentName), 'avatar');
 }
 
 /**

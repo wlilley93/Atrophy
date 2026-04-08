@@ -15,7 +15,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import Database from 'better-sqlite3';
-import { getConfig, USER_DATA } from '../config';
+import { getConfig } from '../config';
+import { getAgentDir } from '../agent-manager';
 import { runInferenceOneshot } from '../inference';
 import { writeObservation, extractAndStoreEntities } from '../memory';
 import { createLogger } from '../logger';
@@ -47,7 +48,7 @@ interface ParsedObservation {
 // ---------------------------------------------------------------------------
 
 function stateFilePath(agentName: string): string {
-  return path.join(USER_DATA, 'agents', agentName, 'state', '.observer_state.json');
+  return path.join(getAgentDir(agentName), 'state', '.observer_state.json');
 }
 
 function loadState(agentName: string): ObserverState {
