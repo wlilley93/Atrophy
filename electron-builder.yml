@@ -12,10 +12,13 @@ files:
 
 asarUnpack:
   # Native .node binaries for onnxruntime - must live outside asar to load at runtime.
-  # Transformers.js dynamically imports onnxruntime-node; if it's inside asar, the
-  # module resolver can't find it and embeddings silently disable themselves.
+  # Both @xenova (embeddings) and @huggingface (kokoro TTS) load onnxruntime-node
+  # via dynamic import; if it's inside asar the module resolver can't find it.
   - "node_modules/onnxruntime-node/**/*"
   - "node_modules/@xenova/transformers/**/*"
+  - "node_modules/@huggingface/transformers/**/*"
+  - "node_modules/kokoro-js/**/*"
+  - "node_modules/phonemizer/**/*"
 
 mac:
   category: public.app-category.utilities

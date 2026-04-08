@@ -14,7 +14,7 @@ import * as os from 'os';
 import * as crypto from 'crypto';
 import { getConfig } from './config';
 import { createLogger } from './logger';
-import { synthesisePiper as piperSynth, isPiperAvailable, getDefaultPiperVoice } from './piper';
+import { synthesiseKokoro, isKokoroAvailable, getDefaultKokoroVoice } from './kokoro';
 
 const log = createLogger('tts');
 
@@ -484,7 +484,7 @@ export async function synthesise(text: string): Promise<string | null> {
   };
   const falVoiceId = config.FAL_VOICE_ID;
   const falEndpoint = config.FAL_TTS_ENDPOINT;
-  const piperVoice = config.PIPER_VOICE;
+  const kokoroVoice = (config as unknown as Record<string, unknown>).KOKORO_VOICE as string | undefined;
   const agentName = config.AGENT_NAME;
 
   // Primary: ElevenLabs streaming (with concurrency limit)
@@ -512,21 +512,21 @@ export async function synthesise(text: string): Promise<string | null> {
     try {
       return await synthesiseFal(text, falEndpoint);
     } catch (e) {
-      log.warn(`Fal failed (${e}), trying Piper...`);
+      log.warn(`Fal failed (${e}), trying Kokoro...`);
     }
   }
 
-  // Fallback: Piper (local neural TTS)
-  if (isPiperAvailable()) {
+  // Fallback: Kokoro-82M (local neural TTS via onnxruntime-node)
+  if (isKokoroAvailable()) {
     try {
-      const { text: piperText } = processProsody(text);
-      if (piperText && piperText.trim()) {
-        const voiceModel = piperVoice || getDefaultPiperVoice(agentName);
-        log.info(`Using Piper TTS with voice: ${voiceModel}`);
-        return await piperSynth(piperText, voiceModel, agentName);
+      const { text: kokoroText } = processProsody(text);
+      if (kokoroText && kokoroText.trim()) {
+        const voice = kokoroVoice || getDefaultKokoroVoice(agentName);
+        log.info(`Using Kokoro TTS with voice: ${voice}`);
+        return await synthesiseKokoro(kokoroText, voice, agentName);
       }
     } catch (e) {
-      log.warn(`Piper failed (${e}), trying macOS say...`);
+      log.warn(`Kokoro failed (${e}), trying macOS say...`);
     }
   }
 

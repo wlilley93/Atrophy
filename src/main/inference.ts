@@ -639,10 +639,21 @@ export function streamInference(
   // --- One-shot spawn path (cron, federation, no tmux, agent not in pool) ---
   const config = getConfig();
 
-  // Tool category filtering - predict which MCP servers are needed
+  // Tool category filtering - predict which MCP servers are needed.
+  //
+  // Only runs for real desktop user messages. Cron jobs, federation,
+  // heartbeat, and other system-triggered inference use the full MCP
+  // config because we cannot predict what tools they will need from the
+  // triggering text (which is usually a system prompt or a fixed
+  // instruction, not a user question). Filtering on those paths stripped
+  // shell/worldmonitor/intel tools from Montgomery's heartbeat and
+  // caused the "MCP configuration parsing failure" fault he reported.
   let mcpConfig: string;
   if (options?.mcpConfigPath) {
     mcpConfig = options.mcpConfigPath;
+  } else if (options?.source !== 'desktop') {
+    mcpConfig = getMcpConfigPath();
+    log.debug(`[tool-filter] skipped for source=${options?.source || 'unknown'}, using full config`);
   } else {
     const categories = predictToolCategories(userMessage);
     const agentForFilter = config.AGENT_NAME;
