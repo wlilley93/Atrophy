@@ -82,6 +82,18 @@
       allAgents = (agentsResult || []) as AgentNode[];
       schedule = scheduleResult || [];
       if (allAgents.length === 0) loadError = 'No agents found';
+
+      // Auto-select the first org so the organagram canvas shows immediately
+      // instead of the empty "Pick an agent" placeholder. If no orgs exist,
+      // fall back to the first primary agent.
+      if (!selection) {
+        if (orgs.length > 0) {
+          selection = { kind: 'org', slug: orgs[0].slug };
+        } else {
+          const first = allAgents.find((a) => a.topLevel);
+          if (first) selection = { kind: 'agent', name: first.name };
+        }
+      }
     } catch (e) {
       loadError = `Failed to load: ${e}`;
       console.error('AgentsTab load error:', e);

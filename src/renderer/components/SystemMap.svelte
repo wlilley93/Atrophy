@@ -16,8 +16,10 @@
 
   interface Props {
     onClose: () => void;
+    /** When true, renders inline (fills parent) instead of as a fixed overlay. */
+    inline?: boolean;
   }
-  let { onClose }: Props = $props();
+  let { onClose, inline = false }: Props = $props();
 
   // ---------------------------------------------------------------------------
   // Topology types (mirror IPC shape)
@@ -487,24 +489,29 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={(e) => { if (!inline) onKeydown(e); }} />
 
-<div class="overlay" onclick={onClose} role="presentation">
-  <div class="panel" onclick={(e) => e.stopPropagation()} role="presentation">
-    <header class="panel-header">
-      <div class="title-block">
-        <span class="title">System Map</span>
-        <span class="title-sub">Switchboard Topology</span>
-      </div>
-      <div class="header-right">
-        <span class="node-count">{nodes.length} nodes</span>
+{#if !inline}
+  <div class="overlay" onclick={onClose} role="presentation"></div>
+{/if}
+
+<div class={inline ? 'panel panel-inline' : 'panel panel-overlay'} onclick={(e) => e.stopPropagation()} role="presentation">
+  <header class="panel-header">
+    <div class="title-block">
+      <span class="title">System Map</span>
+      <span class="title-sub">Switchboard Topology</span>
+    </div>
+    <div class="header-right">
+      <span class="node-count">{nodes.length} nodes</span>
+      {#if !inline}
         <button class="close-btn" onclick={onClose} aria-label="Close">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
         </button>
-      </div>
-    </header>
+      {/if}
+    </div>
+  </header>
 
     {#if loading}
       <div class="loading">
@@ -814,12 +821,22 @@
       {/if}
     {/if}
   </div>
-</div>
 
 <style>
   /* ======================================================================
    * Overlay + Panel shell
    * ====================================================================== */
+
+  /* Inline mode: fills parent instead of floating */
+  .panel-inline {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
 
   .overlay {
     position: fixed;
