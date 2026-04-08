@@ -129,6 +129,7 @@ export interface AtrophyAPI {
   // Usage & activity
   getUsage: (days?: number) => Promise<unknown>;
   getUsageDetail: (agentName: string, days?: number) => Promise<unknown>;
+  getUsageDaily: (days?: number) => Promise<unknown>;
   getActivity: (days?: number, limit?: number) => Promise<unknown>;
 
   // Agent deferral
@@ -416,6 +417,7 @@ const api: AtrophyAPI = {
   // Usage & activity
   getUsage: (days) => ipcRenderer.invoke('usage:all', days),
   getUsageDetail: (agentName, days) => ipcRenderer.invoke('usage:detail', agentName, days),
+  getUsageDaily: (days) => ipcRenderer.invoke('usage:daily', days),
   getActivity: (days, limit) => ipcRenderer.invoke('activity:all', days, limit),
 
   // Agent deferral

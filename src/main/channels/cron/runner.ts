@@ -48,6 +48,14 @@ export interface JobResult {
   stderr: string;
   durationMs: number;
   timestamp: string;
+  // Inference usage (parsed from stderr [inference] lines emitted by claude_cli.py).
+  // Present only when the job actually called the Claude CLI.
+  inference?: {
+    model: string;
+    tokensIn: number;
+    tokensOut: number;
+    costUsd: number;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +142,7 @@ export async function runJob(
       ...process.env as Record<string, string>,
       PATH: `${pythonBinDir}:/usr/local/bin:/usr/bin:/bin`,
       AGENT: agentName,
+      JOB_NAME: jobName,
       PYTHONPATH: [
         path.join(USER_DATA, 'scripts', 'agents'),
         path.join(USER_DATA, 'scripts'),
@@ -195,9 +204,42 @@ export async function runJob(
   // Record in history
   pushHistory(result);
 
-  log.info(
-    `Job '${agentName}.${jobName}' finished (exit=${result.exitCode}, ${result.durationMs}ms)`,
-  );
+  // Extract inference usage from stderr. The Python claude_cli.py helper
+  // emits a parseable line: [inference] agent=X job=Y model=Z tokens_in=N tokens_out=M cost_usd=C
+  // We surface this prominently in the log so operators can see which cron
+  // jobs are burning tokens and how much.
+  const inferenceLines = (result.stderr || '').split('\n').filter((l) => l.startsWith('[inference]'));
+  let totalTokensIn = 0;
+  let totalTokensOut = 0;
+  let totalCost = 0;
+  let inferenceModel = '';
+  for (const line of inferenceLines) {
+    const inMatch = line.match(/tokens_in=(\d+)/);
+    const outMatch = line.match(/tokens_out=(\d+)/);
+    const costMatch = line.match(/cost_usd=([\d.]+)/);
+    const modelMatch = line.match(/model=(\S+)/);
+    if (inMatch) totalTokensIn += parseInt(inMatch[1], 10);
+    if (outMatch) totalTokensOut += parseInt(outMatch[1], 10);
+    if (costMatch) totalCost += parseFloat(costMatch[1]);
+    if (modelMatch && !inferenceModel) inferenceModel = modelMatch[1];
+  }
+
+  if (inferenceLines.length > 0) {
+    result.inference = {
+      model: inferenceModel,
+      tokensIn: totalTokensIn,
+      tokensOut: totalTokensOut,
+      costUsd: totalCost,
+    };
+    log.info(
+      `Job '${agentName}.${jobName}' finished (exit=${result.exitCode}, ${result.durationMs}ms) ` +
+      `[inference: ${inferenceModel} ${totalTokensIn}+${totalTokensOut} tokens, $${totalCost.toFixed(4)}]`,
+    );
+  } else {
+    log.info(
+      `Job '${agentName}.${jobName}' finished (exit=${result.exitCode}, ${result.durationMs}ms)`,
+    );
+  }
 
   if (result.stderr && result.exitCode !== 0) {
     log.warn(`Job '${agentName}.${jobName}' stderr: ${result.stderr.slice(0, 500)}`);

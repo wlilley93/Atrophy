@@ -11,7 +11,7 @@ import * as path from 'path';
 import { execFile, execSync, spawn } from 'child_process';
 import { getConfig } from '../config';
 import { getAgentDir } from '../agent-manager';
-import { getAllAgentsUsage, getAllActivity, getAgentUsageDetail } from '../usage';
+import { getAllAgentsUsage, getAllActivity, getAgentUsageDetail, getDailyUsage } from '../usage';
 import { startServer, stopServer } from '../server';
 import { cronScheduler, getJobHistory } from '../channels/cron';
 import type { JobDefinition } from '../channels/cron';
@@ -91,6 +91,10 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('usage:detail', (_event, agentName: string, days?: number) => {
     return getAgentUsageDetail(agentName, days);
+  });
+
+  ipcMain.handle('usage:daily', (_event, days?: number) => {
+    return getDailyUsage(days);
   });
 
   // -- Cron (in-process scheduler via switchboard) --

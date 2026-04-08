@@ -134,6 +134,74 @@ export function getAllAgentsUsage(days?: number): UsageSummary[] {
 }
 
 // ---------------------------------------------------------------------------
+// Daily usage breakdown (for bar charts)
+// ---------------------------------------------------------------------------
+
+export interface DailyUsageRow {
+  date: string;        // YYYY-MM-DD
+  agent_name: string;
+  display_name: string;
+  tokens_in: number;
+  tokens_out: number;
+  tokens: number;
+  calls: number;
+}
+
+export function getDailyUsage(days = 14): DailyUsageRow[] {
+  const results: DailyUsageRow[] = [];
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  for (const agent of discoverAgents()) {
+    const dbPath = path.join(getAgentDir(agent.name), 'data', 'memory.db');
+    if (!fs.existsSync(dbPath)) continue;
+
+    let displayName = agent.display_name;
+    if (!displayName || displayName === agent.name.charAt(0).toUpperCase() + agent.name.slice(1)) {
+      const bundleManifest = path.join(BUNDLE_ROOT, 'agents', agent.name, 'data', 'agent.json');
+      try {
+        if (fs.existsSync(bundleManifest)) {
+          const manifest = JSON.parse(fs.readFileSync(bundleManifest, 'utf-8'));
+          if (manifest.display_name) displayName = manifest.display_name;
+        }
+      } catch { /* use default */ }
+    }
+
+    let db: Database.Database;
+    try {
+      db = new Database(dbPath, { readonly: true });
+    } catch { continue; }
+
+    try {
+      const rows = db.prepare(`
+        SELECT date(timestamp) as date,
+               COALESCE(SUM(tokens_in), 0) as tokens_in,
+               COALESCE(SUM(tokens_out), 0) as tokens_out,
+               COUNT(*) as calls
+        FROM usage_log
+        WHERE timestamp >= ?
+        GROUP BY date(timestamp)
+        ORDER BY date ASC
+      `).all(cutoff) as { date: string; tokens_in: number; tokens_out: number; calls: number }[];
+      for (const r of rows) {
+        results.push({
+          date: r.date,
+          agent_name: agent.name,
+          display_name: displayName,
+          tokens_in: r.tokens_in,
+          tokens_out: r.tokens_out,
+          tokens: r.tokens_in + r.tokens_out,
+          calls: r.calls,
+        });
+      }
+    } catch { /* table may not exist */ }
+
+    db.close();
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Cross-agent activity feed
 // ---------------------------------------------------------------------------
 
