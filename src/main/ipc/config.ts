@@ -24,7 +24,7 @@ const agentKeys = new Set([
 const userKeys = new Set([
   'USER_NAME', 'INPUT_MODE', 'PTT_KEY', 'WAKE_WORD_ENABLED',
   'WAKE_CHUNK_SECONDS', 'SAMPLE_RATE', 'MAX_RECORD_SEC',
-  'CLAUDE_BIN', 'CLAUDE_MODEL', 'CLAUDE_EFFORT', 'ADAPTIVE_EFFORT', 'CONTEXT_SUMMARIES',
+  'CLAUDE_BIN', 'CLAUDE_MODEL', 'CLAUDE_EFFORT', 'ADAPTIVE_EFFORT', 'INFERENCE_PROVIDER', 'QWEN_BIN', 'QWEN_MODEL', 'CONTEXT_SUMMARIES',
   'MAX_CONTEXT_TOKENS', 'VECTOR_SEARCH_WEIGHT', 'EMBEDDING_MODEL',
   'EMBEDDING_DIM', 'SESSION_SOFT_LIMIT_MINS', 'NOTIFICATIONS_ENABLED',
   'SILENCE_TIMER_ENABLED', 'SILENCE_TIMER_MINUTES',
@@ -75,6 +75,9 @@ export function registerConfigHandlers(ctx: IpcContext): void {
       claudeModel: c.CLAUDE_MODEL,
       claudeEffort: c.CLAUDE_EFFORT,
       adaptiveEffort: c.ADAPTIVE_EFFORT,
+      inferenceProvider: c.INFERENCE_PROVIDER,
+      qwenBin: c.QWEN_BIN,
+      qwenModel: c.QWEN_MODEL,
       // Memory
       contextSummaries: c.CONTEXT_SUMMARIES,
       maxContextTokens: c.MAX_CONTEXT_TOKENS,

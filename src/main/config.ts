@@ -582,6 +582,9 @@ export class Config {
   CLAUDE_MODEL: string;
   CLAUDE_EFFORT: string;
   ADAPTIVE_EFFORT: boolean;
+  INFERENCE_PROVIDER: 'claude' | 'qwen';
+  QWEN_BIN: string;
+  QWEN_MODEL: string;
 
   // MCP
   MCP_DIR: string;
@@ -702,6 +705,9 @@ export class Config {
     this.CLAUDE_MODEL = 'claude-sonnet-4-6';
     this.CLAUDE_EFFORT = 'medium';
     this.ADAPTIVE_EFFORT = true;
+    this.INFERENCE_PROVIDER = 'claude';
+    this.QWEN_BIN = 'qwen';
+    this.QWEN_MODEL = '';
     this.MCP_DIR = '';
     this.MCP_SERVER_SCRIPT = '';
     this.MCP_GOOGLE_SCRIPT = '';
@@ -878,6 +884,9 @@ export class Config {
     this.CLAUDE_MODEL = cfg('CLAUDE_MODEL', 'claude-sonnet-4-6');
     this.CLAUDE_EFFORT = cfg('CLAUDE_EFFORT', 'medium');
     this.ADAPTIVE_EFFORT = cfg('ADAPTIVE_EFFORT', true);
+    this.INFERENCE_PROVIDER = cfg('INFERENCE_PROVIDER', 'claude') as 'claude' | 'qwen';
+    this.QWEN_BIN = cfg('QWEN_BIN', 'qwen');
+    this.QWEN_MODEL = cfg('QWEN_MODEL', '');
 
     // MCP
     this.MCP_DIR = path.join(BUNDLE_ROOT, 'mcp');
