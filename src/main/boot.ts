@@ -283,10 +283,12 @@ function discoverAndWireAgents(_ctx: AppContext): void {
         const lastSession = getLastCliSessionId() || uuidv4();
         const mcpConfig = mcpRegistry.buildConfigForAgent(agent.name);
 
+        const provider = config.INFERENCE_PROVIDER || 'claude';
         pool.createWindow(agent.name, {
           sessionId: lastSession,
-          claudeBin: config.CLAUDE_BIN,
+          claudeBin: provider === 'qwen' ? config.QWEN_BIN : config.CLAUDE_BIN,
           mcpConfigPath: mcpConfig,
+          provider,
         });
 
         setTimeout(() => {

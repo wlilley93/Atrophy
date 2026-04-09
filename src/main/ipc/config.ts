@@ -4,11 +4,13 @@
  */
 
 import { ipcMain } from 'electron';
-import { getConfig, reloadConfig, saveUserConfig, saveAgentConfig } from '../config';
+import { getConfig, reloadConfig, saveUserConfig, saveAgentConfig, BUNDLE_ROOT } from '../config';
 import { writeObservation } from '../memory';
+import { getTmuxPool } from '../inference';
+import { mcpRegistry } from '../mcp-registry';
 import { isDaemonRunning } from '../channels/telegram';
-import { BUNDLE_ROOT } from '../config';
 import { listDownloadedModels, isPiperAvailable } from '../piper';
+import { v4 as uuidv4 } from 'uuid';
 import type { IpcContext } from '../ipc-handlers';
 
 // Allowlist of keys safe to update from the renderer
@@ -129,10 +131,29 @@ export function registerConfigHandlers(ctx: IpcContext): void {
   // Lets users test runtime changes before committing them.
   ipcMain.handle('config:apply', (_event, updates: Record<string, unknown>) => {
     const c = getConfig();
+    const prevProvider = c.INFERENCE_PROVIDER;
     for (const [key, value] of Object.entries(updates)) {
       if (!safeKeys.has(key)) continue;
       if (key in c) {
         (c as unknown as Record<string, unknown>)[key] = value;
+      }
+    }
+    // If inference provider changed, kill the active agent's tmux window
+    // so the next message spawns with the correct CLI binary.
+    if ('INFERENCE_PROVIDER' in updates && updates.INFERENCE_PROVIDER !== prevProvider) {
+      const pool = getTmuxPool();
+      if (pool) {
+        const agentName = c.AGENT_NAME;
+        try { pool.killWindow(agentName); } catch { /* may not exist */ }
+        const mcpConfig = mcpRegistry.buildConfigForAgent(agentName);
+        const provider = String(updates.INFERENCE_PROVIDER) as 'claude' | 'qwen';
+        pool.createWindow(agentName, {
+          sessionId: uuidv4(),
+          claudeBin: provider === 'qwen' ? c.QWEN_BIN : c.CLAUDE_BIN,
+          mcpConfigPath: mcpConfig,
+          provider,
+        });
+        setTimeout(() => { try { pool.pressEnter(agentName); } catch { /* ok */ } }, 1000);
       }
     }
   });
