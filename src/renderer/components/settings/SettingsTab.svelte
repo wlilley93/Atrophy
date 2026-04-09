@@ -41,6 +41,9 @@
     claudeModel: string;
     claudeEffort: string;
     adaptiveEffort: boolean;
+    inferenceProvider: 'claude' | 'qwen';
+    qwenBin: string;
+    qwenModel: string;
     contextSummaries: number;
     maxContextTokens: number;
     vectorSearchWeight: number;
@@ -107,6 +110,9 @@
     claudeModel = $bindable(),
     claudeEffort = $bindable(),
     adaptiveEffort = $bindable(),
+    inferenceProvider = $bindable(),
+    qwenBin = $bindable(),
+    qwenModel = $bindable(),
     contextSummaries = $bindable(),
     maxContextTokens = $bindable(),
     vectorSearchWeight = $bindable(),
@@ -578,32 +584,51 @@
       {#if !collapsed.has('inference')}
         <div class="section-body">
           <div class="field-group">
-            <label class="field-label" for="claude-bin">Claude Binary</label>
-            <input id="claude-bin" type="text" bind:value={claudeBin} class="field-input" />
-          </div>
-          <div class="field-group">
-            <label class="field-label" for="claude-model">Model</label>
-            <select id="claude-model" bind:value={claudeModel} class="field-select">
-              <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-              <option value="claude-opus-4-6">Opus 4.6</option>
-              <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-              <option value="claude-sonnet-4-5-20241022">Sonnet 4.5</option>
-            </select>
-          </div>
-          <div class="field-group">
-            <span class="field-label">Effort</span>
+            <span class="field-label">Provider</span>
             <div class="segmented-control">
-              <button class:active={claudeEffort === 'low'} onclick={() => claudeEffort = 'low'}>Low</button>
-              <button class:active={claudeEffort === 'medium'} onclick={() => claudeEffort = 'medium'}>Medium</button>
-              <button class:active={claudeEffort === 'high'} onclick={() => claudeEffort = 'high'}>High</button>
+              <button class:active={inferenceProvider === 'claude'} onclick={() => inferenceProvider = 'claude'}>Claude</button>
+              <button class:active={inferenceProvider === 'qwen'} onclick={() => inferenceProvider = 'qwen'}>Qwen</button>
             </div>
           </div>
-          <label class="toggle-row">
-            <span class="toggle-label">Adaptive Effort</span>
-            <button class="toggle-switch" class:on={adaptiveEffort} onclick={() => adaptiveEffort = !adaptiveEffort} role="switch" aria-checked={adaptiveEffort}>
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </button>
-          </label>
+
+          {#if inferenceProvider === 'claude'}
+            <div class="field-group">
+              <label class="field-label" for="claude-bin">Claude Binary</label>
+              <input id="claude-bin" type="text" bind:value={claudeBin} class="field-input" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="claude-model">Model</label>
+              <select id="claude-model" bind:value={claudeModel} class="field-select">
+                <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                <option value="claude-opus-4-6">Opus 4.6</option>
+                <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                <option value="claude-sonnet-4-5-20241022">Sonnet 4.5</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <span class="field-label">Effort</span>
+              <div class="segmented-control">
+                <button class:active={claudeEffort === 'low'} onclick={() => claudeEffort = 'low'}>Low</button>
+                <button class:active={claudeEffort === 'medium'} onclick={() => claudeEffort = 'medium'}>Medium</button>
+                <button class:active={claudeEffort === 'high'} onclick={() => claudeEffort = 'high'}>High</button>
+              </div>
+            </div>
+            <label class="toggle-row">
+              <span class="toggle-label">Adaptive Effort</span>
+              <button class="toggle-switch" class:on={adaptiveEffort} onclick={() => adaptiveEffort = !adaptiveEffort} role="switch" aria-checked={adaptiveEffort}>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </button>
+            </label>
+          {:else}
+            <div class="field-group">
+              <label class="field-label" for="qwen-bin">Qwen Binary</label>
+              <input id="qwen-bin" type="text" bind:value={qwenBin} class="field-input" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="qwen-model">Model</label>
+              <input id="qwen-model" type="text" bind:value={qwenModel} class="field-input" placeholder="Leave empty for default" />
+            </div>
+          {/if}
         </div>
       {/if}
     </section>

@@ -164,6 +164,10 @@
   let claudeEffort = $state('medium');
   let adaptiveEffort = $state(true);
 
+  let inferenceProvider = $state<'claude' | 'qwen'>('claude');
+  let qwenBin = $state('qwen');
+  let qwenModel = $state('');
+
   let contextSummaries = $state(3);
   let maxContextTokens = $state(180000);
   let vectorSearchWeight = $state(0.7);
@@ -276,6 +280,10 @@
       claudeEffort = cfg.claudeEffort ?? 'medium';
       adaptiveEffort = cfg.adaptiveEffort ?? true;
 
+      inferenceProvider = (cfg.inferenceProvider as 'claude' | 'qwen') ?? 'claude';
+      qwenBin = cfg.qwenBin ?? 'qwen';
+      qwenModel = cfg.qwenModel ?? '';
+
       contextSummaries = cfg.contextSummaries ?? 3;
       maxContextTokens = cfg.maxContextTokens ?? 180000;
       vectorSearchWeight = cfg.vectorSearchWeight ?? 0.7;
@@ -347,6 +355,9 @@
       CLAUDE_MODEL: claudeModel,
       CLAUDE_EFFORT: claudeEffort,
       ADAPTIVE_EFFORT: adaptiveEffort,
+      INFERENCE_PROVIDER: inferenceProvider,
+      QWEN_BIN: qwenBin,
+      QWEN_MODEL: qwenModel,
       CONTEXT_SUMMARIES: contextSummaries,
       MAX_CONTEXT_TOKENS: maxContextTokens,
       VECTOR_SEARCH_WEIGHT: vectorSearchWeight,
@@ -533,6 +544,9 @@
         bind:claudeModel
         bind:claudeEffort
         bind:adaptiveEffort
+        bind:inferenceProvider
+        bind:qwenBin
+        bind:qwenModel
         bind:contextSummaries
         bind:maxContextTokens
         bind:vectorSearchWeight
