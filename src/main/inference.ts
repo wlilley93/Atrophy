@@ -196,7 +196,7 @@ function cleanEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   // Strip ALL Claude Code env vars - nested processes hang otherwise
   for (const key of Object.keys(env)) {
-    if (key.toUpperCase().includes('CLAUDE')) {
+    if (key.toUpperCase().includes('CLAUDE') || key.toUpperCase().includes('QWEN')) {
       delete env[key];
     }
   }
@@ -609,6 +609,80 @@ export function stopAllInference(): void {
   _activeProcesses.clear();
 }
 
+function buildClaudeStreamCmd(
+  config: ReturnType<typeof getConfig>,
+  opts: { cliSessionId: string | null; sessionId: string; model: string; effort: string; mcpConfig: string; allowedTools: string; agencyContext: string; system: string; userMessage: string },
+): string[] {
+  if (opts.cliSessionId) {
+    return [
+      config.CLAUDE_BIN,
+      '--model', opts.model,
+      '--effort', opts.effort,
+      '--dangerously-skip-permissions',
+      '--verbose',
+      '--output-format', 'stream-json',
+      '--include-partial-messages',
+      '--resume', opts.cliSessionId,
+      '--mcp-config', opts.mcpConfig,
+      '--allowedTools', opts.allowedTools,
+      '--disallowedTools', [...TOOL_BLACKLIST, ...config.DISABLED_TOOLS].join(','),
+      '-p', `[Current context: ${opts.agencyContext}]\n\n${opts.userMessage}`,
+    ];
+  }
+  return [
+    config.CLAUDE_BIN,
+    '--dangerously-skip-permissions',
+    '--model', opts.model,
+    '--effort', opts.effort,
+    '--verbose',
+    '--output-format', 'stream-json',
+    '--include-partial-messages',
+    '--session-id', opts.sessionId,
+    '--system-prompt', opts.system + '\n\n---\n\n## Current Context\n\n' + opts.agencyContext,
+    '--mcp-config', opts.mcpConfig,
+    '--allowedTools', opts.allowedTools,
+    '--disallowedTools', [...TOOL_BLACKLIST, ...config.DISABLED_TOOLS].join(','),
+    '-p', opts.userMessage,
+  ];
+}
+
+function buildQwenStreamCmd(
+  config: ReturnType<typeof getConfig>,
+  opts: { cliSessionId: string | null; sessionId: string; allowedTools: string; agencyContext: string; system: string; userMessage: string },
+): string[] {
+  const model = config.QWEN_MODEL || undefined;
+  const disallowed = [...TOOL_BLACKLIST, ...config.DISABLED_TOOLS].join(',');
+
+  if (opts.cliSessionId) {
+    const cmd = [
+      config.QWEN_BIN,
+      '--output-format', 'stream-json',
+      '--include-partial-messages',
+      '--yolo',
+      '--resume', opts.cliSessionId,
+      '--allowed-tools', opts.allowedTools,
+      '--exclude-tools', disallowed,
+      '-p', `[Current context: ${opts.agencyContext}]\n\n${opts.userMessage}`,
+    ];
+    if (model) cmd.splice(1, 0, '--model', model);
+    return cmd;
+  }
+
+  const cmd = [
+    config.QWEN_BIN,
+    '--output-format', 'stream-json',
+    '--include-partial-messages',
+    '--yolo',
+    '--session-id', opts.sessionId,
+    '--system-prompt', opts.system + '\n\n---\n\n## Current Context\n\n' + opts.agencyContext,
+    '--allowed-tools', opts.allowedTools,
+    '--exclude-tools', disallowed,
+    '-p', opts.userMessage,
+  ];
+  if (model) cmd.splice(1, 0, '--model', model);
+  return cmd;
+}
+
 export function streamInference(
   userMessage: string,
   system: string,
@@ -674,7 +748,7 @@ export function streamInference(
 
   // Adaptive effort
   let effort: EffortLevel = config.CLAUDE_EFFORT as EffortLevel;
-  if (config.ADAPTIVE_EFFORT && config.CLAUDE_EFFORT === 'medium') {
+  if (config.INFERENCE_PROVIDER === 'claude' && config.ADAPTIVE_EFFORT && config.CLAUDE_EFFORT === 'medium') {
     const cachedTurns = getCached('recentTurns', () => memory.getRecentCompanionTurns());
     effort = classifyEffort(userMessage, cachedTurns);
     log.debug(`effort: ${effort}`);
@@ -701,41 +775,13 @@ export function streamInference(
   const allowedTools = '*';
 
   // Resolve model from config, validate against whitelist
-  const model = ALLOWED_MODELS.has(config.CLAUDE_MODEL) ? config.CLAUDE_MODEL : DEFAULT_MODEL;
+  const model = config.INFERENCE_PROVIDER === 'qwen'
+    ? config.QWEN_MODEL
+    : (ALLOWED_MODELS.has(config.CLAUDE_MODEL) ? config.CLAUDE_MODEL : DEFAULT_MODEL);
 
-  let cmd: string[];
-  if (cliSessionId) {
-    cmd = [
-      config.CLAUDE_BIN,
-      '--model', model,
-      '--effort', effort,
-      '--dangerously-skip-permissions',
-      '--verbose',
-      '--output-format', 'stream-json',
-      '--include-partial-messages',
-      '--resume', cliSessionId,
-      '--mcp-config', mcpConfig,
-      '--allowedTools', allowedTools,
-      '--disallowedTools', [...TOOL_BLACKLIST, ...config.DISABLED_TOOLS].join(','),
-      '-p', `[Current context: ${agencyContext}]\n\n${userMessage}`,
-    ];
-  } else {
-    cmd = [
-      config.CLAUDE_BIN,
-      '--dangerously-skip-permissions',
-      '--model', model,
-      '--effort', effort,
-      '--verbose',
-      '--output-format', 'stream-json',
-      '--include-partial-messages',
-      '--session-id', sessionId,
-      '--system-prompt', system + '\n\n---\n\n## Current Context\n\n' + agencyContext,
-      '--mcp-config', mcpConfig,
-      '--allowedTools', allowedTools,
-      '--disallowedTools', [...TOOL_BLACKLIST, ...config.DISABLED_TOOLS].join(','),
-      '-p', userMessage,
-    ];
-  }
+  const cmd = config.INFERENCE_PROVIDER === 'qwen'
+    ? buildQwenStreamCmd(config, { cliSessionId: cliSessionId || null, sessionId, allowedTools, agencyContext, system, userMessage })
+    : buildClaudeStreamCmd(config, { cliSessionId: cliSessionId || null, sessionId, model, effort, mcpConfig, allowedTools, agencyContext, system, userMessage });
 
   const mode = cliSessionId ? 'resume' : 'new';
   const t0 = Date.now();
@@ -1102,15 +1148,21 @@ export function runInferenceOneshot(
     });
     const fullPrompt = promptParts.join('\n');
 
-    const cmd = [
-      config.CLAUDE_BIN,
-      '--model', model,
-      '--effort', effort,
-      '--no-session-persistence',
-      '--print',
-      '--system-prompt', system,
-      '-p', fullPrompt,
-    ];
+    let cmd: string[];
+    if (config.INFERENCE_PROVIDER === 'qwen') {
+      cmd = [config.QWEN_BIN, '--yolo', '--system-prompt', system, '-p', fullPrompt];
+      if (config.QWEN_MODEL) cmd.splice(1, 0, '--model', config.QWEN_MODEL);
+    } else {
+      cmd = [
+        config.CLAUDE_BIN,
+        '--model', model,
+        '--effort', effort,
+        '--no-session-persistence',
+        '--print',
+        '--system-prompt', system,
+        '-p', fullPrompt,
+      ];
+    }
 
     const proc = spawn(cmd[0], cmd.slice(1), {
       stdio: ['ignore', 'pipe', 'pipe'],
