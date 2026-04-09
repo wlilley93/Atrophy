@@ -94,7 +94,16 @@ export async function boot(ctx: AppContext): Promise<void> {
 
   // -- Phase 3: IPC --
   log.info('registering IPC handlers');
-  registerIpcHandlers(ctx as any); // AppContext is a superset of IpcContext
+  // Build IpcContext-compatible view of AppContext.
+  // IpcContext expects function properties; AppContext stores them on managers.
+  const ipcView = Object.create(ctx, {
+    rebuildTrayMenu: { get: () => () => ctx.tray.rebuildMenu() },
+    updateTrayState: { get: () => (state: any) => ctx.tray.updateState(state) },
+    isKeepAwakeActive: { get: () => () => ctx.timers.isKeepAwakeActive() },
+    toggleKeepAwake: { get: () => () => ctx.timers.toggleKeepAwake() },
+    resetJournalNudgeTimer: { get: () => () => ctx.timers.resetJournalNudge() },
+  });
+  registerIpcHandlers(ipcView);
   registerAudioHandlers(() => ctx.mainWindow);
   registerWakeWordHandlers();
   registerCallHandlers(

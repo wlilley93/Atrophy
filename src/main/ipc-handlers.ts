@@ -9,6 +9,7 @@ import type { BrowserWindow } from 'electron';
 import type { Session } from './session';
 import type { HotBundlePaths } from './bundle-updater';
 import type { TrayState } from './icon';
+import type { SwitchAgentResult } from './app-context';
 
 import {
   registerConfigHandlers,
@@ -20,16 +21,18 @@ import {
   registerWindowHandlers,
 } from './ipc/index';
 
+// Re-export for any IPC handler modules that import SwitchAgentResult from here
+export type { SwitchAgentResult } from './app-context';
+
 // ---------------------------------------------------------------------------
 // Interfaces
 // ---------------------------------------------------------------------------
 
-export interface SwitchAgentResult {
-  agentName: string;
-  agentDisplayName: string;
-  customSetup: string | null;
-}
-
+/**
+ * IpcContext is the view of AppContext that IPC handlers see.
+ * It's structurally compatible with AppContext, so passing an AppContext
+ * directly works without adapters.
+ */
 export interface IpcContext {
   mainWindow: BrowserWindow | null;
   currentSession: Session | null;
@@ -41,7 +44,7 @@ export interface IpcContext {
   pendingBundleVersion: string | null;
   readonly hotBundle: HotBundlePaths | null;
   readonly isMenuBarMode: boolean;
-  // Functions from app.ts
+  // Functions - available on both IpcContext and AppContext
   switchAgent: (name: string) => Promise<SwitchAgentResult>;
   rebuildTrayMenu: () => void;
   updateTrayState: (state: TrayState) => void;
