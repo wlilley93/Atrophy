@@ -7,7 +7,6 @@
 import type { BrowserWindow } from 'electron';
 import type { Session } from './session';
 import type { HotBundlePaths } from './bundle-updater';
-import type { TrayState } from './icon';
 import type { TimerManager } from './timers';
 import type { TrayManager } from './tray-manager';
 

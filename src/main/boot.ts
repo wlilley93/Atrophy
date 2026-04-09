@@ -224,7 +224,7 @@ function closeStaleSessionsForAllAgents(): void {
   initDb();
 }
 
-function discoverAndWireAgents(ctx: AppContext): void {
+function discoverAndWireAgents(_ctx: AppContext): void {
   // MCP registry
   try {
     mcpRegistry.discover();
@@ -524,7 +524,7 @@ async function switchAgentImpl(ctx: AppContext, name: string): Promise<SwitchAge
 async function generateDeferredSummary(
   sessionId: number,
   turnHistory: { role: string; content: string; turnId: number }[],
-  systemPrompt: string,
+  _systemPrompt: string,
   oldAgentName: string,
 ): Promise<void> {
   const turnText = turnHistory
