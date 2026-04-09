@@ -858,8 +858,9 @@ app.whenReady().then(() => {
 
           pool.createWindow(agent.name, {
             sessionId: lastSession,
-            claudeBin: config.CLAUDE_BIN,
+            claudeBin: config.INFERENCE_PROVIDER === 'qwen' ? config.QWEN_BIN : config.CLAUDE_BIN,
             mcpConfigPath: mcpConfig,
+            provider: config.INFERENCE_PROVIDER,
           });
 
           // Press Enter after 1s to start claude

@@ -64,6 +64,7 @@ export interface WindowConfig {
   sessionId: string;
   claudeBin: string;
   mcpConfigPath: string;
+  provider?: 'claude' | 'qwen';
 }
 
 // ---------------------------------------------------------------------------
@@ -357,15 +358,24 @@ export class TmuxPool {
     const sessionExists = fs.existsSync(expectedJsonl);
     const sessionFlag = sessionExists ? '--resume' : '--session-id';
 
-    // Build the claude command. Interactive mode (no -p), no --output-format
-    // (we read from JSONL files instead). --dangerously-skip-permissions is
-    // required so the agent can use its tools without prompting.
-    const claudeArgs = [
-      claudeBin,
-      sessionFlag, sessionId,
-      '--dangerously-skip-permissions',
-      '--mcp-config', mcpConfigPath,
-    ];
+    // Build the command. Interactive mode (no -p), no --output-format
+    // (we read from JSONL files instead). For Claude, --dangerously-skip-permissions
+    // and --mcp-config are required. For Qwen, use --yolo and omit --mcp-config.
+    let claudeArgs: string[];
+    if (config.provider === 'qwen') {
+      claudeArgs = [
+        claudeBin,
+        sessionFlag, sessionId,
+        '--yolo',
+      ];
+    } else {
+      claudeArgs = [
+        claudeBin,
+        sessionFlag, sessionId,
+        '--dangerously-skip-permissions',
+        '--mcp-config', mcpConfigPath,
+      ];
+    }
     const claudeCmd = claudeArgs.join(' ');
 
     // Send the command to start Claude CLI
