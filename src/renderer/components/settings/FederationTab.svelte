@@ -1,6 +1,6 @@
 <!-- src/renderer/components/settings/FederationTab.svelte -->
 <script lang="ts">
-  const api = (window as any).api;
+  const api = (window as any).api as Record<string, (...args: any[]) => Promise<any>> | undefined;
 
   interface FederationLink {
     remote_bot_username: string;
@@ -51,9 +51,10 @@
   }
 
   async function loadConfig() {
+    if (!api?.federationGetConfig) return;
     const config = await api.federationGetConfig();
     links = config?.links || {};
-    activePollers = await api.federationGetActivePollers() || [];
+    activePollers = await api?.federationGetActivePollers?.() || [];
   }
 
   async function selectLink(name: string) {

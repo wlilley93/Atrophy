@@ -46,6 +46,7 @@
     slot: TimeSlot;
     durationMinutes: number;
     colour: string;
+    isDot: boolean;
   }
 
   // -----------------------------------------------------------------------
@@ -157,8 +158,16 @@
         ? Math.max(1, Math.round(job.definition.timeout_seconds / 60))
         : 30;
       const colour = agentColour(job.agent);
+
+      // Count slots per day - if a job fires more than 2 times on any day,
+      // render all of its slots as dots instead of calendar boxes.
+      const perDay = new Map<number, number>();
+      for (const s of slots) perDay.set(s.day, (perDay.get(s.day) || 0) + 1);
+      const maxPerDay = Math.max(0, ...perDay.values());
+      const isDot = maxPerDay > 2;
+
       for (const slot of slots) {
-        blocks.push({ job, slot, durationMinutes: durationMin, colour });
+        blocks.push({ job, slot, durationMinutes: durationMin, colour, isDot });
       }
     }
     return blocks;
@@ -640,26 +649,42 @@
             <!-- Job blocks -->
             {#each calendarBlocks as block}
               {@const topPx = block.slot.hour * HOUR_HEIGHT + (block.slot.minute / 60) * HOUR_HEIGHT}
-              {@const heightPx = Math.max(20, (block.durationMinutes / 60) * HOUR_HEIGHT)}
-              <button
-                class="job-block"
-                class:disabled={block.job.disabled}
-                class:is-running={block.job.running}
-                style="
-                  top: {topPx}px;
-                  height: {Math.min(heightPx, (24 * HOUR_HEIGHT) - topPx)}px;
-                  left: calc(44px + {block.slot.day} * (100% - 44px) / 7 + 2px);
-                  width: calc((100% - 44px) / 7 - 4px);
-                  --block-colour: {block.colour};
-                  --block-colour-dim: {agentColourDim(block.job.agent)};
-                "
-                onclick={(e) => handleBlockClick(block, e)}
-                onmouseenter={(e) => handleBlockHover(block, e)}
-                onmouseleave={handleBlockLeave}
-              >
-                <span class="block-name">{block.job.name}</span>
-                <span class="block-agent">{block.job.agent}</span>
-              </button>
+              {#if block.isDot}
+                <button
+                  class="job-dot"
+                  class:disabled={block.job.disabled}
+                  class:is-running={block.job.running}
+                  style="
+                    top: {topPx + 2}px;
+                    left: calc(44px + {block.slot.day} * (100% - 44px) / 7 + (100% - 44px) / 14 - 4px);
+                    background: {block.colour};
+                  "
+                  onclick={(e) => handleBlockClick(block, e)}
+                  onmouseenter={(e) => handleBlockHover(block, e)}
+                  onmouseleave={handleBlockLeave}
+                ></button>
+              {:else}
+                {@const heightPx = Math.max(20, (block.durationMinutes / 60) * HOUR_HEIGHT)}
+                <button
+                  class="job-block"
+                  class:disabled={block.job.disabled}
+                  class:is-running={block.job.running}
+                  style="
+                    top: {topPx}px;
+                    height: {Math.min(heightPx, (24 * HOUR_HEIGHT) - topPx)}px;
+                    left: calc(44px + {block.slot.day} * (100% - 44px) / 7 + 2px);
+                    width: calc((100% - 44px) / 7 - 4px);
+                    --block-colour: {block.colour};
+                    --block-colour-dim: {agentColourDim(block.job.agent)};
+                  "
+                  onclick={(e) => handleBlockClick(block, e)}
+                  onmouseenter={(e) => handleBlockHover(block, e)}
+                  onmouseleave={handleBlockLeave}
+                >
+                  <span class="block-name">{block.job.name}</span>
+                  <span class="block-agent">{block.job.agent}</span>
+                </button>
+              {/if}
             {/each}
 
             <!-- Current time line -->
@@ -1207,6 +1232,33 @@
   }
 
   /* Job blocks */
+  .job-dot {
+    position: absolute;
+    z-index: 5;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: transform 0.1s, opacity 0.12s;
+  }
+
+  .job-dot:hover {
+    transform: scale(1.8);
+    opacity: 1;
+    z-index: 8;
+  }
+
+  .job-dot.disabled {
+    opacity: 0.3;
+  }
+
+  .job-dot.is-running {
+    animation: pulse-block 1.5s ease-in-out infinite;
+  }
+
   .job-block {
     position: absolute;
     z-index: 5;
