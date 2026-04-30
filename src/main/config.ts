@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync, execSync } from 'child_process';
 import * as crypto from 'crypto';
+import { logManifestWarnings } from './validate-manifest';
 
 // ---------------------------------------------------------------------------
 // Root paths
@@ -229,6 +230,7 @@ function loadAgentManifest(name: string): void {
   } catch { /* ignore */ }
 
   _agentManifest = deepMerge(bundle, user);
+  logManifestWarnings(_agentManifest, name);
 }
 
 // ---------------------------------------------------------------------------

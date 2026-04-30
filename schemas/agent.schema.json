@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atrophy.app/schemas/agent.schema.json",
+  "title": "Atrophy Agent Manifest",
+  "description": "Schema for agent.json - the single source of truth for agent identity, configuration, channels, jobs, and organisational hierarchy.",
+  "type": "object",
+  "required": ["name", "display_name", "description"],
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+      "description": "Agent slug. Must match the directory name. No '..' allowed."
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Human-readable name shown in UI and Telegram."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Short description of the agent's purpose."
+    },
+    "user_name": {
+      "type": "string",
+      "default": "User",
+      "description": "How the agent addresses the user."
+    },
+    "opening_line": {
+      "type": "string",
+      "default": "Hello.",
+      "description": "First thing the agent says when a session begins."
+    },
+    "wake_words": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Wake word phrases for voice activation."
+    },
+    "telegram_emoji": {
+      "type": "string",
+      "default": "",
+      "description": "Emoji displayed next to agent name in Telegram."
+    },
+    "disabled_tools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Claude tool names to disable for this agent."
+    },
+    "notify_via": {
+      "type": "string",
+      "enum": ["auto", "telegram", "both"],
+      "default": "auto",
+      "description": "Default notification routing."
+    },
+    "default_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "If false, agent starts disabled until user enables it."
+    },
+    "custom_setup": {
+      "type": "string",
+      "description": "If set, triggers a named setup wizard flow before enabling."
+    },
+    "venv": {
+      "type": "string",
+      "description": "Absolute path to a Python interpreter for this agent's jobs."
+    },
+
+    "voice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tts_backend": {
+          "type": "string",
+          "enum": ["elevenlabs", "fal", "piper", "disabled"],
+          "default": "elevenlabs"
+        },
+        "elevenlabs_voice_id": { "type": "string", "default": "" },
+        "elevenlabs_model": { "type": "string", "default": "eleven_v3" },
+        "elevenlabs_stability": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5 },
+        "elevenlabs_similarity": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.75 },
+        "elevenlabs_style": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.35 },
+        "fal_voice_id": { "type": "string", "default": "" },
+        "playback_rate": { "type": "number", "minimum": 0.1, "maximum": 3.0, "default": 1.12 },
+        "piper_voice": { "type": "string", "default": "" }
+      }
+    },
+
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "window_width": { "type": "integer", "minimum": 0, "default": 0 },
+        "window_height": { "type": "integer", "minimum": 0, "default": 0 },
+        "title": { "type": "string" },
+        "settings_window_width": { "type": "integer", "minimum": 0, "default": 0 },
+        "settings_window_height": { "type": "integer", "minimum": 0, "default": 0 }
+      }
+    },
+
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "active_start": { "type": "integer", "minimum": 0, "maximum": 23, "default": 9 },
+        "active_end": { "type": "integer", "minimum": 0, "maximum": 23, "default": 22 },
+        "interval_mins": { "type": "integer", "minimum": 1, "default": 30 }
+      }
+    },
+
+    "avatar": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string", "default": "" },
+        "resolution": { "type": "integer", "default": 512 }
+      }
+    },
+
+    "appearance": {
+      "type": "object",
+      "properties": {
+        "prompt": { "type": "string" },
+        "negative_prompt": { "type": "string" },
+        "ip_adapter_scale": { "type": "number" },
+        "inference_steps": { "type": "integer" },
+        "guidance_scale": { "type": "number" },
+        "width": { "type": "integer" },
+        "height": { "type": "integer" },
+        "hasAvatar": { "type": "boolean" }
+      }
+    },
+
+    "channels": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "desktop": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "telegram": {
+          "type": "object",
+          "properties": {
+            "bot_token_env": {
+              "type": "string",
+              "pattern": "^TELEGRAM_BOT_TOKEN_",
+              "description": "Env var name holding the bot token."
+            },
+            "chat_id_env": {
+              "type": "string",
+              "pattern": "^TELEGRAM_CHAT_ID_",
+              "description": "Env var name holding the chat ID."
+            },
+            "enabled": { "type": "boolean" }
+          }
+        }
+      }
+    },
+
+    "mcp": {
+      "type": "object",
+      "properties": {
+        "include": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Named MCP servers to include."
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Named MCP servers to explicitly exclude."
+        },
+        "custom": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["command", "args"],
+            "properties": {
+              "command": { "type": "string" },
+              "args": { "type": "array", "items": { "type": "string" } },
+              "env": { "type": "object", "additionalProperties": { "type": "string" } },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "jobs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["script"],
+        "properties": {
+          "script": {
+            "type": "string",
+            "description": "Relative path from BUNDLE_ROOT, e.g. scripts/agents/shared/heartbeat.py"
+          },
+          "description": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["calendar", "interval"],
+            "description": "Scheduling type."
+          },
+          "cron": {
+            "type": "string",
+            "pattern": "^[0-9*,/-]+ [0-9*,/-]+ [0-9*,/-]+ [0-9*,/-]+ [0-9*,/-]+$",
+            "description": "5-field cron expression: min hour dom month dow."
+          },
+          "interval_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Seconds between runs (for type: interval)."
+          },
+          "args": {
+            "oneOf": [
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "string" }
+            ],
+            "description": "Script arguments."
+          },
+          "route_output_to": {
+            "type": "string",
+            "description": "Where to route output. 'self' or another agent name."
+          },
+          "notify_via": {
+            "type": "string",
+            "enum": ["telegram", "db"],
+            "description": "Override notification channel for this job."
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600,
+            "default": 120,
+            "description": "Job timeout in seconds."
+          }
+        }
+      }
+    },
+
+    "router": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accept_from": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["*"],
+          "description": "Address patterns allowed to send to this agent."
+        },
+        "reject_from": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Address patterns to explicitly reject."
+        },
+        "max_queue_depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10
+        },
+        "system_access": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether agent has full system access (xan only)."
+        },
+        "can_address_agents": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether agent can send messages to other agents."
+        }
+      }
+    },
+
+    "org": {
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]+$",
+          "description": "Organisation namespace. Controls storage path for tier 2+."
+        },
+        "tier": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Hierarchy level. 0=root (xan), 1=top-level, 2=subagent, 3=leaf."
+        },
+        "role": { "type": "string" },
+        "reports_to": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "description": "Agent name this agent reports to. null for top-level."
+        },
+        "direct_reports": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "can_address_user": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether agent can message the user directly."
+        },
+        "can_provision": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether agent can create new agents."
+        },
+        "country": {
+          "type": "string",
+          "description": "For ambassador agents - country this agent represents."
+        }
+      }
+    },
+
+    "personality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assertiveness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "initiative": { "type": "number", "minimum": 0, "maximum": 1 },
+        "warmth_default": { "type": "number", "minimum": 0, "maximum": 1 },
+        "humor_style": { "type": "number", "minimum": 0, "maximum": 1 },
+        "depth_preference": { "type": "number", "minimum": 0, "maximum": 1 },
+        "directness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "patience": { "type": "number", "minimum": 0, "maximum": 1 },
+        "risk_tolerance": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  },
+
+  "$defs": {
+    "deprecated_fields": {
+      "description": "These fields are deprecated and should be migrated to their modern equivalents.",
+      "properties": {
+        "telegram_bot_token": {
+          "type": "string",
+          "deprecated": true,
+          "description": "DEPRECATED: Use channels.telegram.bot_token_env instead."
+        },
+        "telegram_chat_id": {
+          "type": "string",
+          "deprecated": true,
+          "description": "DEPRECATED: Use channels.telegram.chat_id_env instead."
+        },
+        "telegram_dm_chat_id": {
+          "type": "string",
+          "deprecated": true,
+          "description": "DEPRECATED: Use channels.telegram.chat_id_env instead."
+        },
+        "role": {
+          "type": "string",
+          "deprecated": true,
+          "description": "DEPRECATED: Use org.role instead."
+        },
+        "setup_agent": {
+          "type": "boolean",
+          "deprecated": true,
+          "description": "DEPRECATED: Legacy field. Not read by TypeScript code."
+        }
+      }
+    }
+  }
+}

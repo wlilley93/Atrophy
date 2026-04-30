@@ -996,6 +996,15 @@ export function streamInference(
               toolId: (block.id as string) || '',
               inputJson: JSON.stringify(block.input || {}),
             } as ToolUseEvent);
+          } else if (block.type === 'text') {
+            // Fallback when content_block_delta stream events didn't fire for this
+            // text block (observed with short responses in Claude CLI 2.1.x). Only
+            // capture if we haven't already accumulated text via streaming.
+            const text = (block.text as string) || '';
+            if (text && !fullText) {
+              fullText = text;
+              emitter.emit('event', { type: 'TextDelta', text } as TextDeltaEvent);
+            }
           }
         }
         continue;

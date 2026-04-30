@@ -3,8 +3,9 @@
  * Port of core/embeddings.py.
  *
  * Embeds text into 384-dim vectors using all-MiniLM-L6-v2.
- * Model loads lazily on first call. Uses WASM via @xenova/transformers
- * instead of Python's sentence-transformers.
+ * Model loads lazily on first call. Uses @huggingface/transformers (v4)
+ * which avoids the onnxruntime-node 1.24+ "Tensor.location must be a
+ * string" bug that broke @xenova/transformers v2 embeds.
  *
  * Vectors stored as Float32Array blobs in SQLite.
  */
@@ -56,15 +57,17 @@ async function loadPipeline(): Promise<unknown> {
         : `Xenova/${config.EMBEDDING_MODEL}`;
       const cacheDir = config.MODELS_DIR;
 
-      log.info(`Loading ${modelName} via Transformers.js (cache: ${cacheDir})...`);
+      log.info(`Loading ${modelName} via @huggingface/transformers (cache: ${cacheDir})...`);
 
-      // Dynamic import - @xenova/transformers is ESM
-      const { pipeline, env } = await import('@xenova/transformers');
+      // Dynamic import - @huggingface/transformers is ESM. Same API shape
+      // as @xenova/transformers v2, so the pipeline() call is unchanged.
+      const { pipeline, env } = await import('@huggingface/transformers');
       env.cacheDir = cacheDir;
       env.allowLocalModels = true;
+      env.useBrowserCache = false;
 
       _pipeline = await pipeline('feature-extraction', modelName, {
-        quantized: true,
+        dtype: 'q8',
       });
 
       log.info(`Model loaded (${EMBEDDING_DIM}-dim, WASM)`);

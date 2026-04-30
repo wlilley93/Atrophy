@@ -1,16 +1,61 @@
-"""Shared helper - send a PNG image to Telegram via sendPhoto."""
+"""Shared helper - send a PNG image to Telegram via sendPhoto, with logging."""
 import json
-import urllib.request
+import logging
 import os
+import urllib.request
+from datetime import datetime
 
-AGENT_JSON = os.path.expanduser('~/.atrophy/agents/general_montgomery/data/agent.json')
+LOG_DIR = os.path.expanduser('~/.atrophy/logs/viz_agent')
+os.makedirs(LOG_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [viz] %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(LOG_DIR, 'viz_agent.log')),
+        logging.StreamHandler(),
+    ],
+)
+log = logging.getLogger('viz_agent')
+
+MONTGOMERY_MANIFEST = os.path.expanduser(
+    '~/.atrophy/agents/general_montgomery/data/agent.json'
+)
 
 
-def send_photo(image_bytes, caption, agent_json_path=AGENT_JSON):
+def _resolve_telegram_creds(agent_json_path=MONTGOMERY_MANIFEST):
+    """Resolve bot token and chat ID, preferring env vars over flat manifest fields."""
     with open(agent_json_path) as f:
         cfg = json.load(f)
-    bot_token = cfg['telegram_bot_token']
-    chat_id = cfg['telegram_chat_id']
+
+    # Modern path: channels.telegram.bot_token_env / chat_id_env
+    channels = cfg.get('channels', {}).get('telegram', {})
+    token_env = channels.get('bot_token_env', '')
+    chat_env = channels.get('chat_id_env', '')
+
+    bot_token = os.environ.get(token_env, '') if token_env else ''
+    chat_id = os.environ.get(chat_env, '') if chat_env else ''
+
+    # Fallback: deprecated flat fields (log warning if used)
+    if not bot_token:
+        bot_token = cfg.get('telegram_bot_token', '')
+        if bot_token:
+            log.warning('Using deprecated telegram_bot_token field - migrate to channels.telegram.bot_token_env')
+    if not chat_id:
+        chat_id = cfg.get('telegram_chat_id', '')
+        if chat_id:
+            log.warning('Using deprecated telegram_chat_id field - migrate to channels.telegram.chat_id_env')
+
+    if not bot_token or not chat_id:
+        raise ValueError('No Telegram credentials found in manifest or env vars')
+
+    return bot_token, chat_id
+
+
+def send_photo(image_bytes, caption, agent_json_path=MONTGOMERY_MANIFEST):
+    bot_token, chat_id = _resolve_telegram_creds(agent_json_path)
+
+    log.info('Sending photo: %s (%d bytes)', caption, len(image_bytes))
 
     url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
     boundary = "----FormBoundary7MA4YWxkTrZu0gW"
@@ -28,5 +73,13 @@ def send_photo(image_bytes, caption, agent_json_path=AGENT_JSON):
 
     req = urllib.request.Request(url, data=body)
     req.add_header('Content-Type', f'multipart/form-data; boundary={boundary}')
-    resp = urllib.request.urlopen(req)
-    return json.loads(resp.read())
+
+    try:
+        resp = urllib.request.urlopen(req)
+        result = json.loads(resp.read())
+        msg_id = result.get('result', {}).get('message_id', '?')
+        log.info('Delivered: msg_id=%s ok=%s', msg_id, result.get('ok'))
+        return result
+    except Exception as exc:
+        log.error('Send failed: %s', exc)
+        raise

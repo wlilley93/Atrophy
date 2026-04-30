@@ -1,6 +1,6 @@
 {
   "introspect": {
-    "cron": "19 1 9 4 *",
+    "cron": "27 1 23 4 *",
     "script": "scripts/agents/shared/introspect.py",
     "description": "Daily self-reflection - reviews sessions, writes journal entry to Obsidian"
   },

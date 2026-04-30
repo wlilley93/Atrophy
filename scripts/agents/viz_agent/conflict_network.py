@@ -141,15 +141,18 @@ def render(conflict_name, actors, rels):
 
 
 def main():
+    from send_photo import log
     conflict = sys.argv[1] if len(sys.argv) > 1 else 'Sudan'
+    log.info('conflict_network: generating for %s', conflict)
     actors, rels = load_graph(conflict)
     if actors is None:
-        print(f"No conflict matching '{conflict}' in DB")
+        log.warning('conflict_network: no conflict matching "%s" in DB', conflict)
         return
+    log.info('conflict_network: %d actors, %d relationships', len(actors), len(rels or []))
     img = render(conflict, actors, rels)
     today = datetime.now().strftime('%d %b %Y')
     result = send_photo(img, f"{conflict} Actor Network | {today}")
-    print(f"Sent: {result.get('ok')} | msg_id: {result.get('result', {}).get('message_id')}")
+    log.info('conflict_network: done, msg_id=%s', result.get('result', {}).get('message_id'))
 
 
 if __name__ == '__main__':

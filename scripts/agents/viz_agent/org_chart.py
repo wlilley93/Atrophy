@@ -135,10 +135,12 @@ def render():
 
 
 def main():
+    from send_photo import log
+    log.info('org_chart: generating')
     img = render()
     today = datetime.now().strftime('%d %b %Y')
     result = send_photo(img, f"Meridian Institute - Agent Architecture | {today}")
-    print(f"Sent: {result.get('ok')} | msg_id: {result.get('result', {}).get('message_id')}")
+    log.info('org_chart: done, msg_id=%s', result.get('result', {}).get('message_id'))
 
 
 if __name__ == '__main__':

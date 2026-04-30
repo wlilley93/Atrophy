@@ -90,14 +90,17 @@ def render(series):
 
 
 def main():
+    from send_photo import log
+    log.info('maritime_chart: generating')
     series = load_series()
     if not series:
-        print("No maritime data in DB")
+        log.warning('maritime_chart: no maritime data in DB')
         return
+    log.info('maritime_chart: %d chokepoints, %d data points', len(series), sum(len(v) for v in series.values()))
     img = render(series)
     today = datetime.now().strftime('%d %b %Y')
     result = send_photo(img, f"Maritime Chokepoint Traffic | {today}")
-    print(f"Sent: {result.get('ok')} | msg_id: {result.get('result', {}).get('message_id')}")
+    log.info('maritime_chart: done, msg_id=%s', result.get('result', {}).get('message_id'))
 
 
 if __name__ == '__main__':

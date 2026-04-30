@@ -29,8 +29,6 @@
     "active_end": 23,
     "interval_mins": 30
   },
-  "role": "system",
-  "setup_agent": true,
   "channels": {
     "telegram": {
       "bot_token_env": "TELEGRAM_BOT_TOKEN_XAN",
@@ -109,6 +107,7 @@
   "org": {
     "slug": "system",
     "tier": 0,
+    "role": "system",
     "can_provision": true
   },
   "personality": {
